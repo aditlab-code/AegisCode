@@ -58,7 +58,9 @@ export function ChatMessageList() {
             <Icon name="aegis" size={24} />
           </span>
           <p>Ask AEGIS anything about your workspace.</p>
-          <span className="empty-state-hint">Type / for skills, @ for files</span>
+          <span className="empty-state-hint">
+            Type / for skills, @ for files
+          </span>
         </div>
       ) : (
         chatMessages.map((item) => (

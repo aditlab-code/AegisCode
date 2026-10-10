@@ -304,4 +304,95 @@ Sistem Chat Agent pada `src/components/layout/chat` direlayout secara modular de
   - **Balon Agent**: Rata kiri dengan card `var(--color-surface-raised)`, tipografi terstruktur, dan tombol interaktif **Copy Message** (ikon copy) yang muncul saat bubble di-hover.
   - **Empty State**: Placeholder minimalis dan bersih jika sesi chat baru belum memiliki pesan.
 
+---
+
+## 9. Blueprint Arsitektur Backend & Local Process (Go Core Server, Security, & Worker Daemons)
+
+Arsitektur backend dirancang berdasarkan hasil keputusan arsitektur resmi ([ADR 0001 - 0008](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/)) dengan pola **Hybrid Layered Core + Out-of-Process Workers**:
+
+```mermaid
+flowchart TB
+    subgraph ClientLayer["Frontend Client (UI Shell)"]
+        UI["React 19 + TypeScript (Aegis Studio)"]
+    end
+
+    subgraph TransportLayer["Secure IPC & Transport (Loopback & UDS)"]
+        HTTP_SSE["HTTP / SSE Stream\n(127.0.0.1 + Ephemeral Bearer Token)"]
+        UDS["Unix Domain Socket (chmod 0600)\n~/.aegis/run/agent.sock"]
+        STDIO["stdio JSON-RPC / PTY Pipe"]
+    end
+
+    subgraph CoreLayer["Go Core Server (Compiled Native Binary)"]
+        Orchestrator["Core Orchestrator & HTTP/SSE Server"]
+        Supervisor["Process Supervisor (Fail-Fast & Auto-Restart)"]
+        Migration["Legacy Migration Adapter (Non-Destructive Import)"]
+        FSWatcher["Workspace Engine & File Watcher"]
+    end
+
+    subgraph WorkersLayer["Isolated Out-of-Process Workers"]
+        LSP["Language Server (LSP)\n(Pyright, Clangd, TSServer)"]
+        PTY["Terminal Runner (PTY Native Shell)\n(zsh / bash)"]
+        Agent["AEGIS Agent Runtime (Olympus AI)\n(Token Streaming & Autonomous Tools)"]
+    end
+
+    subgraph StorageLayer["Data & Storage Boundaries"]
+        WorkspaceFS[("Active Workspace Filesystem\n(User Project Codebase)")]
+        AppDataDB[("Global App Data Directory\n(~/.aegis/data/aegis.db - Embedded SQLite)")]
+        LegacyData[("Legacy v1 Artifacts\n(../AegisCode/data/aegis.db & settings.json)")]
+    end
+
+    UI <-->|Typed Contract & SSE Stream| HTTP_SSE
+    HTTP_SSE <--> Orchestrator
+
+    Orchestrator --- Supervisor
+    Supervisor -->|Spawn & Monitor| STDIO
+    Supervisor -->|Spawn & Monitor| UDS
+    STDIO <--> LSP
+    STDIO <--> PTY
+    UDS <--> Agent
+
+    Orchestrator <--> WorkspaceFS
+    Orchestrator <--> AppDataDB
+    Migration -.->|Read-Only Shadow Import| LegacyData
+    Migration -->|Migrate Schema| AppDataDB
+```
+
+### A. Prinsip & Pola Arsitektur Inti
+1. **Hybrid Layered + Out-of-Process Workers ([ADR 0001](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0001-hybrid-process-architecture.md))**:
+   - Menolak enterprise network microservices (multi-container, separate DB per service, network serialization).
+   - Mengadopsi server lokal berbasis Go sebagai orkestrator sentral dengan subprocess worker terisolasi untuk proses intensif atau tidak stabil (LSP, terminal runner, AI agent).
+2. **Core Server Runtime ([ADR 0003](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0003-core-server-runtime-golang.md))**:
+   - Dibangun menggunakan **Go (Golang)** sebagai single compiled native binary.
+   - Footprint memori ultra-rendah (<30MB RAM), waktu startup instan (<20ms), dan konkurensi native via goroutine untuk streaming SSE dan terminal PTY.
+3. **Pragmatic Package Layout ([ADR 0006](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0006-pragmatic-go-package-layout.md))**:
+   - Struktur paket Go flat & modular (`cmd/server/main.go`, `internal/config`, `internal/store`, `internal/supervisor`, `internal/workspace`, `internal/api`).
+   - Menghindari boilerplate berlebih (anti over-engineering) dan mematuhi aturan error handling eksplisit (*"DO NOT Try catch Silent"*).
+
+### B. Keamanan & Protokol Komunikasi Inter-Service
+1. **Ephemeral Token Handshake**:
+   - Saat Core Server boot, token acak di-generate di memori dan di-pass ke UI Shell.
+   - Server di-bind khusus ke `127.0.0.1` (loopback only). Seluruh request HTTP/SSE wajib menyertakan header `Authorization: Bearer <token>`, memblokir serangan DNS rebinding dan CSRF dari browser web.
+2. **Unix Domain Sockets (UDS) untuk Agent IPC ([ADR 0005](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0005-unix-domain-sockets-for-agent-ipc.md))**:
+   - Core Server dan Agent Runtime bertukar data melalui socket file `~/.aegis/run/agent.sock` dengan perizinan file `0600` (hanya dapat diakses user pemilik proses).
+   - Bebas tabrakan nomor port TCP dan kebal dari scanning jaringan lokal.
+3. **Typed Contract Generation ([ADR 0008](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0008-typed-contract-generation.md))**:
+   - Struct Go diekspor otomatis menjadi TypeScript definitions menggunakan generator tipe (`tygo`).
+   - Menjamin tipe data antara backend Go dan frontend React 19 selalu 100% selaras tanpa human error.
+
+### C. Batas Data & Strategi Migrasi Legacy
+1. **Pemisahan Penyimpanan Data ([ADR 0002](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0002-app-data-directory-and-legacy-migration.md))**:
+   - **Workspace**: Hanya memuat file source code proyek pengguna.
+   - **Global App Data**: Seluruh database SQLite (`aegis.db`), riwayat sesi agent, dan cache berada di `~/.aegis/data/`, tidak pernah mengotori folder repositori aktif.
+2. **Non-Destructive Shadow Migration ([ADR 0007](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0007-non-destructive-shadow-migration.md))**:
+   - Startup routine mendeteksi konfigurasi lama dari v1 (`../AegisCode/data/settings.json`, `.aegis/auth.json`, dan `aegis.db`).
+   - Melakukan pembacaan read-only dan mengimpor preferensi serta model LLM ke skema v2 tanpa memodifikasi atau menghapus file v1 asli.
+
+### D. Supervisi & Ketahanan Proses ([ADR 0004](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0004-worker-supervision-and-agent-isolation.md))
+1. **Process Supervisor**:
+   - Core Server memonitor status exit code setiap child-process (LSP, PTY, Agent).
+   - Kebijakan *Fail-Fast & Explicit Incident Reporting*: jika worker crash, Core Server tidak membungkam error, melainkan memutus fungsi secara eksplisit, mengirim notifikasi diagnostic ke UI, dan menjalankan clean restart terisolasi.
+2. **Isolasi Latensi Editor**:
+   - Beban kerja komputasi berat dari AI Agent tidak membebani loop pengetikan teks pada workbench editor.
+
+
 

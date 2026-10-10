@@ -29,10 +29,7 @@ export function ChatHeader() {
       </div>
 
       <div className="chat-header-actions">
-        <IconButton
-          label="New chat session"
-          onClick={() => createSession()}
-        >
+        <IconButton label="New chat session" onClick={() => createSession()}>
           <Icon name="plus" size={14} />
         </IconButton>
         <IconButton
@@ -42,10 +39,7 @@ export function ChatHeader() {
         >
           <Icon name="history" size={14} />
         </IconButton>
-        <IconButton
-          label="Close AEGIS chat"
-          onClick={() => setChatOpen(false)}
-        >
+        <IconButton label="Close AEGIS chat" onClick={() => setChatOpen(false)}>
           <Icon name="close" size={14} />
         </IconButton>
       </div>
