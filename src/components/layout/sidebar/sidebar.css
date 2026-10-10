@@ -3,7 +3,7 @@
   background: var(--color-surface);
   border: 1px solid var(--color-line);
   border-radius: 11px;
-  box-shadow: 0 14px 38px rgb(0 0 0 / 20%);
+  box-shadow: var(--shadow-elevation);
   backdrop-filter: blur(22px) saturate(135%);
   overflow: hidden;
 }
@@ -544,7 +544,7 @@
   background: var(--color-surface-raised);
   border: 1px solid var(--color-line-bright);
   border-radius: 6px;
-  box-shadow: 0 10px 30px rgb(0 0 0 / 40%);
+  box-shadow: var(--shadow-elevation);
   backdrop-filter: blur(20px);
 }
 
@@ -580,11 +580,11 @@
 }
 
 .context-menu-item.item-danger {
-  color: var(--color-red);
+  color: var(--color-error);
 }
 
 .context-menu-item.item-danger:hover {
-  background: rgb(247 118 142 / 12%);
+  background: var(--color-error-soft);
 }
 
 .context-menu-separator {
@@ -654,22 +654,22 @@
 
 .symbol-function {
   color: var(--color-pink);
-  background: rgb(232 121 249 / 12%);
+  background: var(--color-pink-soft);
 }
 
 .symbol-class {
   color: var(--color-orange);
-  background: rgb(255 174 87 / 12%);
+  background: var(--color-warning-soft);
 }
 
 .symbol-interface {
   color: var(--color-cyan);
-  background: rgb(103 232 249 / 12%);
+  background: var(--color-info-soft);
 }
 
 .symbol-type {
   color: var(--color-blue);
-  background: rgb(140 188 255 / 12%);
+  background: var(--color-blue-soft);
 }
 
 .symbol-line {
@@ -882,7 +882,7 @@
 
 .action-stage:hover {
   color: var(--color-green);
-  background: rgb(158 206 106 / 15%);
+  background: var(--color-success-soft);
 }
 
 .action-unstage {
@@ -891,7 +891,7 @@
 
 .action-unstage:hover {
   color: var(--color-red);
-  background: rgb(247 118 142 / 15%);
+  background: var(--color-error-soft);
 }
 
 .git-change-list {
@@ -930,17 +930,17 @@
 
 .change-added {
   color: var(--color-green);
-  background: rgb(158 206 106 / 15%);
+  background: var(--color-success-soft);
 }
 
 .change-deleted {
   color: var(--color-red);
-  background: rgb(247 118 142 / 15%);
+  background: var(--color-error-soft);
 }
 
 .change-modified {
   color: var(--color-orange);
-  background: rgb(255 174 87 / 15%);
+  background: var(--color-warning-soft);
 }
 
 .change-filename {
@@ -969,7 +969,7 @@
 }
 
 .git-row-action.action-stage:hover {
-  background: rgb(158 206 106 / 15%);
+  background: var(--color-success-soft);
 }
 
 .git-row-action.action-unstage {
@@ -977,7 +977,7 @@
 }
 
 .git-row-action.action-unstage:hover {
-  background: rgb(247 118 142 / 15%);
+  background: var(--color-error-soft);
 }
 
 .git-empty-hint {
@@ -1072,8 +1072,8 @@
   gap: 3px;
   padding: 0 5px;
   color: var(--color-cyan);
-  background: rgb(103 232 249 / 10%);
-  border: 1px solid rgb(103 232 249 / 20%);
+  background: var(--color-info-soft);
+  border: 1px solid var(--color-line-bright);
   border-radius: 2px;
   font-size: 8px;
 }

@@ -23,6 +23,8 @@ export function SettingsModal() {
     setMinimapEnabled,
     activeBranch,
     showToast,
+    theme,
+    setTheme,
   } = useWorkbench()
 
   const [activeCategory, setActiveCategory] = useState<string>("Common")
@@ -125,6 +127,20 @@ export function SettingsModal() {
 
       // Workbench
       {
+        id: "workbench.colorTheme",
+        category: "Workbench",
+        title: "Workbench: Color Theme",
+        description:
+          "Specifies the active color theme (Dark or Light) for the entire workspace.",
+        type: "select",
+        value: theme,
+        options: ["dark", "light"],
+        onChange: (v) => {
+          setTheme(v as "dark" | "light")
+          showToast(`Color theme set to ${v}`)
+        },
+      },
+      {
         id: "workbench.confirmDelete",
         category: "Workbench",
         title: "Workbench: Confirm Delete",
@@ -211,6 +227,8 @@ export function SettingsModal() {
       agentAutoContext,
       setLinterSettings,
       showToast,
+      theme,
+      setTheme,
     ],
   )
 

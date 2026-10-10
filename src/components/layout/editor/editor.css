@@ -612,7 +612,7 @@
   background: var(--color-surface-raised);
   border: 1px solid var(--color-line-bright);
   border-radius: 8px;
-  box-shadow: 0 12px 36px rgb(0 0 0 / 48%);
+  box-shadow: var(--shadow-popover);
   backdrop-filter: blur(24px) saturate(140%);
   animation: hover-fade-in 0.12s ease-out;
 }
@@ -654,15 +654,15 @@
 }
 
 .diag-badge-error {
-  color: var(--color-red);
-  background: rgb(247 118 142 / 15%);
-  border: 1px solid rgb(247 118 142 / 30%);
+  color: var(--color-error);
+  background: var(--color-error-soft);
+  border: 1px solid var(--color-error-soft);
 }
 
 .diag-badge-warning {
-  color: var(--color-orange);
-  background: rgb(255 174 87 / 15%);
-  border: 1px solid rgb(255 174 87 / 30%);
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+  border: 1px solid var(--color-warning-soft);
 }
 
 .diag-source {

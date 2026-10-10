@@ -23,6 +23,7 @@ import type {
   TerminalSession,
   GitCommitNode,
   GitRepo,
+  ThemeMode,
 } from "../types/workbench"
 import {
   initialDiagnostics,
@@ -65,6 +66,9 @@ interface WorkbenchContextType {
   settingsModalOpen: boolean
   setSettingsModalOpen: (value: boolean | ((prev: boolean) => boolean)) => void
   toggleSettingsModal: () => void
+  theme: ThemeMode
+  setTheme: (theme: ThemeMode | ((prev: ThemeMode) => ThemeMode)) => void
+  toggleTheme: () => void
 
   // Resizable Panel Dimensions
   sidebarWidth: number
@@ -269,6 +273,17 @@ function loadStoredBottomTabOrder(): BottomTab[] {
   return DEFAULT_BOTTOM_TAB_ORDER
 }
 
+function loadStoredTheme(): ThemeMode {
+  if (typeof window === "undefined") return "dark"
+  try {
+    const stored = window.localStorage.getItem("aegis_theme")
+    if (stored === "light" || stored === "dark") return stored
+  } catch {
+    // fallback
+  }
+  return "dark"
+}
+
 const DEFAULT_SIDEBAR_WIDTH = 220
 const MIN_SIDEBAR_WIDTH = 160
 const MAX_SIDEBAR_WIDTH = 460
@@ -354,6 +369,31 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const toggleSettingsModal = useCallback(() => {
     setSettingsModalOpen((prev) => !prev)
   }, [])
+
+  const [theme, setThemeState] = useState<ThemeMode>(loadStoredTheme)
+
+  const setTheme = useCallback(
+    (value: ThemeMode | ((prev: ThemeMode) => ThemeMode)) => {
+      setThemeState((prev) => {
+        const next = typeof value === "function" ? value(prev) : value
+        try {
+          window.localStorage.setItem("aegis_theme", next)
+        } catch {
+          // ignore storage error
+        }
+        return next
+      })
+    },
+    [],
+  )
+
+  const toggleTheme = useCallback(() => {
+    setTheme((prev) => (prev === "dark" ? "light" : "dark"))
+  }, [setTheme])
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme)
+  }, [theme])
 
   // Resizable Panel Dimensions
   const [sidebarWidth, setSidebarWidthState] = useState<number>(() =>
@@ -1656,6 +1696,9 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         settingsModalOpen,
         setSettingsModalOpen,
         toggleSettingsModal,
+        theme,
+        setTheme,
+        toggleTheme,
         sidebarWidth,
         setSidebarWidth,
         resetSidebarWidth,

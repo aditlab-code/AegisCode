@@ -84,6 +84,7 @@ export function Icon({ name, size = 16, className = "" }: IconProps) {
       </>
     ),
     maximize: <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />,
+    moon: <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />,
     more: (
       <>
         <circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" />
@@ -122,6 +123,12 @@ export function Icon({ name, size = 16, className = "" }: IconProps) {
       <>
         <rect x="3" y="4" width="18" height="16" rx="1" />
         <path d="M12 4v16" />
+      </>
+    ),
+    sun: (
+      <>
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41m14.14-14.14-1.41 1.41" />
       </>
     ),
     symbol: (

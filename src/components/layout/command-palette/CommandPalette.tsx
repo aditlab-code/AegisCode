@@ -3,8 +3,10 @@ import { Icon } from "../../ui/Icon"
 import { useWorkbench } from "../../../context/WorkbenchContext"
 import type { ActivityType } from "../../../types/workbench"
 
+type CommandAction = ActivityType | "ToggleTheme"
+
 interface CommandItem {
-  activity: ActivityType
+  activity: CommandAction
   detail: string
   label: string
 }
@@ -30,6 +32,11 @@ const commands: CommandItem[] = [
     detail: "Configure the workbench",
     label: "Preferences: Open Settings",
   },
+  {
+    activity: "ToggleTheme",
+    detail: "Switch between Dark and Light mode",
+    label: "Preferences: Toggle Color Theme",
+  },
 ]
 
 export function CommandPalette() {
@@ -39,6 +46,9 @@ export function CommandPalette() {
     setActiveActivity,
     setSidebarOpen,
     setSettingsModalOpen,
+    theme,
+    toggleTheme,
+    showToast,
   } = useWorkbench()
   const [query, setQuery] = useState("")
 
@@ -48,7 +58,15 @@ export function CommandPalette() {
     cmd.label.toLowerCase().includes(query.toLowerCase()),
   )
 
-  function handleSelect(activity: ActivityType) {
+  function handleSelect(activity: CommandAction) {
+    if (activity === "ToggleTheme") {
+      toggleTheme()
+      showToast(
+        theme === "dark" ? "Switched to Light Theme" : "Switched to Dark Theme",
+      )
+      setCommandPaletteOpen(false)
+      return
+    }
     if (activity === "Settings") {
       setSettingsModalOpen(true)
       setCommandPaletteOpen(false)
@@ -66,7 +84,13 @@ export function CommandPalette() {
   return (
     <div
       aria-modal="true"
-      className="palette-backdrop"
+      className="command-palette-backdrop"
+      onClick={handleClose}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          handleClose()
+        }
+      }}
       onMouseDown={handleClose}
       role="dialog"
     >
@@ -96,7 +120,11 @@ export function CommandPalette() {
                   ? "search"
                   : cmd.activity === "Source Control"
                     ? "git"
-                    : "settings"
+                    : cmd.activity === "ToggleTheme"
+                      ? theme === "dark"
+                        ? "sun"
+                        : "moon"
+                      : "settings"
 
             return (
               <button

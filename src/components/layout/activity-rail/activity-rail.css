@@ -6,12 +6,17 @@
   background: var(--color-surface);
   border: 1px solid var(--color-line);
   border-radius: 11px;
-  box-shadow: 0 14px 38px rgb(0 0 0 / 20%);
+  box-shadow: var(--shadow-elevation);
   backdrop-filter: blur(22px) saturate(135%);
   overflow: hidden;
 }
 
 .activity-list {
+  display: grid;
+  gap: 4px;
+}
+
+.activity-bottom {
   display: grid;
   gap: 4px;
 }
@@ -31,3 +36,10 @@
   content: "";
 }
 
+.theme-toggle-icon {
+  transition: transform 0.25s ease;
+}
+
+.theme-toggle-btn:hover .theme-toggle-icon {
+  transform: rotate(20deg);
+}

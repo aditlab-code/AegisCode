@@ -27,7 +27,7 @@
   background: var(--color-surface-raised);
   border: 1px solid var(--color-line-bright);
   border-radius: 10px;
-  box-shadow: 0 24px 60px rgb(0 0 0 / 55%);
+  box-shadow: var(--shadow-popover);
   backdrop-filter: blur(28px) saturate(145%);
   overflow: hidden;
 }

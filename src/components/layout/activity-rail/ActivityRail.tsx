@@ -18,6 +18,9 @@ export function ActivityRail() {
     setSidebarOpen,
     settingsModalOpen,
     toggleSettingsModal,
+    theme,
+    toggleTheme,
+    showToast,
   } = useWorkbench()
 
   function handleSelect(label: ActivityType) {
@@ -27,6 +30,13 @@ export function ActivityRail() {
       setActiveActivity(label)
       if (!sidebarOpen) setSidebarOpen(true)
     }
+  }
+
+  function handleThemeToggle() {
+    toggleTheme()
+    showToast(
+      theme === "dark" ? "Switched to Light Theme" : "Switched to Dark Theme",
+    )
   }
 
   return (
@@ -43,13 +53,28 @@ export function ActivityRail() {
           </IconButton>
         ))}
       </div>
-      <IconButton
-        active={settingsModalOpen}
-        label="Settings (Cmd+,)"
-        onClick={toggleSettingsModal}
-      >
-        <Icon name="settings" size={21} />
-      </IconButton>
+      <div className="activity-bottom">
+        <IconButton
+          className="theme-toggle-btn"
+          label={
+            theme === "dark" ? "Switch to Light Theme" : "Switch to Dark Theme"
+          }
+          onClick={handleThemeToggle}
+        >
+          <Icon
+            className="theme-toggle-icon"
+            name={theme === "dark" ? "sun" : "moon"}
+            size={21}
+          />
+        </IconButton>
+        <IconButton
+          active={settingsModalOpen}
+          label="Settings (Cmd+,)"
+          onClick={toggleSettingsModal}
+        >
+          <Icon name="settings" size={21} />
+        </IconButton>
+      </div>
     </aside>
   )
 }
