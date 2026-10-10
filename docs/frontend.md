@@ -51,7 +51,9 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
 - **Visual Design**:
   - Slim 48px vertical rail on the left border.
   - Top action group: Explorer icon, Search icon, Source Control Git icon.
-  - Bottom action group: Settings gear icon.
+  - Bottom action group:
+    - **Theme Toggle Button**: Interactive toggle button with dynamic `sun` (in Dark mode) and `moon` (in Light mode) icon with 20° rotation hover transition and instant toast notification.
+    - Settings gear icon (`⌘,`).
   - Active indicator pill on left edge with accent coloring (`bg-accent`).
 
 ### 3. Sidebar (`sidebar/`)
@@ -141,19 +143,37 @@ For remote multi-screen workflows on tablets (iPad, Android tablets):
 
 ## 4. Design System & CSS Token Conventions
 
-AegisCode strictly forbids hardcoded arbitrary hex values. All styles reference semantic CSS tokens defined in [`src/styles/tokens.css`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/styles/tokens.css) and Tailwind CSS v4 `@theme`:
+AegisCode enforces a **Strict 100% Hex Token Architecture** with zero arbitrary hex values in components and zero hardcoded `rgb()` / `rgba()` values. All styles reference semantic CSS tokens defined in [`src/styles/tokens.css`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/styles/tokens.css) and Tailwind CSS v4 `@theme`:
 
-| Semantic Token | Tailwind Class | Usage / Role |
-| :--- | :--- | :--- |
-| `--color-canvas` | `bg-canvas` | Deep background behind panels and editor frames |
-| `--color-surface` | `bg-surface` | Main panel surfaces (sidebar, header, bottom panel) |
-| `--color-surface-hover`| `hover:bg-surface-hover` | Hover background for list items and menu rows |
-| `--color-line` | `border-line` | Structural borders, dividers, and resizer sashes |
-| `--color-ink` | `text-ink` | Primary text and active headers |
-| `--color-ink-muted` | `text-ink-muted` | Secondary labels, file details, line numbers |
-| `--color-accent` | `bg-accent`, `text-accent` | Active tabs, focus rings, primary CTA buttons |
-| `--color-danger` | `text-danger`, `bg-danger` | Error squiggles, delete actions, linter errors |
-| `--color-warning` | `text-warning`, `bg-warning` | Linter warnings, modified git status badges |
+### Dual Theme Support (Dark & Light Mode)
+Theme switching is managed globally via `WorkbenchContext.tsx`, persisted in `localStorage` (`aegis_theme`), and applied dynamically via `[data-theme="light"]` attribute on the root HTML element.
+
+| Semantic Token | Dark Mode (Default) | Light Mode (`[data-theme="light"]`) | Usage / Role |
+| :--- | :--- | :--- | :--- |
+| `--color-canvas` | `#090d16` | `#f6f8fb` | Deep canvas background behind panels |
+| `--color-surface` | `#121824c7` | `#ffffffea` | Main panel surfaces (sidebar, header, bottom panel) |
+| `--color-surface-raised`| `#1c2434db` | `#eef2f7f0` | Raised cards, active tabs, dialogs |
+| `--color-surface-hover` | `#7091be21` | `#1e293b0f` | Hover background for list items and menu rows |
+| `--color-surface-overlay`| `#182030f2` | `#fffffff0` | Modal settings, command palette, toast popovers |
+| `--color-line` | `#a8bedc1f` | `#cbd5e1b3` | Structural borders, dividers, resizer sashes |
+| `--color-line-bright` | `#b3cdee38` | `#94a3b880` | Active borders, breadcrumbs, scrollbar thumb |
+| `--color-ink` | `#e7edf7` | `#0f172a` | Primary high-contrast text |
+| `--color-ink-soft` | `#aab6c8` | `#334155` | Secondary text, status bar items |
+| `--color-ink-muted` | `#6f7d91` | `#64748b` | Comments, placeholder text, line numbers |
+| `--color-accent` | `#38bdf8` | `#0284c7` | Active tabs (2px bar), focus rings, CTA buttons |
+| `--color-accent-soft` | `#38bdf826` | `#0284c71a` | Background for active badges, hover glow |
+| `--color-error` / `-soft`| `#f87171` / `#f8717124` | `#dc2626` / `#dc262617` | Universal error diagnostics, deleted files |
+| `--color-warning` / `-soft`| `#fb923c` / `#fb923c24`| `#d97706` / `#d9770617` | Universal warnings, modified git badges |
+| `--color-success` / `-soft`| `#4ade80` / `#4ade8024`| `#16a34a` / `#16a34a17` | Universal success, staged git changes |
+| `--color-info` / `-soft` | `#38bdf8` / `#38bdf824` | `#0284c7` / `#0284c717` | Universal info, highlights, branch tags |
+| `--shadow-elevation` | `0 14px 38px #00000033, inset 0 1px 0 #ffffff14` | `0 10px 30px #0f172a14, inset 0 1px 0 #ffffff80` | Glass panel shadow with dimensional inset |
+| `--shadow-popover` | `0 20px 50px #00000066` | `0 14px 40px #0f172a1f` | Floating dialogs, command palette, toasts |
+
+### Anti-Fatigue Background Gradient
+Implemented in [`src/styles/base.css`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/styles/base.css):
+- **Dark Mode**: Dual ambient radial glow (`#2c67aa3d` & `#36a2ae21`) over linear deep obsidian canvas.
+- **Light Mode**: Dual soft ambient mist (`#38bdf81f` & `#818cf814`) over calm pale slate canvas.
+- Soft color transitions (`transition: background-color 0.25s ease, color 0.25s ease`) prevent retina strain.
 
 ---
 

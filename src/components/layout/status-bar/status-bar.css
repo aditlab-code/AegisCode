@@ -8,7 +8,7 @@
   color: var(--color-ink-muted);
   background: var(--color-surface-raised);
   border-top: 1px solid var(--color-line);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .status-group,
@@ -21,12 +21,13 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 21px;
-  padding: 0 5px;
-  color: var(--color-ink-muted);
+  height: 22px;
+  padding: 0 6px;
+  color: var(--color-ink-soft);
   background: transparent;
-  border-radius: 2px;
+  border-radius: 3px;
   cursor: pointer;
+  transition: all 0.12s ease;
 }
 
 .status-group button:hover,
@@ -50,17 +51,17 @@
 
 .notification-count {
   position: absolute;
-  top: 1px;
-  right: -1px;
+  top: 0;
+  right: -2px;
   display: grid;
   place-items: center;
-  min-width: 10px;
-  height: 10px;
-  padding: 0 2px;
+  min-width: 12px;
+  height: 12px;
+  padding: 0 3px;
   color: var(--color-canvas);
   background: var(--color-accent);
   border-radius: 6px;
-  font-size: 7px;
+  font-size: 8px;
   font-weight: 800;
 }
 
@@ -71,8 +72,8 @@
   color: var(--color-ink-soft);
   background: var(--color-surface-raised);
   border: 1px solid var(--color-line-bright);
-  border-radius: 4px;
-  box-shadow: 0 16px 42px color-mix(in srgb, var(--color-canvas) 78%, transparent);
+  border-radius: 6px;
+  box-shadow: var(--shadow-popover);
   overflow: hidden;
 }
 

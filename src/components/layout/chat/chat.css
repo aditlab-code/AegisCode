@@ -101,9 +101,9 @@
 .message-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  border-radius: 6px;
-  padding: 8px 10px;
+  gap: 7px;
+  border-radius: 8px;
+  padding: 9px 12px;
   transition: background 0.15s ease, border-color 0.15s ease;
   position: relative;
 }
@@ -111,15 +111,16 @@
 .message-user {
   align-self: flex-end;
   max-width: 86%;
-  background: var(--color-accent-soft);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 26%, transparent);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-line-bright);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--color-accent) 8%, transparent);
 }
 
 .message-agent {
   align-self: flex-start;
   width: 100%;
   max-width: 96%;
-  background: var(--color-canvas);
+  background: var(--color-surface);
   border: 1px solid var(--color-line);
 }
 
@@ -140,10 +141,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  font-size: 9.5px;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  font-size: 10px;
   font-weight: 700;
   flex-shrink: 0;
 }
@@ -160,15 +161,15 @@
 }
 
 .msg-author-name {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--color-ink);
   letter-spacing: 0.04em;
 }
 
 .msg-model-badge {
-  font-size: 8.5px;
-  padding: 1px 4px;
+  font-size: 9.5px;
+  padding: 1px 5px;
   border-radius: 3px;
   background: var(--color-canvas);
   color: var(--color-ink-muted);
@@ -180,14 +181,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 3px;
+  padding: 4px;
   background: transparent;
   border: 0;
   color: var(--color-ink-muted);
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s ease, color 0.15s ease;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 
 .message-agent:hover .msg-copy-btn {
@@ -200,8 +201,8 @@
 }
 
 .message-body {
-  font-size: 11px;
-  line-height: 1.55;
+  font-size: 12px;
+  line-height: 1.6;
   color: var(--color-ink);
   word-break: break-word;
 }
@@ -210,7 +211,7 @@
   margin: 0 12px 12px;
   background: var(--color-canvas);
   border: 1px solid var(--color-line-bright);
-  border-radius: 5px;
+  border-radius: 8px;
 }
 
 .composer:focus-within {

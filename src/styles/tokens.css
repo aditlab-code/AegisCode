@@ -31,7 +31,7 @@
   --color-info-soft: #38bdf824;
 
   /* Universal Shadows */
-  --shadow-elevation: 0 14px 38px #00000033;
+  --shadow-elevation: 0 14px 38px #00000033, inset 0 1px 0 #ffffff14;
   --shadow-popover: 0 20px 50px #00000066;
 }
 
@@ -41,8 +41,8 @@
   --color-surface-raised: #eef2f7f0;
   --color-surface-hover: #1e293b0f;
   --color-surface-overlay: #fffffff0;
-  --color-line: #cbd5e180;
-  --color-line-bright: #94a3b866;
+  --color-line: #cbd5e1b3;
+  --color-line-bright: #94a3b880;
   --color-ink: #0f172a;
   --color-ink-soft: #334155;
   --color-ink-muted: #64748b;
@@ -68,6 +68,6 @@
   --color-info-soft: #0284c717;
 
   /* Universal Shadows */
-  --shadow-elevation: 0 10px 30px #0f172a14;
+  --shadow-elevation: 0 10px 30px #0f172a14, inset 0 1px 0 #ffffff80;
   --shadow-popover: 0 14px 40px #0f172a1f;
 }

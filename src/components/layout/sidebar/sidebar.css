@@ -81,7 +81,7 @@
   justify-content: space-between;
   padding: 3px 12px 2px 20px;
   color: var(--color-ink-muted);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -645,9 +645,9 @@
 }
 
 .symbol-kind {
-  padding: 1px 4px;
+  padding: 1px 5px;
   border-radius: 2px;
-  font-size: 8px;
+  font-size: 10px;
   text-transform: uppercase;
   font-weight: 700;
 }
@@ -674,7 +674,7 @@
 
 .symbol-line {
   color: var(--color-ink-muted);
-  font-size: 9px;
+  font-size: 10px;
   font-family: monospace;
 }
 
@@ -920,12 +920,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   font-family: monospace;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
-  border-radius: 2px;
+  border-radius: 3px;
 }
 
 .change-added {
@@ -1070,23 +1070,23 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 0 5px;
+  padding: 1px 6px;
   color: var(--color-cyan);
   background: var(--color-info-soft);
   border: 1px solid var(--color-line-bright);
-  border-radius: 2px;
-  font-size: 8px;
+  border-radius: 3px;
+  font-size: 10px;
 }
 
 .commit-time {
   margin-left: auto;
   color: var(--color-ink-muted);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .commit-message {
   color: var(--color-ink-soft);
-  font-size: 10px;
+  font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

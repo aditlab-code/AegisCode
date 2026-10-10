@@ -10,11 +10,12 @@
 | Phase | Milestone Name | Status | Focus Area |
 | :--- | :--- | :--- | :--- |
 | **Phase 1** | Shell Layout & Column Componentization | ✅ Completed | Master layout shell, CSS modularity, Tailwind v4 tokens |
-| **Phase 2** | Workbench Text Editor & Interactive Buffers | 🟡 Active | Multi-pane groups, buffer editing, tabs DND, linter |
-| **Phase 3** | Explorer, Workspace CRUD, & Git Controls | 🟡 Active | Tree traversal, inline CRUD, regex search/replace, Git UI |
-| **Phase 4** | Status Bar & Diagnostics Engine | 🟡 Active | Dynamic cursor position, language detection, problem popover |
-| **Phase 5** | AppDrawer AEGIS AI Agent & Session Hub | 🟡 Active | Multi-session chat, slash autocomplete, provider selector |
-| **Phase 6** | Go Core Server, SQLite & Bundled DAP Debugger | 🔵 Next | Cross-platform Go binary, supervisor, SQLite DB, DAP/Delve |
+| **Phase 2** | Workbench Text Editor & Interactive Buffers | ✅ Completed | Multi-pane groups, buffer editing, tabs DND, linter, 2px active tab |
+| **Phase 3** | Explorer, Workspace CRUD, & Git Controls | ✅ Completed | Tree traversal, inline CRUD, regex search/replace, Git UI |
+| **Phase 4** | Status Bar & Diagnostics Engine | ✅ Completed | Dynamic cursor Ln/Col, language detection, problem popover |
+| **Phase 5** | AppDrawer AEGIS AI Agent & Session Hub | ✅ Completed | Multi-session chat, slash autocomplete, provider selector |
+| **Special** | UI Dark/Light Theme & 100% Hex Tokens | ✅ Completed | ActivityRail toggle, zero RGB tokens, ambient anti-fatigue gradients |
+| **Phase 6** | Go Core Server, SQLite & Bundled DAP Debugger | 🟡 Active / Next | Cross-platform Go binary, supervisor, SQLite DB, DAP/Delve |
 | **Phase 7** | Web-Based Remote Pairing & Tablet Companion | ⚪ Upcoming | LAN pairing, web preview host, touch-optimized editor mode |
 
 ---
@@ -32,11 +33,11 @@
 ---
 
 ### Phase 2: Workbench Text Editor & Interactive Buffers
-- **Status**: 🟡 In Progress / Polish
+- **Status**: ✅ Completed
 - **Deliverables**:
   - **Dual Independent Window Groups**: Split editor panes (Group 1 & Group 2) with draggable sash splitter.
   - **Drag-and-Drop Tabs (DND)**: Tab reordering and cross-group dragging using HTML5 native Drag and Drop.
-  - **Custom Code Buffer Engine**: Line numbering gutter, active line highlighting, auto-indentation, dirty unsaved indicator.
+  - **Custom Code Buffer Engine**: Line numbering gutter, active line highlighting, auto-indentation, dirty unsaved indicator, 2px active accent tab indicator bar.
   - **Client-Side Syntax Linter**: In-browser heuristic linter supporting TypeScript/JavaScript, Python, C++, and JSON.
   - **Editor Navigation & Find**: Floating in-editor find widget (`Ctrl+F`), breadcrumb bar, and minimap overview.
 - **Exit Criteria**: Editing code in multiple open buffers feels instantaneous, tabs transfer reliably between panes, and linting feedback updates with zero UI lag.
@@ -44,7 +45,7 @@
 ---
 
 ### Phase 3: Explorer, Workspace CRUD, & Git Controls
-- **Status**: 🟡 In Progress
+- **Status**: ✅ Completed
 - **Deliverables**:
   - **Explorer File Tree**: Nested directory view with folder collapse/expand, indent guidelines, and hidden files toggle.
   - **Inline File CRUD**: Create file, create folder, inline rename, delete file, and right-click context menu (Copy Path, Copy Relative Path).
@@ -55,7 +56,7 @@
 ---
 
 ### Phase 4: Status Bar & Diagnostics Engine
-- **Status**: 🟡 In Progress
+- **Status**: ✅ Completed
 - **Deliverables**:
   - Dynamic line and column cursor reporting (`Ln X, Col Y`).
   - Automatic language detection based on active file extension.
@@ -67,7 +68,7 @@
 ---
 
 ### Phase 5: AppDrawer AEGIS AI Agent & Session Hub
-- **Status**: 🟡 In Progress
+- **Status**: ✅ Completed
 - **Deliverables**:
   - **Session Management**: Master-detail session sidebar showing historical conversations, active thread selection, and new chat creation.
   - **Cascading Model Selection**: Grouped selector supporting local models and remote providers.
@@ -77,8 +78,18 @@
 
 ---
 
+### Special Milestone: UI Dark/Light Theme & 100% Hex Tokens
+- **Status**: ✅ Completed
+- **Deliverables**:
+  - **ActivityRail Theme Toggle**: Interactive Sun/Moon icon toggle button above Settings with smooth rotation and toast confirmation.
+  - **Strict 100% Hex Token Architecture**: Completely eliminated all hardcoded `rgb()` / `rgba()` values; standardized on Tailwind CSS v4 `@theme` Hex tokens with universal status tokens (`--color-error`, `--color-warning`, `--color-success`, `--color-info`, `--color-surface-overlay`).
+  - **Anti-Fatigue Ambient Gradient**: Dual-layer ambient radial glow over linear canvas in `base.css` providing eye comfort during prolonged coding sessions.
+  - **UI Design Polish**: 2px active tab accent bar, surface elevation, accent dirty dot, 13.5px / 22px code editor line height, and 11px micro-copy scale.
+
+---
+
 ### Phase 6: Go Core Server, SQLite Storage, & Bundled DAP Debugger
-- **Status**: 🔵 Upcoming (Backend Foundation)
+- **Status**: 🟡 Active / Next (Backend Foundation)
 - **Deliverables**:
   - **Single Cross-Platform Binary**: Go Core Server compiled for macOS (Darwin arm64/amd64), Linux, and Windows.
   - **Embedded Frontend Distribution**: Production web assets (`dist/`) embedded into the Go executable via `embed.FS` for instant zero-install distribution.
