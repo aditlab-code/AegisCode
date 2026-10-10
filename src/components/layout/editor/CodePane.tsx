@@ -1,13 +1,13 @@
-import type { ReactNode } from "react";
-import { Icon } from "../../ui/Icon";
-import { IconButton } from "../../ui/IconButton";
-import { Minimap } from "./Minimap";
+import type { ReactNode } from "react"
+import { Icon } from "../../ui/Icon"
+import { IconButton } from "../../ui/IconButton"
+import { Minimap } from "./Minimap"
 
 interface CodePaneProps {
-  lines: ReactNode[];
-  title: string;
-  secondary?: boolean;
-  onClose?: () => void;
+  lines: ReactNode[]
+  title: string
+  secondary?: boolean
+  onClose?: () => void
 }
 
 export function CodePane({
@@ -37,7 +37,9 @@ export function CodePane({
         <div className="code-content">
           {lines.map((line, index) => (
             <div
-              className={`code-line ${!secondary && index === 8 ? "current-line" : ""}`}
+              className={`code-line ${
+                !secondary && index === 8 ? "current-line" : ""
+              }`}
               key={index}
             >
               <span className="line-number">
@@ -49,7 +51,9 @@ export function CodePane({
                 )}
                 {index + 1}
               </span>
-              <code className={!secondary && index === 14 ? "error-underline" : ""}>
+              <code
+                className={!secondary && index === 14 ? "error-underline" : ""}
+              >
                 {line || "\u00a0"}
               </code>
             </div>
@@ -58,5 +62,5 @@ export function CodePane({
         {!secondary && <Minimap lineCount={18} />}
       </div>
     </div>
-  );
+  )
 }

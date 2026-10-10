@@ -1,7 +1,7 @@
-import { WindowControls } from "./WindowControls";
-import { AppMenu } from "./AppMenu";
-import { GlobalSearchButton } from "./GlobalSearchButton";
-import { HeaderActions } from "./HeaderActions";
+import { WindowControls } from "./WindowControls"
+import { AppMenu } from "./AppMenu"
+import { GlobalSearchButton } from "./GlobalSearchButton"
+import { HeaderActions } from "./HeaderActions"
 
 export function Header() {
   return (
@@ -13,5 +13,5 @@ export function Header() {
       <GlobalSearchButton />
       <HeaderActions />
     </header>
-  );
+  )
 }

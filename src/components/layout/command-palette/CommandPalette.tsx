@@ -1,12 +1,12 @@
-import { useState } from "react";
-import { Icon } from "../../ui/Icon";
-import { useWorkbench } from "../../../context/WorkbenchContext";
-import type { ActivityType } from "../../../types/workbench";
+import { useState } from "react"
+import { Icon } from "../../ui/Icon"
+import { useWorkbench } from "../../../context/WorkbenchContext"
+import type { ActivityType } from "../../../types/workbench"
 
 interface CommandItem {
-  activity: ActivityType;
-  detail: string;
-  label: string;
+  activity: ActivityType
+  detail: string
+  label: string
 }
 
 const commands: CommandItem[] = [
@@ -30,27 +30,31 @@ const commands: CommandItem[] = [
     detail: "Configure the workbench",
     label: "Preferences: Open Settings",
   },
-];
+]
 
 export function CommandPalette() {
-  const { commandPaletteOpen, setCommandPaletteOpen, setActiveActivity, setSidebarOpen } =
-    useWorkbench();
-  const [query, setQuery] = useState("");
+  const {
+    commandPaletteOpen,
+    setCommandPaletteOpen,
+    setActiveActivity,
+    setSidebarOpen,
+  } = useWorkbench()
+  const [query, setQuery] = useState("")
 
-  if (!commandPaletteOpen) return null;
+  if (!commandPaletteOpen) return null
 
   const results = commands.filter((cmd) =>
-    cmd.label.toLowerCase().includes(query.toLowerCase())
-  );
+    cmd.label.toLowerCase().includes(query.toLowerCase()),
+  )
 
   function handleSelect(activity: ActivityType) {
-    setActiveActivity(activity);
-    setSidebarOpen(true);
-    setCommandPaletteOpen(false);
+    setActiveActivity(activity)
+    setSidebarOpen(true)
+    setCommandPaletteOpen(false)
   }
 
   function handleClose() {
-    setCommandPaletteOpen(false);
+    setCommandPaletteOpen(false)
   }
 
   return (
@@ -83,10 +87,10 @@ export function CommandPalette() {
               cmd.activity === "Explorer"
                 ? "explorer"
                 : cmd.activity === "Search"
-                ? "search"
-                : cmd.activity === "Source Control"
-                ? "git"
-                : "settings";
+                  ? "search"
+                  : cmd.activity === "Source Control"
+                    ? "git"
+                    : "settings"
 
             return (
               <button
@@ -101,10 +105,10 @@ export function CommandPalette() {
                   <small>{cmd.detail}</small>
                 </span>
               </button>
-            );
+            )
           })}
         </div>
       </div>
     </div>
-  );
+  )
 }

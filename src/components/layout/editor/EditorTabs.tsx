@@ -1,10 +1,10 @@
-import { Icon } from "../../ui/Icon";
-import { IconButton } from "../../ui/IconButton";
-import { useWorkbench } from "../../../context/WorkbenchContext";
+import { Icon } from "../../ui/Icon"
+import { IconButton } from "../../ui/IconButton"
+import { useWorkbench } from "../../../context/WorkbenchContext"
 
 interface EditorTabsProps {
-  onToggleFind: () => void;
-  isFindOpen: boolean;
+  onToggleFind: () => void
+  isFindOpen: boolean
 }
 
 export function EditorTabs({ onToggleFind, isFindOpen }: EditorTabsProps) {
@@ -16,14 +16,16 @@ export function EditorTabs({ onToggleFind, isFindOpen }: EditorTabsProps) {
     splitEditor,
     setSplitEditor,
     showToast,
-  } = useWorkbench();
+  } = useWorkbench()
 
   return (
     <div className="editor-tabs">
       <div className="tab-list">
         {tabs.map((tab) => (
           <button
-            className={`editor-tab ${activeTab === tab ? "editor-tab-active" : ""}`}
+            className={`editor-tab ${
+              activeTab === tab ? "editor-tab-active" : ""
+            }`}
             key={tab}
             onClick={() => setActiveTab(tab)}
             type="button"
@@ -33,8 +35,8 @@ export function EditorTabs({ onToggleFind, isFindOpen }: EditorTabsProps) {
             <span
               className="close-tab-trigger"
               onClick={(e) => {
-                e.stopPropagation();
-                closeTab(tab);
+                e.stopPropagation()
+                closeTab(tab)
               }}
               role="button"
               tabIndex={0}
@@ -70,5 +72,5 @@ export function EditorTabs({ onToggleFind, isFindOpen }: EditorTabsProps) {
         </IconButton>
       </div>
     </div>
-  );
+  )
 }

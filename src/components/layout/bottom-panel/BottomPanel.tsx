@@ -1,10 +1,10 @@
-import { useState } from "react";
-import { Icon } from "../../ui/Icon";
-import { IconButton } from "../../ui/IconButton";
-import { useWorkbench } from "../../../context/WorkbenchContext";
-import { TerminalView } from "./TerminalView";
-import { ProblemsView } from "./ProblemsView";
-import { OutputView } from "./OutputView";
+import { useState } from "react"
+import { Icon } from "../../ui/Icon"
+import { IconButton } from "../../ui/IconButton"
+import { useWorkbench } from "../../../context/WorkbenchContext"
+import { TerminalView } from "./TerminalView"
+import { ProblemsView } from "./ProblemsView"
+import { OutputView } from "./OutputView"
 
 export function BottomPanel() {
   const {
@@ -13,14 +13,15 @@ export function BottomPanel() {
     terminalRunning,
     setTerminalRunning,
     showToast,
-  } = useWorkbench();
+  } = useWorkbench()
 
-  const [activeTab, setActiveTab] = useState<"Problems" | "Output" | "Terminal">("Terminal");
+  const [activeTab, setActiveTab] =
+    useState<"Problems" | "Output" | "Terminal">("Terminal")
 
   function handleCopy() {
     if (navigator.clipboard) {
-      void navigator.clipboard.writeText(terminalLines.join("\n"));
-      showToast("Terminal output copied to clipboard");
+      void navigator.clipboard.writeText(terminalLines.join("\n"))
+      showToast("Terminal output copied to clipboard")
     }
   }
 
@@ -43,7 +44,9 @@ export function BottomPanel() {
           ))}
         </div>
         <div className="panel-controls">
-          <span className={terminalRunning ? "session-running" : "session-stopped"}>
+          <span
+            className={terminalRunning ? "session-running" : "session-stopped"}
+          >
             <span className="status-dot" />{" "}
             {terminalRunning ? "SSE connected" : "terminated"}
           </span>
@@ -66,5 +69,5 @@ export function BottomPanel() {
         {activeTab === "Output" && <OutputView />}
       </div>
     </section>
-  );
+  )
 }

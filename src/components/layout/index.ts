@@ -1,8 +1,8 @@
-export { Header } from "./header/Header";
-export { ActivityRail } from "./activity-rail/ActivityRail";
-export { Sidebar } from "./sidebar/Sidebar";
-export { Editor } from "./editor/Editor";
-export { BottomPanel } from "./bottom-panel/BottomPanel";
-export { ChatDrawer } from "./chat/ChatDrawer";
-export { StatusBar } from "./status-bar/StatusBar";
-export { CommandPalette } from "./command-palette/CommandPalette";
+export { Header } from "./header/Header"
+export { ActivityRail } from "./activity-rail/ActivityRail"
+export { Sidebar } from "./sidebar/Sidebar"
+export { Editor } from "./editor/Editor"
+export { BottomPanel } from "./bottom-panel/BottomPanel"
+export { ChatDrawer } from "./chat/ChatDrawer"
+export { StatusBar } from "./status-bar/StatusBar"
+export { CommandPalette } from "./command-palette/CommandPalette"

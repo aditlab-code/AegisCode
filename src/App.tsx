@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { WorkbenchProvider, useWorkbench } from "./context/WorkbenchContext";
+import { useMemo } from "react"
+import { WorkbenchProvider, useWorkbench } from "./context/WorkbenchContext"
 import {
   Header,
   ActivityRail,
@@ -9,19 +9,26 @@ import {
   ChatDrawer,
   StatusBar,
   CommandPalette,
-} from "./components/layout";
-import { Toast } from "./components/ui/Toast";
+} from "./components/layout"
+import { Toast } from "./components/ui/Toast"
 
 function AppShell() {
-  const { chatOpen, sidebarOpen, panelOpen, toast, clearToast } = useWorkbench();
+  const {
+    chatOpen,
+    chatSessionsOpen,
+    sidebarOpen,
+    panelOpen,
+    toast,
+    clearToast,
+  } = useWorkbench()
 
   const gridClass = useMemo(
     () =>
       `${chatOpen ? "workspace-chat-open" : "workspace-chat-closed"} ${
         sidebarOpen ? "" : "workspace-sidebar-closed"
-      }`,
-    [chatOpen, sidebarOpen]
-  );
+      } ${chatOpen && chatSessionsOpen ? "workspace-chat-expanded" : ""}`,
+    [chatOpen, chatSessionsOpen, sidebarOpen],
+  )
 
   return (
     <div className="app-shell">
@@ -29,7 +36,9 @@ function AppShell() {
       <main className={`workspace ${gridClass}`}>
         <ActivityRail />
         {sidebarOpen && <Sidebar />}
-        <div className={`workbench ${panelOpen ? "" : "workbench-panel-closed"}`}>
+        <div
+          className={`workbench ${panelOpen ? "" : "workbench-panel-closed"}`}
+        >
           <Editor />
           {panelOpen && <BottomPanel />}
         </div>
@@ -39,7 +48,7 @@ function AppShell() {
       <CommandPalette />
       <Toast message={toast} onDismiss={clearToast} />
     </div>
-  );
+  )
 }
 
 export default function App() {
@@ -47,5 +56,5 @@ export default function App() {
     <WorkbenchProvider>
       <AppShell />
     </WorkbenchProvider>
-  );
+  )
 }

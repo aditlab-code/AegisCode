@@ -20,8 +20,9 @@ export function OutputView() {
         <span className="event-time">10:42:08</span> JSON · parser ready
       </p>
       <p>
-        <span className="event-time">10:42:08</span> C++ · clang-tidy adapter ready
+        <span className="event-time">10:42:08</span> C++ · clang-tidy adapter
+        ready
       </p>
     </div>
-  );
+  )
 }

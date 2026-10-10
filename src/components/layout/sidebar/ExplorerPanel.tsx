@@ -1,8 +1,8 @@
-import { Icon } from "../../ui/Icon";
-import { useWorkbench } from "../../../context/WorkbenchContext";
+import { Icon } from "../../ui/Icon"
+import { useWorkbench } from "../../../context/WorkbenchContext"
 
 export function ExplorerPanel() {
-  const { files, activeTab, setActiveTab } = useWorkbench();
+  const { files, activeTab, setActiveTab } = useWorkbench()
 
   return (
     <>
@@ -12,13 +12,15 @@ export function ExplorerPanel() {
       </div>
       <div className="file-tree">
         {files.map((file) => {
-          const isCurrent = activeTab === file.label;
+          const isCurrent = activeTab === file.label
           return (
             <button
-              className={`file-row ${isCurrent ? "file-active" : ""} ${file.muted ? "text-muted" : ""}`}
+              className={`file-row ${isCurrent ? "file-active" : ""} ${
+                file.muted ? "text-muted" : ""
+              }`}
               key={file.label}
               onClick={() => {
-                if (file.icon === "file") setActiveTab(file.label);
+                if (file.icon === "file") setActiveTab(file.label)
               }}
               style={{ paddingLeft: `${10 + file.depth * 14}px` }}
               type="button"
@@ -35,7 +37,7 @@ export function ExplorerPanel() {
               </span>
               <span>{file.label}</span>
             </button>
-          );
+          )
         })}
       </div>
       <div className="collapsed-section">
@@ -47,5 +49,5 @@ export function ExplorerPanel() {
         <span>TIMELINE</span>
       </div>
     </>
-  );
+  )
 }

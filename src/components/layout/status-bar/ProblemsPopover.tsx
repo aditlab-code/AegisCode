@@ -1,10 +1,10 @@
-import { Icon } from "../../ui/Icon";
-import { useWorkbench } from "../../../context/WorkbenchContext";
+import { Icon } from "../../ui/Icon"
+import { useWorkbench } from "../../../context/WorkbenchContext"
 
 export function ProblemsPopover() {
-  const { diagnostics, activeLanguage } = useWorkbench();
-  const errorCount = diagnostics.filter((d) => d.type === "error").length;
-  const warningCount = diagnostics.filter((d) => d.type === "warning").length;
+  const { diagnostics, activeLanguage } = useWorkbench()
+  const errorCount = diagnostics.filter((d) => d.type === "error").length
+  const warningCount = diagnostics.filter((d) => d.type === "warning").length
 
   return (
     <div className="status-popover problem-popover">
@@ -14,10 +14,7 @@ export function ProblemsPopover() {
       </div>
       {diagnostics.map((diag) => (
         <button key={diag.id} type="button">
-          <Icon
-            name={diag.type === "error" ? "error" : "warning"}
-            size={14}
-          />
+          <Icon name={diag.type === "error" ? "error" : "warning"} size={14} />
           <span>
             <strong>{diag.title}</strong>
             <small>{diag.location}</small>
@@ -30,5 +27,5 @@ export function ProblemsPopover() {
         <span>{activeLanguage}</span>
       </div>
     </div>
-  );
+  )
 }

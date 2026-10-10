@@ -1,26 +1,23 @@
-import { useState } from "react";
-import { Icon } from "../../ui/Icon";
-import { useWorkbench } from "../../../context/WorkbenchContext";
-import { BranchPopover } from "./BranchPopover";
-import { ProblemsPopover } from "./ProblemsPopover";
-import { NotificationsPopover } from "./NotificationsPopover";
+import { useState } from "react"
+import { Icon } from "../../ui/Icon"
+import { useWorkbench } from "../../../context/WorkbenchContext"
+import { BranchPopover } from "./BranchPopover"
+import { ProblemsPopover } from "./ProblemsPopover"
+import { NotificationsPopover } from "./NotificationsPopover"
 
 export function StatusBar() {
-  const {
-    activeBranch,
-    diagnostics,
-    notifications,
-    activeLanguage,
-  } = useWorkbench();
+  const { activeBranch, diagnostics, notifications, activeLanguage } =
+    useWorkbench()
 
-  const [activePanel, setActivePanel] = useState<"branch" | "notifications" | "problems" | null>(null);
+  const [activePanel, setActivePanel] =
+    useState<"branch" | "notifications" | "problems" | null>(null)
 
-  const unreadCount = notifications.filter((item) => !item.read).length;
-  const errorCount = diagnostics.filter((d) => d.type === "error").length;
-  const warningCount = diagnostics.filter((d) => d.type === "warning").length;
+  const unreadCount = notifications.filter((item) => !item.read).length
+  const errorCount = diagnostics.filter((d) => d.type === "error").length
+  const warningCount = diagnostics.filter((d) => d.type === "warning").length
 
   function togglePanel(panel: "branch" | "notifications" | "problems") {
-    setActivePanel((current) => (current === panel ? null : panel));
+    setActivePanel((current) => (current === panel ? null : panel))
   }
 
   return (
@@ -62,7 +59,9 @@ export function StatusBar() {
           type="button"
         >
           <Icon name="bell" size={13} />
-          {unreadCount > 0 && <span className="notification-count">{unreadCount}</span>}
+          {unreadCount > 0 && (
+            <span className="notification-count">{unreadCount}</span>
+          )}
         </button>
       </div>
 
@@ -72,5 +71,5 @@ export function StatusBar() {
       {activePanel === "problems" && <ProblemsPopover />}
       {activePanel === "notifications" && <NotificationsPopover />}
     </footer>
-  );
+  )
 }

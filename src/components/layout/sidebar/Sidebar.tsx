@@ -1,13 +1,13 @@
-import { Icon } from "../../ui/Icon";
-import { IconButton } from "../../ui/IconButton";
-import { useWorkbench } from "../../../context/WorkbenchContext";
-import { ExplorerPanel } from "./ExplorerPanel";
-import { SearchPanel } from "./SearchPanel";
-import { SourceControlPanel } from "./SourceControlPanel";
-import { SettingsPanel } from "./SettingsPanel";
+import { Icon } from "../../ui/Icon"
+import { IconButton } from "../../ui/IconButton"
+import { useWorkbench } from "../../../context/WorkbenchContext"
+import { ExplorerPanel } from "./ExplorerPanel"
+import { SearchPanel } from "./SearchPanel"
+import { SourceControlPanel } from "./SourceControlPanel"
+import { SettingsPanel } from "./SettingsPanel"
 
 export function Sidebar() {
-  const { activeActivity } = useWorkbench();
+  const { activeActivity } = useWorkbench()
 
   return (
     <aside className="side-panel">
@@ -23,5 +23,5 @@ export function Sidebar() {
       {activeActivity === "Source Control" && <SourceControlPanel />}
       {activeActivity === "Settings" && <SettingsPanel />}
     </aside>
-  );
+  )
 }

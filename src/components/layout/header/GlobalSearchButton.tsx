@@ -1,8 +1,8 @@
-import { Icon } from "../../ui/Icon";
-import { useWorkbench } from "../../../context/WorkbenchContext";
+import { Icon } from "../../ui/Icon"
+import { useWorkbench } from "../../../context/WorkbenchContext"
 
 export function GlobalSearchButton() {
-  const { setCommandPaletteOpen } = useWorkbench();
+  const { setCommandPaletteOpen } = useWorkbench()
 
   return (
     <button
@@ -14,5 +14,5 @@ export function GlobalSearchButton() {
       <span>Search files, commands, symbols...</span>
       <kbd>⌘ K</kbd>
     </button>
-  );
+  )
 }

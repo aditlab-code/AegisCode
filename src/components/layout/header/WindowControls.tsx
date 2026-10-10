@@ -1,4 +1,4 @@
-import { Icon } from "../../ui/Icon";
+import { Icon } from "../../ui/Icon"
 
 export function WindowControls() {
   return (
@@ -17,5 +17,5 @@ export function WindowControls() {
         </span>
       </div>
     </div>
-  );
+  )
 }

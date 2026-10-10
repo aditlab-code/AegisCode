@@ -1,6 +1,30 @@
 import type { ReactNode } from "react"
 
-export type IconName = "aegis" | "bell" | "branch" | "chevron" | "close" | "code" | "copy" | "error" | "explorer" | "file" | "folder" | "git" | "layout" | "more" | "panel" | "play" | "search" | "send" | "settings" | "split" | "terminal" | "warning"
+export type IconName = "aegis" | "bell" | "branch" | "check" | "chevron" | "chevron-down" | "close" | "code" | "copy" | "error" | "explorer" | "file" | "folder" | "git" | "history" | "layout" | "more" | "panel" | "play" | "plus" | "search" | "send" | "settings" | "split" | "terminal" | "trash" | "warning"
+
+export type ChatProvider = "antigravity" | "opencode" | "openrouter"
+
+export interface ProviderModel {
+  id: string
+  name: string
+  provider: ChatProvider
+  description?: string
+}
+
+export interface ChatSession {
+  id: string
+  title: string
+  provider: ChatProvider
+  model: string
+  messages: ChatMessage[]
+  createdAt: number
+}
+
+export interface SkillCommand {
+  command: string
+  name: string
+  description: string
+}
 
 export type ActivityType = "Explorer" | "Search" | "Source Control" | "Settings"
 

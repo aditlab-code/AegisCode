@@ -1,8 +1,8 @@
-import { Icon } from "../../ui/Icon";
-import { useWorkbench } from "../../../context/WorkbenchContext";
+import { Icon } from "../../ui/Icon"
+import { useWorkbench } from "../../../context/WorkbenchContext"
 
 export function ProblemsView() {
-  const { diagnostics, showToast } = useWorkbench();
+  const { diagnostics, showToast } = useWorkbench()
 
   return (
     <div className="problems-list">
@@ -12,10 +12,7 @@ export function ProblemsView() {
           onClick={() => showToast(`Navigating to ${diag.location}`)}
           type="button"
         >
-          <Icon
-            name={diag.type === "error" ? "error" : "warning"}
-            size={14}
-          />
+          <Icon name={diag.type === "error" ? "error" : "warning"} size={14} />
           <span>
             <strong>{diag.title}</strong>
             <small>
@@ -25,5 +22,5 @@ export function ProblemsView() {
         </button>
       ))}
     </div>
-  );
+  )
 }

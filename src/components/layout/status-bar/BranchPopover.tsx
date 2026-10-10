@@ -1,13 +1,13 @@
-import { Icon } from "../../ui/Icon";
-import { useWorkbench } from "../../../context/WorkbenchContext";
+import { Icon } from "../../ui/Icon"
+import { useWorkbench } from "../../../context/WorkbenchContext"
 
 interface BranchPopoverProps {
-  onClose: () => void;
+  onClose: () => void
 }
 
 export function BranchPopover({ onClose }: BranchPopoverProps) {
-  const { activeBranch, setActiveBranch } = useWorkbench();
-  const branches = ["main", "feature/editor-split", "develop"];
+  const { activeBranch, setActiveBranch } = useWorkbench()
+  const branches = ["main", "feature/editor-split", "develop"]
 
   return (
     <div className="status-popover branch-popover">
@@ -20,8 +20,8 @@ export function BranchPopover({ onClose }: BranchPopoverProps) {
           className={activeBranch === name ? "popover-row-active" : ""}
           key={name}
           onClick={() => {
-            setActiveBranch(name);
-            onClose();
+            setActiveBranch(name)
+            onClose()
           }}
           type="button"
         >
@@ -32,5 +32,5 @@ export function BranchPopover({ onClose }: BranchPopoverProps) {
       ))}
       <div className="branch-meta">2 modified files · 0 ahead · 0 behind</div>
     </div>
-  );
+  )
 }

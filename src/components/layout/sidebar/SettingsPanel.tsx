@@ -1,10 +1,10 @@
-import { useState } from "react";
-import { Icon } from "../../ui/Icon";
+import { useState } from "react"
+import { Icon } from "../../ui/Icon"
 
 export function SettingsPanel() {
-  const [settingsQuery, setSettingsQuery] = useState("");
-  const [autoSave, setAutoSave] = useState(true);
-  const [minimap, setMinimap] = useState(true);
+  const [settingsQuery, setSettingsQuery] = useState("")
+  const [autoSave, setAutoSave] = useState(true)
+  const [minimap, setMinimap] = useState(true)
 
   return (
     <div className="tool-panel">
@@ -53,5 +53,5 @@ export function SettingsPanel() {
         </label>
       </div>
     </div>
-  );
+  )
 }

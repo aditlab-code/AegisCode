@@ -27,15 +27,51 @@ Arsitektur direktori frontend direstrukturisasi dari komponen monolitik menjadi 
 ```text
 src/
 ├── components/
-│   ├── layout/            # 5 Area Kolom Layout Wireframe IDE
-│   │   ├── Header.tsx         # Window controls, Branding, Menu bar, Global search trigger, Layout toggles
-│   │   ├── ActivityRail.tsx   # Bar navigasi sisi kiri (Explorer, Search, Git, Settings)
-│   │   ├── Sidebar.tsx        # Panel dinamis: Explorer tree, Regex Search, Git control, Settings
-│   │   ├── Editor.tsx         # Tab bar, Breadcrumbs, Code pane, Multi-window/Split editor
-│   │   ├── BottomPanel.tsx    # Terminal SSE mock, Problems/Linting diagnostics, Output logs
-│   │   ├── ChatDrawer.tsx     # AppDrawer: AEGIS Workspace Agent chatbot & prompt composer
-│   │   ├── StatusBar.tsx      # Info baris/kolom, Git branch, Problems badge, Notifications popover
-│   │   └── CommandPalette.tsx # Modal launcher perintah cepat (⌘K)
+│   ├── layout/            # Arsitektur Orkestrator & Mikro-komponen
+│   │   ├── header/            # Modul Header IDE
+│   │   │   ├── Header.tsx             # Orkestrator Header
+│   │   │   ├── WindowControls.tsx     # Traffic lights & branding
+│   │   │   ├── AppMenu.tsx            # Menu dropdown (File, Edit, View, Run, Terminal)
+│   │   │   ├── GlobalSearchButton.tsx # Quick command launcher trigger (⌘K)
+│   │   │   └── HeaderActions.tsx      # Toggle buttons panel, sidebar, & chat
+│   │   ├── activity-rail/     # Navigasi Vertikal Sisi Kiri
+│   │   │   └── ActivityRail.tsx       # Switcher Explorer, Search, Git, & Settings
+│   │   ├── sidebar/           # Modul Primary Sidebar
+│   │   │   ├── Sidebar.tsx            # Orkestrator Sidebar
+│   │   │   ├── ExplorerPanel.tsx      # File tree, Outline, & Timeline
+│   │   │   ├── SearchPanel.tsx        # Regex search & replace repositori
+│   │   │   ├── SourceControlPanel.tsx # Git changes staging, commit, & sync
+│   │   │   └── SettingsPanel.tsx      # Preferences editor (auto save, minimap, tab size)
+│   │   ├── editor/            # Modul Workbench Text Editor
+│   │   │   ├── Editor.tsx             # Orkestrator Editor & Split View
+│   │   │   ├── EditorTabs.tsx         # Multi-tab switcher & tab action bar
+│   │   │   ├── EditorBreadcrumbs.tsx  # Path visual file & selector bahasa
+│   │   │   ├── CodePane.tsx           # Render baris kode, penomoran baris, & diagnostic dots
+│   │   │   ├── Minimap.tsx            # Visual minimap code overview
+│   │   │   └── EditorFindWidget.tsx   # Floating in-editor find widget (Ctrl+F)
+│   │   ├── bottom-panel/      # Modul Bottom Drawer
+│   │   │   ├── BottomPanel.tsx        # Orkestrator Bottom Panel
+│   │   │   ├── TerminalView.tsx       # Simulasi terminal native runner SSE (zsh/bash)
+│   │   │   ├── ProblemsView.tsx       # Daftar diagnostic error & warning syntax
+│   │   │   └── OutputView.tsx         # Logs adapter linting incremental
+│   │   ├── chat/              # Modul AppDrawer AEGIS AI Agent
+│   │   │   ├── ChatDrawer.tsx         # Orkestrator Chat Drawer (Master-Detail Host)
+│   │   │   ├── ChatHeader.tsx         # Agent title, toggle sessions sidebar & actions
+│   │   │   ├── ChatSessionSidebar.tsx # Sub-kolom panel master riwayat sesi
+│   │   │   ├── ChatMessageList.tsx    # Render bubble pesan & token badge (/ & @)
+│   │   │   ├── ChatSuggestions.tsx    # Quick prompt recommendation pills
+│   │   │   ├── ChatComposer.tsx       # Textarea input & keyboard trigger autocomplete
+│   │   │   ├── ChatCommandPopover.tsx # Floating popover autocomplete (/ skills & @ files)
+│   │   │   ├── ChatProviderSelect.tsx # Cascading grouped model & provider dropdown
+│   │   │   └── index.ts               # Barrel export modul chat
+│   │   ├── status-bar/        # Modul Status Bar & Popovers
+│   │   │   ├── StatusBar.tsx          # Orkestrator Status Bar
+│   │   │   ├── BranchPopover.tsx      # Popover checkout branch git
+│   │   │   ├── ProblemsPopover.tsx    # Popover ringkasan problem syntax
+│   │   │   └── NotificationsPopover.tsx # Popover notification center & unread badge
+│   │   ├── command-palette/   # Modul Command Palette Overlay
+│   │   │   └── CommandPalette.tsx     # Modal launcher perintah cepat (⌘K)
+│   │   └── index.ts           # Barrel Export Terpusat untuk App.tsx
 │   └── ui/                # Reusable UI Primitives Kit
 │       ├── Icon.tsx           # SVG icon registry terpusat (aegis, file, folder, git, dsb.)
 │       ├── IconButton.tsx     # Tombol aksi berbasis icon dengan tooltip & active state
@@ -48,7 +84,7 @@ src/
 │   └── workbench.ts           # Type definitions untuk file item, tab, terminal, lint diagnostic
 ├── index.css                  # Token @theme Tailwind v4 & utilitas layout grid
 ├── main.tsx                   # Root entry point
-└── App.tsx                    # Komposisi Shell IDE & Provider Context
+└── App.tsx                    # Komposisi Shell IDE (< 50 baris)
 ```
 
 ---
@@ -147,14 +183,20 @@ State dikelola secara terpusat melalui `WorkbenchContext` menggunakan standard R
 - **Navigation State**: `activeActivity` ('Explorer' | 'Search' | 'Source Control' | 'Settings'), `activeTab`, `openTabs`.
 - **Workspace Data**: `fileTree`, `activeFileContent`, `gitBranch`, `gitChanges`, `notifications`, `diagnostics`.
 - **Terminal State**: `terminalLogs`, `terminalRunning`, `sendTerminalCommand(cmd)`, `clearTerminal()`.
-- **Agent Chat State**: `chatMessages`, `sendChatMessage(text)`.
+- **Agent Chat State**:
+  - `sessions`: Daftar sesi percakapan aktif & historis (`ChatSession[]`).
+  - `activeSessionId`, `activeSession`: Sesi percakapan yang sedang aktif.
+  - `activeProvider` ('antigravity' | 'opencode' | 'openrouter'), `activeModel`: Konfigurasi LLM aktif.
+  - `createSession(provider?, model?)`, `switchSession(id)`, `deleteSession(id)`, `setSessionModel(provider, model)`.
+  - `chatMessages`: Riwayat pesan pada sesi aktif (`activeSession.messages`).
+  - `sendChatMessage(text)`: Mengirim pesan pengguna, trigger auto-naming sesi, dan simulasi respon agent kontekstual.
 - **Toast Feedback**: `showToast(message)` untuk konfirmasi interaksi pengguna.
 
 ---
 
 ## 6. Roadmap Pengembangan Wireframe Frontend (5 Phase)
 
-### Phase 1: Layout Kolom & Shell Componentization (Selesai pada restrukturisasi ini)
+### Phase 1: Layout Kolom & Shell Componentization (Selesai)
 - Pemisahan `App.tsx` menjadi `components/layout/` (Header, ActivityRail, Sidebar, Editor, BottomPanel, ChatDrawer, StatusBar, CommandPalette).
 - Reusable UI kit di `components/ui/` (Icon registry, IconButton, Toast).
 - Konfigurasi `WorkbenchContext` untuk seluruh interaksi navigasi wireframe.
@@ -179,10 +221,15 @@ State dikelola secara terpusat melalui `WorkbenchContext` menggunakan standard R
 - Git branch checkout popover switcher.
 - Notification management center (mark all as read, dismissal).
 
-### Phase 5: AppDrawer (Agentic Aegis Chat & Olympus)
+### Phase 5: AppDrawer (Agentic Aegis Chat, Multi-Provider & Sessions)
+- **Multi-Session Management**: Pembuatan sesi instan, menu riwayat sesi di header, auto-naming sesi dari prompt pertama, dan pemulihan otomatis jika sesi kosong.
+- **Cascading Model Provider**: Grouped popover di footer composer untuk memilih provider (Antigravity, OpenCode, OpenRouter) beserta model unggulan.
+- **Command & Context Autocomplete**:
+  - `/` untuk trigger 5 preset skill agent (`/spec`, `/plan`, `/review`, `/debug`, `/simplify`).
+  - `@` untuk mention file/folder langsung dari context workspace.
+  - Visual token badges berikon di bubble riwayat pesan.
 - Streaming response mockup untuk agent chat.
 - Mekanisme file-editing preview (diff view) yang disarankan oleh agent.
-- Quick action pills untuk lint fix dan code explanation.
 
 ---
 
@@ -194,3 +241,53 @@ Meskipun saat ini fokus pada wireframe frontend, antarmuka dirancang agar transi
 2. **File System API**: `fileTree` siap dipetakan ke endpoint REST/gRPC lokal (`GET /api/workspace/tree`).
 3. **LSP Diagnostics**: Model problem diagnostics mengikuti struktur Language Server Protocol (`range`, `message`, `severity`, `source`).
 4. **Agent Bridge**: Format pesan `ChatMessage` kompatibel dengan payload prompt agent AI Aegis Code.
+
+---
+
+## 8. Arsitektur Relayouting Chat & Agent System (Sesi, Multi-Provider, & Autocomplete)
+
+Sistem Chat Agent pada `src/components/layout/chat` direlayout secara modular dengan arsitektur berikut:
+
+### A. Manajemen Sesi Percakapan (Master-Detail Split Layout)
+- **Komponen**: 
+  - `ChatSessionSidebar.tsx`: Sub-kolom panel master riwayat sesi (lebar 190px) di sebelah kiri chat aktif saat expanded.
+  - `ChatDrawer.tsx`: Host orkestrator yang melebarkan grid drawer dari 300px ke 500px (`.workspace-chat-expanded`) saat sesi dibuka.
+  - `ChatHeader.tsx`: Tombol toggle icon `history` (🕒) di samping tombol `+` (*New Chat*) dan `✕` (*Close*).
+- **Interaksi & UX Menyatu (Master-Detail)**:
+  - Sesi dan alur chat terlihat berdampingan secara bersamaan (*master-detail layout*).
+  - Mengklik sesi di sidebar langsung memuat pesan pada pane chat sebelah kanan secara instan (*live switch*) tanpa menutup tampilan atau menutupi composer.
+  - Tombol `+ New Session` di header sidebar untuk membuat percakapan baru instan.
+  - Tombol toggle `[🕒]` di header mengecilkan chat drawer kembali ke ukuran normal 300px.
+- **Lifecycle & Storage**:
+  - Setiap sesi memiliki tipe `ChatSession`: `{ id, title, provider, model, messages, createdAt }`.
+  - Judul sesi otomatis diperbarui (*auto-named*) dari cuplikan 26 karakter pertama dari prompt user pertama.
+  - Sesi disimpan secara persisten di browser (`localStorage` dengan key `aegis_chat_sessions_v2` dan `aegis_active_session_id_v2`).
+  - Jika pengguna menghapus seluruh sesi, sistem secara otomatis menginisiasi satu sesi baru kosong (*safety reset*).
+
+### B. Mode Dropdown & Provider Bertingkat (Cascading Model Select)
+- **Komponen**: `ChatProviderSelect.tsx` di footer `ChatComposer`.
+- **Struktur Menu**: Tombol single-badge compact (`[Provider] model ▾`) yang membuka popover terkelompok (*grouped list*):
+  - **Antigravity**: `gemini-2.5-flash` (default), `gemini-2.5-pro`
+  - **OpenCode**: `claude-3.7-sonnet` (default), `claude-3.5-haiku`
+  - **OpenRouter**: `deepseek-r1` (default), `claude-3.7-sonnet`, `gpt-4o`
+- **Scoping**: Model dan provider terikat secara individual per sesi chat aktif.
+
+### C. Autocomplete Command (`/`) & Context Path (`@`)
+- **Komponen**: `ChatCommandPopover.tsx` & parser di `ChatComposer.tsx`.
+- **Deteksi Input**: Regex real-time mendeteksi token sebelum kursor yang berawalan `/` atau `@`.
+- **Daftar Opsi**:
+  - `/` (Skills): Menampilkan preset skill agent: `/spec` (Specification), `/plan` (Implementation Plan), `/review` (Code Review), `/debug` (Debugging), `/simplify` (Simplification).
+  - `@` (Files/Folders): Menampilkan tree file dari `useWorkbench().files`. Folder otomatis diakhiri trailing slash `/` (contoh `@components/`).
+- **Navigasi Keyboard**: `ArrowUp` / `ArrowDown` untuk memilih, `Enter` / `Tab` untuk menyisipkan token, `Escape` untuk menutup popover.
+- **Visual Token Rendering**: Di bubble pesan `ChatMessageList.tsx`, token `@` dirender sebagai badge file/folder berikon biru/oranye, dan token `/` dirender sebagai badge command berikon ungu/aksen.
+
+### D. Redesain Balon Chat & Input Context Toolbar
+- **Relokasi In-Context File**: Sub-bar context lama di header ditiadakan. Indikator konteks file aktif dipindahkan langsung ke footer `ChatComposer.tsx` berupa badge pill `[● activeTab]` di samping selector provider.
+- **Pembersihan Area Percakapan**: Banner intro lama (*"Build with your codebase, not around it."*) dan suggestion pills dihapus total, memaksimalkan area baca percakapan.
+- **Balon Chat Modern**:
+  - **Header Balon**: Ikon avatar (`msg-avatar-agent` / `msg-avatar-user`), label pengirim (*AEGIS* / *You*), serta model badge monospaced pada respon agen.
+  - **Balon User**: Rata kanan dengan card `var(--color-accent-soft)` dan border aksen.
+  - **Balon Agent**: Rata kiri dengan card `var(--color-surface-raised)`, tipografi terstruktur, dan tombol interaktif **Copy Message** (ikon copy) yang muncul saat bubble di-hover.
+  - **Empty State**: Placeholder minimalis dan bersih jika sesi chat baru belum memiliki pesan.
+
+

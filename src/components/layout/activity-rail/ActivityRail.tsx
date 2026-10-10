@@ -1,23 +1,25 @@
-import { Icon } from "../../ui/Icon";
-import { IconButton } from "../../ui/IconButton";
-import { useWorkbench } from "../../../context/WorkbenchContext";
-import type { ActivityType } from "../../../types/workbench";
+import { Icon } from "../../ui/Icon"
+import { IconButton } from "../../ui/IconButton"
+import { useWorkbench } from "../../../context/WorkbenchContext"
+import type { ActivityType } from "../../../types/workbench"
 
-const activities: [name: "explorer" | "search" | "git", label: ActivityType][] = [
-  ["explorer", "Explorer"],
-  ["search", "Search"],
-  ["git", "Source Control"],
-];
+const activities: [name: "explorer" | "search" | "git", label: ActivityType][] =
+  [
+    ["explorer", "Explorer"],
+    ["search", "Search"],
+    ["git", "Source Control"],
+  ]
 
 export function ActivityRail() {
-  const { activeActivity, setActiveActivity, sidebarOpen, setSidebarOpen } = useWorkbench();
+  const { activeActivity, setActiveActivity, sidebarOpen, setSidebarOpen } =
+    useWorkbench()
 
   function handleSelect(label: ActivityType) {
     if (activeActivity === label && sidebarOpen) {
-      setSidebarOpen(false);
+      setSidebarOpen(false)
     } else {
-      setActiveActivity(label);
-      if (!sidebarOpen) setSidebarOpen(true);
+      setActiveActivity(label)
+      if (!sidebarOpen) setSidebarOpen(true)
     }
   }
 
@@ -43,5 +45,5 @@ export function ActivityRail() {
         <Icon name="settings" size={21} />
       </IconButton>
     </aside>
-  );
+  )
 }

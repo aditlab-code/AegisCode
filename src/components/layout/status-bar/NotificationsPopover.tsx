@@ -1,8 +1,8 @@
-import { useWorkbench } from "../../../context/WorkbenchContext";
+import { useWorkbench } from "../../../context/WorkbenchContext"
 
 export function NotificationsPopover() {
   const { notifications, markAllNotificationsRead, markNotificationRead } =
-    useWorkbench();
+    useWorkbench()
 
   return (
     <div className="status-popover notification-popover">
@@ -29,5 +29,5 @@ export function NotificationsPopover() {
       ))}
       <div className="notification-footer">Local workspace events only</div>
     </div>
-  );
+  )
 }

@@ -25,8 +25,8 @@ AegisCode enforces the use of **RTK (Rust Token Killer)** — a high-performance
 - **Always Prefix Shell Invocations**: All coding agents MUST prefix shell commands with `rtk`:
   - `rtk git status`, `rtk git diff`, `rtk git log -n 5`
   - `rtk npm --prefix apps/frontend run build`, `rtk npm test`
-  - `rtk node --test apps/frontend/tests/*.test.mjs`
-  - `rtk ls -la apps/frontend/src/styles/`
+  - `rtk node --test tests/*.test.mjs`
+  - `rtk ls -la src/styles/`
   - `rtk cargo test`, `rtk pytest`
 - **Safe Passthrough**: If `rtk` does not have a dedicated filter for a given tool, it safely runs the command unmodified without altering behavior or exit code.
 - **Strict Chaining Rule**: In compound shell commands, prefix EVERY segment in the chain:
@@ -119,16 +119,16 @@ This ensures OpenCode behaves similarly to Claude Code with full workflow enforc
 
 ## Frontend UI Engineering & Styling Guidelines (`apps/frontend`)
 
-When working on any frontend code in `apps/frontend/`, agents MUST adhere strictly to the following architectural constraints and quality gates:
+When working on any frontend code in ``, agents MUST adhere strictly to the following architectural constraints and quality gates:
 
 ### 3. Mandatory Frontend Verification Gates
-Before completing any task touching `apps/frontend/`, the agent MUST run and pass these verification checks:
-1. `rtk grep -rn "data-theme" apps/frontend/src/ | grep "\.vue"` -> Must ONLY match `<script>` attribute watchers (0 in `<style>` blocks).
-2. `rtk grep -rn ':style=".*color' apps/frontend/src/ | grep "\.vue"` -> Must return 0 matches.
-3. `rtk grep -rn "#[0-9a-fA-F]\{3,8\}" apps/frontend/src/styles/ | grep -v "theme-presets.css"` -> Must return 0 matches.
-4. `rtk grep -rn "#[0-9a-fA-F]\{3,8\}" apps/frontend/src/ | grep "\.vue"` -> Must return 0 matches.
+Before completing any task touching ``, the agent MUST run and pass these verification checks:
+1. `rtk grep -rn "data-theme" src/ | grep "\.vue"` -> Must ONLY match `<script>` attribute watchers (0 in `<style>` blocks).
+2. `rtk grep -rn ':style=".*color' src/ | grep "\.vue"` -> Must return 0 matches.
+3. `rtk grep -rn "#[0-9a-fA-F]\{3,8\}" src/styles/ | grep -v "theme-presets.css"` -> Must return 0 matches.
+4. `rtk grep -rn "#[0-9a-fA-F]\{3,8\}" src/ | grep "\.vue"` -> Must return 0 matches.
 5. `rtk npm --prefix apps/frontend run build` -> Must pass with 0 errors.
-6. `rtk node --test apps/frontend/tests/*.test.mjs` -> Must pass 100% of tests.
+6. `rtk node --test tests/*.test.mjs` -> Must pass 100% of tests.
 
 
 ## Orchestration: Personas, Skills, and Commands

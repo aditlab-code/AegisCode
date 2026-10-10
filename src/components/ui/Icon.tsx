@@ -29,7 +29,9 @@ export function Icon({ name, size = 16, className = "" }: IconProps) {
         <path d="M6 7v10M8 17c5 0 8-3 8-8V8" />
       </>
     ),
+    check: <path d="m5 13 4 4L19 7" />,
     chevron: <path d="m9 18 6-6-6-6" />,
+    "chevron-down": <path d="m6 9 6 6 6-6" />,
     close: <path d="m7 7 10 10M17 7 7 17" />,
     code: <path d="m8 9-3 3 3 3m8-6 3 3-3 3m-3-8-2 10" />,
     copy: (
@@ -65,6 +67,13 @@ export function Icon({ name, size = 16, className = "" }: IconProps) {
         <path d="M6 7v10m2-6c4 0 6 1 8 1" />
       </>
     ),
+    history: (
+      <>
+        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+        <path d="M3 3v5h5" />
+        <path d="M12 7v5l4 2" />
+      </>
+    ),
     layout: (
       <>
         <rect x="3" y="4" width="18" height="16" rx="1" />
@@ -85,6 +94,7 @@ export function Icon({ name, size = 16, className = "" }: IconProps) {
       </>
     ),
     play: <path d="m9 6 9 6-9 6z" />,
+    plus: <path d="M12 5v14m-7-7h14" />,
     search: (
       <>
         <circle cx="10.5" cy="10.5" r="6.5" />
@@ -105,6 +115,11 @@ export function Icon({ name, size = 16, className = "" }: IconProps) {
       </>
     ),
     terminal: <path d="m5 7 5 5-5 5m8 0h6" />,
+    trash: (
+      <>
+        <path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      </>
+    ),
     warning: (
       <>
         <path d="M12 3 2.8 20h18.4L12 3Z" />

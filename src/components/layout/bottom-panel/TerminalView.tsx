@@ -1,15 +1,19 @@
-import { useState } from "react";
-import { useWorkbench } from "../../../context/WorkbenchContext";
+import { useState } from "react"
+import { useWorkbench } from "../../../context/WorkbenchContext"
 
 export function TerminalView() {
-  const { terminalLines, terminalRunning, setTerminalRunning, sendTerminalCommand } =
-    useWorkbench();
-  const [command, setCommand] = useState("");
+  const {
+    terminalLines,
+    terminalRunning,
+    setTerminalRunning,
+    sendTerminalCommand,
+  } = useWorkbench()
+  const [command, setCommand] = useState("")
 
   function handleRun() {
-    if (!command.trim()) return;
-    sendTerminalCommand(command);
-    setCommand("");
+    if (!command.trim()) return
+    sendTerminalCommand(command)
+    setCommand("")
   }
 
   return (
@@ -26,8 +30,8 @@ export function TerminalView() {
               line.includes("SSE")
                 ? "terminal-event"
                 : line.startsWith("➜")
-                ? "terminal-ok"
-                : ""
+                  ? "terminal-ok"
+                  : ""
             }
             key={`${line}-${index}`}
           >
@@ -43,14 +47,16 @@ export function TerminalView() {
           disabled={!terminalRunning}
           onChange={(event) => setCommand(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter") handleRun();
-            if (event.key === "c" && event.ctrlKey) setTerminalRunning(false);
+            if (event.key === "Enter") handleRun()
+            if (event.key === "c" && event.ctrlKey) setTerminalRunning(false)
           }}
-          placeholder={terminalRunning ? "Type a command…" : "Terminal terminated"}
+          placeholder={
+            terminalRunning ? "Type a command…" : "Terminal terminated"
+          }
           value={command}
         />
         {terminalRunning && <span className="cursor-block" />}
       </label>
     </div>
-  );
+  )
 }

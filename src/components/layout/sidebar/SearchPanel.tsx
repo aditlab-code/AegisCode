@@ -1,9 +1,9 @@
-import { useState } from "react";
-import { Icon } from "../../ui/Icon";
+import { useState } from "react"
+import { Icon } from "../../ui/Icon"
 
 export function SearchPanel() {
-  const [search, setSearch] = useState("");
-  const [replace, setReplace] = useState("");
+  const [search, setSearch] = useState("")
+  const [replace, setReplace] = useState("")
 
   return (
     <div className="tool-panel">
@@ -48,9 +48,10 @@ export function SearchPanel() {
         </div>
       ) : (
         <p className="panel-hint">
-          Search across the active repository. Regular expressions are supported.
+          Search across the active repository. Regular expressions are
+          supported.
         </p>
       )}
     </div>
-  );
+  )
 }

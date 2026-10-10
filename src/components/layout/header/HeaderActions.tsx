@@ -1,6 +1,6 @@
-import { Icon } from "../../ui/Icon";
-import { IconButton } from "../../ui/IconButton";
-import { useWorkbench } from "../../../context/WorkbenchContext";
+import { Icon } from "../../ui/Icon"
+import { IconButton } from "../../ui/IconButton"
+import { useWorkbench } from "../../../context/WorkbenchContext"
 
 export function HeaderActions() {
   const {
@@ -10,7 +10,7 @@ export function HeaderActions() {
     toggleSidebar,
     chatOpen,
     toggleChat,
-  } = useWorkbench();
+  } = useWorkbench()
 
   return (
     <div className="header-actions">
@@ -36,5 +36,5 @@ export function HeaderActions() {
         <Icon name="aegis" />
       </IconButton>
     </div>
-  );
+  )
 }

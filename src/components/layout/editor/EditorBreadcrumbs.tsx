@@ -1,10 +1,10 @@
-import { Icon } from "../../ui/Icon";
-import { useWorkbench } from "../../../context/WorkbenchContext";
+import { Icon } from "../../ui/Icon"
+import { useWorkbench } from "../../../context/WorkbenchContext"
 
-const languageProfiles = ["TypeScript", "JavaScript", "Python", "JSON", "C++"];
+const languageProfiles = ["TypeScript", "JavaScript", "Python", "JSON", "C++"]
 
 export function EditorBreadcrumbs() {
-  const { activeTab, activeLanguage, setActiveLanguage } = useWorkbench();
+  const { activeTab, activeLanguage, setActiveLanguage } = useWorkbench()
 
   return (
     <div className="breadcrumbs">
@@ -31,5 +31,5 @@ export function EditorBreadcrumbs() {
         </select>
       </label>
     </div>
-  );
+  )
 }

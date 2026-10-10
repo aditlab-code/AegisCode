@@ -1,15 +1,15 @@
-import { useState } from "react";
-import { Icon } from "../../ui/Icon";
-import { useWorkbench } from "../../../context/WorkbenchContext";
+import { useState } from "react"
+import { Icon } from "../../ui/Icon"
+import { useWorkbench } from "../../../context/WorkbenchContext"
 
 export function SourceControlPanel() {
-  const { activeBranch, gitChanges, setActiveTab, showToast } = useWorkbench();
-  const [commitMessage, setCommitMessage] = useState("");
+  const { activeBranch, gitChanges, setActiveTab, showToast } = useWorkbench()
+  const [commitMessage, setCommitMessage] = useState("")
 
   function handleCommit() {
-    if (!commitMessage.trim()) return;
-    showToast(`Committed: "${commitMessage.trim()}"`);
-    setCommitMessage("");
+    if (!commitMessage.trim()) return
+    showToast(`Committed: "${commitMessage.trim()}"`)
+    setCommitMessage("")
   }
 
   return (
@@ -66,5 +66,5 @@ export function SourceControlPanel() {
         </button>
       </div>
     </div>
-  );
+  )
 }
