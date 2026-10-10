@@ -1,0 +1,167 @@
+# AegisCode Frontend UI Design Reference
+
+> **Purpose**: Single source of truth for the active UI design and visual layout structure.  
+> **Rule**: Must be updated whenever visual components, layout regions, or styling paradigms change.  
+> **Design Principles**: Reusable Tailwind tokens, reusable UI components, zero arbitrary hex codes, lightweight modular layouts.
+
+---
+
+## 1. Master Layout Shell & Wireframe Structure
+
+The AegisCode interface utilizes a multi-column, multi-panel desktop shell (`.app-shell`) structured via flexbox and CSS grid with drag-resizable sashes:
+
+```
++----------------------------------------------------------------------------------------------------+
+|  HEADER BAR (Window Controls, App Menu, Global Search ⌘K, Layout Toggles, Companion QR)            |
++---+----------------------+----------------------------------------------+--------------------------+
+| A | SIDEBAR              | WORKBENCH CODE EDITOR                        | AEGIS AI AGENT DRAWER    |
+| C |                      |                                              |                          |
+| T | - Explorer (CRUD)    | [EditorTabs: Group 1]   [EditorTabs: Group 2]| - Session Master List    |
+| I | - Git Source Control | [EditorBreadcrumbs]                          | - Streaming Message View |
+| V | - Search & Replace   | [CodePane + Gutter]                          | - Autocomplete (/ & @)   |
+| I |                      | [Minimap]                                    | - Model Selector         |
+| T |                      +----------------------------------------------+                          |
+| Y |                      | BOTTOM PANEL                                 |                          |
+|   |                      |                                              |                          |
+| R |                      | [Terminal PTY] [Problems Diagnostics] [Logs] |                          |
++---+----------------------+----------------------------------------------+--------------------------+
+|  STATUS BAR (Cursor Position Ln/Col, Active Language, Git Branch, Notification Center)            |
++----------------------------------------------------------------------------------------------------+
+```
+
+---
+
+## 2. Layout Modules (by Folder)
+
+All layout modules live in [`src/components/layout/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout) with co-located CSS files and self-contained sub-components:
+
+### 1. Header (`header/`)
+- **Path**: [`src/components/layout/header/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/header)
+- **Primary Components**: `Header.tsx`, `WindowControls.tsx`, `AppMenu.tsx`, `GlobalSearchButton.tsx`, `HeaderActions.tsx`, `header.css`
+- **Visual Design**:
+  - macOS-style traffic light window controls (red/yellow/green) with hover icons and Aegis branding badge.
+  - Dropdown application menu: File, Edit, View, Run, Terminal, Help.
+  - Centered quick launcher button triggering the Command Palette (`⌘K` / `Ctrl+K`).
+  - Action buttons on the right: toggle primary sidebar, toggle bottom drawer, toggle AI agent chat, toggle companion pairing modal.
+- **Tokens Used**: `bg-surface`, `border-line`, `text-ink`, `text-ink-muted`.
+
+### 2. Activity Rail (`activity-rail/`)
+- **Path**: [`src/components/layout/activity-rail/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/activity-rail)
+- **Primary Components**: `ActivityRail.tsx`, `activity-rail.css`
+- **Visual Design**:
+  - Slim 48px vertical rail on the left border.
+  - Top action group: Explorer icon, Search icon, Source Control Git icon.
+  - Bottom action group: Settings gear icon.
+  - Active indicator pill on left edge with accent coloring (`bg-accent`).
+
+### 3. Sidebar (`sidebar/`)
+- **Path**: [`src/components/layout/sidebar/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/sidebar)
+- **Primary Components**: `Sidebar.tsx`, `ExplorerPanel.tsx`, `SearchPanel.tsx`, `SourceControlPanel.tsx`, `sidebar.css`
+- **Visual Design**:
+  - Resizable horizontal width (default 260px) bounded by an interactive drag sash (`ResizeSash.tsx`).
+  - **Explorer Panel**:
+    - "OPEN EDITORS" section showing pinned tabs across editor groups.
+    - Workspace file tree with folder expansion, tree guides, hidden file visibility toggle, inline CRUD actions (New File, New Folder, Rename, Delete).
+    - Context menu on right-click (Copy Path, Copy Relative Path, Delete, Rename).
+  - **Search Panel**:
+    - Workspace-wide regex query input, case matching, whole word matching.
+    - Granular replace engine (replace single occurrence, replace in file, replace all).
+  - **Source Control Panel**:
+    - Active repository switcher, branch indicators.
+    - Git toolbar: Pull, Push, Commit message input with Ctrl+Enter dispatch.
+    - Staged Changes and Unstaged Changes collapsible groups.
+
+### 4. Workbench Text Editor (`editor/`)
+- **Path**: [`src/components/layout/editor/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/editor)
+- **Primary Components**: `Editor.tsx`, `EditorTabs.tsx`, `EditorBreadcrumbs.tsx`, `CodePane.tsx`, `Minimap.tsx`, `EditorFindWidget.tsx`, `DiagnosticHoverCard.tsx`, `editor.css`
+- **Visual Design**:
+  - **Dual Window Groups (Split Pane)**: Group 1 and Group 2 side-by-side or stacked, divided by a draggable splitter sash.
+  - **Editor Tabs**: Tab bar supporting drag-and-drop (HTML5 native DND) between groups, dirty unsaved indicator dot, close button.
+  - **Editor Breadcrumbs**: Clean path navigation bar (`src > components > layout > editor > Editor.tsx`).
+  - **Code Pane**: Lightweight custom buffer editor with line numbers, active line highlight, auto-indentation, and syntax highlighting via semantic token parser.
+  - **Inline Find Widget**: Floating widget in top-right corner (`Ctrl+F`) with match count and Next/Previous navigation.
+  - **Minimap**: Scaled visual overview on the right edge of the editor buffer with click-to-scroll viewport box.
+
+### 5. Bottom Panel (`bottom-panel/`)
+- **Path**: [`src/components/layout/bottom-panel/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/bottom-panel)
+- **Primary Components**: `BottomPanel.tsx`, `TerminalView.tsx`, `ProblemsView.tsx`, `OutputView.tsx`, `bottom-panel.css`
+- **Visual Design**:
+  - Collapsible lower drawer with draggable vertical resize sash.
+  - Tab bar: **Terminal**, **Problems**, **Output**. Tab drag-and-drop reordering supported.
+  - Panel header actions: Maximize/Restore panel, Close drawer.
+  - **Terminal View**: Multi-session terminal emulator tabs, command history (Arrow Up/Down), terminal clear, interrupt (`Ctrl+C`).
+  - **Problems View**: Diagnostics table filtered by severity (Errors, Warnings, Info). Clicking a problem jumps to the exact line/column in the active editor.
+  - **Output View**: Channel selector (Linter, Tasks, Git, Server) with auto-scroll and clear actions.
+
+### 6. AEGIS AI Agent Drawer (`chat/`)
+- **Path**: [`src/components/layout/chat/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/chat)
+- **Primary Components**: `ChatDrawer.tsx`, `ChatHeader.tsx`, `ChatSessionSidebar.tsx`, `ChatMessageList.tsx`, `ChatSuggestions.tsx`, `ChatComposer.tsx`, `ChatCommandPopover.tsx`, `ChatProviderSelect.tsx`, `chat.css`
+- **Visual Design**:
+  - Split master-detail layout: Session history sidebar toggle on left, main chat conversation on right.
+  - Model & Provider selector: Grouped dropdown supporting local runners, cloud providers, and custom endpoints.
+  - Floating autocomplete popover triggered on `/` (Skills & Slash commands) and `@` (File paths & Context tags).
+  - Quick action suggestion pills above the input composer.
+  - Multi-line textarea composer with code snippet attachments and execution buttons.
+
+### 7. Status Bar (`status-bar/`)
+- **Path**: [`src/components/layout/status-bar/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/status-bar)
+- **Primary Components**: `StatusBar.tsx`, `BranchPopover.tsx`, `ProblemsPopover.tsx`, `NotificationsPopover.tsx`, `status-bar.css`
+- **Visual Design**:
+  - Slim 24px footer anchored at the bottom edge.
+  - Left section: Active Git branch button (opens branch switch popover), error and warning counts (opens Problems popover).
+  - Right section: Cursor position (`Ln 42, Col 18`), spaces/indent size, active encoding (`UTF-8`), active language mode badge, notification bell with unread count.
+
+### 8. Settings Overlay (`settings/`)
+- **Path**: [`src/components/layout/settings/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/settings)
+- **Primary Components**: `SettingsModal.tsx`, `settings-modal.css`
+- **Visual Design**:
+  - Modal overlay with dimmed backdrop.
+  - Two-column VS Code-style preferences: Left category rail (Editor, Terminal, AI Agent, Theme, Network) and right settings card list.
+  - Top search input with instant regex filtering across all settings options.
+
+### 9. Command Palette (`command-palette/`)
+- **Path**: [`src/components/layout/command-palette/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/command-palette)
+- **Primary Components**: `CommandPalette.tsx`, `command-palette.css`
+- **Visual Design**:
+  - Centered modal launcher (`⌘K`).
+  - Search input with keyboard navigation (`Arrow Up/Down`, `Enter` to select, `Escape` to close).
+  - Grouped commands: File navigation, View toggles, Git commands, AI prompts, Theme switches.
+
+---
+
+## 3. Remote Tablet Companion View Mode
+
+For remote multi-screen workflows on tablets (iPad, Android tablets):
+- **Access Route**: `/?mode=companion` or paired via QR Code / local URL from Header.
+- **Two Primary Switcher Tabs**:
+  1. **Web Preview Host Tab**: Renders the running web application hosted by the local Go backend in a sandboxed, touch-friendly iframe/viewport with reload and address bar controls.
+  2. **Focus Code Editor Tab**: Renders a distraction-free, touch-optimized single-pane text editor buffer without sidebars or bottom drawers. Allows direct code editing and instant auto-save synchronization back to the desktop workspace.
+
+---
+
+## 4. Design System & CSS Token Conventions
+
+AegisCode strictly forbids hardcoded arbitrary hex values. All styles reference semantic CSS tokens defined in [`src/styles/tokens.css`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/styles/tokens.css) and Tailwind CSS v4 `@theme`:
+
+| Semantic Token | Tailwind Class | Usage / Role |
+| :--- | :--- | :--- |
+| `--color-canvas` | `bg-canvas` | Deep background behind panels and editor frames |
+| `--color-surface` | `bg-surface` | Main panel surfaces (sidebar, header, bottom panel) |
+| `--color-surface-hover`| `hover:bg-surface-hover` | Hover background for list items and menu rows |
+| `--color-line` | `border-line` | Structural borders, dividers, and resizer sashes |
+| `--color-ink` | `text-ink` | Primary text and active headers |
+| `--color-ink-muted` | `text-ink-muted` | Secondary labels, file details, line numbers |
+| `--color-accent` | `bg-accent`, `text-accent` | Active tabs, focus rings, primary CTA buttons |
+| `--color-danger` | `text-danger`, `bg-danger` | Error squiggles, delete actions, linter errors |
+| `--color-warning` | `text-warning`, `bg-warning` | Linter warnings, modified git status badges |
+
+---
+
+## 5. UI Verification Gates
+
+Whenever frontend code in `src/` is modified, the following quality gates must pass:
+1. `rtk npm run build` -> 0 compile errors.
+2. `rtk npm run format` -> Code formatting verified via `oxfmt`.
+3. Token reusability verified -> 0 hardcoded arbitrary hex colors in TSX/CSS.
+4. Layout markup preservation -> Existing selectors and class contracts preserved 1:1.
+5. Update this documentation if any layout module structure or CSS contract is modified.

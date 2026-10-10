@@ -1,148 +1,70 @@
-# AGENTS.md
+# AGENTS.md — AegisCode Agent Operating Guidelines
 
-This file provides guidance to AI coding agents (Claude Code, Cursor, Copilot, Antigravity, etc.) when working with code in this repository.
-> Objective : IDE lightwight, Local Server
+This file provides direct operational guidance for AI coding agents (Antigravity, Claude Code, Cursor, Copilot) working in this repository.
 
-- Arsitektur Microservice
-- DONT Over Engiinering
+> **Objective**: Lightweight Web-Based IDE + Local Cross-Platform Go Server + Remote Tablet Companion  
+> **Core Architecture**: Hybrid Layered Core with Out-of-Process Worker Supervision  
+> **Prime Directive**: DO NOT OVER-ENGINEER. Keep all code lean, direct, and pragmatic.
 
-## Constrain Frontend
-1. Reuse token color tailwind
-2. Reuse Component design 
+---
 
-## Constrain backend
-1. DO NOT Try catch Silent, If error Is Break the function
-2. DO NOT Add Spaggeti try catch, 1 function is true 
-3. DO NOT Add const, if necessary. check any possible 
+## 1. Chain-of-Thought (COT) Execution with RTK
 
-### Phase 1
+All agents MUST follow a disciplined Chain-of-Thought execution cycle:
+1. **Analyze**: Understand the requirements and verify facts directly from the environment.
+2. **Plan**: Formulate a concise step-by-step plan against project constraints.
+3. **Execute**: Implement changes cleanly and modularly.
+4. **Verify**: Run verification gates (`rtk npm run build` & `rtk npm run format`) to ensure zero errors.
 
-## Rust Token Killer (`rtk`) Integration Guidelines
-
-AegisCode enforces the use of **RTK (Rust Token Killer)** — a high-performance CLI proxy located at `~/.local/bin/rtk` designed to filter, condense, and summarize command line outputs before they enter the LLM context window.
-
-### 1. Mandatory Command Prefixing
-- **Always Prefix Shell Invocations**: All coding agents MUST prefix shell commands with `rtk`:
+### Mandatory Shell Invocation Rule (`rtk`)
+AegisCode enforces the use of **RTK (Rust Token Killer)** (`~/.local/bin/rtk`) to compress terminal outputs before they enter the LLM context:
+- **Always Prefix Commands**: Prefix every shell invocation with `rtk`:
   - `rtk git status`, `rtk git diff`, `rtk git log -n 5`
   - `rtk npm run build`, `rtk npm run format`
-  - `rtk ls -la src/styles/`
-  - `rtk cargo test`, `rtk pytest`
-- **Safe Passthrough**: If `rtk` does not have a dedicated filter for a given tool, it safely runs the command unmodified without altering behavior or exit code.
-- **Strict Chaining Rule**: In compound shell commands, prefix EVERY segment in the chain:
-  - Correct: `rtk git add . && rtk git commit -m "feat: update"`
-  - Incorrect: `rtk git add . && git commit -m "feat: update"`
+  - `rtk ls -la src/components/layout/`
+  - `rtk cargo test`, `rtk go test ./...`
+- **Strict Compound Chaining**: In compound commands (`&&`), prefix EVERY segment:
+  - *Correct*: `rtk git add . && rtk git commit -m "feat: update"`
+  - *Incorrect*: `rtk git add . && git commit -m "feat: update"`
+- **Fallback Modes**:
+  - Re-run with proxy mode if needed: `rtk proxy <command>`
+  - Bypass raw execution if necessary: `RTK_DISABLED=1 <command>`
 
-### 2. Output Handling & Failure Recovery Protocol
-- **Signal Retention**: RTK condenses verbosity while preserving errors, warnings, and stack traces. Treat its output as authoritative and complete.
-- **Fallback (`rtk proxy`)**: If a filtered command returns an unusable result (e.g. unexpectedly empty output, garbled response, or mismatch with exit code), re-run explicitly with proxy mode:
-  ```bash
-  rtk proxy <command>
-  ```
-- **Temporary Bypass**: To execute a raw command completely bypassing RTK:
-  ```bash
-  RTK_DISABLED=1 <command>
-  ```
-- **Unix Piping**: For commands consuming output through pipes:
-  ```bash
-  <command> | rtk pipe
-  ```
+---
 
-### 3. Token Economics & Monitoring
-- Check cumulative token savings across sessions:
-  - `rtk gain` — summary of total tokens saved.
-  - `rtk gain --history` — detailed breakdown per command.
-  - `rtk discover` — analyze past terminal runs for missed compression opportunities.
+## 2. Core Development Constraints
 
-## Repository Overview
+### Frontend Constraints
+1. **Reuse Tailwind Tokens**: All colors must use semantic tokens from [`src/styles/tokens.css`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/styles/tokens.css) via Tailwind CSS v4 (`bg-canvas`, `bg-surface`, `text-ink`, `border-line`, `bg-accent`, etc.). Zero hardcoded hex colors allowed in TSX/CSS.
+2. **Reuse UI Primitives**: Atomic UI components (`Icon`, `IconButton`, `Toast`) must be reused from [`src/components/ui/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/ui/). Do not duplicate primitives.
+3. **Co-locate CSS**: Each layout module in [`src/components/layout/<name>/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout) owns its CSS stylesheet.
+4. **Preserve Selectors**: Maintain existing class names and layout selectors 1:1.
 
-AegisCode is an AI-assisted engineering workbench combining AegisCode Studio (React 19 + TypeScript + Vite IDE) and Aegis Agent (autonomous runtime engine). Skills in `.agents/skills/` and `skills/` extend agent capabilities.
+### Backend Constraints
+1. **DO NOT Catch Errors Silently**: If an error occurs, break the function immediately and report the error explicitly. Never use empty catch/error blocks.
+2. **DO NOT Write Spaghetti Error Handling**: Maintain exactly one clear, linear validation and error path per function.
+3. **DO NOT Add Redundant Constants / Abstractions**: Check state mutability; avoid excessive wrapper classes, DDD boilerplate, or deep hexagonal layers. Keep packages flat in `server/internal/*`.
 
-## OpenCode Integration
+---
 
-OpenCode uses a **skill-driven execution model** powered by the `skill` tool and this repository's `.agents/skills` directory.
+## 3. Mandatory Verification Gates
 
-### Core Rules
+Before completing any task touching the codebase, the agent MUST run and pass:
+```bash
+rtk npm run build    # Must pass with 0 errors
+rtk npm run format   # Code formatting check with oxfmt
+```
 
-- If a task matches a skill, you MUST invoke it
-- Skills are located in `.agents/skills/<skill-name>/SKILL.md` (or `skills/<skill-name>/SKILL.md`)
-- Never implement directly if a skill applies
-- Always follow the skill instructions exactly (do not partially apply them)
+---
 
-### Intent → Skill Mapping
+## 4. Documentation References (`@docs`)
 
-The agent should automatically map user intent to skills:
+For detailed technical specifications, architecture decisions, and design references, consult the dedicated documentation in [`docs/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs):
 
-- Feature / new functionality → `spec-driven-development`, then `incremental-implementation`, `test-driven-development`
-- Planning / breakdown → `planning-and-task-breakdown`
-- Bug / failure / unexpected behavior → `debugging-and-error-recovery`
-- Code review → `code-review-and-quality`
-- Refactoring / simplification → `code-simplification`
-- API or interface design → `api-and-interface-design`
-- UI work → `frontend-ui-engineering`
-
-### Lifecycle Mapping (Implicit Commands)
-
-OpenCode does not support slash commands like `/spec` or `/plan`.
-
-Instead, the agent must internally follow this lifecycle:
-
-- DEFINE → `spec-driven-development`
-- PLAN → `planning-and-task-breakdown`
-- BUILD → `incremental-implementation` + `test-driven-development`
-- VERIFY → `debugging-and-error-recovery`
-- REVIEW → `code-review-and-quality`
-- SHIP → `shipping-and-launch`
-
-### Execution Model
-
-For every request:
-
-1. Determine if any skill applies (even 1% chance)
-2. Invoke the appropriate skill using the `skill` tool
-3. Follow the skill workflow strictly
-4. Only proceed to implementation after required steps (spec, plan, etc.) are complete
-
-### Anti-Rationalization
-
-The following thoughts are incorrect and must be ignored:
-
-- "This is too small for a skill"
-- "I can just quickly implement this"
-- "I’ll gather context first"
-
-Correct behavior:
-
-- Always check for and use skills first
-
-This ensures OpenCode behaves similarly to Claude Code with full workflow enforcement.
-
-## Frontend UI Engineering & Styling Guidelines (`src/`)
-
-When working on any frontend code in `src/`, agents MUST adhere strictly to the following architectural constraints and quality gates:
-
-### 1. Modular CSS Architecture
-- **Shared Foundations & Primitives** (`src/styles/`):
-  - `tokens.css`: Definisi `@theme` Tailwind CSS v4. Seluruh palet warna wajib merujuk ke token semantik ini (`--color-canvas`, `--color-surface`, `--color-ink`, `--color-accent`, dsb.).
-  - `base.css`: Reset global `#root`, `html`, `body`, button, focus rings.
-  - `ui.css`: Komponen UI reusable (`.icon-button`, `.action-toast`, `.status-dot`, scrollbar).
-  - `shell.css`: Layout shell master (`.app-shell`, `.workspace`, `.workbench`).
-- **Co-located Layout Styles** (`src/components/layout/<layout-name>/<layout-name>.css`):
-  - Setiap modul layout membawahi file CSS-nya sendiri (contoh: `header/header.css`, `sidebar/sidebar.css`, `chat/chat.css`, `editor/editor.css`, dsb.).
-- **Entry-Point Aggregator** (`src/index.css`):
-  - File agregator ramping yang memuat `@import 'tailwindcss';`, disusul layer `src/styles/` dan modul layout dalam hierarki cascade teratur.
-
-### 2. Mandatory Frontend Verification Gates
-Before completing any task touching `src/`, the agent MUST run and pass these verification checks:
-1. `rtk npm run build` -> Must pass with 0 errors.
-2. `rtk npm run format` -> Formatting check with `oxfmt`.
-3. Reuse token color tailwind -> No arbitrary hardcoded hex colors in component TSX/styles (all color definitions must reside in `src/styles/tokens.css` or use semantic Tailwind classes / CSS variables).
-4. Component Selector Preservation -> Preserve existing class selectors 1:1 without breaking layout markup.
-
-
-## Orchestration: Personas, Skills, and Commands
-
-This repo has three composable layers. They have different jobs and should not be confused:
-
-- **Skills** (`.agents/skills/<name>/SKILL.md`) — workflows with steps and exit criteria. The *how*. Mandatory hops when an intent matches.
-- **Personas** (`.agents/agents/<role>.md`) — roles with a perspective and an output format. The *who*.
-- **Slash commands** (`.agents/commands/*.toml` / `.claude/commands/*.md`) — user-facing entry points. The *when*. The orchestration layer.
+- **Folder Hierarchy & Responsibilities**: [`docs/architecture.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/architecture.md)
+- **Active UI Design & Layout Modules**: [`docs/frontend.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/frontend.md)
+- **Milestones & Phasing (Phase 1–7)**: [`docs/roadmap.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/roadmap.md)
+- **Backend Endpoints, DAP & Pairing**: [`docs/feature-backend.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/feature-backend.md)
+- **Feature Assessment & RFC Scorecard**: [`docs/report.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/report.md)
+- **Installation, Build & Tablet Setup**: [`docs/installation.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/installation.md)
+- **Architecture Decision Records**: [`docs/adr/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr)
