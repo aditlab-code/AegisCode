@@ -3,7 +3,7 @@ import { Icon } from "../../ui/Icon"
 import { useWorkbench } from "../../../context/WorkbenchContext"
 
 export function SourceControlPanel() {
-  const { activeBranch, gitChanges, setActiveTab, showToast } = useWorkbench()
+  const { activeBranch, gitChanges, openFileInPane, showToast } = useWorkbench()
   const [commitMessage, setCommitMessage] = useState("")
 
   function handleCommit() {
@@ -45,7 +45,7 @@ export function SourceControlPanel() {
           <button
             className="change-row"
             key={change.file}
-            onClick={() => setActiveTab(change.file)}
+            onClick={() => openFileInPane(change.file)}
             type="button"
           >
             <span className="change-code">{change.code}</span>

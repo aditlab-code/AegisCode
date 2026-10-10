@@ -12,7 +12,8 @@ logs/
 .claude-replay.*
 .tmp-*
 /.figma/design-context/
-
+DS_Store
+..DS_Store
 # Platform-managed agentplat state, not project source. In the
 # client-initiated single-repo workspace layout (make's `Path: "."` spec) the
 # repo root IS the workspace root, so these land inside this repo rather than

@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
+import { useWorkbench } from "../../../context/WorkbenchContext"
 
 interface EditorFindWidgetProps {
   isOpen: boolean
@@ -8,19 +9,44 @@ interface EditorFindWidgetProps {
 }
 
 export function EditorFindWidget({ isOpen, onClose }: EditorFindWidgetProps) {
+  const {
+    activeTab,
+    secondaryActiveTab,
+    focusedPane,
+    splitEditor,
+    fileBuffers,
+  } = useWorkbench()
+
   const [query, setQuery] = useState("")
   const [caseSensitive, setCaseSensitive] = useState(false)
   const [matchWord, setMatchWord] = useState(false)
 
   if (!isOpen) return null
 
+  const currentFile =
+    focusedPane === "secondary" && splitEditor ? secondaryActiveTab : activeTab
+  const content = fileBuffers[currentFile]?.content || ""
+
+  let matchCount = 0
+  if (query.trim()) {
+    try {
+      const pattern = matchWord ? `\\b${query}\\b` : query
+      const flags = caseSensitive ? "g" : "gi"
+      const regex = new RegExp(pattern, flags)
+      const found = content.match(regex)
+      matchCount = found ? found.length : 0
+    } catch {
+      matchCount = 0
+    }
+  }
+
   return (
     <div className="absolute right-4 top-12 z-20 flex items-center gap-2 rounded border border-[var(--color-line)] bg-[var(--color-surface-raised)] p-1.5 shadow-lg">
       <div className="flex items-center gap-1.5 rounded bg-[var(--color-canvas)] px-2 py-1 border border-[var(--color-line)]">
         <Icon
+          className="text-[var(--color-ink-soft)]"
           name="search"
           size={13}
-          className="text-[var(--color-ink-soft)]"
         />
         <input
           autoFocus
@@ -55,7 +81,9 @@ export function EditorFindWidget({ isOpen, onClose }: EditorFindWidgetProps) {
         </button>
       </div>
       <span className="text-[11px] text-[var(--color-ink-muted)]">
-        {query ? "2 matches" : "No results"}
+        {query
+          ? `${matchCount} match${matchCount === 1 ? "" : "es"}`
+          : "No results"}
       </span>
       <IconButton label="Close find widget" onClick={onClose}>
         <Icon name="close" size={12} />

@@ -1,10 +1,20 @@
 import { useState } from "react"
 import { Icon } from "../../ui/Icon"
+import { useWorkbench } from "../../../context/WorkbenchContext"
 
 export function SettingsPanel() {
+  const { linterSettings, setLinterSettings } = useWorkbench()
   const [settingsQuery, setSettingsQuery] = useState("")
   const [autoSave, setAutoSave] = useState(true)
   const [minimap, setMinimap] = useState(true)
+
+  const query = settingsQuery.toLowerCase().trim()
+
+  const showEditorGroup =
+    !query || "editor auto save minimap tab size".includes(query)
+  const showLinterGroup =
+    !query ||
+    "linter diagnostics syntax warnings ontype onsave trigger".includes(query)
 
   return (
     <div className="tool-panel">
@@ -17,41 +27,101 @@ export function SettingsPanel() {
           value={settingsQuery}
         />
       </label>
-      <div className="settings-group">
-        <span className="settings-label">EDITOR</span>
-        <label className="setting-row">
-          <span>
-            <strong>Auto Save</strong>
-            <small>Save changes automatically</small>
-          </span>
-          <input
-            checked={autoSave}
-            onChange={() => setAutoSave((v) => !v)}
-            type="checkbox"
-          />
-        </label>
-        <label className="setting-row">
-          <span>
-            <strong>Minimap</strong>
-            <small>Show code overview</small>
-          </span>
-          <input
-            checked={minimap}
-            onChange={() => setMinimap((v) => !v)}
-            type="checkbox"
-          />
-        </label>
-        <label className="setting-row setting-select">
-          <span>
-            <strong>Tab Size</strong>
-            <small>Spaces per indentation</small>
-          </span>
-          <select aria-label="Editor tab size" defaultValue="2">
-            <option>2</option>
-            <option>4</option>
-          </select>
-        </label>
-      </div>
+
+      {showEditorGroup && (
+        <div className="settings-group">
+          <span className="settings-label">EDITOR</span>
+          <label className="setting-row">
+            <span>
+              <strong>Auto Save</strong>
+              <small>Save changes automatically</small>
+            </span>
+            <input
+              checked={autoSave}
+              onChange={() => setAutoSave((v) => !v)}
+              type="checkbox"
+            />
+          </label>
+          <label className="setting-row">
+            <span>
+              <strong>Minimap</strong>
+              <small>Show code overview</small>
+            </span>
+            <input
+              checked={minimap}
+              onChange={() => setMinimap((v) => !v)}
+              type="checkbox"
+            />
+          </label>
+          <label className="setting-row setting-select">
+            <span>
+              <strong>Tab Size</strong>
+              <small>Spaces per indentation</small>
+            </span>
+            <select aria-label="Editor tab size" defaultValue="2">
+              <option>2</option>
+              <option>4</option>
+            </select>
+          </label>
+        </div>
+      )}
+
+      {showLinterGroup && (
+        <div className="settings-group">
+          <span className="settings-label">LINTER & DIAGNOSTICS</span>
+          <label className="setting-row">
+            <span>
+              <strong>Enable Linter</strong>
+              <small>Run active syntax analysis</small>
+            </span>
+            <input
+              checked={linterSettings.enabled}
+              onChange={(e) =>
+                setLinterSettings((prev) => ({
+                  ...prev,
+                  enabled: e.target.checked,
+                }))
+              }
+              type="checkbox"
+            />
+          </label>
+          <label className="setting-row setting-select">
+            <span>
+              <strong>Lint Trigger</strong>
+              <small>When diagnostics execute</small>
+            </span>
+            <select
+              aria-label="Lint trigger mode"
+              onChange={(e) =>
+                setLinterSettings((prev) => ({
+                  ...prev,
+                  trigger: e.target.value as "onType" | "onSave",
+                }))
+              }
+              value={linterSettings.trigger}
+            >
+              <option value="onType">On Type (Reaktif)</option>
+              <option value="onSave">On Save (Ctrl+S)</option>
+            </select>
+          </label>
+          <label className="setting-row">
+            <span>
+              <strong>Show Warnings</strong>
+              <small>Display syntax warnings alongside errors</small>
+            </span>
+            <input
+              checked={linterSettings.showWarnings}
+              onChange={(e) =>
+                setLinterSettings((prev) => ({
+                  ...prev,
+                  showWarnings: e.target.checked,
+                }))
+              }
+              type="checkbox"
+            />
+          </label>
+        </div>
+      )}
     </div>
   )
 }

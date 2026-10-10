@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 
-export type IconName = "aegis" | "bell" | "branch" | "check" | "chevron" | "chevron-down" | "close" | "code" | "copy" | "error" | "explorer" | "file" | "folder" | "git" | "history" | "layout" | "more" | "panel" | "play" | "plus" | "search" | "send" | "settings" | "split" | "terminal" | "trash" | "warning"
+export type IconName = "aegis" | "bell" | "branch" | "check" | "chevron" | "chevron-down" | "chevron-up" | "close" | "code" | "copy" | "error" | "explorer" | "file" | "folder" | "git" | "history" | "layout" | "maximize" | "more" | "panel" | "play" | "plus" | "search" | "send" | "settings" | "split" | "terminal" | "trash" | "warning"
 
 export type ChatProvider = "antigravity" | "opencode" | "openrouter"
 
@@ -35,6 +35,30 @@ export interface FileItem {
   open?: boolean
   active?: boolean
   muted?: boolean
+}
+
+export interface EditorGroupState {
+  id: "group1" | "group2"
+  name: string
+  tabs: string[]
+  activeTab: string
+}
+
+export interface FileBuffer {
+  content: string
+  isDirty: boolean
+  language: string
+}
+
+export interface CursorPosition {
+  line: number
+  col: number
+}
+
+export interface LinterSettings {
+  enabled: boolean
+  trigger: "onType" | "onSave"
+  showWarnings: boolean
 }
 
 export interface DiagnosticItem {
@@ -75,3 +99,16 @@ export interface MenuGroup {
   label: string
   items: [string, string, string][]
 }
+
+export type BottomTab = "Terminal" | "Problems" | "Output"
+
+export interface TerminalSession {
+  id: string
+  name: string
+  shell: string
+  lines: string[]
+  running: boolean
+  commandHistory: string[]
+}
+
+export type OutputChannel = "Linter" | "Tasks" | "Git"

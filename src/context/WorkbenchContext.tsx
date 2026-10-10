@@ -8,22 +8,31 @@ import {
 } from "react"
 import type {
   ActivityType,
+  BottomTab,
   ChatMessage,
   ChatProvider,
   ChatSession,
+  CursorPosition,
   DiagnosticItem,
+  EditorGroupState,
+  FileBuffer,
   FileItem,
   GitChange,
+  LinterSettings,
   NotificationItem,
+  TerminalSession,
 } from "../types/workbench"
 import {
   initialDiagnostics,
+  initialFileBuffers,
   initialFiles,
   initialGitChanges,
   initialNotifications,
   initialTerminalLines,
+  initialTerminalSessions,
 } from "../data/mockData"
 import { CHAT_MODELS } from "../data/chatConstants"
+import { detectLanguage, validateSyntax } from "../utils/linter"
 
 interface WorkbenchContextType {
   // Layout toggles
@@ -33,6 +42,13 @@ interface WorkbenchContextType {
   panelOpen: boolean
   setPanelOpen: (value: boolean | ((prev: boolean) => boolean)) => void
   togglePanel: () => void
+  panelMaximized: boolean
+  setPanelMaximized: (value: boolean | ((prev: boolean) => boolean)) => void
+  togglePanelMaximized: () => void
+  activeBottomTab: BottomTab
+  setActiveBottomTab: (tab: BottomTab) => void
+  bottomTabOrder: BottomTab[]
+  reorderBottomTabs: (sourceIndex: number, targetIndex: number) => void
   chatOpen: boolean
   setChatOpen: (value: boolean | ((prev: boolean) => boolean)) => void
   toggleChat: () => void
@@ -41,9 +57,39 @@ interface WorkbenchContextType {
   toggleChatSessions: () => void
   commandPaletteOpen: boolean
   setCommandPaletteOpen: (value: boolean | ((prev: boolean) => boolean)) => void
+
+  // Window Groups & Split Layout
   splitEditor: boolean
   setSplitEditor: (value: boolean | ((prev: boolean) => boolean)) => void
   toggleSplitEditor: () => void
+  closeSplitEditor: () => void
+  splitRatio: number
+  setSplitRatio: (ratio: number | ((prev: number) => number)) => void
+  group1: EditorGroupState
+  group2: EditorGroupState
+  focusedGroup: "group1" | "group2"
+  setFocusedGroup: (group: "group1" | "group2") => void
+  openFileInGroup: (filename: string, group?: "group1" | "group2") => void
+  closeTabInGroup: (group: "group1" | "group2", filename: string) => void
+  setActiveTabInGroup: (group: "group1" | "group2", filename: string) => void
+  moveTabBetweenGroups: (
+    sourceGroup: "group1" | "group2",
+    targetGroup: "group1" | "group2",
+    filename: string,
+    targetIndex?: number,
+  ) => void
+  reorderTabsInGroup: (
+    group: "group1" | "group2",
+    sourceIndex: number,
+    targetIndex: number,
+  ) => void
+
+  // Backward-compatible helpers
+  focusedPane: "primary" | "secondary"
+  setFocusedPane: (pane: "primary" | "secondary") => void
+  secondaryActiveTab: string
+  setSecondaryActiveTab: (tab: string) => void
+  openFileInPane: (filename: string, pane?: "primary" | "secondary") => void
 
   // Activity & Navigation
   activeActivity: ActivityType
@@ -55,6 +101,16 @@ interface WorkbenchContextType {
   activeLanguage: string
   setActiveLanguage: (lang: string) => void
 
+  // File Buffers, Linter & Cursor
+  fileBuffers: Record<string, FileBuffer>
+  updateFileContent: (filename: string, content: string) => void
+  saveFile: (filename?: string) => void
+  cursorPosition: CursorPosition
+  setCursorPosition: (pos: CursorPosition) => void
+  linterSettings: LinterSettings
+  setLinterSettings: React.Dispatch<React.SetStateAction<LinterSettings>>
+  navigateToDiagnostic: (diag: DiagnosticItem) => void
+
   // Workspace Data
   files: FileItem[]
   diagnostics: DiagnosticItem[]
@@ -65,12 +121,18 @@ interface WorkbenchContextType {
   setActiveBranch: (branch: string) => void
   gitChanges: GitChange[]
 
-  // Terminal
+  // Terminal & Sessions
+  terminalSessions: TerminalSession[]
+  activeTerminalSessionId: string
+  activeTerminalSession: TerminalSession | undefined
+  setActiveTerminalSessionId: (id: string) => void
+  createTerminalSession: (shellName?: string) => void
+  closeTerminalSession: (id: string) => void
   terminalLines: string[]
   terminalRunning: boolean
   setTerminalRunning: (value: boolean | ((prev: boolean) => boolean)) => void
-  sendTerminalCommand: (command: string) => void
-  clearTerminal: () => void
+  sendTerminalCommand: (command: string, sessionId?: string) => void
+  clearTerminal: (sessionId?: string) => void
 
   // Chat Sessions & Model Provider
   sessions: ChatSession[]
@@ -143,6 +205,30 @@ function loadStoredActiveId(sessions: ChatSession[]): string {
   return sessions[0]?.id || "session-1"
 }
 
+const DEFAULT_BOTTOM_TAB_ORDER: BottomTab[] = ["Terminal", "Problems", "Output"]
+
+function loadStoredBottomTabOrder(): BottomTab[] {
+  if (typeof window === "undefined") return DEFAULT_BOTTOM_TAB_ORDER
+  try {
+    const raw = window.localStorage.getItem("aegis_bottom_panel_tab_order")
+    if (raw) {
+      const parsed = JSON.parse(raw) as BottomTab[]
+      if (
+        Array.isArray(parsed) &&
+        parsed.length === 3 &&
+        parsed.includes("Terminal") &&
+        parsed.includes("Problems") &&
+        parsed.includes("Output")
+      ) {
+        return parsed
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return DEFAULT_BOTTOM_TAB_ORDER
+}
+
 function generateContextualReply(
   text: string,
   provider: ChatProvider,
@@ -184,16 +270,50 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   // Layout states
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [panelOpen, setPanelOpen] = useState(true)
+  const [panelMaximized, setPanelMaximized] = useState(false)
+  const [activeBottomTab, setActiveBottomTab] = useState<BottomTab>("Terminal")
+  const [bottomTabOrder, setBottomTabOrder] = useState<BottomTab[]>(
+    loadStoredBottomTabOrder,
+  )
   const [chatOpen, setChatOpen] = useState(true)
   const [chatSessionsOpen, setChatSessionsOpen] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [splitEditor, setSplitEditor] = useState(false)
+  const [splitRatio, setSplitRatio] = useState(50)
+  const [focusedGroup, setFocusedGroup] = useState<"group1" | "group2">(
+    "group1",
+  )
+
+  const [group1, setGroup1] = useState<EditorGroupState>({
+    id: "group1",
+    name: "Group 1",
+    tabs: ["App.tsx", "Status.tsx"],
+    activeTab: "App.tsx",
+  })
+
+  const [group2, setGroup2] = useState<EditorGroupState>({
+    id: "group2",
+    name: "Group 2",
+    tabs: ["package.json"],
+    activeTab: "package.json",
+  })
 
   // Activity & Editor states
   const [activeActivity, setActiveActivity] = useState<ActivityType>("Explorer")
-  const [activeTab, setActiveTab] = useState("App.tsx")
-  const [tabs, setTabs] = useState(["App.tsx", "Status.tsx"])
   const [activeLanguage, setActiveLanguage] = useState("TypeScript")
+
+  // File Buffers, Cursor & Linter states
+  const [fileBuffers, setFileBuffers] =
+    useState<Record<string, FileBuffer>>(initialFileBuffers)
+  const [cursorPosition, setCursorPosition] = useState<CursorPosition>({
+    line: 1,
+    col: 1,
+  })
+  const [linterSettings, setLinterSettings] = useState<LinterSettings>({
+    enabled: true,
+    trigger: "onType",
+    showWarnings: true,
+  })
 
   // Data states
   const [files, setFiles] = useState<FileItem[]>(initialFiles)
@@ -205,9 +325,47 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [gitChanges, setGitChanges] = useState<GitChange[]>(initialGitChanges)
 
   // Terminal state
-  const [terminalLines, setTerminalLines] =
-    useState<string[]>(initialTerminalLines)
-  const [terminalRunning, setTerminalRunning] = useState(true)
+  const [terminalSessions, setTerminalSessions] = useState<TerminalSession[]>(
+    () => initialTerminalSessions,
+  )
+  const [activeTerminalSessionId, setActiveTerminalSessionId] =
+    useState<string>(() => initialTerminalSessions[0]?.id || "session-term-1")
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        "aegis_bottom_panel_tab_order",
+        JSON.stringify(bottomTabOrder),
+      )
+    } catch {
+      // storage unavailable
+    }
+  }, [bottomTabOrder])
+
+  const togglePanelMaximized = useCallback(() => {
+    setPanelMaximized((prev) => !prev)
+  }, [])
+
+  const reorderBottomTabs = useCallback(
+    (sourceIndex: number, targetIndex: number) => {
+      setBottomTabOrder((prev) => {
+        if (
+          sourceIndex < 0 ||
+          sourceIndex >= prev.length ||
+          targetIndex < 0 ||
+          targetIndex >= prev.length ||
+          sourceIndex === targetIndex
+        ) {
+          return prev
+        }
+        const next = [...prev]
+        const [moved] = next.splice(sourceIndex, 1)
+        next.splice(targetIndex, 0, moved)
+        return next
+      })
+    },
+    [],
+  )
 
   // Chat sessions state
   const [sessions, setSessions] = useState<ChatSession[]>(loadStoredSessions)
@@ -307,6 +465,58 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   // Toast state
   const [toast, setToast] = useState("")
 
+  // Computed compatibility values
+  const currentFocusedFile =
+    focusedGroup === "group2" && splitEditor
+      ? group2.activeTab
+      : group1.activeTab
+  const activeTab = currentFocusedFile
+  const secondaryActiveTab = group2.activeTab
+  const tabs = Array.from(new Set([...group1.tabs, ...group2.tabs]))
+  const focusedPane = focusedGroup === "group2" ? "secondary" : "primary"
+
+  const setFocusedPane = useCallback(
+    (pane: "primary" | "secondary") =>
+      setFocusedGroup(pane === "secondary" ? "group2" : "group1"),
+    [],
+  )
+
+  // Auto-detect language dynamically from focused file
+  useEffect(() => {
+    if (currentFocusedFile) {
+      setActiveLanguage(detectLanguage(currentFocusedFile))
+    }
+  }, [currentFocusedFile])
+
+  // Reactive auto-linting on type
+  useEffect(() => {
+    if (!linterSettings.enabled || linterSettings.trigger !== "onType") {
+      if (!linterSettings.enabled) {
+        setDiagnostics([])
+      }
+      return
+    }
+
+    const timer = setTimeout(() => {
+      if (currentFocusedFile) {
+        const buffer = fileBuffers[currentFocusedFile]
+        if (buffer) {
+          const fileDiags = validateSyntax(
+            currentFocusedFile,
+            buffer.content,
+            linterSettings.showWarnings,
+          )
+          setDiagnostics((prev) => [
+            ...prev.filter((d) => !d.location.startsWith(currentFocusedFile)),
+            ...fileDiags,
+          ])
+        }
+      }
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [currentFocusedFile, fileBuffers, linterSettings])
+
   const toggleSidebar = useCallback(() => setSidebarOpen((v) => !v), [])
   const togglePanel = useCallback(() => setPanelOpen((v) => !v), [])
   const toggleChat = useCallback(() => setChatOpen((v) => !v), [])
@@ -314,25 +524,333 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     () => setChatSessionsOpen((v) => !v),
     [],
   )
-  const toggleSplitEditor = useCallback(() => setSplitEditor((v) => !v), [])
+
+  const openFileInGroup = useCallback(
+    (filename: string, group?: "group1" | "group2") => {
+      const targetGroup = group || focusedGroup
+      if (targetGroup === "group2") {
+        setGroup2((prev) => ({
+          ...prev,
+          tabs: prev.tabs.includes(filename)
+            ? prev.tabs
+            : [...prev.tabs, filename],
+          activeTab: filename,
+        }))
+        setSplitEditor(true)
+        setFocusedGroup("group2")
+      } else {
+        setGroup1((prev) => ({
+          ...prev,
+          tabs: prev.tabs.includes(filename)
+            ? prev.tabs
+            : [...prev.tabs, filename],
+          activeTab: filename,
+        }))
+        setFocusedGroup("group1")
+      }
+    },
+    [focusedGroup],
+  )
+
+  const setActiveTabInGroup = useCallback(
+    (group: "group1" | "group2", filename: string) => {
+      if (group === "group2") {
+        setGroup2((prev) => ({ ...prev, activeTab: filename }))
+        setFocusedGroup("group2")
+      } else {
+        setGroup1((prev) => ({ ...prev, activeTab: filename }))
+        setFocusedGroup("group1")
+      }
+    },
+    [],
+  )
+
+  const setSecondaryActiveTab = useCallback(
+    (tab: string) => {
+      setActiveTabInGroup("group2", tab)
+    },
+    [setActiveTabInGroup],
+  )
+
+  const closeTabInGroup = useCallback(
+    (group: "group1" | "group2", filename: string) => {
+      if (group === "group2") {
+        setGroup2((prev) => {
+          const nextTabs = prev.tabs.filter((t) => t !== filename)
+          if (nextTabs.length === 0) {
+            setSplitEditor(false)
+            setFocusedGroup("group1")
+            return {
+              ...prev,
+              tabs: [],
+              activeTab: "",
+            }
+          }
+          const nextActive =
+            prev.activeTab === filename ? nextTabs[0] : prev.activeTab
+          return {
+            ...prev,
+            tabs: nextTabs,
+            activeTab: nextActive,
+          }
+        })
+      } else {
+        setGroup1((prev) => {
+          const nextTabs = prev.tabs.filter((t) => t !== filename)
+          const nextActive =
+            prev.activeTab === filename ? nextTabs[0] || "" : prev.activeTab
+          return {
+            ...prev,
+            tabs: nextTabs,
+            activeTab: nextActive,
+          }
+        })
+      }
+    },
+    [],
+  )
+
+  const moveTabBetweenGroups = useCallback(
+    (
+      sourceGroup: "group1" | "group2",
+      targetGroup: "group1" | "group2",
+      filename: string,
+      targetIndex?: number,
+    ) => {
+      if (sourceGroup === targetGroup) {
+        return
+      }
+
+      // Remove from source
+      if (sourceGroup === "group1") {
+        setGroup1((prev) => {
+          const filtered = prev.tabs.filter((t) => t !== filename)
+          return {
+            ...prev,
+            tabs: filtered,
+            activeTab:
+              prev.activeTab === filename ? filtered[0] || "" : prev.activeTab,
+          }
+        })
+      } else {
+        setGroup2((prev) => {
+          const filtered = prev.tabs.filter((t) => t !== filename)
+          if (filtered.length === 0) {
+            setSplitEditor(false)
+            setFocusedGroup("group1")
+          }
+          return {
+            ...prev,
+            tabs: filtered,
+            activeTab:
+              prev.activeTab === filename ? filtered[0] || "" : prev.activeTab,
+          }
+        })
+      }
+
+      // Add to target
+      if (targetGroup === "group2") {
+        setGroup2((prev) => {
+          const newTabs = [...prev.tabs]
+          if (
+            typeof targetIndex === "number" &&
+            targetIndex >= 0 &&
+            targetIndex <= newTabs.length
+          ) {
+            newTabs.splice(targetIndex, 0, filename)
+          } else if (!newTabs.includes(filename)) {
+            newTabs.push(filename)
+          }
+          return {
+            ...prev,
+            tabs: newTabs,
+            activeTab: filename,
+          }
+        })
+        setSplitEditor(true)
+        setFocusedGroup("group2")
+      } else {
+        setGroup1((prev) => {
+          const newTabs = [...prev.tabs]
+          if (
+            typeof targetIndex === "number" &&
+            targetIndex >= 0 &&
+            targetIndex <= newTabs.length
+          ) {
+            newTabs.splice(targetIndex, 0, filename)
+          } else if (!newTabs.includes(filename)) {
+            newTabs.push(filename)
+          }
+          return {
+            ...prev,
+            tabs: newTabs,
+            activeTab: filename,
+          }
+        })
+        setFocusedGroup("group1")
+      }
+    },
+    [],
+  )
+
+  const reorderTabsInGroup = useCallback(
+    (group: "group1" | "group2", sourceIndex: number, targetIndex: number) => {
+      const setter = group === "group1" ? setGroup1 : setGroup2
+      setter((prev) => {
+        if (
+          sourceIndex < 0 ||
+          sourceIndex >= prev.tabs.length ||
+          targetIndex < 0 ||
+          targetIndex >= prev.tabs.length ||
+          sourceIndex === targetIndex
+        ) {
+          return prev
+        }
+        const newTabs = [...prev.tabs]
+        const [moved] = newTabs.splice(sourceIndex, 1)
+        newTabs.splice(targetIndex, 0, moved)
+        return {
+          ...prev,
+          tabs: newTabs,
+        }
+      })
+    },
+    [],
+  )
+
+  const toggleSplitEditor = useCallback(() => {
+    setSplitEditor((prev) => {
+      if (prev) {
+        setFocusedGroup("group1")
+        return false
+      }
+      setGroup2((prevG2) => {
+        if (prevG2.tabs.length > 0) return prevG2
+        const candidate =
+          group1.tabs.find((t) => t !== group1.activeTab) ||
+          group1.activeTab ||
+          "package.json"
+        return {
+          ...prevG2,
+          tabs: [candidate],
+          activeTab: candidate,
+        }
+      })
+      setFocusedGroup("group2")
+      return true
+    })
+  }, [group1])
+
+  const closeSplitEditor = useCallback(() => {
+    setSplitEditor(false)
+    setFocusedGroup("group1")
+  }, [])
+
+  const openFileInPane = useCallback(
+    (filename: string, pane?: "primary" | "secondary") => {
+      openFileInGroup(filename, pane === "secondary" ? "group2" : "group1")
+    },
+    [openFileInGroup],
+  )
+
+  const setActiveTab = useCallback(
+    (tab: string) => {
+      openFileInGroup(tab, focusedGroup)
+    },
+    [focusedGroup, openFileInGroup],
+  )
 
   const closeTab = useCallback(
     (tabToClose: string) => {
-      setTabs((currentTabs) => {
-        const filtered = currentTabs.filter((t) => t !== tabToClose)
-        if (filtered.length > 0 && activeTab === tabToClose) {
-          setActiveTab(filtered[0])
-        }
-        return filtered
-      })
+      closeTabInGroup(focusedGroup, tabToClose)
     },
-    [activeTab],
+    [closeTabInGroup, focusedGroup],
   )
 
   const showToast = useCallback((message: string) => {
     setToast(message)
     window.setTimeout(() => setToast(""), 2200)
   }, [])
+
+  const updateFileContent = useCallback((filename: string, content: string) => {
+    setFileBuffers((prev) => {
+      const existing = prev[filename]
+      return {
+        ...prev,
+        [filename]: {
+          content,
+          isDirty: true,
+          language: existing?.language || detectLanguage(filename),
+        },
+      }
+    })
+  }, [])
+
+  const saveFile = useCallback(
+    (filenameToSave?: string) => {
+      const target =
+        filenameToSave ||
+        (focusedPane === "secondary" && splitEditor
+          ? secondaryActiveTab
+          : activeTab)
+
+      setFileBuffers((prev) => {
+        const buf = prev[target]
+        if (!buf) return prev
+        return {
+          ...prev,
+          [target]: {
+            ...buf,
+            isDirty: false,
+          },
+        }
+      })
+
+      if (linterSettings.enabled) {
+        const buf = fileBuffers[target]
+        if (buf) {
+          const fileDiags = validateSyntax(
+            target,
+            buf.content,
+            linterSettings.showWarnings,
+          )
+          setDiagnostics((prev) => [
+            ...prev.filter((d) => !d.location.startsWith(target)),
+            ...fileDiags,
+          ])
+        }
+      }
+
+      showToast(`Saved ${target}`)
+    },
+    [
+      activeTab,
+      fileBuffers,
+      focusedPane,
+      linterSettings,
+      secondaryActiveTab,
+      showToast,
+      splitEditor,
+    ],
+  )
+
+  const navigateToDiagnostic = useCallback(
+    (diag: DiagnosticItem) => {
+      const match = diag.location.match(/^([^[\s]+)\s*\[(\d+),\s*(\d+)\]/)
+      if (match) {
+        const filename = match[1]
+        const line = parseInt(match[2], 10)
+        const col = parseInt(match[3], 10)
+
+        openFileInPane(filename)
+        setCursorPosition({ line, col })
+        showToast(`Jumped to ${filename} [Ln ${line}, Col ${col}]`)
+      } else {
+        showToast(`Navigating to ${diag.location}`)
+      }
+    },
+    [openFileInPane, showToast],
+  )
 
   const clearToast = useCallback(() => setToast(""), [])
 
@@ -346,32 +864,131 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     )
   }, [])
 
-  const clearTerminal = useCallback(() => {
-    setTerminalLines([])
+  const activeTerminalSession =
+    terminalSessions.find((s) => s.id === activeTerminalSessionId) ||
+    terminalSessions[0]
+  const terminalLines = activeTerminalSession?.lines || []
+  const terminalRunning = activeTerminalSession?.running ?? false
+
+  const setTerminalRunning = useCallback(
+    (value: boolean | ((prev: boolean) => boolean)) => {
+      setTerminalSessions((sessions) =>
+        sessions.map((s) => {
+          if (s.id !== activeTerminalSessionId) return s
+          const nextRunning =
+            typeof value === "function" ? value(s.running) : value
+          return { ...s, running: nextRunning }
+        }),
+      )
+    },
+    [activeTerminalSessionId],
+  )
+
+  const createTerminalSession = useCallback((shellName = "zsh") => {
+    setTerminalSessions((sessions) => {
+      const nextNum = sessions.length + 1
+      const newSession: TerminalSession = {
+        id: `session-term-${Date.now()}`,
+        name: `${nextNum}: ${shellName}`,
+        shell: shellName,
+        lines: [
+          `➜ New terminal session started (${shellName})`,
+          `SSE connected · session local-${String(nextNum).padStart(2, "0")}`,
+        ],
+        running: true,
+        commandHistory: [],
+      }
+      setActiveTerminalSessionId(newSession.id)
+      return [...sessions, newSession]
+    })
   }, [])
 
-  const sendTerminalCommand = useCallback((commandText: string) => {
-    const value = commandText.trim()
-    if (!value) return
-
-    if (value === "clear") {
-      setTerminalLines([])
-    } else if (value === "lint") {
-      setTerminalLines((lines) => [
-        ...lines,
-        `$ ${value}`,
-        "Lint complete · 1 error, 1 warning · 42 ms",
-      ])
-    } else if (value.startsWith("echo ")) {
-      setTerminalLines((lines) => [...lines, `$ ${value}`, value.slice(5)])
-    } else {
-      setTerminalLines((lines) => [
-        ...lines,
-        `$ ${value}`,
-        `command queued locally: ${value}`,
-      ])
-    }
+  const closeTerminalSession = useCallback((idToClose: string) => {
+    setTerminalSessions((sessions) => {
+      if (sessions.length <= 1) {
+        return [
+          {
+            id: `session-term-${Date.now()}`,
+            name: "1: zsh",
+            shell: "zsh",
+            lines: ["Terminal reset"],
+            running: true,
+            commandHistory: [],
+          },
+        ]
+      }
+      const nextSessions = sessions.filter((s) => s.id !== idToClose)
+      setActiveTerminalSessionId((currId) => {
+        if (currId === idToClose) {
+          return nextSessions[0]?.id || ""
+        }
+        return currId
+      })
+      return nextSessions
+    })
   }, [])
+
+  const clearTerminal = useCallback(
+    (sessionId?: string) => {
+      const targetId = sessionId || activeTerminalSessionId
+      setTerminalSessions((sessions) =>
+        sessions.map((s) => (s.id === targetId ? { ...s, lines: [] } : s)),
+      )
+    },
+    [activeTerminalSessionId],
+  )
+
+  const sendTerminalCommand = useCallback(
+    (commandText: string, sessionId?: string) => {
+      const value = commandText.trim()
+      if (!value) return
+      const targetId = sessionId || activeTerminalSessionId
+
+      setTerminalSessions((sessions) =>
+        sessions.map((s) => {
+          if (s.id !== targetId) return s
+
+          const nextHistory = [...s.commandHistory]
+          if (nextHistory[nextHistory.length - 1] !== value) {
+            nextHistory.push(value)
+          }
+
+          if (value === "clear") {
+            return { ...s, lines: [], commandHistory: nextHistory }
+          }
+
+          let extraLines: string[] = []
+          if (value === "lint") {
+            extraLines = [
+              `$ ${value}`,
+              "Lint complete · 1 error, 1 warning · 42 ms",
+            ]
+          } else if (value.startsWith("echo ")) {
+            extraLines = [`$ ${value}`, value.slice(5)]
+          } else if (value === "pwd") {
+            extraLines = [
+              `$ ${value}`,
+              "/Users/aditwicaksono/Documents/Project-AI/AegisCodev2",
+            ]
+          } else if (value === "ls") {
+            extraLines = [
+              `$ ${value}`,
+              "src  public  package.json  vite.config.ts  README.md",
+            ]
+          } else {
+            extraLines = [`$ ${value}`, `command queued locally: ${value}`]
+          }
+
+          return {
+            ...s,
+            lines: [...s.lines, ...extraLines],
+            commandHistory: nextHistory,
+          }
+        }),
+      )
+    },
+    [activeTerminalSessionId],
+  )
 
   const sendChatMessage = useCallback(
     (text: string) => {
@@ -421,13 +1038,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     (action: string) => {
       const actionMessages: Record<string, string> = {
         "clear-terminal": "Terminal output cleared",
-        find: "Find widget opened for App.tsx",
+        find: `Find widget opened for ${activeTab}`,
         "new-file": "Untitled-1 created",
         "open-folder": "Folder picker ready",
         redo: "Nothing to redo",
         run: "Run session queued without debugging",
-        "run-file": "Running App.tsx",
-        save: "App.tsx saved",
+        "run-file": `Running ${activeTab}`,
         stop: "Active run session stopped",
         undo: "Last editor action reverted",
       }
@@ -438,11 +1054,13 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         toggleSidebar()
       } else if (action === "panel" || action === "new-terminal") {
         togglePanel()
+      } else if (action === "save") {
+        saveFile()
       } else {
         showToast(actionMessages[action] ?? "Command completed")
       }
     },
-    [showToast, togglePanel, toggleSidebar],
+    [activeTab, saveFile, showToast, togglePanel, toggleSidebar],
   )
 
   // Global keyboard shortcuts
@@ -462,7 +1080,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
         event.preventDefault()
-        showToast("App.tsx saved")
+        saveFile()
       }
       if (event.key === "Escape") {
         setCommandPaletteOpen(false)
@@ -471,7 +1089,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [showToast, togglePanel, toggleSidebar])
+  }, [saveFile, togglePanel, toggleSidebar])
 
   return (
     <WorkbenchContext.Provider
@@ -482,6 +1100,13 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         panelOpen,
         setPanelOpen,
         togglePanel,
+        panelMaximized,
+        setPanelMaximized,
+        togglePanelMaximized,
+        activeBottomTab,
+        setActiveBottomTab,
+        bottomTabOrder,
+        reorderBottomTabs,
         chatOpen,
         setChatOpen,
         toggleChat,
@@ -493,6 +1118,23 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         splitEditor,
         setSplitEditor,
         toggleSplitEditor,
+        closeSplitEditor,
+        splitRatio,
+        setSplitRatio,
+        group1,
+        group2,
+        focusedGroup,
+        setFocusedGroup,
+        openFileInGroup,
+        closeTabInGroup,
+        setActiveTabInGroup,
+        moveTabBetweenGroups,
+        reorderTabsInGroup,
+        focusedPane,
+        setFocusedPane,
+        secondaryActiveTab,
+        setSecondaryActiveTab,
+        openFileInPane,
         activeActivity,
         setActiveActivity,
         activeTab,
@@ -501,6 +1143,14 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         closeTab,
         activeLanguage,
         setActiveLanguage,
+        fileBuffers,
+        updateFileContent,
+        saveFile,
+        cursorPosition,
+        setCursorPosition,
+        linterSettings,
+        setLinterSettings,
+        navigateToDiagnostic,
         files,
         diagnostics,
         notifications,
@@ -509,10 +1159,17 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         activeBranch,
         setActiveBranch,
         gitChanges,
+        terminalSessions,
+        activeTerminalSessionId,
+        activeTerminalSession,
+        setActiveTerminalSessionId,
+        createTerminalSession,
+        closeTerminalSession,
         terminalLines,
         terminalRunning,
         setTerminalRunning,
         sendTerminalCommand,
+        clearTerminal,
         sessions,
         activeSessionId,
         activeSession,

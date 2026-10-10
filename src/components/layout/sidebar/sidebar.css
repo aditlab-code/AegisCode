@@ -45,6 +45,74 @@
   transform: rotate(90deg);
 }
 
+.section-title-clickable {
+  width: 100%;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  text-align: left;
+}
+
+.section-title-clickable:hover {
+  background: var(--color-surface-hover);
+}
+
+.chevron-arrow {
+  display: inline-flex;
+  transition: transform 0.15s ease;
+}
+
+.chevron-arrow svg {
+  transform: rotate(0deg) !important;
+}
+
+.chevron-open svg {
+  transform: rotate(90deg) !important;
+}
+
+.open-editors-list {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.open-editors-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 12px 2px 20px;
+  color: var(--color-ink-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.group-header-focused {
+  color: var(--color-accent);
+}
+
+.open-editor-row {
+  padding-left: 20px !important;
+  cursor: pointer;
+}
+
+.open-editor-row .file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.open-editor-row .close-tab-trigger {
+  opacity: 0;
+  margin-left: auto;
+  padding: 2px;
+}
+
+.open-editor-row:hover .close-tab-trigger {
+  opacity: 1;
+}
+
 .file-tree {
   padding-bottom: 8px;
 }

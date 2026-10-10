@@ -18,6 +18,7 @@ function AppShell() {
     chatSessionsOpen,
     sidebarOpen,
     panelOpen,
+    panelMaximized,
     toast,
     clearToast,
   } = useWorkbench()
@@ -37,7 +38,9 @@ function AppShell() {
         <ActivityRail />
         {sidebarOpen && <Sidebar />}
         <div
-          className={`workbench ${panelOpen ? "" : "workbench-panel-closed"}`}
+          className={`workbench ${panelOpen ? "" : "workbench-panel-closed"} ${
+            panelOpen && panelMaximized ? "workbench-panel-maximized" : ""
+          }`}
         >
           <Editor />
           {panelOpen && <BottomPanel />}

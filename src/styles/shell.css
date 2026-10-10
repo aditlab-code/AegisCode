@@ -55,6 +55,16 @@
   grid-template-rows: minmax(0, 1fr);
 }
 
+.workbench-panel-maximized {
+  grid-template-rows: 0 1fr;
+}
+
+.workbench-panel-maximized .editor,
+.workbench-panel-maximized .editor-split-container {
+  display: none;
+}
+
+
 @media (max-width: 980px) {
   .workspace-chat-open {
     grid-template-columns: 44px 190px minmax(320px, 1fr);

@@ -1,28 +1,32 @@
-export function OutputView() {
+import type { OutputChannel } from "../../../types/workbench"
+
+interface OutputViewProps {
+  channel: OutputChannel
+  logs: Record<OutputChannel, string[]>
+}
+
+export function OutputView({ channel, logs }: OutputViewProps) {
+  const currentLogs = logs[channel] || []
+
   return (
     <div className="lint-output">
-      <p>
-        <span className="event-time">10:42:08</span> Starting incremental lint
-        across 5 language profiles
-      </p>
-      <p>
-        <span className="event-time">10:42:08</span> TypeScript · ESLint adapter
-        ready
-      </p>
-      <p>
-        <span className="event-time">10:42:08</span> JavaScript · ESLint adapter
-        ready
-      </p>
-      <p>
-        <span className="event-time">10:42:08</span> Python · Ruff adapter ready
-      </p>
-      <p>
-        <span className="event-time">10:42:08</span> JSON · parser ready
-      </p>
-      <p>
-        <span className="event-time">10:42:08</span> C++ · clang-tidy adapter
-        ready
-      </p>
+      {currentLogs.length === 0 ? (
+        <p className="empty-problems text-muted">
+          Output channel &quot;{channel}&quot; is currently empty.
+        </p>
+      ) : (
+        currentLogs.map((line, index) => {
+          const hasTimestamp = line.startsWith("[") && line.indexOf("]") === 9
+          const time = hasTimestamp ? line.slice(1, 9) : "10:42:08"
+          const text = hasTimestamp ? line.slice(11) : line
+
+          return (
+            <p key={`${line}-${index}`}>
+              <span className="event-time">{time}</span> {text}
+            </p>
+          )
+        })
+      )}
     </div>
   )
 }

@@ -2,7 +2,7 @@ import { Icon } from "../../ui/Icon"
 import { useWorkbench } from "../../../context/WorkbenchContext"
 
 export function ProblemsPopover() {
-  const { diagnostics, activeLanguage } = useWorkbench()
+  const { diagnostics, activeLanguage, navigateToDiagnostic } = useWorkbench()
   const errorCount = diagnostics.filter((d) => d.type === "error").length
   const warningCount = diagnostics.filter((d) => d.type === "warning").length
 
@@ -13,7 +13,11 @@ export function ProblemsPopover() {
         <strong>{diagnostics.length} total</strong>
       </div>
       {diagnostics.map((diag) => (
-        <button key={diag.id} type="button">
+        <button
+          key={diag.id}
+          onClick={() => navigateToDiagnostic(diag)}
+          type="button"
+        >
           <Icon name={diag.type === "error" ? "error" : "warning"} size={14} />
           <span>
             <strong>{diag.title}</strong>

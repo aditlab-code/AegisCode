@@ -24,13 +24,19 @@
 
 .bottom-tabs button {
   position: relative;
-  padding: 0;
+  padding: 0 4px;
   color: var(--color-ink-muted);
   background: transparent;
   cursor: pointer;
   font-size: 10px;
   letter-spacing: .05em;
   text-transform: uppercase;
+  user-select: none;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.bottom-tabs button.tab-drag-over {
+  border-left: 2px solid var(--color-accent) !important;
 }
 
 .bottom-tabs .bottom-tab-active {
@@ -50,8 +56,38 @@
   color: var(--color-orange);
 }
 
+.panel-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.panel-select {
+  height: 22px;
+  padding: 1px 6px;
+  color: var(--color-ink);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-line);
+  border-radius: 4px;
+  outline: 0;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.panel-select:focus {
+  border-color: var(--color-accent);
+}
+
+.panel-control-divider {
+  width: 1px;
+  height: 14px;
+  margin: 0 4px;
+  background: var(--color-line);
+}
+
 .panel-controls > span {
-  margin-right: 6px;
+  margin-right: 4px;
   color: var(--color-ink-muted);
 }
 
@@ -150,6 +186,54 @@
   background: var(--color-ink-soft);
   vertical-align: -2px;
   animation: blink 1.1s steps(1) infinite;
+}
+
+.problems-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.problems-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  color: var(--color-ink-muted);
+  background: var(--color-surface-hover);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 10px;
+  transition: all 0.15s ease;
+}
+
+.filter-chip:hover {
+  color: var(--color-ink);
+}
+
+.filter-chip-active {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  border-color: var(--color-line-bright);
+}
+
+.empty-problems {
+  padding: 12px 6px;
+  color: var(--color-ink-muted);
+  font-size: 11px;
+}
+
+.terminal-error {
+  color: var(--color-red);
 }
 
 .problems-list {

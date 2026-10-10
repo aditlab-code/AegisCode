@@ -6,8 +6,15 @@ import { ProblemsPopover } from "./ProblemsPopover"
 import { NotificationsPopover } from "./NotificationsPopover"
 
 export function StatusBar() {
-  const { activeBranch, diagnostics, notifications, activeLanguage } =
-    useWorkbench()
+  const {
+    activeBranch,
+    diagnostics,
+    notifications,
+    activeLanguage,
+    cursorPosition,
+    setPanelOpen,
+    setActiveBottomTab,
+  } = useWorkbench()
 
   const [activePanel, setActivePanel] =
     useState<"branch" | "notifications" | "problems" | null>(null)
@@ -18,6 +25,12 @@ export function StatusBar() {
 
   function togglePanel(panel: "branch" | "notifications" | "problems") {
     setActivePanel((current) => (current === panel ? null : panel))
+  }
+
+  function handleProblemsClick() {
+    setPanelOpen(true)
+    setActiveBottomTab("Problems")
+    togglePanel("problems")
   }
 
   return (
@@ -32,7 +45,7 @@ export function StatusBar() {
         </button>
         <button
           className={activePanel === "problems" ? "status-button-active" : ""}
-          onClick={() => togglePanel("problems")}
+          onClick={handleProblemsClick}
           type="button"
         >
           <Icon name="error" size={13} /> {errorCount}
@@ -41,7 +54,9 @@ export function StatusBar() {
       </div>
 
       <div className="status-group">
-        <span className="status-item">Ln 9, Col 24</span>
+        <span className="status-item">
+          Ln {cursorPosition.line}, Col {cursorPosition.col}
+        </span>
         <span className="status-item">Spaces: 2</span>
         <span className="status-item">UTF-8</span>
         <span className="status-item">{activeLanguage}</span>

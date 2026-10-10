@@ -40,25 +40,25 @@ src/
 │   │   │   └── activity-rail.css      # Styling activity rail vertical bar
 │   │   ├── sidebar/           # Modul Primary Sidebar
 │   │   │   ├── Sidebar.tsx            # Orkestrator Sidebar
-│   │   │   ├── ExplorerPanel.tsx      # File tree, Outline, & Timeline
+│   │   │   ├── ExplorerPanel.tsx      # Seksi OPEN EDITORS (Window Groups), File tree, Outline, & Timeline
 │   │   │   ├── SearchPanel.tsx        # Regex search & replace repositori
 │   │   │   ├── SourceControlPanel.tsx # Git changes staging, commit, & sync
-│   │   │   ├── SettingsPanel.tsx      # Preferences editor (auto save, minimap, tab size)
-│   │   │   └── sidebar.css            # Styling side panel & sub-panels
-│   │   ├── editor/            # Modul Workbench Text Editor
-│   │   │   ├── Editor.tsx             # Orkestrator Editor & Split View
-│   │   │   ├── EditorTabs.tsx         # Multi-tab switcher & tab action bar
-│   │   │   ├── EditorBreadcrumbs.tsx  # Path visual file & selector bahasa
-│   │   │   ├── CodePane.tsx           # Render baris kode, penomoran baris, & diagnostic dots
+│   │   │   ├── SettingsPanel.tsx      # Preferences editor (auto save, minimap, tab size, Linter & Diagnostics)
+│   │   │   └── sidebar.css            # Styling side panel, Open Editors, & sub-panels
+│   │   ├── editor/            # Modul Workbench Text Editor (VS Code Window Groups)
+│   │   │   ├── Editor.tsx             # Orkestrator Window Groups (Group 1 & 2), Dual Pane, & Draggable Resizer Sash
+│   │   │   ├── EditorTabs.tsx         # Group-aware multi-tab switcher dengan native HTML5 Drag-and-Drop (DND)
+│   │   │   ├── EditorBreadcrumbs.tsx  # Path visual file bersih (tanpa dropdown manual / badge status)
+│   │   │   ├── CodePane.tsx           # Lightweight interactive buffer editor (pengetikan nyata, gutter, auto-indent, diagnostics)
 │   │   │   ├── Minimap.tsx            # Visual minimap code overview
-│   │   │   ├── EditorFindWidget.tsx   # Floating in-editor find widget (Ctrl+F)
-│   │   │   └── editor.css             # Styling tabs, breadcrumbs, code panes, & minimap
-│   │   ├── bottom-panel/      # Modul Bottom Drawer
-│   │   │   ├── BottomPanel.tsx        # Orkestrator Bottom Panel
-│   │   │   ├── TerminalView.tsx       # Simulasi terminal native runner SSE (zsh/bash)
-│   │   │   ├── ProblemsView.tsx       # Daftar diagnostic error & warning syntax
-│   │   │   ├── OutputView.tsx         # Logs adapter linting incremental
-│   │   │   └── bottom-panel.css       # Styling bottom drawer, terminal, & problems
+│   │   │   ├── EditorFindWidget.tsx   # Floating in-editor find widget (Ctrl+F) dengan dynamic match counter
+│   │   │   └── editor.css             # Styling window groups, draggable resizer sash, tabs, code buffer, gutter, & squiggly
+│   │   ├── bottom-panel/      # Modul Bottom Panel & Drawer Multi-Fungsi
+│   │   │   ├── BottomPanel.tsx        # Orkestrator Bottom Panel (Draggable Tab Bar, Maximize/Restore, Controls)
+│   │   │   ├── TerminalView.tsx       # Multi-Session Terminal (Arrow Up/Down history, Ctrl+C interrupt, auto-scroll)
+│   │   │   ├── ProblemsView.tsx       # Diagnostic syntax viewer dengan filter severity (All/Errors/Warnings) & navigasi baris
+│   │   │   ├── OutputView.tsx         # Multi-channel log viewer (Linter, Tasks, Git) dengan action clear
+│   │   │   └── bottom-panel.css       # Styling panel tabs, drag over indicators, dropdown selector, & filter chips
 │   │   ├── chat/              # Modul AppDrawer AEGIS AI Agent
 │   │   │   ├── ChatDrawer.tsx         # Orkestrator Chat Drawer (Master-Detail Host)
 │   │   │   ├── ChatHeader.tsx         # Agent title, toggle sessions sidebar & actions
@@ -71,9 +71,9 @@ src/
 │   │   │   ├── index.ts               # Barrel export modul chat
 │   │   │   └── chat.css               # Styling chat drawer, sessions, messages, & composer
 │   │   ├── status-bar/        # Modul Status Bar & Popovers
-│   │   │   ├── StatusBar.tsx          # Orkestrator Status Bar
+│   │   │   ├── StatusBar.tsx          # Orkestrator Status Bar (kursor dinamis Ln/Col, bahasa aktif otomatis)
 │   │   │   ├── BranchPopover.tsx      # Popover checkout branch git
-│   │   │   ├── ProblemsPopover.tsx    # Popover ringkasan problem syntax
+│   │   │   ├── ProblemsPopover.tsx    # Popover ringkasan problem syntax (klik untuk lompat baris)
 │   │   │   ├── NotificationsPopover.tsx # Popover notification center & unread badge
 │   │   │   └── status-bar.css         # Styling status bar & popovers
 │   │   ├── command-palette/   # Modul Command Palette Overlay
@@ -89,13 +89,16 @@ src/
 │   ├── base.css               # Reset global (#root, body, buttons, focus-visible)
 │   ├── ui.css                 # Styling elemen UI bersama (icon-button, toast, scrollbar)
 │   └── shell.css              # Master frame layout (.app-shell, .workspace, .workbench)
+├── utils/                 # Utility Engines Ringan (0 Bloat)
+│   ├── linter.ts              # Mesin validasi sintaksis multi-bahasa (TS/JS, Python, JSON, C++) & auto-detect bahasa
+│   └── syntax.tsx             # Tokenizer pewarnaan sintaksis reaktif berbasis semantic CSS tokens
 ├── context/
-│   └── WorkbenchContext.tsx   # React Context & useWorkbench Hook (state wireframe interaktif)
+│   └── WorkbenchContext.tsx   # React Context & useWorkbench Hook (Editor Groups, Buffers, Linter, Chat)
 ├── data/
 │   ├── chatConstants.ts       # Preset skill autocomplete & model providers
-│   └── mockData.ts            # Data awal file tree, diagnostic lints, terminal logs, git changes
+│   └── mockData.ts            # Buffer awal file teks, tree workspace, diagnostic lints, terminal logs
 ├── types/
-│   └── workbench.ts           # Type definitions untuk file item, tab, terminal, lint diagnostic
+│   └── workbench.ts           # Type definitions (EditorGroupState, FileBuffer, CursorPosition, LinterSettings, dsb.)
 ├── index.css                  # Slim Aggregator (@import tailwindcss & modul CSS)
 ├── main.tsx                   # Root entry point
 └── App.tsx                    # Komposisi Shell IDE (< 50 baris)
@@ -145,22 +148,27 @@ flowchart TD
    - Action toggle: Toggle Bottom Panel (`Ctrl+J`), Toggle Primary Sidebar (`Ctrl+B`), Toggle AEGIS Chat.
 2. **Activity Rail & Sidebar (Left Columns)**:
    - **Activity Rail**: Ikon switcher untuk Explorer, Search, Source Control (Git), dan Settings.
-   - **Explorer**: File tree hierarkis dengan status aktif/muted, icon folder/file, expandable section (Outline, Timeline).
+   - **Explorer**: 
+     - **OPEN EDITORS**: Seksi collapsible di paling atas yang memvisualisasikan subtab per Window Group (`GROUP 1` dan `GROUP 2`), status file aktif, indikator modifikasi belum disimpan (*dirty bullet*), dan tombol penutup file (`✕`).
+     - **Workspace File Tree**: Tree direktori hierarkis (`AEGISCODE`) dengan status aktif/muted, icon folder/file, dan expandable sections (Outline, Timeline).
    - **Search & Replace**: Regex-ready input filter untuk repositori aktif dengan file include pattern.
    - **Source Control**: Branch info, commit message composer, status perubahan staging (M/A/D), dan sync action.
-   - **Settings**: Pengaturan konfigurasi editor (Auto Save, Minimap, Tab Size).
+   - **Settings**: Pengaturan konfigurasi editor (Auto Save, Minimap, Tab Size) dan section **LINTER & DIAGNOSTICS** (Enable Linter, Lint Trigger onType/onSave, Show Warnings).
 3. **Workbench (Center Column)**:
-   - **Tabs Header**: Multi-tab switcher dengan tombol run file, split editor toggle, dan penutup tab.
-   - **Breadcrumbs**: Path visual file aktif (`src > App.tsx > LocalServer`) dan profile bahasa pemrograman (TypeScript, Python, C++, dsb.).
-   - **Editor Panes**: Editor single pane atau multi-pane/split horizontal, minimap code overview, serta diagnostic highlight dot (warning/error).
-   - **Bottom Panel**: Panel drawer bawah dengan tab *Terminal* (simulasi native runner zsh/bash dengan shortcut terminate & clear), *Problems* (daftar error & warning syntax), dan *Output* (lint adapter log).
+   - **Window Groups (VS Code Architecture)**: Mendukung dual independent editor groups (`Group 1` & `Group 2`), masing-masing memiliki bilah multi-tab mandiri.
+   - **Draggable Window Resizer (Sash)**: Pembatas interaktif vertikal di antara kedua group dengan cursor `col-resize` (rentang 20%–80%) dan fitur double-click untuk auto-reset 50:50.
+   - **Draggable Tabs (DND Engine)**: Mendukung drag-and-drop native HTML5 untuk memindahkan file antar window group atau mengubah urutan tab.
+   - **Clean Breadcrumbs**: Path visual file aktif (`src > App.tsx > LocalServer`) yang bersih tanpa dropdown manual atau badge status statis.
+   - **Interactive Code Buffer**: Pengetikan interaktif nyata dengan `fileBuffers` tersinkronisasi, nomor baris dinamis, auto-indent (2 spasi pada Tab, preserve indent pada Enter), dirty bullet pada tab, dan shortcut simpan (`Ctrl+S`).
+   - **Auto-Linting & Gutter Diagnostics**: Validasi sintaksis real-time untuk TS/JS, Python, JSON, dan C++ dengan dot error/warning di gutter dan garis bawah bergelombang (*squiggly underline*) yang terhubung ke panel Problems.
+   - **Bottom Panel**: Panel drawer bawah modular dengan urutan default **Terminal - Problems - Output**, tab draggable horizontal yang persisten di `localStorage`, kontrol toolbar interaktif (Maximize/Restore `.workbench-panel-maximized`, Close `✕`), Multi-Session Terminal (dropdown switcher, Arrow Up/Down history, Ctrl+C interrupt), Problems filter (All/Errors/Warnings), dan Output channel selector (Linter, Tasks, Git).
 4. **AppDrawer (Right Column)**:
    - Panel chatbot AEGIS Agent yang terhubung dengan konteks workspace lokal.
    - History pesan AI & user, suggestion prompt ("Explain this file", "Fix 2 problems"), serta context badge.
 5. **Status Bar (Bottom Row)**:
    - Info branch Git aktif (dengan popover switcher branch lokal).
-   - Indikator masalah syntax (error/warning popover).
-   - Indikator cursor posisi (Ln, Col), indentasi spasi, encoding file (UTF-8), bahasa aktif.
+   - Indikator masalah syntax (error/warning counter terintegrasi; klik otomatis membuka Bottom Panel dan mengaktifkan tab *Problems*).
+   - Indikator cursor posisi dinamis (`Ln X, Col Y`), indentasi spasi (Spaces: 2), encoding file (UTF-8), dan bahasa aktif yang dideteksi 100% otomatis dari ekstensi file.
    - Notification center popover dengan unread counter badge.
 
 ---
@@ -193,10 +201,29 @@ Semua komponen wajib mengonsumsi semantic token warna yang dideklarasikan di `sr
 
 State dikelola secara terpusat melalui `WorkbenchContext` menggunakan standard React Context dan custom hook `useWorkbench()`:
 
-- **Layout State**: `sidebarOpen`, `panelOpen`, `chatOpen`, `commandPaletteOpen`, `splitEditorOpen`.
-- **Navigation State**: `activeActivity` ('Explorer' | 'Search' | 'Source Control' | 'Settings'), `activeTab`, `openTabs`.
-- **Workspace Data**: `fileTree`, `activeFileContent`, `gitBranch`, `gitChanges`, `notifications`, `diagnostics`.
-- **Terminal State**: `terminalLogs`, `terminalRunning`, `sendTerminalCommand(cmd)`, `clearTerminal()`.
+- **Layout State**: `sidebarOpen`, `panelOpen`, `panelMaximized`, `togglePanelMaximized()`, `chatOpen`, `commandPaletteOpen`, `splitEditor`, `activeBottomTab` ('Terminal' | 'Problems' | 'Output'), `setActiveBottomTab(tab)`, `bottomTabOrder` (urutan tab persisten di `localStorage`), `reorderBottomTabs(srcIndex, targetIndex)`.
+- **Window Groups & Split State**:
+  - `group1`: State Window Group 1 (`{ id: 'group1', name: 'Group 1', tabs: string[], activeTab: string }`).
+  - `group2`: State Window Group 2 (`{ id: 'group2', name: 'Group 2', tabs: string[], activeTab: string }`).
+  - `focusedGroup`: Identifier group aktif (`'group1' | 'group2'`).
+  - `splitRatio`: Rasio persentase lebar window kiri dan kanan (20% – 80%, default 50%).
+  - `openFileInGroup(file, group?)`, `closeTabInGroup(group, file)`, `setActiveTabInGroup(group, file)`.
+  - `moveTabBetweenGroups(src, target, file, index?)`, `reorderTabsInGroup(group, srcIndex, targetIndex)`.
+  - `toggleSplitEditor()`, `closeSplitEditor()`.
+- **File Buffers & Editor Engine**:
+  - `fileBuffers`: Map terpusat teks file (`Record<string, { content, isDirty, language }>`).
+  - `updateFileContent(filename, content)`, `saveFile(filename?)`.
+  - `cursorPosition`: Tracking kursor baris dan kolom (`{ line, col }`) yang tersambung ke Status Bar.
+  - `linterSettings`: Pengaturan diagnostik (`{ enabled: boolean, trigger: 'onType' | 'onSave', showWarnings: boolean }`).
+  - `navigateToDiagnostic(diag)`: Navigasi instan dari Problems panel ke file dan baris spesifik.
+- **Navigation State**: `activeActivity` ('Explorer' | 'Search' | 'Source Control' | 'Settings'), `activeLanguage` (auto-detect pasif).
+- **Workspace Data**: `files`, `gitChanges`, `notifications`, `diagnostics`.
+- **Terminal & Bottom Panel State**:
+  - `terminalSessions`: Daftar sesi terminal aktif (`TerminalSession[]` dengan properti `id`, `name`, `shell`, `lines`, `running`, `commandHistory`).
+  - `activeTerminalSessionId`, `activeTerminalSession`: Sesi terminal aktif saat ini.
+  - `createTerminalSession(shell?)`, `closeTerminalSession(id)`.
+  - `terminalLines`, `terminalRunning`, `setTerminalRunning()`.
+  - `sendTerminalCommand(cmd, sessionId?)`, `clearTerminal(sessionId?)`.
 - **Agent Chat State**:
   - `sessions`: Daftar sesi percakapan aktif & historis (`ChatSession[]`).
   - `activeSessionId`, `activeSession`: Sesi percakapan yang sedang aktif.
@@ -393,6 +420,185 @@ flowchart TB
    - Kebijakan *Fail-Fast & Explicit Incident Reporting*: jika worker crash, Core Server tidak membungkam error, melainkan memutus fungsi secara eksplisit, mengirim notifikasi diagnostic ke UI, dan menjalankan clean restart terisolasi.
 2. **Isolasi Latensi Editor**:
    - Beban kerja komputasi berat dari AI Agent tidak membebani loop pengetikan teks pada workbench editor.
+
+---
+
+## 10. Arsitektur Workbench Text Editor & Window Groups (VS Code Model, Linter, & DND)
+
+Modul Text Editor pada `src/components/layout/editor` dirancang ulang mengikuti paradigma **VS Code Window Groups** untuk menghadirkan pengalaman IDE native yang fleksibel, cepat, dan ringan (*0 bloat*):
+
+```mermaid
+flowchart TD
+    subgraph WindowSystem["VS Code Window Groups Architecture"]
+        direction LR
+        subgraph Group1["Window Group 1"]
+            Tabs1["Independent Tab Bar (DND)"]
+            Bread1["Clean Breadcrumbs"]
+            Pane1["Interactive Buffer Editor (Primary)"]
+            Tabs1 --> Bread1 --> Pane1
+        end
+        
+        Sash["Draggable Divider Sash\n(20% - 80% | Double-Click Reset)"]
+        
+        subgraph Group2["Window Group 2"]
+            Tabs2["Independent Tab Bar (DND)"]
+            Bread2["Clean Breadcrumbs"]
+            Pane2["Interactive Buffer Editor (Secondary)"]
+            Tabs2 --> Bread2 --> Pane2
+        end
+        
+        Group1 <--> Sash <--> Group2
+    end
+
+    subgraph StateAndEngines["Centralized Engines (WorkbenchContext)"]
+        Buffers[("fileBuffers Store\n(Preserve Unsaved State)")]
+        LinterEngine["Auto-Linter Engine\n(TS/JS, Python, JSON, C++)"]
+        OpenEditors["Explorer 'OPEN EDITORS'\n(Group 1 & Group 2 Subtabs)"]
+    end
+
+    Pane1 <--> Buffers
+    Pane2 <--> Buffers
+    Buffers --> LinterEngine
+    LinterEngine --> Problems["Problems Panel & Squiggly Lines"]
+    WindowSystem <--> OpenEditors
+```
+
+### A. Dual Independent Window Groups
+- **State Terisolasi**: Setiap group memiliki struktur `EditorGroupState`:
+  - `group1`: `{ id: 'group1', name: 'Group 1', tabs: string[], activeTab: string }`
+  - `group2`: `{ id: 'group2', name: 'Group 2', tabs: string[], activeTab: string }`
+- **Bilah Multi-Tab Mandiri**: Setiap group memiliki komponen `EditorTabs.tsx` sendiri di atas pane kodenya. User dapat membuka, mengaktifkan, dan menutup tab secara independen di Group 1 maupun Group 2.
+- **Routing File Berbasis Fokus**: Membuka file dari Explorer, Git Source Control, atau Command Palette akan otomatis mengisi group yang sedang memiliki fokus aktif (`focusedGroup: 'group1' | 'group2'`).
+- **Auto-Close Split Lifecycle**: Jika seluruh tab pada Group 2 ditutup hingga habis (0 tabs tersisa), mode split otomatis dinonaktifkan (`splitEditor = false`) dan Group 1 kembali memenuhi 100% layar.
+
+### B. Draggable Window Resizer (Sash)
+- **Pembatas Interaktif Vertikal**: Komponen divider 4px (`.split-resizer-sash`) disematkan di antara kedua group pane.
+- **Fluid Resizing**: User dapat menyeret mouse secara horizontal dengan kursor `col-resize` untuk mengubah rasio lebar window antara 20% hingga 80% (disimpan di state `splitRatio`).
+- **Proteksi Drag**: Layar dilindungi overlay transparan (`.split-resize-overlay`) selama penyeretan agar kursor tidak lepas dan teks di dalam editor tidak sengaja terseleksi.
+- **Double-Click Reset**: Mengetuk ganda divider langsung mengembalikan proporsi kedua window ke **50:50**.
+
+### C. Drag-and-Drop Tabs Engine (DND)
+- **Native HTML5 Drag & Drop**: Setiap tab pada `EditorTabs.tsx` memiliki atribut `draggable`.
+- **Perpindahan Antar Group**: Menarik tab dari Group 1 dan melepasnya di tab bar Group 2 (atau sebaliknya) mengeksekusi `moveTabBetweenGroups`, memindahkan file ke group tujuan dan mengaktifkannya.
+- **Pengurutan Tab (Reordering)**: Menarik tab di dalam bar yang sama mengeksekusi `reorderTabsInGroup`, memperbarui urutan file secara dinamis.
+- **Visual Feedback**: Menampilkan drop indicator vertikal (`.tab-drag-over`) pada tab target dan highlight drop zone (`.editor-tabs-droptarget`).
+
+### D. Hierarki "OPEN EDITORS" di Explorer Sidebar
+- Di `ExplorerPanel.tsx`, disediakan seksi collapsible `"OPEN EDITORS"` tepat di atas project file tree:
+  - Saat split aktif, daftar file dikelompokkan dalam sub-header `GROUP 1` dan `GROUP 2`.
+  - Menampilkan ikon file, nama file, penanda file aktif, *dirty bullet* jika ada perubahan belum disimpan, dan tombol close `✕`.
+  - Mengklik file langsung memfokuskan window group terkait dan mengaktifkan file tersebut.
+
+### E. Interactive Buffer Engine & 6 Fitur Wajib Text Editor
+Menggantikan preview statis dengan code buffer yang dapat diketik secara nyata:
+1. **Interactive Typing & Buffer Centralization**: Teks seluruh file dikelola dalam `fileBuffers` terpusat (`WorkbenchContext.tsx`), memastikan perubahan tidak hilang saat user berpindah tab atau membagi window.
+2. **Dynamic Line Numbers & Gutter**: Nomor baris dinamis mengikuti panjang teks, dilengkapi titik diagnostik merah (*error*) dan oranye (*warning*).
+3. **Tracking Kursor Real-Time**: Posisi kursor (`Ln X, Col Y`) dihitung dari kursor aktif dan disinkronkan secara real-time ke Status Bar.
+4. **Dirty State & Save Handling**: Dot bullet pada tab menandakan modifikasi belum disimpan; didukung shortcut `Ctrl+S` / `Cmd+S` untuk menyimpan buffer.
+5. **Indentation Handling**: Menekan tombol `Tab` menyisipkan 2 spasi (tanpa memindahkan fokus HTML), dan tombol `Enter` mempertahankan indentasi baris sebelumnya secara otomatis.
+6. **Syntax Highlighting & Squiggly Lines**: Tokenizer ringan (`src/utils/syntax.tsx`) mewarnai token sintaksis menggunakan semantic Tailwind CSS tokens repo, disertai garis bawah bergelombang merah/oranye untuk baris bermasalah.
+7. **Find Widget Integration**: `EditorFindWidget.tsx` (`Ctrl+F`) mendeteksi dan menghitung jumlah match secara nyata dari buffer yang aktif.
+8. **Navigasi Klik Diagnostik**: Mengklik item error/warning pada panel Problems langsung melompat ke file dan nomor baris terkait.
+
+### F. Auto-Linter Engine & Pengaturan di Settings
+- **Pembersihan Breadcrumb**: Badge `"Lint ready"` dan dropdown bahasa manual dihapus dari `EditorBreadcrumbs.tsx`. Jalur navigasi tampil rapi dan bahasa pemrograman dideteksi 100% otomatis dari ekstensi file.
+- **Mesin Validasi Sintaksis (`src/utils/linter.ts`)**:
+  - **JSON**: Parser validasi JSON bawaan (deteksi trailing comma, unquoted key, kurung kurawal hilang).
+  - **TypeScript & JavaScript**: Deteksi ketidakseimbangan delimiter `{ }`, `( )`, `[ ]`, unclosed quotes, dan console statements.
+  - **Python**: Deteksi syntax error blok tanpa titik dua `:`, trailing semicolons, dan unclosed quotes.
+  - **C++**: Deteksi statement tanpa titik koma `;` dan bracket matching.
+- **Konfigurasi di Settings (`SettingsPanel.tsx`)**:
+  - Grup **LINTER & DIAGNOSTICS**:
+    - `Enable Linter`: Toggle on/off untuk mengaktifkan/menonaktifkan seluruh diagnostik secara instan.
+    - `Lint Trigger`: Pilihan mode eksekusi (`onType` reaktif dengan debounce ~300ms vs `onSave` saat menyimpan file).
+    - `Show Warnings`: Toggle untuk menyaring apakah hanya error fatal atau warning juga yang dimunculkan di editor & Problems panel.
+
+---
+
+## 11. Arsitektur Bottom Panel (Draggable Tabs, Multi-Session Terminal, Problems Filter, & Output Channels)
+
+Modul Bottom Panel pada `src/components/layout/bottom-panel` mengadopsi arsitektur multi-fungsi yang responsif, terintegrasi penuh ke `WorkbenchContext`, dan mendukung personalisasi layout pengguna:
+
+```mermaid
+flowchart TD
+    subgraph BottomPanelModule["Bottom Panel Architecture (src/components/layout/bottom-panel)"]
+        direction TB
+        Header["Bottom Panel Header Bar"]
+        
+        subgraph TabsGroup["Draggable Tabs (Native HTML5 DND)"]
+            T1["Terminal (Default #1)"]
+            T2["Problems (Default #2)"]
+            T3["Output (Default #3)"]
+        end
+
+        subgraph ToolbarGroup["Contextual Controls & Frame Actions"]
+            TermCtrl["Terminal Controls:\nSession Select, New (+), Kill (Trash), Clear, Status, Copy, Run"]
+            OutCtrl["Output Controls:\nChannel Select (Linter/Tasks/Git), Clear (Trash)"]
+            UniversalCtrl["Universal Actions:\nMaximize / Restore, Close Panel (X)"]
+        end
+
+        subgraph ViewArea["Active Viewport"]
+            TermView["TerminalView.tsx\n(Arrow Up/Down History, Ctrl+C Interrupt, Auto-Scroll)"]
+            ProbView["ProblemsView.tsx\n(Severity Filters: All/Errors/Warnings, Click Navigation)"]
+            OutView["OutputView.tsx\n(Channel Multi-Buffer: Linter, Tasks, Git)"]
+        end
+
+        Header --> TabsGroup
+        Header --> ToolbarGroup
+        TabsGroup -.-> ViewArea
+    end
+
+    subgraph StateConnections["Integrasi WorkbenchContext"]
+        TabOrderStorage[("localStorage: aegis_bottom_panel_tab_order")]
+        SessionsState[("terminalSessions Store")]
+        DiagnosticsState[("diagnostics Store")]
+        StatusBarLink["StatusBar Problems Indicator (Auto-Open & Switch)"]
+    end
+
+    TabsGroup <--> TabOrderStorage
+    TermView <--> SessionsState
+    ProbView <--> DiagnosticsState
+    StatusBarLink --> ProbView
+```
+
+### A. Draggable Tabs Engine & Urutan Bawaan
+- **Urutan Default**: Urutan inisial tab terstruktur sebagai **Terminal** (1), **Problems** (2), dan **Output** (3).
+- **Native HTML5 Drag & Drop**: Setiap tombol tab (`.bottom-tab-button`) mengaktifkan atribut `draggable` dengan handler `onDragStart`, `onDragOver`, `onDragLeave`, dan `onDrop`.
+- **Indikator Visual**: Menampilkan garis batas aksen biru (`.tab-drag-over` dengan border-left 2px) saat tab lain diseret melintas di atasnya.
+- **Persistensi Preferensi**: Urutan tab disimpan otomatis ke browser (`localStorage` key `aegis_bottom_panel_tab_order`). Jika urutan diubah oleh pengguna, susunan tersebut tetap terjaga saat refresh atau sesi IDE dibuka kembali.
+
+### B. Fitur Core Multi-Session Terminal (`TerminalView.tsx`)
+- **Multi-Session Management**:
+  - Selector sesi dropdown (`.panel-select`) di header toolbar yang memungkinkan navigasi cepat antar-sesi aktif (`1: zsh`, `2: zsh`).
+  - Tombol **`+` (New Terminal Session)**: Membuka instance terminal mandiri dengan shell profil terpilih.
+  - Tombol **`Trash` (Kill Session)**: Menghentikan dan menutup sesi terminal aktif dengan pemulihan sesi otomatis (*safety fallback* jika sesi terakhir ditutup).
+- **Command History Navigation**:
+  - Tombol **Arrow Up (↑)**: Menavigasi ke perintah sebelumnya dari riwayat `commandHistory`.
+  - Tombol **Arrow Down (↓)**: Menavigasi maju ke perintah berikutnya atau mengosongkan input.
+- **Auto-Scroll Real-Time**: Viewport otomatis bergulir (*smooth/auto scroll*) ke baris paling bawah saat output baru tiba.
+- **Interrupt & Clear Controls**:
+  - Shortcut `Ctrl+C`: Menghentikan proses yang sedang berjalan dan menampilkan simbol `^C` secara instan.
+  - Tombol **Clear Output** (ikon silang / trash) serta command `clear` bawaan untuk membersihkan buffer layar.
+
+### C. Fitur Core Problems Tab (`ProblemsView.tsx`)
+- **Filter Severity Chips**:
+  - Tombol filter cepat di bagian atas: **All (N)**, **Errors (N)**, dan **Warnings (N)** dengan indikator aktif (`.filter-chip-active`).
+  - Mengisolasi pesan diagnostik sehingga developer dapat berfokus membenahi error kritis atau sekadar meninjau peringatan kode.
+- **Navigasi Klik Langsung**: Mengklik salah satu entri problem langsung melompat (*jump*) ke file dan nomor baris bersangkutan di Code Editor, memfokuskan kursor, dan menampilkan notifikasi toast.
+- **Integrasi Status Bar**: Mengklik counter error/warning di `StatusBar.tsx` otomatis membuka Bottom Panel (jika tertutup) dan langsung memfokuskan tab aktif ke **Problems**.
+
+### D. Fitur Core Output Tab (`OutputView.tsx`)
+- **Channel Selector Dropdown**: Switcher saluran log di toolbar kanan dengan 3 kanal default:
+  1. `Linter / Syntax`: Log adapter linting lintas bahasa dan status inisialisasi parser.
+  2. `Tasks & Build`: Log dev server lokal (Vite, SSE runner, task watchers).
+  3. `Git / Source Control`: Log eksekusi Git CLI lokal dan ringkasan branch.
+- **Channel Buffer & Clear**: Tombol pembersih log (*Clear Output*) di samping dropdown yang membersihkan output khusus untuk saluran yang sedang aktif.
+- **Timestamping & Monospace Formatting**: Tiap baris log dilengkapi penanda waktu (*timestamp*) dan styling monospaced rapi.
+
+### E. Kontrol Frame & Ukuran Panel
+- **Maximize / Restore**: Tombol maximize di header kanan yang mengaplikasikan kelas `.workbench-panel-maximized` pada container shell, memperluas area panel hingga memenuhi workbench untuk kemudahan peninjauan log panjang.
+- **Close Button (`✕`)**: Tombol penutup instan yang menyinkronkan state `panelOpen = false` tanpa perlu menggunakan keyboard shortcut `Ctrl+J`.
+
 
 
 

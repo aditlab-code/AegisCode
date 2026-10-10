@@ -32,6 +32,7 @@ export function Icon({ name, size = 16, className = "" }: IconProps) {
     check: <path d="m5 13 4 4L19 7" />,
     chevron: <path d="m9 18 6-6-6-6" />,
     "chevron-down": <path d="m6 9 6 6 6-6" />,
+    "chevron-up": <path d="m18 15-6-6-6 6" />,
     close: <path d="m7 7 10 10M17 7 7 17" />,
     code: <path d="m8 9-3 3 3 3m8-6 3 3-3 3m-3-8-2 10" />,
     copy: (
@@ -80,6 +81,7 @@ export function Icon({ name, size = 16, className = "" }: IconProps) {
         <path d="M8 4v16m9-16v16" />
       </>
     ),
+    maximize: <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />,
     more: (
       <>
         <circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" />
