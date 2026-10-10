@@ -70,7 +70,8 @@ func (s *Server) handleWorkspaceOpen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	absPath, err := s.ws.SetRoot(req.Path)
+	cleanedPath := filepath.Clean(strings.TrimSpace(req.Path))
+	absPath, err := s.ws.SetRoot(cleanedPath)
 	if err != nil {
 		jsonError(w, http.StatusBadRequest, err.Error())
 		return
@@ -406,6 +407,15 @@ func (s *Server) handleGitStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rootPath, _ := s.ws.GetRoot()
+	if strings.TrimSpace(rootPath) == "" {
+		jsonResponse(w, http.StatusOK, git.RepoStatus{
+			IsRepo:   false,
+			Branch:   "",
+			RepoName: "",
+		})
+		return
+	}
+
 	status, err := git.DetectRepo(rootPath)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
@@ -422,14 +432,6 @@ func main() {
 	}
 
 	initialDir := os.Getenv("WORKSPACE_ROOT")
-	if initialDir == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			log.Fatalf("failed to get current working directory: %v", err)
-		}
-		initialDir = cwd
-	}
-
 	ws, err := workspace.NewManager(initialDir)
 	if err != nil {
 		log.Fatalf("failed to initialize workspace manager: %v", err)
@@ -459,7 +461,11 @@ func main() {
 
 	rootPath, name := ws.GetRoot()
 	fmt.Printf("AegisCode Go Core Server listening on http://localhost:%s\n", port)
-	fmt.Printf("Active Workspace: %s (%s)\n", name, rootPath)
+	if rootPath == "" {
+		fmt.Println("Active Workspace: None (Awaiting folder)")
+	} else {
+		fmt.Printf("Active Workspace: %s (%s)\n", name, rootPath)
+	}
 
 	if err := http.ListenAndServe(":"+port, handler); err != nil {
 		log.Fatalf("server exited with error: %v", err)

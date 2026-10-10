@@ -154,3 +154,5 @@ export interface PanelDimensions {
   chatDrawerWidth: number
   bottomPanelHeight: number
 }
+
+export type { WorkbenchContextType } from "../context/core/workbenchFacade"

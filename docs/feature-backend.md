@@ -87,15 +87,19 @@ To enable multi-screen remote workflows on tablets without external cloud server
 
 ### B. Workspace & File System Operations (Phase 6 Sub-Phase 1 Active)
 - `GET /api/v1/workspace/info`
-  - Response: `{ "rootPath": "/Users/...", "name": "AegisCodev2" }`
+  - Returns current active workspace root path and folder name. If no workspace is open (e.g. server booted without `WORKSPACE_ROOT` or workspace was closed), returns empty strings:
+  - Response (Active): `{ "rootPath": "/Users/...", "name": "AegisCodev2" }`
+  - Response (Empty / Closed): `{ "rootPath": "", "name": "" }`
 - `POST /api/v1/workspace/open`
   - Body: `{ "path": "/Users/path/to/folder" }`
+  - Sanitizes and normalizes the path with `filepath.Clean(strings.TrimSpace(path))` to prevent trailing slash mismatches.
   - Response: `{ "status": "ok", "rootPath": "string", "name": "string" }`
 - `POST /api/v1/workspace/close`
-  - Closes active root workspace directory and clears internal watchers.
+  - Closes active root workspace directory, resets `rootPath` to empty `""`, and clears internal watchers.
   - Response: `{ "status": "closed" }`
 - `POST /api/v1/workspace/pick-folder`
   - Triggers native OS folder dialog (`osascript` on macOS, PowerShell on Windows, `zenity`/`kdialog` on Linux).
+  - Automatically cleans and normalizes returned path (stripping OS trailing slashes).
   - Response (Success): `{ "status": "ok", "path": "string", "name": "string", "rootPath": "string" }`
   - Response (Cancelled): `{ "status": "cancelled", "cancelled": true }`
   - Response (Unsupported/Headless): `{ "status": "unsupported", "unsupported": true, "error": "string" }`
@@ -131,6 +135,7 @@ To enable multi-screen remote workflows on tablets without external cloud server
   - Response: `{ "status": "ok", "replacements": 12, "modifiedFiles": ["string"] }`
 - `GET /api/v1/git/status`
   - Reads `.git` directory and `.git/HEAD` to detect current active branch.
+  - Safe behavior on empty/closed workspace (`rootPath == ""`): returns `200 OK` with `{ "isRepo": false, "branch": "", "repoName": "" }` without throwing a 500 error.
   - Response: `{ "isRepo": boolean, "branch": "string", "repoName": "string" }`
 
 ### C. Server-Sent Events (SSE) Streaming
@@ -186,3 +191,53 @@ The Core Server implements a resilient Process Supervisor ([ADR 0004](file:///Us
    - An explicit error event is dispatched to the client.
    - The supervisor executes a clean restart policy if configured.
 3. **Data Boundary**: User workspace directories are strictly read/write for project files only. All internal databases, vector embeddings, and session logs are kept in the global app directory (`~/.aegis/data/`).
+
+---
+
+## 6. Testing Architecture & Core Test Harness
+
+To prevent regression proliferation and enforce independent testing without artificial mocks or headless browser overhead (non-Playwright):
+
+### Directory Structure & Segregation
+Testing is strictly segregated under the root `test/` directory, cleanly separating the UI Shell from the Core Server:
+- [`test/frontend/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/test/frontend): Pure logic, state machine, and facade integration tests running under **Vitest**.
+  - [`virtualWorkspace.ts`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/test/frontend/virtualWorkspace.ts): In-Memory Virtual Workspace Engine providing a deterministic in-memory filesystem for pure logic testing without dummy mocks.
+  - [`core/workbenchCore.test.ts`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/test/frontend/core/workbenchCore.test.ts): Centralized Frontend Core Test Suite.
+- [`test/backend/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/test/backend): Native Go Core Server integration and regression suite.
+  - [`core/server_core_test.go`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/test/backend/core/server_core_test.go): Centralized Backend Core Test Suite running end-to-end HTTP scenarios directly against the compiled Core Server binary.
+
+### Core Test Pattern (Table-Driven Scenario Matrix)
+Rather than spawning dozens of scattered test files for every bug report or edge case, all regressions register directly into the **Core Test Matrix**:
+1. **Frontend Core Test**: The `coreRegressionScenarios` matrix executes end-to-end state transitions across domain slices:
+   - Workspace file CRUD, buffer dirty flags, and debounced save synchronizations.
+   - Editor group tabs, split pane migrations, and automatic un-splitting.
+   - Git staging, unstaging, and commit creation.
+   - Terminal PTY sessions, command history, and stream pipelines.
+   - AI Agent session creation and conversational context streaming.
+   - `AsyncSequenceGuard` concurrency safety (monotonic request IDs and AbortController cancellation).
+   - `WS-CLOSE-01`: Close workspace lifecycle (tree, buffers, and tab states cleared).
+   - `WS-PATH-01`: Path normalization (trailing slash stripping, OS cross-platform paths, recent projects storage).
+2. **Backend Core Test**: The `TestCoreServerLifecycle` scenario matrix spins up the native Core Server binary bound to an ephemeral TCP port and an isolated OS temporary directory (`os.MkdirTemp`). It executes real HTTP/REST requests:
+   - `GET /api/v1/workspace/info`
+   - `POST /api/v1/workspace/file` (Write & create directories)
+   - `GET /api/v1/workspace/file` (Read verification)
+   - `POST /api/v1/workspace/move` & `POST /api/v1/workspace/rename`
+   - `GET /api/v1/workspace/tree` (Recursive tree hierarchy verification)
+   - `POST /api/v1/workspace/search` & `POST /api/v1/workspace/replace-all`
+   - `GET /api/v1/git/status` (Repo vs non-repo detection)
+   - `DELETE /api/v1/workspace/file` & 404 verification
+   - `POST /api/v1/workspace/close` (Close active workspace)
+   - `GET /api/v1/workspace/info` (Verify empty rootPath after close)
+   - `GET /api/v1/git/status` on empty/closed workspace (Safe 200 OK verification)
+   - `POST /api/v1/workspace/open` with trailing slash (Normalization verification)
+   Additionally, `TestServerBootWithEmptyWorkspaceRoot` verifies that booting without `WORKSPACE_ROOT` starts in a clean `rootPath == ""` state awaiting folder selection, without hardcoding the Go server's directory.
+   All operations run against actual disk files with zero mock structs.
+
+### Verification Commands & Quality Gates
+```bash
+rtk npm test              # Runs both frontend (Vitest) and backend (Go) core test suites
+rtk npm run test:frontend # Runs Vitest frontend scenario matrix
+rtk npm run test:backend  # Runs Go server internal package tests and test/backend/core suite
+rtk npm run build         # Vite production bundle build verification (0 errors)
+rtk npm run format        # Code formatting check with oxfmt
+```

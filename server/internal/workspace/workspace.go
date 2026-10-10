@@ -53,15 +53,12 @@ type Manager struct {
 }
 
 func NewManager(initialRoot string) (*Manager, error) {
-	if initialRoot == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return nil, err
-		}
-		initialRoot = cwd
+	if strings.TrimSpace(initialRoot) == "" {
+		return &Manager{rootPath: ""}, nil
 	}
 
-	absPath, err := filepath.Abs(initialRoot)
+	cleanPath := filepath.Clean(strings.TrimSpace(initialRoot))
+	absPath, err := filepath.Abs(cleanPath)
 	if err != nil {
 		return nil, err
 	}
@@ -78,11 +75,13 @@ func NewManager(initialRoot string) (*Manager, error) {
 }
 
 func (m *Manager) SetRoot(newRoot string) (string, error) {
-	if strings.TrimSpace(newRoot) == "" {
+	trimmed := strings.TrimSpace(newRoot)
+	if trimmed == "" {
 		return "", errors.New("empty root path provided")
 	}
 
-	absPath, err := filepath.Abs(newRoot)
+	cleanPath := filepath.Clean(trimmed)
+	absPath, err := filepath.Abs(cleanPath)
 	if err != nil {
 		return "", err
 	}
@@ -579,7 +578,7 @@ func PickFolderNative(ctx context.Context) (string, bool, error) {
 		if chosen == "" {
 			return "", true, nil
 		}
-		return chosen, false, nil
+		return filepath.Clean(chosen), false, nil
 
 	case "windows":
 		psScript := `[System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = 'Select Project Folder'; $f.ShowNewFolderButton = $true; if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath } else { Write-Output 'CANCELLED' }`
@@ -592,7 +591,7 @@ func PickFolderNative(ctx context.Context) (string, bool, error) {
 		if chosen == "" || chosen == "CANCELLED" {
 			return "", true, nil
 		}
-		return chosen, false, nil
+		return filepath.Clean(chosen), false, nil
 
 	case "linux":
 		if _, lookErr := exec.LookPath("zenity"); lookErr == nil {
@@ -605,7 +604,7 @@ func PickFolderNative(ctx context.Context) (string, bool, error) {
 			if chosen == "" {
 				return "", true, nil
 			}
-			return chosen, false, nil
+			return filepath.Clean(chosen), false, nil
 		}
 		if _, lookErr := exec.LookPath("kdialog"); lookErr == nil {
 			cmd := exec.CommandContext(ctx, "kdialog", "--getexistingdirectory")
@@ -617,7 +616,7 @@ func PickFolderNative(ctx context.Context) (string, bool, error) {
 			if chosen == "" {
 				return "", true, nil
 			}
-			return chosen, false, nil
+			return filepath.Clean(chosen), false, nil
 		}
 		return "", false, errors.New("no native file dialog tool available on linux (zenity or kdialog required)")
 

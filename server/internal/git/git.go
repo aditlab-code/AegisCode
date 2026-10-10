@@ -1,7 +1,6 @@
 package git
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,8 +13,12 @@ type RepoStatus struct {
 }
 
 func DetectRepo(rootPath string) (RepoStatus, error) {
-	if rootPath == "" {
-		return RepoStatus{}, errors.New("root path is empty")
+	if strings.TrimSpace(rootPath) == "" {
+		return RepoStatus{
+			IsRepo:   false,
+			Branch:   "",
+			RepoName: "",
+		}, nil
 	}
 
 	gitDir := filepath.Join(rootPath, ".git")
