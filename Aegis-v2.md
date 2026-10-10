@@ -1,6 +1,6 @@
-# Roadmap V2
+# Roadmap FRONT END ONLY
 
-# AEGISCODE
+# AEGISCODE 
 
 > Objective : IDE lightwight, Local Server
 
