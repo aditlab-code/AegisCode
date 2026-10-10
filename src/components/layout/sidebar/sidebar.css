@@ -118,6 +118,7 @@
 }
 
 .file-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -126,7 +127,7 @@
   padding-right: 8px;
   color: var(--color-ink-soft);
   background: transparent;
-  cursor: default;
+  cursor: pointer;
   text-align: left;
   white-space: nowrap;
 }
@@ -141,8 +142,73 @@
   background: var(--color-surface-hover);
 }
 
-.file-row > svg {
+.tree-indent-guides {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+}
+
+.tree-indent-col {
+  display: block;
+}
+
+.tree-indent-guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--color-line);
+  transition: background-color 0.15s ease;
+}
+
+.tree-branch-tick {
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 1px;
+  background: var(--color-line);
+  transition: background-color 0.15s ease;
+}
+
+.file-row:hover .tree-indent-guide,
+.file-row:hover .tree-branch-tick {
+  background: var(--color-line-bright);
+}
+
+.file-row.file-active .tree-indent-guide,
+.file-row.file-active .tree-branch-tick {
+  background: var(--color-accent-soft);
+}
+
+.folder-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  cursor: pointer;
+  color: var(--color-ink-muted);
+  transition: color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.folder-chevron:hover {
+  color: var(--color-ink);
+}
+
+.folder-chevron svg {
+  transition: transform 0.15s ease;
+}
+
+.folder-chevron.chevron-open svg {
   transform: rotate(90deg);
+}
+
+.folder-chevron.chevron-closed svg {
+  transform: rotate(0deg);
 }
 
 .tree-spacer {
@@ -370,52 +436,844 @@
   border-radius: 3px;
 }
 
-.settings-group {
-  margin-top: 18px;
-}
+/* ========================================================
+   EXPLORER ENHANCEMENTS: CRUD, FILTER, CONTEXT MENU, OUTLINE
+   ======================================================== */
 
-.settings-label {
-  display: block;
-  margin: 0 3px 7px;
-  color: var(--color-ink-muted);
-  font-size: 9px;
-  letter-spacing: .1em;
-}
-
-.setting-row {
+.section-title-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 9px 3px;
-  border-bottom: 1px solid var(--color-line);
+  padding-right: 6px;
 }
 
-.setting-row > span {
-  display: grid;
-  gap: 3px;
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
-.setting-row strong {
-  color: var(--color-ink-soft);
+.action-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--color-ink-muted);
+  background: transparent;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.action-icon-btn:hover {
+  color: var(--color-ink);
+  background: var(--color-surface-hover);
+}
+
+.action-icon-btn.btn-active {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.explorer-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  margin: 2px 8px 6px;
+  padding: 0 6px;
+  color: var(--color-ink-muted);
+  background: var(--color-canvas);
+  border: 1px solid var(--color-line-bright);
+  border-radius: 3px;
+}
+
+.explorer-filter-input {
+  flex: 1;
+  min-width: 0;
+  color: var(--color-ink);
+  background: transparent;
+  border: 0;
+  outline: 0;
   font-size: 11px;
-  font-weight: 500;
 }
 
-.setting-row small {
+.explorer-filter-input::placeholder {
+  color: var(--color-ink-muted);
+}
+
+.filter-clear-btn {
+  padding: 1px;
+  color: var(--color-ink-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.filter-clear-btn:hover {
+  color: var(--color-ink);
+}
+
+.file-muted {
+  opacity: 0.65;
+  color: var(--color-ink-muted);
+}
+
+.inline-input {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  padding: 0 4px;
+  color: var(--color-ink);
+  background: var(--color-canvas);
+  border: 1px solid var(--color-accent);
+  border-radius: 2px;
+  outline: 0;
+  font-size: 11px;
+}
+
+.file-create-row {
+  background: var(--color-surface-hover);
+}
+
+/* Floating Context Menu */
+.explorer-context-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 170px;
+  padding: 4px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-line-bright);
+  border-radius: 6px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 40%);
+  backdrop-filter: blur(20px);
+}
+
+.context-menu-header {
+  padding: 4px 8px 6px;
+  color: var(--color-ink-muted);
+  border-bottom: 1px solid var(--color-line);
+  font-size: 10px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  color: var(--color-ink-soft);
+  background: transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  text-align: left;
+}
+
+.context-menu-item:hover {
+  color: var(--color-ink);
+  background: var(--color-surface-hover);
+}
+
+.context-menu-item.item-danger {
+  color: var(--color-red);
+}
+
+.context-menu-item.item-danger:hover {
+  background: rgb(247 118 142 / 12%);
+}
+
+.context-menu-separator {
+  height: 1px;
+  margin: 3px 0;
+  background: var(--color-line);
+}
+
+/* Outline Symbol Tree */
+.outline-section {
+  border-top: 1px solid var(--color-line);
+}
+
+.outline-tab-label {
+  margin-left: auto;
+  color: var(--color-ink-muted);
+  font-size: 9px;
+  font-weight: 400;
+  text-transform: none;
+}
+
+.outline-list {
+  padding: 2px 0 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.outline-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 23px;
+  padding: 0 10px 0 18px;
+  color: var(--color-ink-soft);
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+  text-align: left;
+}
+
+.outline-item:hover {
+  color: var(--color-ink);
+  background: var(--color-surface-hover);
+}
+
+.symbol-badge {
+  color: var(--color-accent);
+}
+
+.symbol-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+}
+
+.symbol-kind {
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-size: 8px;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.symbol-function {
+  color: var(--color-pink);
+  background: rgb(232 121 249 / 12%);
+}
+
+.symbol-class {
+  color: var(--color-orange);
+  background: rgb(255 174 87 / 12%);
+}
+
+.symbol-interface {
+  color: var(--color-cyan);
+  background: rgb(103 232 249 / 12%);
+}
+
+.symbol-type {
+  color: var(--color-blue);
+  background: rgb(140 188 255 / 12%);
+}
+
+.symbol-line {
+  color: var(--color-ink-muted);
+  font-size: 9px;
+  font-family: monospace;
+}
+
+.outline-empty {
+  padding: 8px 18px;
+  color: var(--color-ink-muted);
+  font-size: 10px;
+}
+
+/* ========================================================
+   SOURCE CONTROL: REPO CONTROLLER, TOOLBAR, STAGED, GRAPH
+   ======================================================== */
+
+.git-panel {
+  padding: 0 8px;
+}
+
+.git-repo-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 4px 6px;
+  background: var(--color-canvas);
+  border: 1px solid var(--color-line-bright);
+  border-radius: 4px;
+}
+
+.git-repo-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.git-repo-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-orange);
+}
+
+.status-dot-git {
+  margin-left: auto;
+  background: var(--color-green);
+  box-shadow: 0 0 6px var(--color-green);
+}
+
+.repo-label-text {
+  color: var(--color-ink-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.git-repo-dropdown {
+  flex: 1;
+  min-width: 0;
+  color: var(--color-ink);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.git-commit-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.commit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.commit-git-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-canvas);
+}
+
+.primary-action:disabled .commit-git-icon {
+  color: var(--color-ink-muted);
+}
+
+.git-toolbar {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.git-tool-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 24px;
+  color: var(--color-ink-soft);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-bright);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.git-tool-icon {
+  display: inline-flex;
+  align-items: center;
+  transition: transform 0.12s ease;
+}
+
+.icon-pull {
+  color: var(--color-cyan);
+}
+
+.icon-push {
+  color: var(--color-orange);
+}
+
+.icon-sync {
+  color: var(--color-accent);
+}
+
+.git-tool-btn:hover {
+  color: var(--color-ink);
+  background: var(--color-surface-hover);
+  border-color: var(--color-accent);
+}
+
+.git-tool-btn:hover .icon-pull {
+  filter: drop-shadow(0 0 4px var(--color-cyan));
+  transform: translateY(1px);
+}
+
+.git-tool-btn:hover .icon-push {
+  filter: drop-shadow(0 0 4px var(--color-orange));
+  transform: translateY(-1px);
+}
+
+.git-tool-btn:hover .icon-sync {
+  filter: drop-shadow(0 0 4px var(--color-accent));
+}
+
+.git-section {
+  margin-top: 12px;
+  border-top: 1px solid var(--color-line);
+}
+
+.git-section-header {
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.section-title-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  color: var(--color-ink);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.git-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 14px;
+  padding: 0 4px;
+  color: var(--color-ink-soft);
+  background: var(--color-surface-hover);
+  border-radius: 8px;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.git-header-action {
+  padding: 2px 4px;
+  color: var(--color-ink-muted);
+  background: transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.git-header-action:hover {
+  background: var(--color-surface-hover);
+}
+
+.action-stage {
+  color: var(--color-green);
+}
+
+.action-stage:hover {
+  color: var(--color-green);
+  background: rgb(158 206 106 / 15%);
+}
+
+.action-unstage {
+  color: var(--color-red);
+}
+
+.action-unstage:hover {
+  color: var(--color-red);
+  background: rgb(247 118 142 / 15%);
+}
+
+.git-change-list {
+  padding: 2px 0 6px;
+}
+
+.git-change-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 6px;
+  color: var(--color-ink-soft);
+  background: transparent;
+  border-radius: 2px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.git-change-row:hover {
+  color: var(--color-ink);
+  background: var(--color-surface-hover);
+}
+
+.change-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  font-family: monospace;
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 2px;
+}
+
+.change-added {
+  color: var(--color-green);
+  background: rgb(158 206 106 / 15%);
+}
+
+.change-deleted {
+  color: var(--color-red);
+  background: rgb(247 118 142 / 15%);
+}
+
+.change-modified {
+  color: var(--color-orange);
+  background: rgb(255 174 87 / 15%);
+}
+
+.change-filename {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-row-action {
+  opacity: 0;
+  padding: 2px;
+  color: var(--color-ink-muted);
+  background: transparent;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.git-change-row:hover .git-row-action {
+  opacity: 1;
+}
+
+.git-row-action.action-stage {
+  color: var(--color-green);
+}
+
+.git-row-action.action-stage:hover {
+  background: rgb(158 206 106 / 15%);
+}
+
+.git-row-action.action-unstage {
+  color: var(--color-red);
+}
+
+.git-row-action.action-unstage:hover {
+  background: rgb(247 118 142 / 15%);
+}
+
+.git-empty-hint {
+  padding: 4px 6px;
+  color: var(--color-ink-muted);
+  font-size: 10px;
+}
+
+/* Branch Graph Section */
+.git-graph-section {
+  padding-bottom: 12px;
+}
+
+.git-active-branch-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 1px 6px;
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.branch-icon-accent {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-accent);
+}
+
+.branch-icon-tag {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-cyan);
+}
+
+.branch-graph-container {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.branch-node-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  padding: 2px 4px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.branch-node-row:hover {
+  background: var(--color-surface-hover);
+}
+
+.branch-svg-col {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  flex-shrink: 0;
+}
+
+.branch-node-info {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.branch-node-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.commit-hash {
+  color: var(--color-accent);
+  font-family: monospace;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.commit-branch-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 5px;
+  color: var(--color-cyan);
+  background: rgb(103 232 249 / 10%);
+  border: 1px solid rgb(103 232 249 / 20%);
+  border-radius: 2px;
+  font-size: 8px;
+}
+
+.commit-time {
+  margin-left: auto;
   color: var(--color-ink-muted);
   font-size: 9px;
 }
 
-.setting-row input[type="checkbox"] {
-  width: 13px;
-  height: 13px;
-  accent-color: var(--color-accent);
+.commit-message {
+  color: var(--color-ink-soft);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.setting-row select {
-  color: var(--color-ink-soft);
-  background: var(--color-canvas);
-  border: 1px solid var(--color-line-bright);
-  border-radius: 2px;
+/* ========================================================
+   SEARCH & REPLACE: REGEX MODIFIERS, GRANULAR REPLACE
+   ======================================================== */
+
+.search-panel {
+  padding: 0 8px;
 }
+
+.search-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.search-box,
+.replace-box {
+  margin-bottom: 0;
+}
+
+.search-clear-btn {
+  padding: 2px;
+  color: var(--color-ink-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.search-clear-btn:hover {
+  color: var(--color-ink);
+}
+
+.search-modifiers {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.modifier-btn {
+  padding: 1px 4px;
+  color: var(--color-ink-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.modifier-btn:hover {
+  color: var(--color-ink);
+  background: var(--color-surface-hover);
+}
+
+.modifier-btn.modifier-active {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
+
+.replace-bar-toggle {
+  display: flex;
+  align-items: center;
+}
+
+.replace-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  color: var(--color-ink-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.replace-toggle-btn:hover {
+  color: var(--color-ink);
+}
+
+.replace-all-btn {
+  padding: 2px 6px;
+  color: var(--color-canvas);
+  background: var(--color-accent);
+  border: 0;
+  border-radius: 2px;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.replace-all-btn:disabled {
+  color: var(--color-ink-muted);
+  background: var(--color-line);
+  cursor: not-allowed;
+}
+
+.search-file-group {
+  margin-bottom: 6px;
+}
+
+.search-file-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.search-file-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  padding: 3px 2px;
+  color: var(--color-ink);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.search-filename {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-file-badge {
+  margin-left: auto;
+  color: var(--color-ink-muted);
+  font-size: 9px;
+}
+
+.file-replace-btn,
+.single-replace-btn {
+  padding: 2px 4px;
+  color: var(--color-ink-muted);
+  background: transparent;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.file-replace-btn:hover,
+.single-replace-btn:hover {
+  color: var(--color-accent);
+  background: var(--color-surface-hover);
+}
+
+.search-matches-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.search-match-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px 3px 20px;
+  color: var(--color-ink-soft);
+  cursor: pointer;
+  border-radius: 2px;
+  font-size: 10px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+.search-match-row:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-ink);
+}
+
+.match-line-num {
+  color: var(--color-ink-muted);
+  min-width: 18px;
+}
+
+.match-snippet {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+

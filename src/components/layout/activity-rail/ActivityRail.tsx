@@ -11,8 +11,14 @@ const activities: [name: "explorer" | "search" | "git", label: ActivityType][] =
   ]
 
 export function ActivityRail() {
-  const { activeActivity, setActiveActivity, sidebarOpen, setSidebarOpen } =
-    useWorkbench()
+  const {
+    activeActivity,
+    setActiveActivity,
+    sidebarOpen,
+    setSidebarOpen,
+    settingsModalOpen,
+    toggleSettingsModal,
+  } = useWorkbench()
 
   function handleSelect(label: ActivityType) {
     if (activeActivity === label && sidebarOpen) {
@@ -38,9 +44,9 @@ export function ActivityRail() {
         ))}
       </div>
       <IconButton
-        active={sidebarOpen && activeActivity === "Settings"}
-        label="Settings"
-        onClick={() => handleSelect("Settings")}
+        active={settingsModalOpen}
+        label="Settings (Cmd+,)"
+        onClick={toggleSettingsModal}
       >
         <Icon name="settings" size={21} />
       </IconButton>

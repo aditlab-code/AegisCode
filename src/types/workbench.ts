@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 
-export type IconName = "aegis" | "bell" | "branch" | "check" | "chevron" | "chevron-down" | "chevron-up" | "close" | "code" | "copy" | "error" | "explorer" | "file" | "folder" | "git" | "history" | "layout" | "maximize" | "more" | "panel" | "play" | "plus" | "search" | "send" | "settings" | "split" | "terminal" | "trash" | "warning"
+export type IconName = "aegis" | "arrow-down" | "arrow-up" | "bell" | "branch" | "check" | "chevron" | "chevron-down" | "chevron-up" | "close" | "code" | "copy" | "error" | "explorer" | "file" | "folder" | "git" | "history" | "layout" | "maximize" | "more" | "panel" | "play" | "plus" | "refresh" | "search" | "send" | "settings" | "split" | "symbol" | "terminal" | "trash" | "warning"
 
 export type ChatProvider = "antigravity" | "opencode" | "openrouter"
 
@@ -112,3 +112,33 @@ export interface TerminalSession {
 }
 
 export type OutputChannel = "Linter" | "Tasks" | "Git"
+
+export interface GitCommitNode {
+  id: string
+  hash: string
+  message: string
+  author: string
+  time: string
+  branch: string
+  isHead?: boolean
+}
+
+export interface GitRepo {
+  id: string
+  name: string
+  branch: string
+  path: string
+}
+
+export interface OutlineSymbol {
+  id: string
+  name: string
+  kind: "function" | "class" | "type" | "variable" | "hook"
+  line: number
+}
+
+export interface PanelDimensions {
+  sidebarWidth: number
+  chatDrawerWidth: number
+  bottomPanelHeight: number
+}

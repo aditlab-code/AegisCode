@@ -3,10 +3,10 @@ import { Icon } from "../../ui/Icon"
 import { useWorkbench } from "../../../context/WorkbenchContext"
 
 export function SettingsPanel() {
-  const { linterSettings, setLinterSettings } = useWorkbench()
+  const { linterSettings, setLinterSettings, minimapEnabled, toggleMinimap } =
+    useWorkbench()
   const [settingsQuery, setSettingsQuery] = useState("")
   const [autoSave, setAutoSave] = useState(true)
-  const [minimap, setMinimap] = useState(true)
 
   const query = settingsQuery.toLowerCase().trim()
 
@@ -48,8 +48,8 @@ export function SettingsPanel() {
               <small>Show code overview</small>
             </span>
             <input
-              checked={minimap}
-              onChange={() => setMinimap((v) => !v)}
+              checked={minimapEnabled}
+              onChange={toggleMinimap}
               type="checkbox"
             />
           </label>

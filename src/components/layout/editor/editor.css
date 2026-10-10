@@ -4,6 +4,12 @@
   min-height: 0;
 }
 
+.editor-empty {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
 .editor-split-container {
   display: flex;
   width: 100%;
@@ -20,6 +26,12 @@
   min-width: 0;
   overflow: hidden;
   border-right: 1px solid var(--color-line);
+}
+
+.editor-window-group.group-empty {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 .editor-window-group:last-child {
@@ -229,6 +241,8 @@
 
 .code-editor {
   position: relative;
+  display: flex;
+  flex-direction: row;
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -237,7 +251,8 @@
 
 .code-editor-layout {
   display: flex;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   height: 100%;
 }
 
@@ -357,22 +372,79 @@
   text-underline-offset: 3px;
 }
 
-.minimap {
-  position: sticky;
-  top: 4px;
-  float: right;
-  display: grid;
-  gap: 3px;
-  width: 55px;
-  margin: -400px 8px 0 0;
-  opacity: 0.35;
-  pointer-events: none;
+/* Interactive Minimap */
+.minimap-container {
+  position: relative;
+  z-index: 5;
+  width: 60px;
+  flex-shrink: 0;
+  height: 100%;
+  background: color-mix(in srgb, var(--color-canvas) 92%, transparent);
+  border-left: 1px solid var(--color-line);
+  overflow: hidden;
+  user-select: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
 }
 
-.minimap span {
-  display: block;
+.minimap-container:hover {
+  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+}
+
+.minimap-content {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 6px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.minimap-line {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   height: 2px;
-  background: var(--color-blue);
+  opacity: 0.75;
+  transition: opacity 0.15s ease;
+}
+
+.minimap-container:hover .minimap-line {
+  opacity: 1;
+}
+
+.minimap-token {
+  display: inline-block;
+  height: 2px;
+  border-radius: 1px;
+  background-color: currentColor;
+}
+
+.minimap-empty-bar {
+  display: inline-block;
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--color-line) 50%, transparent);
+}
+
+.minimap-slider {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--color-accent) 60%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 60%, transparent);
+  pointer-events: none;
+  transition: top 0.04s linear;
+}
+
+@media (max-width: 640px) {
+  .minimap-container {
+    display: none;
+  }
 }
 
 .syntax-pink {
@@ -392,4 +464,283 @@
 }
 .text-muted {
   color: var(--color-ink-muted);
+}
+
+/* ========================================================
+   EDITOR EMPTY STATE (ALL TABS CLOSED)
+   ======================================================== */
+
+.editor-empty-state {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 24px;
+  background: var(--color-canvas);
+  overflow: hidden;
+  user-select: none;
+}
+
+.empty-watermark {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  color: var(--color-ink);
+  transform: scale(1.6);
+}
+
+.empty-content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 440px;
+  text-align: center;
+}
+
+.empty-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 24px;
+}
+
+.empty-brand-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--color-accent) 15%, transparent);
+}
+
+.empty-title {
+  margin: 4px 0 0;
+  color: var(--color-ink);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.empty-subtitle {
+  margin: 0;
+  color: var(--color-ink-muted);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.empty-shortcut-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 24px;
+}
+
+.empty-shortcut-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  color: var(--color-ink-soft);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 11px;
+}
+
+.empty-shortcut-card:hover {
+  color: var(--color-ink);
+  background: var(--color-surface-hover);
+  border-color: var(--color-line-bright);
+  transform: translateY(-1px);
+}
+
+.shortcut-card-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: inherit;
+}
+
+.shortcut-card-left svg {
+  color: var(--color-accent);
+}
+
+.shortcut-kbd {
+  padding: 2px 6px;
+  color: var(--color-ink-muted);
+  background: var(--color-canvas);
+  border: 1px solid var(--color-line);
+  border-radius: 3px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+}
+
+.empty-footer-hint {
+  margin: 0;
+  color: var(--color-ink-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* ========================================================
+   DIAGNOSTIC HOVER CARD (LINT HINTS ON ERROR TEXT)
+   ======================================================== */
+
+.diagnostic-hover-card {
+  position: fixed;
+  z-index: 50;
+  width: min(340px, calc(100vw - 32px));
+  padding: 10px 12px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-line-bright);
+  border-radius: 8px;
+  box-shadow: 0 12px 36px rgb(0 0 0 / 48%);
+  backdrop-filter: blur(24px) saturate(140%);
+  animation: hover-fade-in 0.12s ease-out;
+}
+
+@keyframes hover-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hover-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.hover-card-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.diag-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.diag-badge-error {
+  color: var(--color-red);
+  background: rgb(247 118 142 / 15%);
+  border: 1px solid rgb(247 118 142 / 30%);
+}
+
+.diag-badge-warning {
+  color: var(--color-orange);
+  background: rgb(255 174 87 / 15%);
+  border: 1px solid rgb(255 174 87 / 30%);
+}
+
+.diag-source {
+  color: var(--color-ink-muted);
+  font-family: monospace;
+  font-size: 10px;
+}
+
+.hover-card-close-btn {
+  padding: 2px;
+  color: var(--color-ink-muted);
+  background: transparent;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.hover-card-close-btn:hover {
+  color: var(--color-ink);
+  background: var(--color-surface-hover);
+}
+
+.hover-card-body {
+  margin-bottom: 8px;
+}
+
+.diag-message {
+  margin: 0 0 4px;
+  color: var(--color-ink);
+  font-size: 11px;
+  line-height: 1.45;
+  font-weight: 500;
+}
+
+.diag-location {
+  color: var(--color-ink-muted);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+}
+
+.hover-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-line);
+}
+
+.hover-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-bright);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+  transition: all 0.12s ease;
+}
+
+.action-problems {
+  color: var(--color-ink-soft);
+}
+
+.action-problems:hover {
+  color: var(--color-ink);
+  background: var(--color-surface-hover);
+}
+
+.action-ai {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+
+.action-ai:hover {
+  background: color-mix(in srgb, var(--color-accent) 25%, transparent);
+  border-color: var(--color-accent);
 }

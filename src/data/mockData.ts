@@ -5,6 +5,8 @@ import type {
   GitChange,
   FileBuffer,
   TerminalSession,
+  GitCommitNode,
+  GitRepo,
 } from "../types/workbench"
 
 export const initialFileBuffers: Record<string, FileBuffer> = {
@@ -108,15 +110,36 @@ export default defineConfig({
 dist
 .DS_Store`,
   },
+  ".env": {
+    language: "Plain Text",
+    isDirty: false,
+    content: `PORT=4173
+AEGIS_DEBUG=true
+AEGIS_MODE=local`,
+  },
+  "SKILL.md": {
+    language: "Markdown",
+    isDirty: false,
+    content: `# Agent Skills Specification
+
+This repository contains OpenCode and Aegis agent skills.
+- spec-driven-development
+- test-driven-development
+- debugging-and-error-recovery
+`,
+  },
 }
 
 export const initialFiles: FileItem[] = [
+  { depth: 0, icon: "folder", label: ".agents", open: false, muted: true },
+  { depth: 1, icon: "file", label: "SKILL.md", muted: true },
   { depth: 0, icon: "folder", label: "src", open: true },
   { depth: 1, icon: "folder", label: "components", open: true },
   { depth: 2, icon: "file", label: "Endpoint.tsx" },
   { depth: 2, icon: "file", label: "Status.tsx" },
   { depth: 1, icon: "file", label: "App.tsx", active: true },
   { depth: 1, icon: "file", label: "index.css" },
+  { depth: 0, icon: "file", label: ".env", muted: true },
   { depth: 0, icon: "file", label: ".gitignore", muted: true },
   { depth: 0, icon: "file", label: "package.json" },
   { depth: 0, icon: "file", label: "vite.config.ts" },
@@ -166,6 +189,65 @@ export const initialNotifications: NotificationItem[] = [
 export const initialGitChanges: GitChange[] = [
   { code: "M", file: "App.tsx", directory: "src" },
   { code: "M", file: "index.css", directory: "src" },
+]
+
+export const initialStagedChanges: GitChange[] = [
+  {
+    code: "M",
+    file: "Sidebar.tsx",
+    directory: "src/components/layout/sidebar",
+  },
+]
+
+export const initialGitRepos: GitRepo[] = [
+  {
+    id: "repo-1",
+    name: "aegiscode (root)",
+    branch: "main",
+    path: "/Users/aditwicaksono/Documents/Project-AI/AegisCodev2",
+  },
+  {
+    id: "repo-2",
+    name: "aegis-runner",
+    branch: "dev",
+    path: "/Users/aditwicaksono/Documents/Project-AI/aegis-runner",
+  },
+]
+
+export const initialGitCommits: GitCommitNode[] = [
+  {
+    id: "commit-1",
+    hash: "7f4b89a",
+    message: "feat: add bottom panel drag and drop",
+    author: "Adit",
+    time: "10m ago",
+    branch: "main",
+    isHead: true,
+  },
+  {
+    id: "commit-2",
+    hash: "3c2d1e0",
+    message: "refactor: flexbox bottom panel layout",
+    author: "Adit",
+    time: "32m ago",
+    branch: "main",
+  },
+  {
+    id: "commit-3",
+    hash: "a98c7b6",
+    message: "feat: VS Code window groups split editor",
+    author: "Adit",
+    time: "2h ago",
+    branch: "feature/sidebar",
+  },
+  {
+    id: "commit-4",
+    hash: "1e5f8a2",
+    message: "chore: init aegis codebase architecture",
+    author: "Adit",
+    time: "1d ago",
+    branch: "main",
+  },
 ]
 
 export const initialTerminalLines: string[] = [

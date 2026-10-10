@@ -38,6 +38,7 @@ export function CommandPalette() {
     setCommandPaletteOpen,
     setActiveActivity,
     setSidebarOpen,
+    setSettingsModalOpen,
   } = useWorkbench()
   const [query, setQuery] = useState("")
 
@@ -48,6 +49,11 @@ export function CommandPalette() {
   )
 
   function handleSelect(activity: ActivityType) {
+    if (activity === "Settings") {
+      setSettingsModalOpen(true)
+      setCommandPaletteOpen(false)
+      return
+    }
     setActiveActivity(activity)
     setSidebarOpen(true)
     setCommandPaletteOpen(false)

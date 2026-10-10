@@ -1,23 +1,30 @@
-.bottom-tabs {
-  display: flex;
-  align-items: stretch;
-}
-
 .bottom-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
   background: rgb(10 15 23 / 94%);
   border-top: 1px solid var(--color-line);
+}
+
+.workbench-panel-maximized .bottom-panel {
+  border-top: 0;
 }
 
 .bottom-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 34px;
+  height: 35px;
+  flex-shrink: 0;
   padding: 0 7px 0 12px;
+  border-bottom: 1px solid var(--color-line);
 }
 
 .bottom-tabs {
+  display: flex;
+  align-items: stretch;
   gap: 19px;
   height: 100%;
 }
@@ -46,7 +53,7 @@
 .bottom-tab-active::after {
   position: absolute;
   inset: auto 0 0;
-  height: 1px;
+  height: 2px;
   background: var(--color-accent);
   content: "";
 }
@@ -114,39 +121,67 @@
   box-shadow: none;
 }
 
-.terminal-output {
-  height: calc(100% - 34px);
-  padding: 5px 14px 12px;
-  overflow: auto;
-  color: var(--color-ink-soft);
+/* Master body content */
+.bottom-panel-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Terminal View */
+.terminal-session {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 11px;
   line-height: 19px;
-}
-
-.terminal-output p {
-  margin: 0;
-}
-
-.terminal-session {
-  display: flex;
-  min-height: 100%;
-  flex-direction: column;
+  color: var(--color-ink-soft);
 }
 
 .terminal-history {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 14px;
+}
+
+.terminal-history p {
+  margin: 0;
 }
 
 .terminal-event {
   color: var(--color-cyan);
 }
 
+.terminal-prompt,
+.terminal-ok {
+  color: var(--color-accent);
+}
+
+.terminal-error {
+  color: var(--color-red);
+}
+
+.terminal-link {
+  color: var(--color-cyan);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .terminal-command {
   display: flex;
   align-items: center;
   gap: 7px;
-  min-height: 20px;
+  height: 34px;
+  flex-shrink: 0;
+  padding: 0 14px;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-line);
 }
 
 .terminal-command input {
@@ -167,17 +202,6 @@
   cursor: not-allowed;
 }
 
-.terminal-prompt,
-.terminal-ok {
-  color: var(--color-accent);
-}
-
-.terminal-link {
-  color: var(--color-cyan);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
 .cursor-block {
   display: inline-block;
   width: 6px;
@@ -188,17 +212,23 @@
   animation: blink 1.1s steps(1) infinite;
 }
 
+/* Problems View */
 .problems-container {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 8px 14px;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
 }
 
 .problems-filter-bar {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding-bottom: 6px;
+  padding-bottom: 8px;
+  flex-shrink: 0;
   border-bottom: 1px solid var(--color-line);
 }
 
@@ -227,19 +257,20 @@
 }
 
 .empty-problems {
-  padding: 12px 6px;
+  padding: 14px 6px;
   color: var(--color-ink-muted);
   font-size: 11px;
 }
 
-.terminal-error {
-  color: var(--color-red);
-}
-
 .problems-list {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   gap: 2px;
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  padding-top: 6px;
+  font-family: inherit;
 }
 
 .problems-list button {
@@ -250,6 +281,7 @@
   padding: 6px 8px;
   color: var(--color-ink-soft);
   background: transparent;
+  border-radius: 4px;
   text-align: left;
 }
 
@@ -280,6 +312,132 @@
   font-size: 9px;
 }
 
+/* Maximized Problems Table View */
+.problems-table-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: 6px;
+}
+
+.problems-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  text-align: left;
+}
+
+.problems-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 6px 10px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-line);
+}
+
+.problems-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-line) 45%, transparent);
+  color: var(--color-ink-soft);
+  vertical-align: middle;
+}
+
+.problems-table-row {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.problems-table-row:hover {
+  background: var(--color-surface-hover);
+}
+
+.severity-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.severity-error {
+  color: var(--color-red);
+  background: color-mix(in srgb, var(--color-red) 12%, transparent);
+}
+
+.severity-warning {
+  color: var(--color-orange);
+  background: color-mix(in srgb, var(--color-orange) 12%, transparent);
+}
+
+.problem-message-cell strong {
+  font-weight: 500;
+  color: var(--color-ink);
+}
+
+.problem-file-cell,
+.problem-loc-cell {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  color: var(--color-ink-muted);
+}
+
+.source-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-line);
+  border-radius: 3px;
+  font-size: 9px;
+  color: var(--color-ink-muted);
+}
+
+.problems-ask-ai-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
+  border-radius: 4px;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.problems-ask-ai-btn:hover {
+  background: var(--color-accent);
+  color: var(--color-canvas);
+}
+
+/* Output View */
+.lint-output {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 14px 12px;
+  color: var(--color-ink-soft);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 19px;
+}
+
+.lint-output p {
+  margin: 0;
+}
+
 .lint-output .event-time {
   margin-right: 10px;
   color: var(--color-ink-muted);
@@ -288,4 +446,3 @@
 @keyframes blink {
   50% { opacity: 0; }
 }
-

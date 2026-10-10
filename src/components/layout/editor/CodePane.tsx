@@ -1,14 +1,19 @@
 import {
   useRef,
+  useState,
+  useEffect,
   type ChangeEvent,
   type KeyboardEvent,
+  type MouseEvent,
   type UIEvent,
 } from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { Minimap } from "./Minimap"
+import { DiagnosticHoverCard } from "./DiagnosticHoverCard"
 import { useWorkbench } from "../../../context/WorkbenchContext"
 import { tokenizeLine } from "../../../utils/syntax"
+import type { DiagnosticItem } from "../../../types/workbench"
 
 interface CodePaneProps {
   paneId: "primary" | "secondary"
@@ -35,6 +40,7 @@ export function CodePane({
     saveFile,
     tabs,
     setSecondaryActiveTab,
+    minimapEnabled,
   } = useWorkbench()
 
   const gutterRef = useRef<HTMLDivElement>(null)
@@ -50,11 +56,62 @@ export function CodePane({
     d.location.startsWith(filename),
   )
 
+  const [hoverDiag, setHoverDiag] = useState<{
+    diag: DiagnosticItem
+    x: number
+    y: number
+  } | null>(null)
+
+  const [scrollInfo, setScrollInfo] = useState({
+    scrollTop: 0,
+    scrollHeight: 1,
+    clientHeight: 1,
+  })
+
+  useEffect(() => {
+    function updateDimensions() {
+      if (textareaRef.current) {
+        setScrollInfo({
+          scrollTop: textareaRef.current.scrollTop,
+          scrollHeight: textareaRef.current.scrollHeight || 1,
+          clientHeight: textareaRef.current.clientHeight || 1,
+        })
+      }
+    }
+    updateDimensions()
+    const timer = setTimeout(updateDimensions, 60)
+    window.addEventListener("resize", updateDimensions)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener("resize", updateDimensions)
+    }
+  }, [filename, content])
+
   function getLineDiagnostic(lineNum: number) {
     return fileDiagnostics.find((d) => {
       const match = d.location.match(/\[(\d+),/)
       return match && parseInt(match[1], 10) === lineNum
     })
+  }
+
+  function handleTextareaMouseMove(e: MouseEvent<HTMLTextAreaElement>) {
+    if (!textareaRef.current) return
+    const rect = textareaRef.current.getBoundingClientRect()
+    const relativeY = e.clientY - rect.top + textareaRef.current.scrollTop - 9
+    const lineNum = Math.floor(relativeY / 21) + 1
+
+    if (lineNum >= 1 && lineNum <= lines.length) {
+      const diag = getLineDiagnostic(lineNum)
+      if (diag) {
+        setHoverDiag({
+          diag,
+          x: e.clientX,
+          y: e.clientY + 14,
+        })
+        return
+      }
+    }
+    setHoverDiag(null)
   }
 
   function syncScroll(event: UIEvent<HTMLTextAreaElement>) {
@@ -66,6 +123,25 @@ export function CodePane({
     if (gutterRef.current) {
       gutterRef.current.scrollTop = target.scrollTop
     }
+    setScrollInfo({
+      scrollTop: target.scrollTop,
+      scrollHeight: target.scrollHeight,
+      clientHeight: target.clientHeight,
+    })
+  }
+
+  function handleScrollToLine(lineIndex: number) {
+    if (!textareaRef.current) return
+    const lineHeight = 21
+    const targetScroll = Math.max(0, lineIndex * lineHeight - 60)
+    textareaRef.current.scrollTop = targetScroll
+    if (syntaxRef.current) syntaxRef.current.scrollTop = targetScroll
+    if (gutterRef.current) gutterRef.current.scrollTop = targetScroll
+    setScrollInfo({
+      scrollTop: targetScroll,
+      scrollHeight: textareaRef.current.scrollHeight,
+      clientHeight: textareaRef.current.clientHeight,
+    })
   }
 
   function updateCursor() {
@@ -200,6 +276,23 @@ export function CodePane({
                           ? "diagnostic-error"
                           : "diagnostic-warning"
                       }`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        setHoverDiag({
+                          diag,
+                          x: rect.right + 10,
+                          y: rect.top - 6,
+                        })
+                      }}
+                      onMouseEnter={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        setHoverDiag({
+                          diag,
+                          x: rect.right + 10,
+                          y: rect.top - 6,
+                        })
+                      }}
                       title={diag.title}
                     />
                   )}
@@ -256,6 +349,7 @@ export function CodePane({
               }}
               onKeyDown={handleKeyDown}
               onKeyUp={updateCursor}
+              onMouseMove={handleTextareaMouseMove}
               onScroll={syncScroll}
               ref={textareaRef}
               spellCheck={false}
@@ -265,8 +359,24 @@ export function CodePane({
           </div>
         </div>
 
-        {!secondary && <Minimap lineCount={Math.max(lines.length, 18)} />}
+        {minimapEnabled && (
+          <Minimap
+            clientHeight={scrollInfo.clientHeight}
+            lines={lines}
+            onScrollToLine={handleScrollToLine}
+            scrollHeight={scrollInfo.scrollHeight}
+            scrollTop={scrollInfo.scrollTop}
+          />
+        )}
       </div>
+
+      {hoverDiag && (
+        <DiagnosticHoverCard
+          diagnostic={hoverDiag.diag}
+          onClose={() => setHoverDiag(null)}
+          position={{ x: hoverDiag.x, y: hoverDiag.y }}
+        />
+      )}
     </div>
   )
 }

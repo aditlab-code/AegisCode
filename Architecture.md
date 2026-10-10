@@ -40,11 +40,13 @@ src/
 │   │   │   └── activity-rail.css      # Styling activity rail vertical bar
 │   │   ├── sidebar/           # Modul Primary Sidebar
 │   │   │   ├── Sidebar.tsx            # Orkestrator Sidebar
-│   │   │   ├── ExplorerPanel.tsx      # Seksi OPEN EDITORS (Window Groups), File tree, Outline, & Timeline
-│   │   │   ├── SearchPanel.tsx        # Regex search & replace repositori
-│   │   │   ├── SourceControlPanel.tsx # Git changes staging, commit, & sync
-│   │   │   ├── SettingsPanel.tsx      # Preferences editor (auto save, minimap, tab size, Linter & Diagnostics)
-│   │   │   └── sidebar.css            # Styling side panel, Open Editors, & sub-panels
+│   │   │   ├── ExplorerPanel.tsx      # Inline CRUD, Floating Context Menu, Hidden Files, Quick Filter, & Symbol Outline
+│   │   │   ├── SearchPanel.tsx        # Regex Search & Granular Replace Engine (single, per-file, all)
+│   │   │   ├── SourceControlPanel.tsx # Multi-repo controller, Git toolbar (pull/push/commit), Staged/Changes subtabs, & Branch Graph
+│   │   │   └── sidebar.css            # Styling side panel, Explorer, Git Graph, & Search
+│   │   ├── settings/          # Modul Settings Modal Overlay (Minimalist VS Code)
+│   │   │   ├── SettingsModal.tsx      # Modal Overlay Preferences (Two-column categories & Regex Search Bar)
+│   │   │   └── settings-modal.css     # Styling floating modal dialog & preferences cards
 │   │   ├── editor/            # Modul Workbench Text Editor (VS Code Window Groups)
 │   │   │   ├── Editor.tsx             # Orkestrator Window Groups (Group 1 & 2), Dual Pane, & Draggable Resizer Sash
 │   │   │   ├── EditorTabs.tsx         # Group-aware multi-tab switcher dengan native HTML5 Drag-and-Drop (DND)
@@ -147,13 +149,26 @@ flowchart TD
    - Quick Command Launcher button (`⌘ K`).
    - Action toggle: Toggle Bottom Panel (`Ctrl+J`), Toggle Primary Sidebar (`Ctrl+B`), Toggle AEGIS Chat.
 2. **Activity Rail & Sidebar (Left Columns)**:
-   - **Activity Rail**: Ikon switcher untuk Explorer, Search, Source Control (Git), dan Settings.
+   - **Activity Rail**: Ikon switcher untuk Explorer, Search, Source Control (Git), dan trigger modal dialog Settings (`Cmd+,`).
    - **Explorer**: 
      - **OPEN EDITORS**: Seksi collapsible di paling atas yang memvisualisasikan subtab per Window Group (`GROUP 1` dan `GROUP 2`), status file aktif, indikator modifikasi belum disimpan (*dirty bullet*), dan tombol penutup file (`✕`).
-     - **Workspace File Tree**: Tree direktori hierarkis (`AEGISCODE`) dengan status aktif/muted, icon folder/file, dan expandable sections (Outline, Timeline).
-   - **Search & Replace**: Regex-ready input filter untuk repositori aktif dengan file include pattern.
-   - **Source Control**: Branch info, commit message composer, status perubahan staging (M/A/D), dan sync action.
-   - **Settings**: Pengaturan konfigurasi editor (Auto Save, Minimap, Tab Size) dan section **LINTER & DIAGNOSTICS** (Enable Linter, Lint Trigger onType/onSave, Show Warnings).
+     - **Workspace File Tree & Inline CRUD**: Tree direktori hierarkis (`AEGISCODE`) dengan aksi header & inline New File, New Folder, Rename, Delete.
+     - **Floating Context Menu (Klik Kanan)**: Menu popover floating native-feel dengan Copy Name, Copy Relative Path, Copy Full Path, Rename, dan Delete.
+     - **Hidden File Detection**: Otomatis membaca dan menampilkan file/folder tersembunyi (`.agents/`, `.env`, `.gitignore`) secara default dengan muted visual styling (`.file-muted`).
+     - **Quick Filter Bar**: Filter instan pohon file berdasarkan nama secara real-time.
+     - **Interactive Outline (Symbol Tree)**: Parser regex simbol file aktif (functions, classes, interfaces, types) dengan navigasi klik-lompat-baris (`setCursorPosition`).
+   - **Search & Replace**:
+     - Mesin pencarian regex real-time (`.*`, `Aa` match case, `\b` whole word) melintasi seluruh buffer aktif workspace (`fileBuffers`).
+     - Kontrol replace granular: replace per baris/match, replace semua dalam 1 file spesifik, dan replace all lintas workspace.
+   - **Source Control (Git)**:
+     - **Active Repository Controller**: Multi-repo switcher dropdown (`aegis-code-v2`, `aegis-agent-runtime`, `aegis-docs`).
+     - **Full Git Controls**: Toolbar commit message textarea, shortcut Ctrl+Enter, tombol Pull (`gitPull`), Push (`gitPush`), dan Sync.
+     - **Subtabs Staged & Changes**: Subseksi `STAGED CHANGES` (dengan tombol unstage per-file `-` dan unstage all) dan `CHANGES` (dengan tombol stage per-file `+` dan stage all).
+     - **Branch Graph**: Visual timeline commit berbasis SVG yang memetakan rantai hash, badge cabang (`main`), author, dan timestamp.
+   - **Settings Modal Overlay (Bukan Tab & Bukan Sidebar)**:
+     - Floating dialog modal minimalis bergaya VS Code dengan backdrop blur (`Cmd+,`).
+     - Navigasi dua kolom: Kolom kiri (Commonly Used, Text Editor, Workbench, Linter, Git, AI), kolom kanan (kartu pengaturan interaktif toggle/select/input).
+     - Header search bar dengan dukungan regex (`.*`) untuk pencarian instan nama atau deskripsi opsi setting.
 3. **Workbench (Center Column)**:
    - **Window Groups (VS Code Architecture)**: Mendukung dual independent editor groups (`Group 1` & `Group 2`), masing-masing memiliki bilah multi-tab mandiri.
    - **Draggable Window Resizer (Sash)**: Pembatas interaktif vertikal di antara kedua group dengan cursor `col-resize` (rentang 20%–80%) dan fitur double-click untuk auto-reset 50:50.
@@ -161,6 +176,9 @@ flowchart TD
    - **Clean Breadcrumbs**: Path visual file aktif (`src > App.tsx > LocalServer`) yang bersih tanpa dropdown manual atau badge status statis.
    - **Interactive Code Buffer**: Pengetikan interaktif nyata dengan `fileBuffers` tersinkronisasi, nomor baris dinamis, auto-indent (2 spasi pada Tab, preserve indent pada Enter), dirty bullet pada tab, dan shortcut simpan (`Ctrl+S`).
    - **Auto-Linting & Gutter Diagnostics**: Validasi sintaksis real-time untuk TS/JS, Python, JSON, dan C++ dengan dot error/warning di gutter dan garis bawah bergelombang (*squiggly underline*) yang terhubung ke panel Problems.
+   - **Editor Empty State**: Tampilan watermark logo Aegis dengan kartu pintasan interaktif (`⌘N` New File, `⌘K` Command Palette, `⌘B` Toggle Sidebar, `⌘,` Settings) saat seluruh tab ditutup.
+   - **Lint Diagnostic Hover Tooltip**: Popover floating (`DiagnosticHoverCard`) saat hover/klik pada error squiggly text atau gutter dot, dilengkapi tombol *"View in Problems"* dan *"Ask Aegis AI"*.
+   - **3-Layer Browser AI Sync**: Sinkronisasi aktif metadata dokumen & buffer (`document.title`, `<meta name="aegis:*">`, DOM `data-aegis-*`, dan `window.__AEGIS_ACTIVE_CONTEXT__`) untuk interoperabilitas dengan AI bawaan browser.
    - **Bottom Panel**: Panel drawer bawah modular dengan urutan default **Terminal - Problems - Output**, tab draggable horizontal yang persisten di `localStorage`, kontrol toolbar interaktif (Maximize/Restore `.workbench-panel-maximized`, Close `✕`), Multi-Session Terminal (dropdown switcher, Arrow Up/Down history, Ctrl+C interrupt), Problems filter (All/Errors/Warnings), dan Output channel selector (Linter, Tasks, Git).
 4. **AppDrawer (Right Column)**:
    - Panel chatbot AEGIS Agent yang terhubung dengan konteks workspace lokal.
@@ -513,6 +531,46 @@ Menggantikan preview statis dengan code buffer yang dapat diketik secara nyata:
     - `Lint Trigger`: Pilihan mode eksekusi (`onType` reaktif dengan debounce ~300ms vs `onSave` saat menyimpan file).
     - `Show Warnings`: Toggle untuk menyaring apakah hanya error fatal atau warning juga yang dimunculkan di editor & Problems panel.
 
+### G. Editor Empty State (`EditorEmptyState.tsx`)
+- **Visual Branding & Watermark**: Saat semua tab dalam sebuah Window Group atau seluruh editor ditutup, ruang editor menampilkan visual watermark logo Aegis (`Icon name="aegis"` dengan opasitas lembut), heading *"AegisCode Editor"*, serta subjudul deskriptif.
+- **Kartu Aksi Pintasan (Action Cards)**: Disediakan 4 kartu pintasan keyboard interaktif:
+  1. `⌘ N` / `Ctrl+N` (*New File*): Menampilkan prompt instan untuk membuat file baru di dalam buffer dan langsung membukanya di editor.
+  2. `⌘ K` / `Ctrl+K` (*Command Palette*): Membuka overlay command palette untuk pencarian file dan perintah IDE.
+  3. `⌘ B` / `Ctrl+B` (*Toggle Sidebar*): Menampilkan / menyembunyikan primary sidebar panel.
+  4. `⌘ ,` / `Ctrl+,` (*Open Settings*): Membuka modal pengaturan konfigurasi IDE.
+- **Dukungan Dual-Group**: Bekerja baik pada mode single view maupun saat split editor aktif (misalnya Group 1 memiliki file terbuka sedangkan Group 2 kosong).
+
+### H. Floating Lint Diagnostics & Hover Card (`DiagnosticHoverCard.tsx`)
+- **Pemicu Interaktif Ganda**:
+  - *Gutter Diagnostic Dots*: Mengklik dot merah (*error*) atau oranye (*warning*) di gutter baris kode.
+  - *Squiggly Text Cursor / Mouse Hover*: Arahkan kursor atau mouse pada segmen teks bergaris bawah bergelombang merah/kuning untuk memicu kartu popover.
+- **Anatomi Popover Floating**:
+  - Header: Badge severity (`ERROR` / `WARNING`) berlatar warna semantik token, indikator lokasi baris & kolom (`Ln X, Col Y`), dan tombol tutup (`✕`).
+  - Pesan Diagnostik: Teks deskripsi masalah sintaksis yang jelas.
+  - Quick Actions Footer:
+    1. **"View in Problems"**: Membuka Bottom Panel, mengaktifkan tab Problems, dan menyorot daftar isu.
+    2. **"Ask Aegis AI"**: Mengirimkan prompt diagnosa langsung ke AEGIS Chat Drawer (`"Help me fix this diagnostic in <filename>: <error>"`) dan otomatis membuka drawer jika sedang tertutup.
+- **Dismissal Luwes**: Dapat ditutup dengan menekan tombol Escape (`Esc`), mengklik tombol `✕`, atau mengklik di luar area kartu.
+
+### I. 3-Layer Browser Native AI Synchronization (`src/utils/browserAiSync.ts`)
+Untuk mendukung integrasi langsung dengan AI bawaan browser (seperti Chrome Built-in AI / Gemini Nano, Web AI Extensions, atau screen/DOM parser agent):
+- **Lapis 1 — Head & Document Title Layer**:
+  - `document.title`: Mengadopsi format `<ActiveFile> — AegisCode` (atau `AegisCode — Lightweight IDE` saat kosong).
+  - `<head>` Meta Tags: Otomatis membuat dan memperbarui elemen meta secara reaktif:
+    - `<meta name="aegis:active-file" content="...">`
+    - `<meta name="aegis:language" content="...">`
+    - `<meta name="aegis:workspace" content="...">`
+    - `<meta name="aegis:cursor" content="Ln X, Col Y">`
+    - `<meta name="aegis:is-dirty" content="true|false">`
+    - `<meta name="aegis:diagnostics-count" content="...">`
+- **Lapis 2 — Semantic DOM Attributes Layer**:
+  - Elemen container `.workspace` disuntikkan atribut data semantik standar:
+    `data-aegis-active-file`, `data-aegis-language`, `data-aegis-workspace`, `data-aegis-cursor-line`, `data-aegis-cursor-col`, `data-aegis-dirty`, `data-aegis-diagnostics`.
+  - Hal ini memudahkan script web AI ekstensi melakukan pembacaan konteks instan tanpa perlu membedah DOM internal editor.
+- **Lapis 3 — Runtime Global JS Context & CustomEvent**:
+  - Objek global `window.__AEGIS_ACTIVE_CONTEXT__` selalu memuat snapshot metadata terkini beserta timestamp UNIX.
+  - Setiap perubahan file, cursor move, atau buffer editing memancarkan custom event `window.dispatchEvent(new CustomEvent('aegis:file-change', { detail: payload }))` sehingga ekstensi AI atau modul eksternal dapat berlangganan secara asinkronus (*event-driven*).
+
 ---
 
 ## 11. Arsitektur Bottom Panel (Draggable Tabs, Multi-Session Terminal, Problems Filter, & Output Channels)
@@ -595,9 +653,130 @@ flowchart TD
 - **Channel Buffer & Clear**: Tombol pembersih log (*Clear Output*) di samping dropdown yang membersihkan output khusus untuk saluran yang sedang aktif.
 - **Timestamping & Monospace Formatting**: Tiap baris log dilengkapi penanda waktu (*timestamp*) dan styling monospaced rapi.
 
-### E. Kontrol Frame & Ukuran Panel
-- **Maximize / Restore**: Tombol maximize di header kanan yang mengaplikasikan kelas `.workbench-panel-maximized` pada container shell, memperluas area panel hingga memenuhi workbench untuk kemudahan peninjauan log panjang.
+### E. Kontrol Frame & Mekanisme Fullscreen (Flexbox Layout Engine & Grid Fix)
+- **Koreksi Bug Grid Fullscreen**: Memperbaiki deklarasi `.workbench-panel-maximized` menjadi `grid-template-rows: 1fr !important;`. Sebelumnya, `grid-template-rows: 0 1fr;` menyebabkan `<BottomPanel />` terdorong ke row 1 (`0px`) karena `.editor` (`display: none`) tidak berpartisipasi dalam formatting grid, mengakibatkan konten tab collapse/rusak. Dengan `1fr !important;`, Bottom Panel mengambil 100% penuh tinggi workbench tanpa celah.
+- **Data Grid Inspeksi Masalah pada Mode Fullscreen (`ProblemsView.tsx`)**:
+  - Pada mode normal: Tampilan kartu daftar 1-kolom yang ringkas.
+  - Pada mode fullscreen / maximized: Bertransformasi otomatis menjadi **Data Grid Multi-Kolom Profesional** dengan kolom:
+    1. *Severity*: Ikon dan badge warna semantik (`Error` / `Warning`).
+    2. *Message*: Judul / deskripsi masalah sintaksis.
+    3. *File*: Nama file yang bermasalah.
+    4. *Location*: Nomor baris dan kolom (`Ln X, Col Y`).
+    5. *Source*: Sumber linter (`TypeScript`, `ESLint`, `JSON Parser`, dll.).
+    6. *Actions*: Tombol aksi cepat *"Ask AI"* di ujung baris yang langsung mengirim diagnosa ke AEGIS Chat Drawer.
+- **Container Flexbox Murni (`height: 100%`)**: `.bottom-panel` dikonfigurasi sebagai container flex vertikal (`height: 100%; min-height: 0; overflow: hidden;`), dengan `.bottom-panel-header` (`flex-shrink: 0; height: 35px;`) dan `.bottom-panel-content` (`flex: 1; min-height: 0; overflow: hidden;`). Ini menjamin isi tab selalu berekspansi penuh 100% tanpa menyisakan ruang kosong atau collapse.
+- **Pemisahan Font & Scroll Terisolasi**:
+  - TerminalView & OutputView memakai monospace `SFMono-Regular` dengan scroll viewport mandiri (`overflow-y: auto`).
+  - ProblemsView memakai sans-serif UI, filter bar sticky, dan list/table yang scrollable mandiri.
+  - Input command bar Terminal terkunci di bagian bawah (`flex-shrink: 0; border-top: 1px solid var(--color-line);`).
+- **Maximize / Restore**: Tombol maximize di header kanan yang menyinkronkan status visual (`chevron-down` saat maximized vs `maximize` saat normal), menonaktifkan border atas `.bottom-panel` dan memperluas area panel hingga memenuhi workbench untuk kemudahan peninjauan log panjang.
 - **Close Button (`✕`)**: Tombol penutup instan yang menyinkronkan state `panelOpen = false` tanpa perlu menggunakan keyboard shortcut `Ctrl+J`.
+
+---
+
+## 12. Arsitektur Drag-Resize Sash & Responsive Desktop Constraints
+
+Untuk menghadirkan pengalaman manipulasi layout desktop yang setara dengan IDE native (VS Code) dengan prinsip *lightweight, 0 bloat, no external library*, sistem menerapkan arsitektur drag resize berbasis CSS custom properties:
+
+```mermaid
+flowchart LR
+    subgraph Sashes["Sash Engine (ResizeSash.tsx)"]
+        SashSide["Sidebar Sash\n(col-resize | 160px - 460px)"]
+        SashBottom["Bottom Panel Sash\n(row-resize | 100px - 75% H)"]
+        SashChat["Chat Drawer Sash\n(col-resize | 260px - 600px)"]
+    end
+
+    subgraph StateAndStorage["WorkbenchContext"]
+        Vars["CSS Variables:\n--sidebar-width\n--chat-width\n--bottom-height"]
+        Storage[("localStorage Persist:\naegis_sidebar_width\naegis_chat_width\naegis_bottom_height")]
+        Memory["Remember Last Dragged Size\n(Double-Click to Reset)"]
+    end
+
+    subgraph DesktopObserver["Desktop Responsive Engine"]
+        Guar["Central Editor Guarantee: >= 320px"]
+        Collapse["Adaptive Auto-Collapse:\n< 1200px -> Clamp/Close Chat\n< 980px -> Close Chat & Sidebar"]
+    end
+
+    Sashes --> StateAndStorage
+    StateAndStorage --> Vars
+    Vars --> DesktopObserver
+```
+
+### A. Komponen Reusable `ResizeSash.tsx`
+- **Dukungan Dua Arah**:
+  - `direction: "vertical"` (`col-resize`): Ditempatkan di batas kanan Sidebar (`.sash-sidebar`) dan batas kiri Chat Drawer (`.sash-chat`).
+  - `direction: "horizontal"` (`row-resize`): Ditempatkan di batas atas Bottom Panel (`.sash-bottom`, hanya aktif jika panel terbuka dan tidak sedang fullscreen).
+- **Proteksi Drag Layar Penuh (`.resize-overlay-active`)**:
+  - Saat penyeretan mouse aktif, overlay transparan fullscreen dipasang di atas viewport dengan cursor yang sesuai (`col-resize` / `row-resize`). Ini mencegah kursor lepas, teks terseleksi, atau event pointer terserap oleh `textarea` editor atau `iframe`.
+- **Indikator Visual Presisi**: Garis pembatas aksen biru setebal 2px (`var(--color-accent)`) yang bertransisi halus saat disentuh atau diseret.
+
+### B. Batasan Dimensi (Clamping) & Snap-to-Close
+- **Sidebar**:
+  - Rentang aman: Min `160px` – Max `460px` (Default `220px`).
+  - *Snap-to-Close*: Jika diseret di bawah ambang batas kritis `< 90px`, sidebar otomatis menutup (`sidebarOpen = false`).
+- **Chat Drawer**:
+  - Rentang aman: Min `260px` – Max `600px` (Default `300px` atau `500px` saat expanded session).
+  - *Snap-to-Close*: Jika diseret di bawah `< 90px`, chat drawer otomatis menutup (`chatOpen = false`).
+- **Bottom Panel**:
+  - Rentang aman: Min `100px` – Max `75%` dari tinggi jendela/workbench (Default `180px`).
+  - *Snap-to-Close*: Jika diseret di bawah `< 80px`, panel bawah otomatis menutup (`panelOpen = false`).
+- **Jaminan Text Editor di Tengah**: Lebar area Text Editor diproteksi minimal `320px` di setiap kalkulasi drag. Sash tidak dapat ditarik lebih jauh jika editor terancam kurang dari 320px.
+
+### C. Pemulihan Dimensi (Remember Last Size) & Double-Click Reset
+- **Remember Last Size**: Ketika panel ditutup (baik via snap-to-close, shortcut keyboard, atau tombol close), ukuran terakhir yang diseret disimpan dalam state `lastActiveWidth` / `lastActiveHeight`. Saat panel dibuka kembali, ukuran personal pengguna langsung dipulihkan.
+- **Double-Click Reset**: Mengetuk dua kali sash mana pun langsung mengembalikan panel ke ukuran bawaan (*Sidebar: 220px, Bottom: 180px, Chat: 300px*).
+- **Persistensi `localStorage`**: Nilai kustom disimpan di `localStorage` (`aegis_sidebar_width`, `aegis_chat_width`, `aegis_bottom_height`) sehingga layout tetap konsisten melintasi refresh browser.
+
+### D. Penanganan Responsif Viewport Desktop (Editor-First Priority)
+- **Prioritas Utama**: Editor kode adalah area kerja terpenting dan selalu dilindungi dari himpitan panel samping.
+- **Adaptive Breakpoints**:
+  1. Resolusi `>= 1280px`: Semua panel dapat terbuka penuh berdampingan.
+  2. Resolusi `< 1200px`: Jika lebar layar menyempit dan total panel kustom menekan editor < 320px, Chat Drawer otomatis dikurangi lebarnya atau di-collapse (`chatOpen = false`).
+  3. Resolusi `< 980px`: Chat Drawer ditutup, Sidebar di-collapse menjadi ikon rail (`sidebarOpen = false`), memberikan 100% ruang tersisa untuk editor.
+- **User-Intent Preservation**: Ketika jendela browser kembali diperlebar ke layar besar (> 1440px), sistem tidak memaksa membuka panel secara agresif, menghormati fokus kerja pengguna.
+
+---
+
+## 13. Arsitektur Text Editor Refinements & Sidebar Tree Percabangan
+
+Untuk meningkatkan kenyamanan navigasi dan keterbacaan kode berstandar IDE modern, sistem mengimplementasikan pembaruan pada Text Editor dan Sidebar Explorer:
+
+```mermaid
+flowchart TD
+    subgraph EditorRefinements["Text Editor Refinements"]
+        EmptyMode["Empty State Cleanup:\nSingle Mode (0 tab) -> Omit action toolbar & tabs\nSplit Mode -> Clean 'Close Split Group' header"]
+        Minimap["Interactive Minimap:\n• Micro-syntax token lines\n• Viewport slider (scrollTop / scrollHeight)\n• Click-to-scroll navigation\n• Settings toggle & <900px auto-hide"]
+    end
+
+    subgraph SidebarTree["Sidebar Explorer Hierarchy"]
+        TreeGuides["Visual Tree Indent Guides:\n• Vertical lines per nesting depth level\n• Horizontal branch tick (d === depth - 1)\n• Semantic tokens (--color-line, --color-line-bright)"]
+        TreeCollapse["Folder Collapse & Expand:\n• Single-click row or chevron toggle\n• 0deg to 90deg chevron rotation\n• Hierarchical pruning loop (skipUntilDepth)\n• Explorer refresh reset & search bypass"]
+    end
+```
+
+### A. Text Editor Empty State Cleanup
+- **Eliminasi Action Toolbar Saat 0 Tab**: Saat semua tab file ditutup pada mode editor tunggal, baris `<EditorTabs />` yang memuat aksi `Save`, `Run`, `Find`, dan `Split` tidak lagi dimunculkan. Pengguna disajikan langsung dengan `<EditorEmptyState />` yang memuat watermark logo Aegis, shortcut keyboard (`⌘P` Quick Open, `⌘K` Command Palette, `Ctrl+` Toggle Terminal), dan tombol pembuat tab/file cepat.
+- **Header Bersih pada Split View Kosong**: Pada mode editor terpisah (*Split Editor*), jika salah satu grup jendela tidak memiliki tab aktif, grup tersebut menampilkan header bersih dengan tombol aksi *"Close Split Group (✕)"* alih-alih action toolbar, menjaga fokus visual pengguna.
+
+### B. Interactive Minimap Engine (`Minimap.tsx`)
+- **Micro-Syntax Rendering**: Tokenisasi baris kode per baris menjadi representasi garis mini berwarna (`syntax-pink` untuk kata kunci bahasa, `syntax-green` untuk string/literal, `syntax-blue` untuk pengenal/fungsi) dengan batas lebar maksimal 56px.
+- **Dynamic Viewport Slider**: Indikator slider transparan (`.minimap-slider`) yang merefleksikan posisi gulir saat ini (`scrollTop / scrollHeight`) dan proporsi tinggi layar (`clientHeight / scrollHeight`).
+- **Click-to-Scroll & Drag Navigation**: Mengklik area minimap menghitung rasio vertikal terhadap tinggi kontainer dan memicu `onScrollToLine`, menggulir buffer teks di `textarea` editor secara sinkron ke baris yang dituju.
+- **Toggle Preferences & Adaptasi Responsif**: Minimap dapat diaktifkan/dinonaktifkan melalui `SettingsModal` ("Editor: Minimap", tersimpan di `localStorage` `aegis_minimap_enabled`), dan otomatis disembunyikan pada split screen sempit atau lebar viewport `< 900px`.
+
+### C. Sidebar Tree Percabangan & Indent Guidelines (`ExplorerPanel.tsx` & `sidebar.css`)
+- **Visual Tree Branching Guidelines**:
+  - Untuk setiap baris dengan kedalaman `depth > 0`, sistem merender garis panduan vertikal absolut (`.tree-indent-guide`) di posisi `16 + d * 14 px` untuk tiap level kedalaman leluhur.
+  - Pada kedalaman langsung (`d === depth - 1`), sistem menambahkan garis percabangan horizontal (`.tree-branch-tick`, lebar 8px) yang menghubungkan garis vertikal langsung ke sisi kiri ikon atau teks berkas.
+  - **Hover & Active Feedback**: Garis panduan menggunakan token warna semantik Tailwind `var(--color-line)`, dan bertransisi menjadi `var(--color-line-bright)` saat baris di-hover atau `var(--color-accent-soft)` saat berkas sedang aktif.
+- **Mekanisme Folder Collapse / Expand**:
+  - **State Terkelola**: State `collapsedFolders` (`Record<string, boolean>`) mengidentifikasi status buka/tutup tiap folder, diinisialisasi dari berkas bawaan (misal folder `.agents` tertutup secara default).
+  - **Single-Click Toggle**: Mengetuk seluruh baris folder atau tombol chevron spesifik langsung memicu `toggleFolder(file.label)`.
+  - **Animasi Rotasi Chevron**: Ikon chevron dibungkus dalam `.folder-chevron` dengan transisi rotasi halus: `chevron-open` (rotasi 90°) saat terbuka dan `chevron-closed` (rotasi 0°) saat terlipat.
+  - **Algoritma Hierarchical Pruning (`visibleFiles`)**: Saat folder terlipat, sistem mencatat `skipUntilDepth = folder.depth` dan mengabaikan seluruh baris turunan yang memiliki `depth > skipUntilDepth` hingga menemukan entri baru dengan kedalaman setara atau lebih dangkal.
+  - **Search Bypass & Refresh Reset**: Saat filter cepat aktif (`filterQuery`), pruning folder dinonaktifkan sementara agar semua berkas yang cocok dapat langsung diakses; tombol *Refresh Explorer* mengembalikan status lipatan folder ke konfigurasi awal.
+
+
 
 
 

@@ -1,6 +1,7 @@
 import { useState, type DragEvent } from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
+import { ResizeSash } from "../../ui/ResizeSash"
 import { useWorkbench } from "../../../context/WorkbenchContext"
 import type { BottomTab, OutputChannel } from "../../../types/workbench"
 import { TerminalView } from "./TerminalView"
@@ -26,6 +27,8 @@ export function BottomPanel() {
     panelMaximized,
     togglePanelMaximized,
     setPanelOpen,
+    setBottomPanelHeight,
+    resetBottomPanelHeight,
     showToast,
   } = useWorkbench()
 
@@ -96,6 +99,29 @@ export function BottomPanel() {
 
   return (
     <section className="bottom-panel">
+      {!panelMaximized && (
+        <ResizeSash
+          className="sash-bottom"
+          direction="horizontal"
+          onDoubleClick={resetBottomPanelHeight}
+          onResize={(delta) => {
+            setBottomPanelHeight((prev) => {
+              // Dragging upwards (negative delta) increases panel height
+              const next = prev - delta
+              if (next < 80) {
+                setPanelOpen(false)
+                return 180
+              }
+              const maxHeight =
+                typeof window !== "undefined"
+                  ? Math.floor(window.innerHeight * 0.75)
+                  : 600
+              return Math.max(100, Math.min(maxHeight, next))
+            })
+          }}
+          title="Drag to resize bottom panel (Double-click to reset)"
+        />
+      )}
       <div className="bottom-panel-header">
         <div className="bottom-tabs">
           {bottomTabOrder.map((name: BottomTab, index: number) => (
@@ -224,7 +250,7 @@ export function BottomPanel() {
         </div>
       </div>
 
-      <div className="terminal-output">
+      <div className="bottom-panel-content">
         {activeBottomTab === "Terminal" && <TerminalView />}
         {activeBottomTab === "Problems" && <ProblemsView />}
         {activeBottomTab === "Output" && (

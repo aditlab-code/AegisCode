@@ -15,6 +15,8 @@ export function Icon({ name, size = 16, className = "" }: IconProps) {
         <path d="m9 13.5 3-6 3 6M10.3 11h3.4" />
       </>
     ),
+    "arrow-down": <path d="M12 5v14m-6-6 6 6 6-6" />,
+    "arrow-up": <path d="M12 19V5m-6 6 6-6 6 6" />,
     bell: (
       <>
         <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" />
@@ -97,6 +99,12 @@ export function Icon({ name, size = 16, className = "" }: IconProps) {
     ),
     play: <path d="m9 6 9 6-9 6z" />,
     plus: <path d="M12 5v14m-7-7h14" />,
+    refresh: (
+      <>
+        <path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5" />
+        <path d="M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5" />
+      </>
+    ),
     search: (
       <>
         <circle cx="10.5" cy="10.5" r="6.5" />
@@ -114,6 +122,12 @@ export function Icon({ name, size = 16, className = "" }: IconProps) {
       <>
         <rect x="3" y="4" width="18" height="16" rx="1" />
         <path d="M12 4v16" />
+      </>
+    ),
+    symbol: (
+      <>
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 3v3m0 12v3M3 12h3m12 0h3" />
       </>
     ),
     terminal: <path d="m5 7 5 5-5 5m8 0h6" />,

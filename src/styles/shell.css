@@ -4,6 +4,7 @@
   height: 100%;
   min-width: 760px;
   background: transparent;
+  overflow: hidden;
 }
 
 .workspace {
@@ -11,37 +12,36 @@
   min-height: 0;
   gap: 7px;
   padding: 8px 8px 5px;
+  position: relative;
 }
 
-
 .workspace-chat-open {
-  grid-template-columns: 44px 220px minmax(320px, 1fr) 300px;
+  grid-template-columns: 44px var(--sidebar-width, 220px) minmax(320px, 1fr) var(--chat-width, 300px);
 }
 
 .workspace-chat-open.workspace-chat-expanded {
-  grid-template-columns: 44px 220px minmax(320px, 1fr) 500px;
+  grid-template-columns: 44px var(--sidebar-width, 220px) minmax(320px, 1fr) var(--chat-width, 500px);
 }
 
 .workspace-chat-closed {
-  grid-template-columns: 44px 220px minmax(320px, 1fr);
+  grid-template-columns: 44px var(--sidebar-width, 220px) minmax(320px, 1fr);
 }
 
 .workspace-sidebar-closed.workspace-chat-open {
-  grid-template-columns: 44px minmax(320px, 1fr) 300px;
+  grid-template-columns: 44px minmax(320px, 1fr) var(--chat-width, 300px);
 }
 
 .workspace-sidebar-closed.workspace-chat-open.workspace-chat-expanded {
-  grid-template-columns: 44px minmax(320px, 1fr) 500px;
+  grid-template-columns: 44px minmax(320px, 1fr) var(--chat-width, 500px);
 }
 
 .workspace-sidebar-closed.workspace-chat-closed {
   grid-template-columns: 44px minmax(320px, 1fr);
 }
 
-
 .workbench {
   display: grid;
-  grid-template-rows: minmax(240px, 1fr) 172px;
+  grid-template-rows: minmax(180px, 1fr) var(--bottom-height, 180px);
   min-width: 0;
   min-height: 0;
   background: rgb(8 12 19 / 92%);
@@ -49,25 +49,85 @@
   border-radius: 11px;
   box-shadow: 0 18px 48px rgb(0 0 0 / 25%);
   overflow: hidden;
+  position: relative;
 }
 
 .workbench-panel-closed {
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) !important;
 }
 
 .workbench-panel-maximized {
-  grid-template-rows: 0 1fr;
+  grid-template-rows: 1fr !important;
 }
 
 .workbench-panel-maximized .editor,
 .workbench-panel-maximized .editor-split-container {
-  display: none;
+  display: none !important;
 }
 
+/* Sashes and Drag Overlays */
+.side-panel {
+  position: relative;
+}
+
+.chat-drawer {
+  position: relative;
+}
+
+.bottom-panel {
+  position: relative;
+}
+
+.resize-sash {
+  position: absolute;
+  z-index: 25;
+  transition: background-color 0.15s ease;
+  user-select: none;
+}
+
+.resize-sash-vertical {
+  width: 6px;
+  cursor: col-resize;
+  top: 0;
+  bottom: 0;
+}
+
+.resize-sash-horizontal {
+  height: 6px;
+  cursor: row-resize;
+  left: 0;
+  right: 0;
+}
+
+.resize-sash-vertical:hover,
+.resize-sash-horizontal:hover,
+.resize-sash-active {
+  background: var(--color-accent) !important;
+}
+
+.sash-sidebar {
+  right: -3px;
+}
+
+.sash-chat {
+  left: -3px;
+}
+
+.sash-bottom {
+  top: -3px;
+}
+
+.resize-overlay-active {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  user-select: none;
+  background: transparent;
+}
 
 @media (max-width: 980px) {
   .workspace-chat-open {
-    grid-template-columns: 44px 190px minmax(320px, 1fr);
+    grid-template-columns: 44px var(--sidebar-width, 190px) minmax(320px, 1fr);
   }
 
   .workspace-chat-open .chat-drawer {

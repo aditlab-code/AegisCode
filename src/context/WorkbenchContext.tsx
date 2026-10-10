@@ -21,6 +21,8 @@ import type {
   LinterSettings,
   NotificationItem,
   TerminalSession,
+  GitCommitNode,
+  GitRepo,
 } from "../types/workbench"
 import {
   initialDiagnostics,
@@ -30,6 +32,9 @@ import {
   initialNotifications,
   initialTerminalLines,
   initialTerminalSessions,
+  initialStagedChanges,
+  initialGitCommits,
+  initialGitRepos,
 } from "../data/mockData"
 import { CHAT_MODELS } from "../data/chatConstants"
 import { detectLanguage, validateSyntax } from "../utils/linter"
@@ -57,6 +62,25 @@ interface WorkbenchContextType {
   toggleChatSessions: () => void
   commandPaletteOpen: boolean
   setCommandPaletteOpen: (value: boolean | ((prev: boolean) => boolean)) => void
+  settingsModalOpen: boolean
+  setSettingsModalOpen: (value: boolean | ((prev: boolean) => boolean)) => void
+  toggleSettingsModal: () => void
+
+  // Resizable Panel Dimensions
+  sidebarWidth: number
+  setSidebarWidth: (value: number | ((prev: number) => number)) => void
+  resetSidebarWidth: () => void
+  chatDrawerWidth: number
+  setChatDrawerWidth: (value: number | ((prev: number) => number)) => void
+  resetChatDrawerWidth: () => void
+  bottomPanelHeight: number
+  setBottomPanelHeight: (value: number | ((prev: number) => number)) => void
+  resetBottomPanelHeight: () => void
+
+  // Text Editor Settings
+  minimapEnabled: boolean
+  setMinimapEnabled: (value: boolean | ((prev: boolean) => boolean)) => void
+  toggleMinimap: () => void
 
   // Window Groups & Split Layout
   splitEditor: boolean
@@ -113,13 +137,29 @@ interface WorkbenchContextType {
 
   // Workspace Data
   files: FileItem[]
+  setFiles: React.Dispatch<React.SetStateAction<FileItem[]>>
+  createFile: (name: string, isFolder?: boolean, parentFolder?: string) => void
+  renameFile: (oldName: string, newName: string) => void
+  deleteFile: (name: string) => void
   diagnostics: DiagnosticItem[]
   notifications: NotificationItem[]
   markAllNotificationsRead: () => void
   markNotificationRead: (id: string) => void
   activeBranch: string
   setActiveBranch: (branch: string) => void
+  activeRepo: string
+  setActiveRepo: (repo: string) => void
+  gitRepos: GitRepo[]
   gitChanges: GitChange[]
+  stagedChanges: GitChange[]
+  gitCommits: GitCommitNode[]
+  stageChange: (file: string) => void
+  unstageChange: (file: string) => void
+  stageAllChanges: () => void
+  unstageAllChanges: () => void
+  commitChanges: (message: string) => void
+  gitPull: () => void
+  gitPush: () => void
 
   // Terminal & Sessions
   terminalSessions: TerminalSession[]
@@ -229,6 +269,38 @@ function loadStoredBottomTabOrder(): BottomTab[] {
   return DEFAULT_BOTTOM_TAB_ORDER
 }
 
+const DEFAULT_SIDEBAR_WIDTH = 220
+const MIN_SIDEBAR_WIDTH = 160
+const MAX_SIDEBAR_WIDTH = 460
+
+const DEFAULT_CHAT_WIDTH = 300
+const MIN_CHAT_WIDTH = 260
+const MAX_CHAT_WIDTH = 600
+
+const DEFAULT_BOTTOM_HEIGHT = 180
+const MIN_BOTTOM_HEIGHT = 100
+
+function loadStoredNumber(
+  key: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  if (typeof window === "undefined") return fallback
+  try {
+    const raw = window.localStorage.getItem(key)
+    if (raw) {
+      const val = parseInt(raw, 10)
+      if (!isNaN(val) && val >= min && val <= max) {
+        return val
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return fallback
+}
+
 function generateContextualReply(
   text: string,
   provider: ChatProvider,
@@ -278,6 +350,170 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [chatOpen, setChatOpen] = useState(true)
   const [chatSessionsOpen, setChatSessionsOpen] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false)
+  const toggleSettingsModal = useCallback(() => {
+    setSettingsModalOpen((prev) => !prev)
+  }, [])
+
+  // Resizable Panel Dimensions
+  const [sidebarWidth, setSidebarWidthState] = useState<number>(() =>
+    loadStoredNumber(
+      "aegis_sidebar_width",
+      DEFAULT_SIDEBAR_WIDTH,
+      MIN_SIDEBAR_WIDTH,
+      MAX_SIDEBAR_WIDTH,
+    ),
+  )
+  const [chatDrawerWidth, setChatDrawerWidthState] = useState<number>(() =>
+    loadStoredNumber(
+      "aegis_chat_width",
+      DEFAULT_CHAT_WIDTH,
+      MIN_CHAT_WIDTH,
+      MAX_CHAT_WIDTH,
+    ),
+  )
+  const [bottomPanelHeight, setBottomPanelHeightState] = useState<number>(() =>
+    loadStoredNumber(
+      "aegis_bottom_height",
+      DEFAULT_BOTTOM_HEIGHT,
+      MIN_BOTTOM_HEIGHT,
+      800,
+    ),
+  )
+
+  const [lastSidebarWidth, setLastSidebarWidth] = useState<number>(
+    () => sidebarWidth,
+  )
+  const [lastChatWidth, setLastChatWidth] = useState<number>(
+    () => chatDrawerWidth,
+  )
+  const [lastBottomHeight, setLastBottomHeight] = useState<number>(
+    () => bottomPanelHeight,
+  )
+
+  const setSidebarWidth = useCallback(
+    (value: number | ((prev: number) => number)) => {
+      setSidebarWidthState((prev) => {
+        const next = typeof value === "function" ? value(prev) : value
+        if (next >= MIN_SIDEBAR_WIDTH) {
+          setLastSidebarWidth(next)
+          try {
+            window.localStorage.setItem("aegis_sidebar_width", String(next))
+          } catch {
+            // ignore
+          }
+        }
+        return next
+      })
+    },
+    [],
+  )
+
+  const resetSidebarWidth = useCallback(() => {
+    setSidebarWidthState(DEFAULT_SIDEBAR_WIDTH)
+    setLastSidebarWidth(DEFAULT_SIDEBAR_WIDTH)
+    try {
+      window.localStorage.setItem(
+        "aegis_sidebar_width",
+        String(DEFAULT_SIDEBAR_WIDTH),
+      )
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  const setChatDrawerWidth = useCallback(
+    (value: number | ((prev: number) => number)) => {
+      setChatDrawerWidthState((prev) => {
+        const next = typeof value === "function" ? value(prev) : value
+        if (next >= MIN_CHAT_WIDTH) {
+          setLastChatWidth(next)
+          try {
+            window.localStorage.setItem("aegis_chat_width", String(next))
+          } catch {
+            // ignore
+          }
+        }
+        return next
+      })
+    },
+    [],
+  )
+
+  const resetChatDrawerWidth = useCallback(() => {
+    setChatDrawerWidthState(DEFAULT_CHAT_WIDTH)
+    setLastChatWidth(DEFAULT_CHAT_WIDTH)
+    try {
+      window.localStorage.setItem(
+        "aegis_chat_width",
+        String(DEFAULT_CHAT_WIDTH),
+      )
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  const setBottomPanelHeight = useCallback(
+    (value: number | ((prev: number) => number)) => {
+      setBottomPanelHeightState((prev) => {
+        const next = typeof value === "function" ? value(prev) : value
+        if (next >= MIN_BOTTOM_HEIGHT) {
+          setLastBottomHeight(next)
+          try {
+            window.localStorage.setItem("aegis_bottom_height", String(next))
+          } catch {
+            // ignore
+          }
+        }
+        return next
+      })
+    },
+    [],
+  )
+
+  const resetBottomPanelHeight = useCallback(() => {
+    setBottomPanelHeightState(DEFAULT_BOTTOM_HEIGHT)
+    setLastBottomHeight(DEFAULT_BOTTOM_HEIGHT)
+    try {
+      window.localStorage.setItem(
+        "aegis_bottom_height",
+        String(DEFAULT_BOTTOM_HEIGHT),
+      )
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  const [minimapEnabled, setMinimapEnabledState] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true
+    try {
+      const stored = window.localStorage.getItem("aegis_minimap_enabled")
+      if (stored !== null) return stored === "true"
+    } catch {
+      // ignore
+    }
+    return true
+  })
+
+  const setMinimapEnabled = useCallback(
+    (value: boolean | ((prev: boolean) => boolean)) => {
+      setMinimapEnabledState((prev) => {
+        const next = typeof value === "function" ? value(prev) : value
+        try {
+          window.localStorage.setItem("aegis_minimap_enabled", String(next))
+        } catch {
+          // ignore
+        }
+        return next
+      })
+    },
+    [],
+  )
+
+  const toggleMinimap = useCallback(() => {
+    setMinimapEnabled((v) => !v)
+  }, [setMinimapEnabled])
+
   const [splitEditor, setSplitEditor] = useState(false)
   const [splitRatio, setSplitRatio] = useState(50)
   const [focusedGroup, setFocusedGroup] = useState<"group1" | "group2">(
@@ -322,7 +558,13 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] =
     useState<NotificationItem[]>(initialNotifications)
   const [activeBranch, setActiveBranch] = useState("main")
+  const [activeRepo, setActiveRepo] = useState("aegis-code-v2")
+  const [gitRepos, setGitRepos] = useState<GitRepo[]>(initialGitRepos)
   const [gitChanges, setGitChanges] = useState<GitChange[]>(initialGitChanges)
+  const [stagedChanges, setStagedChanges] =
+    useState<GitChange[]>(initialStagedChanges)
+  const [gitCommits, setGitCommits] =
+    useState<GitCommitNode[]>(initialGitCommits)
 
   // Terminal state
   const [terminalSessions, setTerminalSessions] = useState<TerminalSession[]>(
@@ -517,9 +759,74 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timer)
   }, [currentFocusedFile, fileBuffers, linterSettings])
 
-  const toggleSidebar = useCallback(() => setSidebarOpen((v) => !v), [])
-  const togglePanel = useCallback(() => setPanelOpen((v) => !v), [])
-  const toggleChat = useCallback(() => setChatOpen((v) => !v), [])
+  const toggleSidebar = useCallback(() => {
+    setSidebarOpen((prev) => {
+      const next = !prev
+      if (next && sidebarWidth < MIN_SIDEBAR_WIDTH) {
+        setSidebarWidthState(
+          lastSidebarWidth >= MIN_SIDEBAR_WIDTH
+            ? lastSidebarWidth
+            : DEFAULT_SIDEBAR_WIDTH,
+        )
+      }
+      return next
+    })
+  }, [lastSidebarWidth, sidebarWidth])
+
+  const togglePanel = useCallback(() => {
+    setPanelOpen((prev) => {
+      const next = !prev
+      if (next && bottomPanelHeight < MIN_BOTTOM_HEIGHT) {
+        setBottomPanelHeightState(
+          lastBottomHeight >= MIN_BOTTOM_HEIGHT
+            ? lastBottomHeight
+            : DEFAULT_BOTTOM_HEIGHT,
+        )
+      }
+      return next
+    })
+  }, [bottomPanelHeight, lastBottomHeight])
+
+  const toggleChat = useCallback(() => {
+    setChatOpen((prev) => {
+      const next = !prev
+      if (next && chatDrawerWidth < MIN_CHAT_WIDTH) {
+        setChatDrawerWidthState(
+          lastChatWidth >= MIN_CHAT_WIDTH ? lastChatWidth : DEFAULT_CHAT_WIDTH,
+        )
+      }
+      return next
+    })
+  }, [chatDrawerWidth, lastChatWidth])
+
+  // Desktop Responsive Viewport Observer
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    function handleResize() {
+      const winWidth = window.innerWidth
+      if (winWidth < 980) {
+        if (chatOpen) setChatOpen(false)
+        if (sidebarOpen && winWidth < 768) setSidebarOpen(false)
+      } else if (winWidth < 1200) {
+        const currentSidebar = sidebarOpen ? sidebarWidth : 0
+        const currentChat = chatOpen ? chatDrawerWidth : 0
+        const availableForEditor = winWidth - 44 - currentSidebar - currentChat
+        if (availableForEditor < 320 && chatOpen) {
+          const maxChatPossible = winWidth - 44 - currentSidebar - 320
+          if (maxChatPossible < MIN_CHAT_WIDTH) {
+            setChatOpen(false)
+          } else {
+            setChatDrawerWidthState(Math.floor(maxChatPossible))
+          }
+        }
+      }
+    }
+
+    window.addEventListener("resize", handleResize)
+    return () => window.removeEventListener("resize", handleResize)
+  }, [chatOpen, sidebarOpen, sidebarWidth, chatDrawerWidth])
+
   const toggleChatSessions = useCallback(
     () => setChatSessionsOpen((v) => !v),
     [],
@@ -864,6 +1171,232 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     )
   }, [])
 
+  const createFile = useCallback(
+    (name: string, isFolder = false, parentFolder?: string) => {
+      const cleanName = name.trim()
+      if (!cleanName) return
+
+      const newPath = parentFolder ? `${parentFolder}/${cleanName}` : cleanName
+      const newItem: FileItem = {
+        name: cleanName,
+        type: isFolder ? "folder" : "file",
+        path: newPath,
+        modified: true,
+        children: isFolder ? [] : undefined,
+      }
+
+      setFiles((prevFiles) => {
+        if (!parentFolder) {
+          return [...prevFiles, newItem]
+        }
+        const addRecursive = (items: FileItem[]): FileItem[] => {
+          return items.map((item) => {
+            if (
+              item.type === "folder" &&
+              (item.path === parentFolder || item.name === parentFolder)
+            ) {
+              return {
+                ...item,
+                children: [...(item.children || []), newItem],
+              }
+            }
+            if (item.children) {
+              return {
+                ...item,
+                children: addRecursive(item.children),
+              }
+            }
+            return item
+          })
+        }
+        return addRecursive(prevFiles)
+      })
+
+      if (!isFolder) {
+        setFileBuffers((prev) => ({
+          ...prev,
+          [cleanName]: {
+            content: `// ${cleanName}\n`,
+            isDirty: true,
+            language: detectLanguage(cleanName),
+          },
+        }))
+        setGitChanges((prev) => [
+          ...prev,
+          { file: cleanName, status: "added", additions: 1, deletions: 0 },
+        ])
+        showToast(`Created file: ${cleanName}`)
+      } else {
+        showToast(`Created folder: ${cleanName}`)
+      }
+    },
+    [showToast],
+  )
+
+  const renameFile = useCallback(
+    (oldName: string, newName: string) => {
+      const clean = newName.trim()
+      if (!clean || clean === oldName) return
+
+      const updateRecursive = (items: FileItem[]): FileItem[] => {
+        return items.map((item) => {
+          if (item.name === oldName) {
+            return {
+              ...item,
+              name: clean,
+              path: item.path
+                ? item.path.replace(new RegExp(`${oldName}$`), clean)
+                : clean,
+              modified: true,
+            }
+          }
+          if (item.children) {
+            return { ...item, children: updateRecursive(item.children) }
+          }
+          return item
+        })
+      }
+
+      setFiles((prev) => updateRecursive(prev))
+
+      setFileBuffers((prev) => {
+        if (prev[oldName]) {
+          const buffer = prev[oldName]
+          const next = { ...prev }
+          delete next[oldName]
+          next[clean] = {
+            ...buffer,
+            isDirty: true,
+            language: detectLanguage(clean),
+          }
+          return next
+        }
+        return prev
+      })
+
+      setGroup1((prev) => ({
+        ...prev,
+        tabs: prev.tabs.map((t) => (t === oldName ? clean : t)),
+        activeTab: prev.activeTab === oldName ? clean : prev.activeTab,
+      }))
+      setGroup2((prev) => ({
+        ...prev,
+        tabs: prev.tabs.map((t) => (t === oldName ? clean : t)),
+        activeTab: prev.activeTab === oldName ? clean : prev.activeTab,
+      }))
+
+      showToast(`Renamed ${oldName} to ${clean}`)
+    },
+    [showToast],
+  )
+
+  const deleteFile = useCallback(
+    (name: string) => {
+      const deleteRecursive = (items: FileItem[]): FileItem[] => {
+        return items
+          .filter((item) => item.name !== name && item.path !== name)
+          .map((item) => {
+            if (item.children) {
+              return { ...item, children: deleteRecursive(item.children) }
+            }
+            return item
+          })
+      }
+
+      setFiles((prev) => deleteRecursive(prev))
+      setFileBuffers((prev) => {
+        const next = { ...prev }
+        delete next[name]
+        return next
+      })
+
+      closeTabInGroup("group1", name)
+      closeTabInGroup("group2", name)
+
+      setGitChanges((prev) => [
+        ...prev.filter((c) => c.file !== name),
+        { file: name, status: "deleted", additions: 0, deletions: 1 },
+      ])
+      setStagedChanges((prev) => prev.filter((c) => c.file !== name))
+
+      showToast(`Deleted ${name}`)
+    },
+    [closeTabInGroup, showToast],
+  )
+
+  const stageChange = useCallback((file: string) => {
+    setGitChanges((prevChanges) => {
+      const target = prevChanges.find((c) => c.file === file)
+      if (!target) return prevChanges
+      setStagedChanges((prevStaged) => {
+        if (prevStaged.some((s) => s.file === file)) return prevStaged
+        return [...prevStaged, target]
+      })
+      return prevChanges.filter((c) => c.file !== file)
+    })
+  }, [])
+
+  const unstageChange = useCallback((file: string) => {
+    setStagedChanges((prevStaged) => {
+      const target = prevStaged.find((s) => s.file === file)
+      if (!target) return prevStaged
+      setGitChanges((prevChanges) => {
+        if (prevChanges.some((c) => c.file === file)) return prevChanges
+        return [...prevChanges, target]
+      })
+      return prevStaged.filter((s) => s.file !== file)
+    })
+  }, [])
+
+  const stageAllChanges = useCallback(() => {
+    setGitChanges((prevChanges) => {
+      setStagedChanges((prevStaged) => [...prevStaged, ...prevChanges])
+      return []
+    })
+    showToast("Staged all changes")
+  }, [showToast])
+
+  const unstageAllChanges = useCallback(() => {
+    setStagedChanges((prevStaged) => {
+      setGitChanges((prevChanges) => [...prevChanges, ...prevStaged])
+      return []
+    })
+    showToast("Unstaged all changes")
+  }, [showToast])
+
+  const commitChanges = useCallback(
+    (message: string) => {
+      const cleanMsg = message.trim()
+      if (!cleanMsg) {
+        showToast("Please enter a commit message")
+        return
+      }
+      if (stagedChanges.length === 0) {
+        showToast("No staged changes to commit")
+        return
+      }
+      const newCommit: GitCommitNode = {
+        hash: Math.random().toString(16).substring(2, 9),
+        message: cleanMsg,
+        author: "Adit Wicaksono",
+        timestamp: "Just now",
+        branch: activeBranch,
+      }
+      setGitCommits((prev) => [newCommit, ...prev])
+      setStagedChanges([])
+      showToast(`Committed [${newCommit.hash}]: ${cleanMsg}`)
+    },
+    [activeBranch, showToast, stagedChanges],
+  )
+
+  const gitPull = useCallback(() => {
+    showToast(`Pulled latest changes from origin/${activeBranch}`)
+  }, [activeBranch, showToast])
+
+  const gitPush = useCallback(() => {
+    showToast(`Pushed commits to origin/${activeBranch}`)
+  }, [activeBranch, showToast])
+
   const activeTerminalSession =
     terminalSessions.find((s) => s.id === activeTerminalSessionId) ||
     terminalSessions[0]
@@ -1082,14 +1615,19 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         event.preventDefault()
         saveFile()
       }
+      if ((event.metaKey || event.ctrlKey) && event.key === ",") {
+        event.preventDefault()
+        toggleSettingsModal()
+      }
       if (event.key === "Escape") {
         setCommandPaletteOpen(false)
+        setSettingsModalOpen(false)
       }
     }
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [saveFile, togglePanel, toggleSidebar])
+  }, [saveFile, togglePanel, toggleSidebar, toggleSettingsModal])
 
   return (
     <WorkbenchContext.Provider
@@ -1115,6 +1653,21 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         toggleChatSessions,
         commandPaletteOpen,
         setCommandPaletteOpen,
+        settingsModalOpen,
+        setSettingsModalOpen,
+        toggleSettingsModal,
+        sidebarWidth,
+        setSidebarWidth,
+        resetSidebarWidth,
+        chatDrawerWidth,
+        setChatDrawerWidth,
+        resetChatDrawerWidth,
+        bottomPanelHeight,
+        setBottomPanelHeight,
+        resetBottomPanelHeight,
+        minimapEnabled,
+        setMinimapEnabled,
+        toggleMinimap,
         splitEditor,
         setSplitEditor,
         toggleSplitEditor,
@@ -1152,13 +1705,29 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         setLinterSettings,
         navigateToDiagnostic,
         files,
+        setFiles,
+        createFile,
+        renameFile,
+        deleteFile,
         diagnostics,
         notifications,
         markAllNotificationsRead,
         markNotificationRead,
         activeBranch,
         setActiveBranch,
+        activeRepo,
+        setActiveRepo,
+        gitRepos,
         gitChanges,
+        stagedChanges,
+        gitCommits,
+        stageChange,
+        unstageChange,
+        stageAllChanges,
+        unstageAllChanges,
+        commitChanges,
+        gitPull,
+        gitPush,
         terminalSessions,
         activeTerminalSessionId,
         activeTerminalSession,
