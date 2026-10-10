@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:all": "go -C server run ./cmd/server & vite",
+    "server": "go -C server run ./cmd/server",
     "build": "vite build",
+    "build:server": "go -C server build -o ../dist-server/aegis-server ./cmd/server",
     "preview": "vite preview",
     "format": "oxfmt"
   },

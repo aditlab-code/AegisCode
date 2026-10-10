@@ -1,43 +1,15 @@
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbench } from "../../../context/WorkbenchContext"
-import type { ActivityType } from "../../../types/workbench"
+import type { IconName } from "../../../types/workbench"
 
-type CommandAction = ActivityType | "ToggleTheme"
-
-interface CommandItem {
-  activity: CommandAction
-  detail: string
+interface CommandPaletteItem {
+  id: string
   label: string
+  detail: string
+  icon: IconName
+  action: () => void
 }
-
-const commands: CommandItem[] = [
-  {
-    activity: "Explorer",
-    detail: "Navigate repository files",
-    label: "View: Show Explorer",
-  },
-  {
-    activity: "Search",
-    detail: "Search and replace across files",
-    label: "Search: Find in Files",
-  },
-  {
-    activity: "Source Control",
-    detail: "Review pending changes",
-    label: "Git: Open Source Control",
-  },
-  {
-    activity: "Settings",
-    detail: "Configure the workbench",
-    label: "Preferences: Open Settings",
-  },
-  {
-    activity: "ToggleTheme",
-    detail: "Switch between Dark and Light mode",
-    label: "Preferences: Toggle Color Theme",
-  },
-]
 
 export function CommandPalette() {
   const {
@@ -49,31 +21,130 @@ export function CommandPalette() {
     theme,
     toggleTheme,
     showToast,
+    openFolderPicker,
+    openRootFolder,
+    closeRootFolder,
+    rootWorkspacePath,
+    recentProjects,
   } = useWorkbench()
+
   const [query, setQuery] = useState("")
+
+  const allCommands = useMemo<CommandPaletteItem[]>(() => {
+    const list: CommandPaletteItem[] = [
+      {
+        id: "open-folder",
+        label: "File: Open Folder...",
+        detail: "Open project folder in native file manager",
+        icon: "folder",
+        action: () => {
+          openFolderPicker()
+        },
+      },
+      ...(rootWorkspacePath
+        ? [
+            {
+              id: "close-folder",
+              label: "File: Close Folder",
+              detail: "Close the currently open workspace",
+              icon: "close" as IconName,
+              action: () => {
+                closeRootFolder()
+              },
+            },
+          ]
+        : []),
+      {
+        id: "view-explorer",
+        label: "View: Show Explorer",
+        detail: "Navigate repository files",
+        icon: "explorer",
+        action: () => {
+          setActiveActivity("Explorer")
+          setSidebarOpen(true)
+        },
+      },
+      {
+        id: "search-files",
+        label: "Search: Find in Files",
+        detail: "Search and replace across files",
+        icon: "search",
+        action: () => {
+          setActiveActivity("Search")
+          setSidebarOpen(true)
+        },
+      },
+      {
+        id: "git-scm",
+        label: "Git: Open Source Control",
+        detail: "Review pending changes",
+        icon: "git",
+        action: () => {
+          setActiveActivity("Source Control")
+          setSidebarOpen(true)
+        },
+      },
+      {
+        id: "pref-settings",
+        label: "Preferences: Open Settings",
+        detail: "Configure the workbench",
+        icon: "settings",
+        action: () => setSettingsModalOpen(true),
+      },
+      {
+        id: "toggle-theme",
+        label: "Preferences: Toggle Color Theme",
+        detail: "Switch between Dark and Light mode",
+        icon: theme === "dark" ? "sun" : "moon",
+        action: () => {
+          toggleTheme()
+          showToast(
+            theme === "dark"
+              ? "Switched to Light Theme"
+              : "Switched to Dark Theme",
+          )
+        },
+      },
+    ]
+
+    recentProjects.forEach((p) => {
+      const base = p.split("/").filter(Boolean).pop() || p
+      list.push({
+        id: `recent-${p}`,
+        label: `File: Open Recent: ${base}`,
+        detail: p,
+        icon: "folder",
+        action: () => {
+          openRootFolder(p)
+        },
+      })
+    })
+
+    return list
+  }, [
+    openFolderPicker,
+    closeRootFolder,
+    openRootFolder,
+    rootWorkspacePath,
+    recentProjects,
+    setActiveActivity,
+    setSettingsModalOpen,
+    setSidebarOpen,
+    showToast,
+    theme,
+    toggleTheme,
+  ])
 
   if (!commandPaletteOpen) return null
 
-  const results = commands.filter((cmd) =>
-    cmd.label.toLowerCase().includes(query.toLowerCase()),
+  const results = allCommands.filter(
+    (cmd) =>
+      cmd.label.toLowerCase().includes(query.toLowerCase()) ||
+      cmd.detail.toLowerCase().includes(query.toLowerCase()),
   )
 
-  function handleSelect(activity: CommandAction) {
-    if (activity === "ToggleTheme") {
-      toggleTheme()
-      showToast(
-        theme === "dark" ? "Switched to Light Theme" : "Switched to Dark Theme",
-      )
-      setCommandPaletteOpen(false)
-      return
-    }
-    if (activity === "Settings") {
-      setSettingsModalOpen(true)
-      setCommandPaletteOpen(false)
-      return
-    }
-    setActiveActivity(activity)
-    setSidebarOpen(true)
+  function handleSelect(cmd: CommandPaletteItem) {
+    cmd.action()
     setCommandPaletteOpen(false)
   }
 
@@ -113,27 +184,14 @@ export function CommandPalette() {
         <div className="command-results">
           <span className="command-section">COMMANDS</span>
           {results.map((cmd, index) => {
-            const iconName =
-              cmd.activity === "Explorer"
-                ? "explorer"
-                : cmd.activity === "Search"
-                  ? "search"
-                  : cmd.activity === "Source Control"
-                    ? "git"
-                    : cmd.activity === "ToggleTheme"
-                      ? theme === "dark"
-                        ? "sun"
-                        : "moon"
-                      : "settings"
-
             return (
               <button
                 className={index === 0 ? "command-active" : ""}
-                key={cmd.label}
-                onClick={() => handleSelect(cmd.activity)}
+                key={cmd.id}
+                onClick={() => handleSelect(cmd)}
                 type="button"
               >
-                <Icon name={iconName} size={15} />
+                <Icon name={cmd.icon} size={15} />
                 <span>
                   <strong>{cmd.label}</strong>
                   <small>{cmd.detail}</small>

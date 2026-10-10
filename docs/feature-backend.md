@@ -85,22 +85,53 @@ To enable multi-screen remote workflows on tablets without external cloud server
 - `GET /api/v1/pairing/info`
   - Returns current LAN IP, pairing port, QR code data, and active companion sessions.
 
-### B. Workspace & File System Operations
+### B. Workspace & File System Operations (Phase 6 Sub-Phase 1 Active)
+- `GET /api/v1/workspace/info`
+  - Response: `{ "rootPath": "/Users/...", "name": "AegisCodev2" }`
+- `POST /api/v1/workspace/open`
+  - Body: `{ "path": "/Users/path/to/folder" }`
+  - Response: `{ "status": "ok", "rootPath": "string", "name": "string" }`
+- `POST /api/v1/workspace/close`
+  - Closes active root workspace directory and clears internal watchers.
+  - Response: `{ "status": "closed" }`
+- `POST /api/v1/workspace/pick-folder`
+  - Triggers native OS folder dialog (`osascript` on macOS, PowerShell on Windows, `zenity`/`kdialog` on Linux).
+  - Response (Success): `{ "status": "ok", "path": "string", "name": "string", "rootPath": "string" }`
+  - Response (Cancelled): `{ "status": "cancelled", "cancelled": true }`
+  - Response (Unsupported/Headless): `{ "status": "unsupported", "unsupported": true, "error": "string" }`
+- `GET /api/v1/workspace/browse`
+  - Query: `?path=/optional/path&showHidden=false`
+  - Response: `{ "currentPath": "string", "parentPath": "string", "homePath": "string", "rootPath": "string", "directories": [ { "name": "string", "path": "string" } ] }`
+- `POST /api/v1/workspace/folder`
+  - Body: `{ "path": "/absolute/or/relative/path" }`
+  - Response: `{ "status": "ok", "path": "string" }`
 - `GET /api/v1/workspace/tree`
-  - Query: `?depth=3&showHidden=false`
-  - Response: Recursive JSON file tree with file metadata, types, and git status flags.
+  - Query: `?depth=8&showHidden=false`
+  - Response: Recursive JSON file tree: `{ "tree": [ { "path": "src/App.tsx", "name": "App.tsx", "type": "file" | "folder", "depth": 0, "children": [] } ] }`
 - `GET /api/v1/workspace/file`
   - Query: `?path=relative/path/to/file.ts`
-  - Response: File text content, encoding, modified timestamp, and read-only status.
+  - Response: `{ "path": "string", "content": "string" }`
 - `POST /api/v1/workspace/file`
-  - Body: `{ "path": "string", "content": "string", "createParents": true }`
-  - Response: `{ "status": "ok", "bytesWritten": 1024, "updatedAt": 1700000000 }`
+  - Body: `{ "path": "string", "content": "string", "isFolder": boolean }`
+  - Response: `{ "status": "ok", "path": "string" }`
 - `DELETE /api/v1/workspace/file`
-  - Query: `?path=relative/path/to/file.ts&recursive=false`
-  - Response: `{ "status": "deleted" }`
+  - Query: `?path=relative/path/to/file.ts`
+  - Response: `{ "status": "deleted", "path": "string" }`
 - `POST /api/v1/workspace/rename`
   - Body: `{ "oldPath": "string", "newPath": "string" }`
-  - Response: `{ "status": "renamed" }`
+  - Response: `{ "status": "renamed", "oldPath": "string", "newPath": "string" }`
+- `POST /api/v1/workspace/move`
+  - Body: `{ "sourcePath": "string", "targetDirectory": "string" }`
+  - Response: `{ "status": "moved", "sourcePath": "string", "newPath": "string" }`
+- `POST /api/v1/workspace/search`
+  - Body: `{ "query": "string", "isRegex": boolean, "isMatchCase": boolean, "isWholeWord": boolean }`
+  - Response: `{ "results": [ { "filename": "string", "matches": [ { "lineNumber": 1, "column": 5, "lineContent": "string", "matchText": "string" } ] } ] }`
+- `POST /api/v1/workspace/replace-all`
+  - Body: `{ "query": "string", "replacement": "string", "isRegex": boolean, "isMatchCase": boolean, "isWholeWord": boolean }`
+  - Response: `{ "status": "ok", "replacements": 12, "modifiedFiles": ["string"] }`
+- `GET /api/v1/git/status`
+  - Reads `.git` directory and `.git/HEAD` to detect current active branch.
+  - Response: `{ "isRepo": boolean, "branch": "string", "repoName": "string" }`
 
 ### C. Server-Sent Events (SSE) Streaming
 - `GET /api/v1/events/workspace`

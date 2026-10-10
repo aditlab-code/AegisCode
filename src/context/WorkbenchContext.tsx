@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react"
@@ -39,6 +40,19 @@ import {
 } from "../data/mockData"
 import { CHAT_MODELS } from "../data/chatConstants"
 import { detectLanguage, validateSyntax } from "../utils/linter"
+import {
+  fetchWorkspaceInfo,
+  openWorkspace,
+  fetchWorkspaceTree,
+  fetchFileContent,
+  saveWorkspaceFile,
+  deleteWorkspaceFile,
+  renameWorkspaceFile,
+  moveWorkspaceFile,
+  fetchGitStatus,
+  pickFolderNative,
+  closeWorkspace,
+} from "../utils/workspaceApi"
 
 interface WorkbenchContextType {
   // Layout toggles
@@ -139,7 +153,21 @@ interface WorkbenchContextType {
   setLinterSettings: React.Dispatch<React.SetStateAction<LinterSettings>>
   navigateToDiagnostic: (diag: DiagnosticItem) => void
 
-  // Workspace Data
+  // Workspace Data & Root Folder
+  rootWorkspacePath: string
+  rootWorkspaceName: string
+  isWorkspaceLoading: boolean
+  recentProjects: string[]
+  addRecentProject: (path: string) => void
+  removeRecentProject: (path: string) => void
+  clearRecentProjects: () => void
+  openFolderPicker: () => Promise<void>
+  openRootFolder: (path: string) => Promise<void>
+  closeRootFolder: () => Promise<void>
+  safeOpenRootFolder: (path: string) => Promise<void>
+  safeCloseRootFolder: () => Promise<void>
+  refreshWorkspace: () => Promise<void>
+  moveFile: (sourcePath: string, targetDirectory: string) => Promise<void>
   files: FileItem[]
   setFiles: React.Dispatch<React.SetStateAction<FileItem[]>>
   createFile: (name: string, isFolder?: boolean, parentFolder?: string) => void
@@ -282,6 +310,22 @@ function loadStoredTheme(): ThemeMode {
     // fallback
   }
   return "dark"
+}
+
+function loadStoredRecentProjects(): string[] {
+  if (typeof window === "undefined") return []
+  try {
+    const raw = window.localStorage.getItem("aegis_recent_projects_v1")
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        return parsed.filter((p) => typeof p === "string" && p.trim())
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return []
 }
 
 const DEFAULT_SIDEBAR_WIDTH = 220
@@ -563,16 +607,22 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [group1, setGroup1] = useState<EditorGroupState>({
     id: "group1",
     name: "Group 1",
-    tabs: ["App.tsx", "Status.tsx"],
-    activeTab: "App.tsx",
+    tabs: [],
+    activeTab: "",
   })
 
   const [group2, setGroup2] = useState<EditorGroupState>({
     id: "group2",
     name: "Group 2",
-    tabs: ["package.json"],
-    activeTab: "package.json",
+    tabs: [],
+    activeTab: "",
   })
+
+  // Workspace Root State
+  const [rootWorkspacePath, setRootWorkspacePath] = useState<string>("")
+  const [rootWorkspaceName, setRootWorkspaceName] =
+    useState<string>("AegisCode")
+  const [isWorkspaceLoading, setIsWorkspaceLoading] = useState<boolean>(false)
 
   // Activity & Editor states
   const [activeActivity, setActiveActivity] = useState<ActivityType>("Explorer")
@@ -874,7 +924,42 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
   const openFileInGroup = useCallback(
     (filename: string, group?: "group1" | "group2") => {
+      if (!filename) return
       const targetGroup = group || focusedGroup
+
+      setFileBuffers((prev) => {
+        if (!prev[filename]) {
+          fetchFileContent(filename)
+            .then((content) => {
+              setFileBuffers((curr) => ({
+                ...curr,
+                [filename]: {
+                  content,
+                  isDirty: false,
+                  language: detectLanguage(filename),
+                },
+              }))
+              const diags = validateSyntax(filename, content, true)
+              setDiagnostics((dPrev) => [
+                ...dPrev.filter((d) => !d.location.startsWith(filename)),
+                ...diags,
+              ])
+            })
+            .catch((err) => {
+              console.warn("Failed to fetch file content:", err)
+            })
+          return {
+            ...prev,
+            [filename]: {
+              content: "",
+              isDirty: false,
+              language: detectLanguage(filename),
+            },
+          }
+        }
+        return prev
+      })
+
       if (targetGroup === "group2") {
         setGroup2((prev) => ({
           ...prev,
@@ -1073,10 +1158,8 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
       }
       setGroup2((prevG2) => {
         if (prevG2.tabs.length > 0) return prevG2
-        const candidate =
-          group1.tabs.find((t) => t !== group1.activeTab) ||
-          group1.activeTab ||
-          "package.json"
+        const candidate = group1.activeTab || group1.tabs[0] || ""
+        if (!candidate) return prevG2
         return {
           ...prevG2,
           tabs: [candidate],
@@ -1119,63 +1202,88 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     window.setTimeout(() => setToast(""), 2200)
   }, [])
 
-  const updateFileContent = useCallback((filename: string, content: string) => {
-    setFileBuffers((prev) => {
-      const existing = prev[filename]
-      return {
-        ...prev,
-        [filename]: {
+  const updateFileContent = useCallback(
+    (filename: string, content: string) => {
+      setFileBuffers((prev) => {
+        const existing = prev[filename]
+        return {
+          ...prev,
+          [filename]: {
+            content,
+            isDirty: true,
+            language: existing?.language || detectLanguage(filename),
+          },
+        }
+      })
+
+      if (linterSettings.enabled && linterSettings.trigger === "onType") {
+        const diags = validateSyntax(
+          filename,
           content,
-          isDirty: true,
-          language: existing?.language || detectLanguage(filename),
-        },
+          linterSettings.showWarnings,
+        )
+        setDiagnostics((prev) => [
+          ...prev.filter((d) => !d.location.startsWith(filename)),
+          ...diags,
+        ])
       }
-    })
-  }, [])
+    },
+    [linterSettings],
+  )
 
   const saveFile = useCallback(
-    (filenameToSave?: string) => {
+    async (filenameToSave?: string) => {
       const target =
         filenameToSave ||
-        (focusedPane === "secondary" && splitEditor
-          ? secondaryActiveTab
-          : activeTab)
+        (focusedGroup === "group2" && splitEditor
+          ? group2.activeTab
+          : group1.activeTab)
+
+      if (!target) return
+
+      const buf = fileBuffers[target]
+      if (buf) {
+        try {
+          await saveWorkspaceFile(target, buf.content, false)
+        } catch (err: any) {
+          console.error("Failed to save to backend:", err)
+          showToast(`Save failed: ${err.message || "Failed to write file"}`)
+          return
+        }
+      }
 
       setFileBuffers((prev) => {
-        const buf = prev[target]
-        if (!buf) return prev
+        const currentBuf = prev[target]
+        if (!currentBuf) return prev
         return {
           ...prev,
           [target]: {
-            ...buf,
+            ...currentBuf,
             isDirty: false,
           },
         }
       })
 
-      if (linterSettings.enabled) {
-        const buf = fileBuffers[target]
-        if (buf) {
-          const fileDiags = validateSyntax(
-            target,
-            buf.content,
-            linterSettings.showWarnings,
-          )
-          setDiagnostics((prev) => [
-            ...prev.filter((d) => !d.location.startsWith(target)),
-            ...fileDiags,
-          ])
-        }
+      if (linterSettings.enabled && buf) {
+        const fileDiags = validateSyntax(
+          target,
+          buf.content,
+          linterSettings.showWarnings,
+        )
+        setDiagnostics((prev) => [
+          ...prev.filter((d) => !d.location.startsWith(target)),
+          ...fileDiags,
+        ])
       }
 
       showToast(`Saved ${target}`)
     },
     [
-      activeTab,
       fileBuffers,
-      focusedPane,
+      focusedGroup,
+      group1.activeTab,
+      group2.activeTab,
       linterSettings,
-      secondaryActiveTab,
       showToast,
       splitEditor,
     ],
@@ -1211,157 +1319,272 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
     )
   }, [])
 
+  const loadWorkspace = useCallback(
+    async (path?: string) => {
+      setIsWorkspaceLoading(true)
+      try {
+        let info
+        if (path) {
+          info = await openWorkspace(path)
+        } else {
+          const savedPath = localStorage.getItem("aegis_root_workspace")
+          if (savedPath) {
+            info = await openWorkspace(savedPath).catch(() =>
+              fetchWorkspaceInfo(),
+            )
+          } else {
+            info = await fetchWorkspaceInfo()
+          }
+        }
+
+        setRootWorkspacePath(info.rootPath)
+        setRootWorkspaceName(info.name)
+        localStorage.setItem("aegis_root_workspace", info.rootPath)
+
+        const treeData = await fetchWorkspaceTree()
+        setFiles(treeData.flatTree)
+
+        // Fetch git status checkpoint
+        const gitData = await fetchGitStatus().catch(() => ({
+          isRepo: false,
+          branch: "",
+          repoName: info.name,
+        }))
+        if (gitData.isRepo) {
+          setActiveBranch(gitData.branch || "main")
+          setActiveRepo(gitData.repoName || info.name)
+          setGitRepos([
+            {
+              id: "repo-root",
+              name: gitData.repoName || info.name,
+              branch: gitData.branch || "main",
+              path: info.rootPath,
+            },
+          ])
+        } else {
+          setActiveBranch("no git")
+          setActiveRepo(info.name)
+          setGitRepos([])
+        }
+      } catch (err: any) {
+        console.warn("Workspace backend not reachable yet or error:", err)
+      } finally {
+        setIsWorkspaceLoading(false)
+      }
+    },
+    [],
+  )
+
+  const [recentProjects, setRecentProjects] = useState<string[]>(
+    loadStoredRecentProjects,
+  )
+
+  const addRecentProject = useCallback((path: string) => {
+    const clean = path.trim()
+    if (!clean) return
+    setRecentProjects((prev) => {
+      const next = [clean, ...prev.filter((p) => p !== clean)].slice(0, 8)
+      try {
+        window.localStorage.setItem(
+          "aegis_recent_projects_v1",
+          JSON.stringify(next),
+        )
+      } catch {}
+      return next
+    })
+  }, [])
+
+  const removeRecentProject = useCallback((path: string) => {
+    setRecentProjects((prev) => {
+      const next = prev.filter((p) => p !== path)
+      try {
+        window.localStorage.setItem(
+          "aegis_recent_projects_v1",
+          JSON.stringify(next),
+        )
+      } catch {}
+      return next
+    })
+  }, [])
+
+  const clearRecentProjects = useCallback(() => {
+    setRecentProjects([])
+    try {
+      window.localStorage.removeItem("aegis_recent_projects_v1")
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    loadWorkspace()
+  }, [loadWorkspace])
+
+  // Auto-save any dirty buffers before switching or closing workspace
+  const autoSaveDirtyBuffers = useCallback(async () => {
+    const dirty = Object.keys(fileBuffers).filter(
+      (filename) => fileBuffers[filename]?.isDirty,
+    )
+    for (const filename of dirty) {
+      const buf = fileBuffers[filename]
+      if (buf) {
+        try {
+          await saveWorkspaceFile(filename, buf.content, false)
+        } catch {}
+      }
+    }
+  }, [fileBuffers])
+
+  const openRootFolder = useCallback(
+    async (path: string) => {
+      try {
+        await autoSaveDirtyBuffers()
+        setGroup1((prev) => ({ ...prev, tabs: [], activeTab: "" }))
+        setGroup2((prev) => ({ ...prev, tabs: [], activeTab: "" }))
+        setFileBuffers({})
+        await loadWorkspace(path)
+        addRecentProject(path)
+        showToast(`Opened folder: ${path}`)
+      } catch (err: any) {
+        removeRecentProject(path)
+        showToast(`Failed to open folder: ${err.message}`)
+      }
+    },
+    [
+      addRecentProject,
+      autoSaveDirtyBuffers,
+      loadWorkspace,
+      removeRecentProject,
+      showToast,
+    ],
+  )
+
+  const closeRootFolder = useCallback(async () => {
+    try {
+      await autoSaveDirtyBuffers()
+      await closeWorkspace()
+      setFiles([])
+      setRootWorkspacePath("")
+      setRootWorkspaceName("")
+      setGroup1((prev) => ({ ...prev, tabs: [], activeTab: "" }))
+      setGroup2((prev) => ({ ...prev, tabs: [], activeTab: "" }))
+      setFileBuffers({})
+      showToast("Workspace closed")
+    } catch (err: any) {
+      showToast(`Failed to close workspace: ${err.message}`)
+    }
+  }, [autoSaveDirtyBuffers, showToast])
+
+  const openFolderPicker = useCallback(async () => {
+    try {
+      const res = await pickFolderNative()
+      if (res.status === "ok" && res.path) {
+        await openRootFolder(res.path)
+      }
+    } catch (err: any) {
+      console.debug("Folder picker cancelled or dismissed:", err)
+    }
+  }, [openRootFolder])
+
+  const refreshWorkspace = useCallback(async () => {
+    await loadWorkspace()
+    showToast("Workspace refreshed")
+  }, [loadWorkspace, showToast])
+
+  const moveFile = useCallback(
+    async (sourcePath: string, targetDirectory: string) => {
+      try {
+        const newPath = await moveWorkspaceFile(sourcePath, targetDirectory)
+        showToast(`Moved to ${newPath}`)
+        await loadWorkspace()
+        setGroup1((prev) => ({
+          ...prev,
+          tabs: prev.tabs.map((t) => (t === sourcePath ? newPath : t)),
+          activeTab: prev.activeTab === sourcePath ? newPath : prev.activeTab,
+        }))
+        setGroup2((prev) => ({
+          ...prev,
+          tabs: prev.tabs.map((t) => (t === sourcePath ? newPath : t)),
+          activeTab: prev.activeTab === sourcePath ? newPath : prev.activeTab,
+        }))
+      } catch (err: any) {
+        showToast(`Move failed: ${err.message}`)
+      }
+    },
+    [loadWorkspace, showToast],
+  )
+
   const createFile = useCallback(
-    (name: string, isFolder = false, parentFolder?: string) => {
+    async (name: string, isFolder = false, parentFolder?: string) => {
       const cleanName = name.trim()
       if (!cleanName) return
 
       const newPath = parentFolder ? `${parentFolder}/${cleanName}` : cleanName
-      const newItem: FileItem = {
-        name: cleanName,
-        type: isFolder ? "folder" : "file",
-        path: newPath,
-        modified: true,
-        children: isFolder ? [] : undefined,
-      }
-
-      setFiles((prevFiles) => {
-        if (!parentFolder) {
-          return [...prevFiles, newItem]
+      try {
+        await saveWorkspaceFile(
+          newPath,
+          isFolder ? "" : `// ${cleanName}\n`,
+          isFolder,
+        )
+        await loadWorkspace()
+        if (!isFolder) {
+          openFileInGroup(newPath, focusedGroup)
         }
-        const addRecursive = (items: FileItem[]): FileItem[] => {
-          return items.map((item) => {
-            if (
-              item.type === "folder" &&
-              (item.path === parentFolder || item.name === parentFolder)
-            ) {
-              return {
-                ...item,
-                children: [...(item.children || []), newItem],
-              }
-            }
-            if (item.children) {
-              return {
-                ...item,
-                children: addRecursive(item.children),
-              }
-            }
-            return item
-          })
-        }
-        return addRecursive(prevFiles)
-      })
-
-      if (!isFolder) {
-        setFileBuffers((prev) => ({
-          ...prev,
-          [cleanName]: {
-            content: `// ${cleanName}\n`,
-            isDirty: true,
-            language: detectLanguage(cleanName),
-          },
-        }))
-        setGitChanges((prev) => [
-          ...prev,
-          { file: cleanName, status: "added", additions: 1, deletions: 0 },
-        ])
-        showToast(`Created file: ${cleanName}`)
-      } else {
-        showToast(`Created folder: ${cleanName}`)
+        showToast(`Created ${isFolder ? "folder" : "file"}: ${cleanName}`)
+      } catch (err: any) {
+        showToast(`Create failed: ${err.message}`)
       }
     },
-    [showToast],
+    [focusedGroup, loadWorkspace, openFileInGroup, showToast],
   )
 
   const renameFile = useCallback(
-    (oldName: string, newName: string) => {
+    async (oldPath: string, newName: string) => {
       const clean = newName.trim()
-      if (!clean || clean === oldName) return
+      if (!clean || clean === oldPath) return
 
-      const updateRecursive = (items: FileItem[]): FileItem[] => {
-        return items.map((item) => {
-          if (item.name === oldName) {
-            return {
-              ...item,
-              name: clean,
-              path: item.path
-                ? item.path.replace(new RegExp(`${oldName}$`), clean)
-                : clean,
-              modified: true,
-            }
-          }
-          if (item.children) {
-            return { ...item, children: updateRecursive(item.children) }
-          }
-          return item
-        })
+      const parentDir = oldPath.includes("/")
+        ? oldPath.substring(0, oldPath.lastIndexOf("/"))
+        : ""
+      const newPath = parentDir ? `${parentDir}/${clean}` : clean
+
+      try {
+        await renameWorkspaceFile(oldPath, newPath)
+        await loadWorkspace()
+        setGroup1((prev) => ({
+          ...prev,
+          tabs: prev.tabs.map((t) => (t === oldPath ? newPath : t)),
+          activeTab: prev.activeTab === oldPath ? newPath : prev.activeTab,
+        }))
+        setGroup2((prev) => ({
+          ...prev,
+          tabs: prev.tabs.map((t) => (t === oldPath ? newPath : t)),
+          activeTab: prev.activeTab === oldPath ? newPath : prev.activeTab,
+        }))
+        showToast(`Renamed to ${clean}`)
+      } catch (err: any) {
+        showToast(`Rename failed: ${err.message}`)
       }
-
-      setFiles((prev) => updateRecursive(prev))
-
-      setFileBuffers((prev) => {
-        if (prev[oldName]) {
-          const buffer = prev[oldName]
-          const next = { ...prev }
-          delete next[oldName]
-          next[clean] = {
-            ...buffer,
-            isDirty: true,
-            language: detectLanguage(clean),
-          }
-          return next
-        }
-        return prev
-      })
-
-      setGroup1((prev) => ({
-        ...prev,
-        tabs: prev.tabs.map((t) => (t === oldName ? clean : t)),
-        activeTab: prev.activeTab === oldName ? clean : prev.activeTab,
-      }))
-      setGroup2((prev) => ({
-        ...prev,
-        tabs: prev.tabs.map((t) => (t === oldName ? clean : t)),
-        activeTab: prev.activeTab === oldName ? clean : prev.activeTab,
-      }))
-
-      showToast(`Renamed ${oldName} to ${clean}`)
     },
-    [showToast],
+    [loadWorkspace, showToast],
   )
 
   const deleteFile = useCallback(
-    (name: string) => {
-      const deleteRecursive = (items: FileItem[]): FileItem[] => {
-        return items
-          .filter((item) => item.name !== name && item.path !== name)
-          .map((item) => {
-            if (item.children) {
-              return { ...item, children: deleteRecursive(item.children) }
-            }
-            return item
-          })
+    async (name: string) => {
+      try {
+        await deleteWorkspaceFile(name)
+        closeTabInGroup("group1", name)
+        closeTabInGroup("group2", name)
+        setFileBuffers((prev) => {
+          const next = { ...prev }
+          delete next[name]
+          return next
+        })
+        await loadWorkspace()
+        showToast(`Deleted ${name}`)
+      } catch (err: any) {
+        showToast(`Delete failed: ${err.message}`)
       }
-
-      setFiles((prev) => deleteRecursive(prev))
-      setFileBuffers((prev) => {
-        const next = { ...prev }
-        delete next[name]
-        return next
-      })
-
-      closeTabInGroup("group1", name)
-      closeTabInGroup("group2", name)
-
-      setGitChanges((prev) => [
-        ...prev.filter((c) => c.file !== name),
-        { file: name, status: "deleted", additions: 0, deletions: 1 },
-      ])
-      setStagedChanges((prev) => prev.filter((c) => c.file !== name))
-
-      showToast(`Deleted ${name}`)
     },
-    [closeTabInGroup, showToast],
+    [closeTabInGroup, loadWorkspace, showToast],
   )
 
   const stageChange = useCallback((file: string) => {
@@ -1415,8 +1638,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         showToast("No staged changes to commit")
         return
       }
+      const commitHash = Math.random().toString(16).substring(2, 9)
       const newCommit: GitCommitNode = {
-        hash: Math.random().toString(16).substring(2, 9),
+        id: commitHash,
+        hash: commitHash,
         message: cleanMsg,
         author: "Adit Wicaksono",
         timestamp: "Just now",
@@ -1623,6 +1848,10 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
 
       if (action === "commands") {
         setCommandPaletteOpen(true)
+      } else if (action === "open-folder") {
+        openFolderPicker()
+      } else if (action === "close-folder") {
+        closeRootFolder()
       } else if (action === "sidebar") {
         toggleSidebar()
       } else if (action === "panel" || action === "new-terminal") {
@@ -1633,7 +1862,15 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         showToast(actionMessages[action] ?? "Command completed")
       }
     },
-    [activeTab, saveFile, showToast, togglePanel, toggleSidebar],
+    [
+      activeTab,
+      closeRootFolder,
+      openFolderPicker,
+      saveFile,
+      showToast,
+      togglePanel,
+      toggleSidebar,
+    ],
   )
 
   // Global keyboard shortcuts
@@ -1747,6 +1984,20 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
         linterSettings,
         setLinterSettings,
         navigateToDiagnostic,
+        rootWorkspacePath,
+        rootWorkspaceName,
+        isWorkspaceLoading,
+        recentProjects,
+        addRecentProject,
+        removeRecentProject,
+        clearRecentProjects,
+        openFolderPicker,
+        openRootFolder,
+        closeRootFolder,
+        safeOpenRootFolder: openRootFolder,
+        safeCloseRootFolder: closeRootFolder,
+        refreshWorkspace,
+        moveFile,
         files,
         setFiles,
         createFile,

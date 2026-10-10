@@ -76,6 +76,7 @@ export function Editor() {
         />
         <EditorBreadcrumbs file={group1.activeTab} />
         <EditorFindWidget
+          filename={group1.activeTab}
           isOpen={findOpenGroup1}
           onClose={() => setFindOpenGroup1(false)}
         />
@@ -109,6 +110,7 @@ export function Editor() {
             />
             <EditorBreadcrumbs file={group1.activeTab} />
             <EditorFindWidget
+              filename={group1.activeTab}
               isOpen={findOpenGroup1}
               onClose={() => setFindOpenGroup1(false)}
             />
@@ -163,6 +165,7 @@ export function Editor() {
             />
             <EditorBreadcrumbs file={group2.activeTab} />
             <EditorFindWidget
+              filename={group2.activeTab}
               isOpen={findOpenGroup2}
               onClose={() => setFindOpenGroup2(false)}
             />

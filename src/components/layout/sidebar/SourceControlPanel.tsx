@@ -38,6 +38,30 @@ export function SourceControlPanel() {
 
   return (
     <div className="tool-panel git-panel">
+      {/* Visual Checkpoint Status Notice */}
+      <div className="mx-3 my-2 p-2 rounded border border-[var(--color-line)] bg-[var(--color-surface-raised)] text-[11px]">
+        <div className="flex items-center gap-1.5 font-medium text-[var(--color-ink)]">
+          <Icon name="branch" size={13} />
+          <span>
+            {activeBranch && activeBranch !== "no git"
+              ? `Git Active: ${activeBranch}`
+              : "No Git Detected"}
+          </span>
+          <span
+            className={`ml-auto w-2 h-2 rounded-full ${
+              activeBranch && activeBranch !== "no git"
+                ? "bg-[var(--color-success)]"
+                : "bg-[var(--color-warning)]"
+            }`}
+          />
+        </div>
+        <p className="mt-1 text-[10px] text-[var(--color-ink-muted)]">
+          {activeBranch && activeBranch !== "no git"
+            ? "Visual checkpoint active. CLI git actions unscoped for Phase 1."
+            : "No .git directory found in root workspace folder."}
+        </p>
+      </div>
+
       {/* 1. Active Repositories Controller */}
       <div className="git-repo-selector">
         <label className="git-repo-label" htmlFor="repo-select">
@@ -55,13 +79,30 @@ export function SourceControlPanel() {
           }}
           value={activeRepo}
         >
-          {gitRepos.map((repo) => (
-            <option key={repo.id} value={repo.id}>
-              {repo.name} ({repo.branch})
+          {gitRepos.length > 0 ? (
+            gitRepos.map((repo) => (
+              <option key={repo.id} value={repo.id}>
+                {repo.name} ({repo.branch})
+              </option>
+            ))
+          ) : (
+            <option value="none">
+              {activeBranch && activeBranch !== "no git"
+                ? `${activeRepo} (${activeBranch})`
+                : "No repository"}
             </option>
-          ))}
+          )}
         </select>
-        <span className="status-dot status-dot-git" title="Online" />
+        <span
+          className={`status-dot ${
+            activeBranch && activeBranch !== "no git"
+              ? "status-dot-git"
+              : "opacity-40"
+          }`}
+          title={
+            activeBranch && activeBranch !== "no git" ? "Active" : "Offline"
+          }
+        />
       </div>
 
       {/* 2. Commit Message & Action Buttons */}
@@ -69,41 +110,30 @@ export function SourceControlPanel() {
         <textarea
           aria-label="Commit message"
           className="commit-input"
-          onChange={(event) => setCommitMessage(event.target.value)}
-          onKeyDown={(e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-              e.preventDefault()
-              handleCommit()
-            }
-          }}
-          placeholder="Message (Ctrl+Enter to commit)"
+          disabled
+          placeholder="Commit action unscoped in Phase 1 (visual checkpoint only)"
           rows={3}
           value={commitMessage}
         />
 
         <button
-          className="primary-action commit-btn"
-          disabled={!commitMessage.trim() || stagedChanges.length === 0}
-          onClick={handleCommit}
-          title={
-            stagedChanges.length === 0
-              ? "Stage changes first to commit"
-              : "Commit staged changes"
-          }
+          className="primary-action commit-btn opacity-50 cursor-not-allowed"
+          disabled
+          title="Commit action unscoped in Phase 1 (visual checkpoint only)"
           type="button"
         >
           <span className="commit-git-icon">
             <Icon name="git" size={13} />
           </span>
-          <span>Commit ({stagedChanges.length} staged)</span>
+          <span>Commit (Checkpoint Only)</span>
         </button>
 
         {/* Git Control Toolbar: Pull, Push, Sync */}
         <div className="git-toolbar">
           <button
-            className="git-tool-btn git-btn-pull"
-            onClick={gitPull}
-            title="Git Pull: Fetch and merge remote changes"
+            className="git-tool-btn git-btn-pull opacity-50 cursor-not-allowed"
+            disabled
+            title="Git pull action unscoped in Phase 1"
             type="button"
           >
             <span className="git-tool-icon icon-pull">
@@ -112,9 +142,9 @@ export function SourceControlPanel() {
             <span>Pull</span>
           </button>
           <button
-            className="git-tool-btn git-btn-push"
-            onClick={gitPush}
-            title="Git Push: Push commits to remote branch"
+            className="git-tool-btn git-btn-push opacity-50 cursor-not-allowed"
+            disabled
+            title="Git push action unscoped in Phase 1"
             type="button"
           >
             <span className="git-tool-icon icon-push">
@@ -123,12 +153,9 @@ export function SourceControlPanel() {
             <span>Push</span>
           </button>
           <button
-            className="git-tool-btn git-btn-sync"
-            onClick={() => {
-              gitPull()
-              gitPush()
-            }}
-            title="Git Sync: Pull and Push"
+            className="git-tool-btn git-btn-sync opacity-50 cursor-not-allowed"
+            disabled
+            title="Git sync action unscoped in Phase 1"
             type="button"
           >
             <span className="git-tool-icon icon-sync">

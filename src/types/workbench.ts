@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 
-export type IconName = "aegis" | "arrow-down" | "arrow-up" | "bell" | "branch" | "check" | "chevron" | "chevron-down" | "chevron-up" | "close" | "code" | "copy" | "error" | "explorer" | "file" | "folder" | "git" | "history" | "layout" | "maximize" | "moon" | "more" | "panel" | "play" | "plus" | "refresh" | "search" | "send" | "settings" | "split" | "sun" | "symbol" | "terminal" | "trash" | "warning"
+export type IconName = "aegis" | "arrow-down" | "arrow-up" | "bell" | "branch" | "check" | "chevron" | "chevron-down" | "chevron-up" | "close" | "code" | "copy" | "error" | "explorer" | "file" | "folder" | "git" | "history" | "layout" | "maximize" | "moon" | "more" | "panel" | "play" | "plus" | "refresh" | "search" | "send" | "settings" | "split" | "sun" | "symbol" | "terminal" | "trash" | "warning" | "edit" | "add"
 
 export type ThemeMode = "dark" | "light"
 
@@ -31,12 +31,18 @@ export interface SkillCommand {
 export type ActivityType = "Explorer" | "Search" | "Source Control" | "Settings"
 
 export interface FileItem {
+  id?: string
   depth: number
   icon: "file" | "folder"
   label: string
+  path: string
+  name?: string
+  type?: "file" | "folder"
   open?: boolean
   active?: boolean
   muted?: boolean
+  children?: FileItem[]
+  modified?: boolean
 }
 
 export interface EditorGroupState {
@@ -88,7 +94,10 @@ export interface ChatMessage {
 export interface GitChange {
   code: "M" | "A" | "D"
   file: string
-  directory: string
+  directory?: string
+  status?: string
+  additions?: number
+  deletions?: number
 }
 
 export interface MenuItem {
@@ -120,7 +129,8 @@ export interface GitCommitNode {
   hash: string
   message: string
   author: string
-  time: string
+  time?: string
+  timestamp?: string
   branch: string
   isHead?: boolean
 }
@@ -133,9 +143,9 @@ export interface GitRepo {
 }
 
 export interface OutlineSymbol {
-  id: string
+  id?: string
   name: string
-  kind: "function" | "class" | "type" | "variable" | "hook"
+  kind: "function" | "class" | "type" | "variable" | "hook" | "interface"
   line: number
 }
 

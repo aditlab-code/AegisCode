@@ -8,6 +8,7 @@ const menus: MenuGroup[] = [
     items: [
       ["New Text File", "Ctrl+N", "new-file"],
       ["Open Folder…", "Ctrl+O", "open-folder"],
+      ["Close Folder", "Ctrl+K F", "close-folder"],
       ["Save", "Ctrl+S", "save"],
     ],
   },
@@ -45,7 +46,8 @@ const menus: MenuGroup[] = [
 ]
 
 export function AppMenu() {
-  const { runAction } = useWorkbench()
+  const { runAction, recentProjects, openRootFolder, clearRecentProjects } =
+    useWorkbench()
   const [activeMenu, setActiveMenu] = useState<string | null>(null)
   const navRef = useRef<HTMLElement>(null)
   const triggerRefs = useRef<Record<string, HTMLButtonElement | null>>({})
@@ -121,6 +123,46 @@ export function AppMenu() {
                   <kbd>{shortcut}</kbd>
                 </button>
               ))}
+
+              {menu.label === "File" && recentProjects.length > 0 && (
+                <div className="border-t border-[var(--color-line)] my-1 pt-1">
+                  <div className="px-3 py-1 text-[10px] font-semibold text-[var(--color-ink-muted)] uppercase tracking-wider">
+                    Recent Projects
+                  </div>
+                  {recentProjects.map((p) => {
+                    const base = p.split("/").filter(Boolean).pop() || p
+                    return (
+                      <button
+                        className="flex items-center justify-between w-full px-3 py-1 text-xs hover:bg-[var(--color-surface-raised)] text-[var(--color-ink)] text-left"
+                        key={p}
+                        onClick={() => {
+                          setActiveMenu(null)
+                          openRootFolder(p)
+                        }}
+                        role="menuitem"
+                        title={p}
+                        type="button"
+                      >
+                        <span className="truncate max-w-[160px]">{base}</span>
+                        <span className="text-[10px] text-[var(--color-ink-muted)] font-mono truncate max-w-[100px]">
+                          {p}
+                        </span>
+                      </button>
+                    )
+                  })}
+                  <button
+                    className="w-full px-3 py-1 text-[10px] text-[var(--color-ink-muted)] hover:text-red-400 text-left hover:bg-[var(--color-surface-raised)] transition-colors"
+                    onClick={() => {
+                      setActiveMenu(null)
+                      clearRecentProjects()
+                    }}
+                    role="menuitem"
+                    type="button"
+                  >
+                    Clear Recent Projects
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

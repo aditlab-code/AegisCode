@@ -2,7 +2,8 @@
   display: grid;
   grid-template-rows: 48px minmax(0, 1fr) 30px;
   height: 100%;
-  min-width: 760px;
+  width: 100%;
+  min-width: 0;
   background: transparent;
   overflow: hidden;
 }
@@ -10,33 +11,34 @@
 .workspace {
   display: grid;
   min-height: 0;
+  min-width: 0;
   gap: 7px;
   padding: 8px 8px 5px;
   position: relative;
 }
 
 .workspace-chat-open {
-  grid-template-columns: 44px var(--sidebar-width, 220px) minmax(320px, 1fr) var(--chat-width, 300px);
+  grid-template-columns: 44px var(--sidebar-width, 220px) minmax(0, 1fr) var(--chat-width, 300px);
 }
 
 .workspace-chat-open.workspace-chat-expanded {
-  grid-template-columns: 44px var(--sidebar-width, 220px) minmax(320px, 1fr) var(--chat-width, 500px);
+  grid-template-columns: 44px var(--sidebar-width, 220px) minmax(0, 1fr) var(--chat-width, 500px);
 }
 
 .workspace-chat-closed {
-  grid-template-columns: 44px var(--sidebar-width, 220px) minmax(320px, 1fr);
+  grid-template-columns: 44px var(--sidebar-width, 220px) minmax(0, 1fr);
 }
 
 .workspace-sidebar-closed.workspace-chat-open {
-  grid-template-columns: 44px minmax(320px, 1fr) var(--chat-width, 300px);
+  grid-template-columns: 44px minmax(0, 1fr) var(--chat-width, 300px);
 }
 
 .workspace-sidebar-closed.workspace-chat-open.workspace-chat-expanded {
-  grid-template-columns: 44px minmax(320px, 1fr) var(--chat-width, 500px);
+  grid-template-columns: 44px minmax(0, 1fr) var(--chat-width, 500px);
 }
 
 .workspace-sidebar-closed.workspace-chat-closed {
-  grid-template-columns: 44px minmax(320px, 1fr);
+  grid-template-columns: 44px minmax(0, 1fr);
 }
 
 .workbench {
@@ -50,6 +52,7 @@
   box-shadow: var(--shadow-elevation);
   overflow: hidden;
   position: relative;
+  z-index: 1;
 }
 
 .workbench-panel-closed {
@@ -68,6 +71,7 @@
 /* Sashes and Drag Overlays */
 .side-panel {
   position: relative;
+  z-index: 10;
 }
 
 .chat-drawer {

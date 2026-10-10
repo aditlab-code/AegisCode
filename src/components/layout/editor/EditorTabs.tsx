@@ -188,8 +188,8 @@ export function EditorTabs({
           <Icon name="check" size={14} />
         </IconButton>
         <IconButton
-          label="Run file"
-          onClick={() => showToast(`Running ${currentGroup.activeTab}...`)}
+          label="Run file (unscoped in Phase 1)"
+          onClick={() => showToast("Code runner unscoped for Phase 1")}
         >
           <Icon name="play" />
         </IconButton>

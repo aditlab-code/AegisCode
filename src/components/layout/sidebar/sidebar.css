@@ -535,10 +535,16 @@
   background: var(--color-surface-hover);
 }
 
+.file-drop-target {
+  background: var(--color-surface-hover) !important;
+  outline: 1px dashed var(--color-accent) !important;
+  border-radius: 2px;
+}
+
 /* Floating Context Menu */
 .explorer-context-menu {
   position: fixed;
-  z-index: 60;
+  z-index: 1000;
   min-width: 170px;
   padding: 4px;
   background: var(--color-surface-raised);

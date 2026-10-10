@@ -23,13 +23,23 @@ function extractSymbols(code?: string): OutlineSymbol[] {
       /^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)/,
     )
     if (fnMatch) {
-      symbols.push({ name: fnMatch[1], kind: "function", line: lineNum })
+      symbols.push({
+        id: `fn-${idx}`,
+        name: fnMatch[1],
+        kind: "function",
+        line: lineNum,
+      })
       return
     }
 
     const classMatch = trimmed.match(/^(?:export\s+)?class\s+([A-Za-z0-9_$]+)/)
     if (classMatch) {
-      symbols.push({ name: classMatch[1], kind: "class", line: lineNum })
+      symbols.push({
+        id: `cls-${idx}`,
+        name: classMatch[1],
+        kind: "class",
+        line: lineNum,
+      })
       return
     }
 
@@ -37,13 +47,23 @@ function extractSymbols(code?: string): OutlineSymbol[] {
       /^(?:export\s+)?interface\s+([A-Za-z0-9_$]+)/,
     )
     if (ifaceMatch) {
-      symbols.push({ name: ifaceMatch[1], kind: "interface", line: lineNum })
+      symbols.push({
+        id: `iface-${idx}`,
+        name: ifaceMatch[1],
+        kind: "interface",
+        line: lineNum,
+      })
       return
     }
 
     const typeMatch = trimmed.match(/^(?:export\s+)?type\s+([A-Za-z0-9_$]+)/)
     if (typeMatch) {
-      symbols.push({ name: typeMatch[1], kind: "type", line: lineNum })
+      symbols.push({
+        id: `type-${idx}`,
+        name: typeMatch[1],
+        kind: "type",
+        line: lineNum,
+      })
       return
     }
 
@@ -51,7 +71,12 @@ function extractSymbols(code?: string): OutlineSymbol[] {
       /^(?:export\s+)?const\s+([A-Za-z0-9_$]+)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z0-9_$]+)\s*=>/,
     )
     if (arrowFnMatch) {
-      symbols.push({ name: arrowFnMatch[1], kind: "function", line: lineNum })
+      symbols.push({
+        id: `arrow-${idx}`,
+        name: arrowFnMatch[1],
+        kind: "function",
+        line: lineNum,
+      })
       return
     }
   })
@@ -71,6 +96,12 @@ export function ExplorerPanel() {
     createFile,
     renameFile,
     deleteFile,
+    moveFile,
+    rootWorkspaceName,
+    rootWorkspacePath,
+    openRootFolder,
+    refreshWorkspace,
+    isWorkspaceLoading,
     group1,
     group2,
     focusedGroup,
@@ -81,12 +112,18 @@ export function ExplorerPanel() {
     fileBuffers,
     setCursorPosition,
     showToast,
+    recentProjects,
+    removeRecentProject,
+    clearRecentProjects,
   } = useWorkbench()
 
   const [openEditorsOpen, setOpenEditorsOpen] = useState(true)
   const [workspaceOpen, setWorkspaceOpen] = useState(true)
   const [outlineOpen, setOutlineOpen] = useState(true)
   const [timelineOpen, setTimelineOpen] = useState(false)
+
+  // Drag and Drop target highlight state
+  const [dragTarget, setDragTarget] = useState<string | null>(null)
 
   // Filter state
   const [filterActive, setFilterActive] = useState(false)
@@ -220,9 +257,9 @@ export function ExplorerPanel() {
   }
 
   function handleCopyFullPath(file: FileItem) {
-    const fullPath = `/Users/aditwicaksono/Documents/Project-AI/AegisCodev2/${
-      file.path || file.label
-    }`
+    const fullPath = rootWorkspacePath
+      ? `${rootWorkspacePath}/${file.path || file.label}`
+      : file.path || file.label
     navigator.clipboard?.writeText(fullPath)
     showToast(`Copied full path: ${fullPath}`)
     setContextMenu(null)
@@ -242,13 +279,13 @@ export function ExplorerPanel() {
   }
 
   function triggerRename(file: FileItem) {
-    setRenamingFile(file.label)
+    setRenamingFile(file.path || file.label)
     setRenameValue(file.label)
     setContextMenu(null)
   }
 
   function triggerDelete(file: FileItem) {
-    deleteFile(file.label)
+    deleteFile(file.path || file.label)
     setContextMenu(null)
   }
 
@@ -410,8 +447,9 @@ export function ExplorerPanel() {
       {/* Workspace Header with CRUD Action Bar */}
       <div className="section-title-bar">
         <button
-          className="section-title section-title-clickable flex-1"
+          className="section-title section-title-clickable min-w-0 flex-1"
           onClick={() => setWorkspaceOpen((v) => !v)}
+          title={workspaceOpen ? "Collapse folder tree" : "Expand folder tree"}
           type="button"
         >
           <span
@@ -419,7 +457,12 @@ export function ExplorerPanel() {
           >
             <Icon name="chevron" size={12} />
           </span>
-          <span>AEGISCODE</span>
+          <span
+            className="truncate text-[10px] font-bold text-[var(--color-ink)]"
+            title={rootWorkspacePath || "AegisCode"}
+          >
+            {(rootWorkspaceName || "NO FOLDER OPENED").toUpperCase()}
+          </span>
         </button>
 
         <div className="section-actions">
@@ -445,7 +488,7 @@ export function ExplorerPanel() {
             title="New Folder"
             type="button"
           >
-            <Icon name="folder" size={13} />
+            <Icon name="plus" size={13} />
           </button>
           <button
             className={`action-icon-btn ${filterActive ? "btn-active" : ""}`}
@@ -461,14 +504,7 @@ export function ExplorerPanel() {
           <button
             className="action-icon-btn"
             onClick={() => {
-              const resetState: Record<string, boolean> = {}
-              files.forEach((f) => {
-                if (f.icon === "folder" && f.open === false) {
-                  resetState[f.label] = true
-                }
-              })
-              setCollapsedFolders(resetState)
-              showToast("Explorer refreshed")
+              refreshWorkspace()
             }}
             title="Refresh Explorer"
             type="button"
@@ -502,7 +538,102 @@ export function ExplorerPanel() {
       )}
 
       {workspaceOpen && (
-        <div className="file-tree">
+        <div
+          className="file-tree"
+          onDragOver={(e) => {
+            e.preventDefault()
+            e.dataTransfer.dropEffect = "move"
+          }}
+          onDrop={(e) => {
+            e.preventDefault()
+            setDragTarget(null)
+            try {
+              const data = JSON.parse(
+                e.dataTransfer.getData("application/json"),
+              )
+              if (data?.path) {
+                moveFile(data.path, "")
+              }
+            } catch {}
+          }}
+        >
+          {visibleFiles.length === 0 && (
+            <div className="p-4 text-center">
+              <p className="text-[11px] text-[var(--color-ink-muted)] mb-2">
+                {isWorkspaceLoading
+                  ? "Scanning workspace..."
+                  : rootWorkspacePath
+                    ? "This folder is empty."
+                    : "No folder opened."}
+              </p>
+              {!rootWorkspacePath && (
+                <p className="text-[10px] text-[var(--color-ink-muted)]">
+                  Use{" "}
+                  <span className="text-[var(--color-ink)] font-medium">
+                    File ➔ Open Folder…
+                  </span>{" "}
+                  to open a project
+                </p>
+              )}
+
+              {recentProjects.length > 0 && (
+                <div className="mt-4 pt-3 border-t border-[var(--color-line)] text-left">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-semibold tracking-wider text-[var(--color-ink-muted)] uppercase">
+                      Recent Projects
+                    </span>
+                    <button
+                      className="text-[10px] text-[var(--color-ink-muted)] hover:text-red-400 transition-colors"
+                      onClick={clearRecentProjects}
+                      title="Clear recent projects list"
+                      type="button"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    {recentProjects.map((p) => {
+                      const base = p.split("/").filter(Boolean).pop() || p
+                      return (
+                        <div
+                          className="group flex items-center justify-between px-2 py-1.5 rounded hover:bg-[var(--color-surface-raised)] cursor-pointer text-xs transition-colors"
+                          key={p}
+                          onClick={() => openRootFolder(p)}
+                          title={p}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-[var(--color-accent)] shrink-0">
+                              <Icon name="folder" size={12} />
+                            </span>
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-[var(--color-ink)] truncate font-medium">
+                                {base}
+                              </span>
+                              <span className="text-[10px] text-[var(--color-ink-muted)] truncate font-mono">
+                                {p}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            className="opacity-0 group-hover:opacity-100 p-1 text-[var(--color-ink-muted)] hover:text-red-400 shrink-0 transition-opacity"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              removeRecentProject(p)
+                            }}
+                            title="Remove from recent"
+                            type="button"
+                          >
+                            <Icon name="close" size={10} />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Inline creation input row */}
           {creatingType && (
             <div
@@ -537,27 +668,63 @@ export function ExplorerPanel() {
           )}
 
           {visibleFiles.map((file) => {
-            const isCurrent = currentTab === file.label
+            const fileKey = file.path || file.label
+            const isCurrent =
+              currentTab === file.label || currentTab === file.path
             const isHidden = file.label.startsWith(".") || file.muted
-            const isRenaming = renamingFile === file.label
-            const isFolder = file.icon === "folder"
+            const isRenaming = renamingFile === fileKey
+            const isFolder = file.icon === "folder" || file.type === "folder"
             const isCollapsed = Boolean(collapsedFolders[file.label])
+            const isDropTarget = dragTarget === fileKey
 
             return (
               <div
                 className={`file-row ${isCurrent ? "file-active" : ""} ${
                   isHidden ? "file-muted" : ""
-                }`}
-                key={file.label}
+                } ${isDropTarget ? "file-drop-target" : ""}`}
+                draggable={!isRenaming}
+                key={fileKey}
                 onClick={() => {
                   if (isRenaming) return
                   if (isFolder) {
                     toggleFolder(file.label)
                   } else {
-                    openFileInGroup(file.label, focusedGroup)
+                    openFileInGroup(fileKey, focusedGroup)
                   }
                 }}
                 onContextMenu={(e) => handleRowContextMenu(e, file)}
+                onDragLeave={() => {
+                  if (dragTarget === fileKey) setDragTarget(null)
+                }}
+                onDragOver={(e) => {
+                  if (isFolder) {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setDragTarget(fileKey)
+                  }
+                }}
+                onDragStart={(e) => {
+                  if (isRenaming) return
+                  e.dataTransfer.setData(
+                    "application/json",
+                    JSON.stringify({ path: fileKey, isFolder }),
+                  )
+                  e.dataTransfer.effectAllowed = "move"
+                }}
+                onDrop={(e) => {
+                  if (!isFolder) return
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setDragTarget(null)
+                  try {
+                    const data = JSON.parse(
+                      e.dataTransfer.getData("application/json"),
+                    )
+                    if (data?.path && data.path !== fileKey) {
+                      moveFile(data.path, fileKey)
+                    }
+                  } catch {}
+                }}
                 style={{ paddingLeft: `${10 + file.depth * 14}px` }}
               >
                 {/* Visual tree branching indent guidelines */}
@@ -609,11 +776,11 @@ export function ExplorerPanel() {
                   <input
                     autoFocus
                     className="inline-input"
-                    onBlur={() => handleRenameSubmit(file.label)}
+                    onBlur={() => handleRenameSubmit(fileKey)}
                     onChange={(e) => setRenameValue(e.target.value)}
                     onClick={(e) => e.stopPropagation()}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") handleRenameSubmit(file.label)
+                      if (e.key === "Enter") handleRenameSubmit(fileKey)
                       if (e.key === "Escape") setRenamingFile(null)
                     }}
                     value={renameValue}

@@ -6,9 +6,14 @@ import { useWorkbench } from "../../../context/WorkbenchContext"
 interface EditorFindWidgetProps {
   isOpen: boolean
   onClose: () => void
+  filename?: string
 }
 
-export function EditorFindWidget({ isOpen, onClose }: EditorFindWidgetProps) {
+export function EditorFindWidget({
+  isOpen,
+  onClose,
+  filename,
+}: EditorFindWidgetProps) {
   const {
     activeTab,
     secondaryActiveTab,
@@ -24,7 +29,10 @@ export function EditorFindWidget({ isOpen, onClose }: EditorFindWidgetProps) {
   if (!isOpen) return null
 
   const currentFile =
-    focusedPane === "secondary" && splitEditor ? secondaryActiveTab : activeTab
+    filename ||
+    (focusedPane === "secondary" && splitEditor
+      ? secondaryActiveTab
+      : activeTab)
   const content = fileBuffers[currentFile]?.content || ""
 
   let matchCount = 0
