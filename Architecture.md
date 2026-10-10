@@ -27,33 +27,38 @@ Arsitektur direktori frontend direstrukturisasi dari komponen monolitik menjadi 
 ```text
 src/
 ├── components/
-│   ├── layout/            # Arsitektur Orkestrator & Mikro-komponen
+│   ├── layout/            # Arsitektur Orkestrator & Mikro-komponen (Co-located CSS)
 │   │   ├── header/            # Modul Header IDE
 │   │   │   ├── Header.tsx             # Orkestrator Header
 │   │   │   ├── WindowControls.tsx     # Traffic lights & branding
 │   │   │   ├── AppMenu.tsx            # Menu dropdown (File, Edit, View, Run, Terminal)
 │   │   │   ├── GlobalSearchButton.tsx # Quick command launcher trigger (⌘K)
-│   │   │   └── HeaderActions.tsx      # Toggle buttons panel, sidebar, & chat
+│   │   │   ├── HeaderActions.tsx      # Toggle buttons panel, sidebar, & chat
+│   │   │   └── header.css             # Styling header bar & window controls
 │   │   ├── activity-rail/     # Navigasi Vertikal Sisi Kiri
-│   │   │   └── ActivityRail.tsx       # Switcher Explorer, Search, Git, & Settings
+│   │   │   ├── ActivityRail.tsx       # Switcher Explorer, Search, Git, & Settings
+│   │   │   └── activity-rail.css      # Styling activity rail vertical bar
 │   │   ├── sidebar/           # Modul Primary Sidebar
 │   │   │   ├── Sidebar.tsx            # Orkestrator Sidebar
 │   │   │   ├── ExplorerPanel.tsx      # File tree, Outline, & Timeline
 │   │   │   ├── SearchPanel.tsx        # Regex search & replace repositori
 │   │   │   ├── SourceControlPanel.tsx # Git changes staging, commit, & sync
-│   │   │   └── SettingsPanel.tsx      # Preferences editor (auto save, minimap, tab size)
+│   │   │   ├── SettingsPanel.tsx      # Preferences editor (auto save, minimap, tab size)
+│   │   │   └── sidebar.css            # Styling side panel & sub-panels
 │   │   ├── editor/            # Modul Workbench Text Editor
 │   │   │   ├── Editor.tsx             # Orkestrator Editor & Split View
 │   │   │   ├── EditorTabs.tsx         # Multi-tab switcher & tab action bar
 │   │   │   ├── EditorBreadcrumbs.tsx  # Path visual file & selector bahasa
 │   │   │   ├── CodePane.tsx           # Render baris kode, penomoran baris, & diagnostic dots
 │   │   │   ├── Minimap.tsx            # Visual minimap code overview
-│   │   │   └── EditorFindWidget.tsx   # Floating in-editor find widget (Ctrl+F)
+│   │   │   ├── EditorFindWidget.tsx   # Floating in-editor find widget (Ctrl+F)
+│   │   │   └── editor.css             # Styling tabs, breadcrumbs, code panes, & minimap
 │   │   ├── bottom-panel/      # Modul Bottom Drawer
 │   │   │   ├── BottomPanel.tsx        # Orkestrator Bottom Panel
 │   │   │   ├── TerminalView.tsx       # Simulasi terminal native runner SSE (zsh/bash)
 │   │   │   ├── ProblemsView.tsx       # Daftar diagnostic error & warning syntax
-│   │   │   └── OutputView.tsx         # Logs adapter linting incremental
+│   │   │   ├── OutputView.tsx         # Logs adapter linting incremental
+│   │   │   └── bottom-panel.css       # Styling bottom drawer, terminal, & problems
 │   │   ├── chat/              # Modul AppDrawer AEGIS AI Agent
 │   │   │   ├── ChatDrawer.tsx         # Orkestrator Chat Drawer (Master-Detail Host)
 │   │   │   ├── ChatHeader.tsx         # Agent title, toggle sessions sidebar & actions
@@ -63,26 +68,35 @@ src/
 │   │   │   ├── ChatComposer.tsx       # Textarea input & keyboard trigger autocomplete
 │   │   │   ├── ChatCommandPopover.tsx # Floating popover autocomplete (/ skills & @ files)
 │   │   │   ├── ChatProviderSelect.tsx # Cascading grouped model & provider dropdown
-│   │   │   └── index.ts               # Barrel export modul chat
+│   │   │   ├── index.ts               # Barrel export modul chat
+│   │   │   └── chat.css               # Styling chat drawer, sessions, messages, & composer
 │   │   ├── status-bar/        # Modul Status Bar & Popovers
 │   │   │   ├── StatusBar.tsx          # Orkestrator Status Bar
 │   │   │   ├── BranchPopover.tsx      # Popover checkout branch git
 │   │   │   ├── ProblemsPopover.tsx    # Popover ringkasan problem syntax
-│   │   │   └── NotificationsPopover.tsx # Popover notification center & unread badge
+│   │   │   ├── NotificationsPopover.tsx # Popover notification center & unread badge
+│   │   │   └── status-bar.css         # Styling status bar & popovers
 │   │   ├── command-palette/   # Modul Command Palette Overlay
-│   │   │   └── CommandPalette.tsx     # Modal launcher perintah cepat (⌘K)
+│   │   │   ├── CommandPalette.tsx     # Modal launcher perintah cepat (⌘K)
+│   │   │   └── command-palette.css    # Styling modal palette & search results
 │   │   └── index.ts           # Barrel Export Terpusat untuk App.tsx
 │   └── ui/                # Reusable UI Primitives Kit
 │       ├── Icon.tsx           # SVG icon registry terpusat (aegis, file, folder, git, dsb.)
 │       ├── IconButton.tsx     # Tombol aksi berbasis icon dengan tooltip & active state
 │       └── Toast.tsx          # Notifikasi aksi pengguna
+├── styles/                # Shared Styling Foundations & Primitives
+│   ├── tokens.css             # Definisi @theme Tailwind v4 & palet semantic tokens
+│   ├── base.css               # Reset global (#root, body, buttons, focus-visible)
+│   ├── ui.css                 # Styling elemen UI bersama (icon-button, toast, scrollbar)
+│   └── shell.css              # Master frame layout (.app-shell, .workspace, .workbench)
 ├── context/
 │   └── WorkbenchContext.tsx   # React Context & useWorkbench Hook (state wireframe interaktif)
 ├── data/
+│   ├── chatConstants.ts       # Preset skill autocomplete & model providers
 │   └── mockData.ts            # Data awal file tree, diagnostic lints, terminal logs, git changes
 ├── types/
 │   └── workbench.ts           # Type definitions untuk file item, tab, terminal, lint diagnostic
-├── index.css                  # Token @theme Tailwind v4 & utilitas layout grid
+├── index.css                  # Slim Aggregator (@import tailwindcss & modul CSS)
 ├── main.tsx                   # Root entry point
 └── App.tsx                    # Komposisi Shell IDE (< 50 baris)
 ```
@@ -153,7 +167,7 @@ flowchart TD
 
 ## 4. Design System & Token Reusability (Tailwind CSS v4)
 
-Semua komponen wajib mengonsumsi semantic token warna yang dideklarasikan di `src/index.css`:
+Semua komponen wajib mengonsumsi semantic token warna yang dideklarasikan di `src/styles/tokens.css` (di-load via `src/index.css`):
 
 | Token CSS | Variabel Tailwind Class | Deskripsi Penggunaan |
 | :--- | :--- | :--- |

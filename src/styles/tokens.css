@@ -1,0 +1,19 @@
+@theme {
+  --color-canvas: #090d14;
+  --color-surface: rgb(20 25 35 / 76%);
+  --color-surface-raised: rgb(29 36 49 / 82%);
+  --color-surface-hover: rgb(112 145 190 / 13%);
+  --color-line: rgb(168 190 220 / 12%);
+  --color-line-bright: rgb(179 205 238 / 22%);
+  --color-ink: #e7edf7;
+  --color-ink-soft: #aab6c8;
+  --color-ink-muted: #6f7d91;
+  --color-accent: #79b8ff;
+  --color-accent-soft: rgb(69 132 205 / 18%);
+  --color-cyan: #67e8f9;
+  --color-blue: #8cbcff;
+  --color-pink: #e879f9;
+  --color-orange: #ffae57;
+  --color-green: #9ece6a;
+  --color-red: #f7768e;
+}

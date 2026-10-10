@@ -24,8 +24,7 @@ AegisCode enforces the use of **RTK (Rust Token Killer)** — a high-performance
 ### 1. Mandatory Command Prefixing
 - **Always Prefix Shell Invocations**: All coding agents MUST prefix shell commands with `rtk`:
   - `rtk git status`, `rtk git diff`, `rtk git log -n 5`
-  - `rtk npm --prefix apps/frontend run build`, `rtk npm test`
-  - `rtk node --test tests/*.test.mjs`
+  - `rtk npm run build`, `rtk npm run format`
   - `rtk ls -la src/styles/`
   - `rtk cargo test`, `rtk pytest`
 - **Safe Passthrough**: If `rtk` does not have a dedicated filter for a given tool, it safely runs the command unmodified without altering behavior or exit code.
@@ -56,7 +55,7 @@ AegisCode enforces the use of **RTK (Rust Token Killer)** — a high-performance
 
 ## Repository Overview
 
-AegisCode is an AI-assisted engineering workbench combining AegisCode Studio (Vue 3 + Vite IDE) and Aegis Agent (autonomous runtime engine). Skills in `.agents/skills/` and `skills/` extend agent capabilities.
+AegisCode is an AI-assisted engineering workbench combining AegisCode Studio (React 19 + TypeScript + Vite IDE) and Aegis Agent (autonomous runtime engine). Skills in `.agents/skills/` and `skills/` extend agent capabilities.
 
 ## OpenCode Integration
 
@@ -117,18 +116,27 @@ Correct behavior:
 
 This ensures OpenCode behaves similarly to Claude Code with full workflow enforcement.
 
-## Frontend UI Engineering & Styling Guidelines (`apps/frontend`)
+## Frontend UI Engineering & Styling Guidelines (`src/`)
 
-When working on any frontend code in ``, agents MUST adhere strictly to the following architectural constraints and quality gates:
+When working on any frontend code in `src/`, agents MUST adhere strictly to the following architectural constraints and quality gates:
 
-### 3. Mandatory Frontend Verification Gates
-Before completing any task touching ``, the agent MUST run and pass these verification checks:
-1. `rtk grep -rn "data-theme" src/ | grep "\.vue"` -> Must ONLY match `<script>` attribute watchers (0 in `<style>` blocks).
-2. `rtk grep -rn ':style=".*color' src/ | grep "\.vue"` -> Must return 0 matches.
-3. `rtk grep -rn "#[0-9a-fA-F]\{3,8\}" src/styles/ | grep -v "theme-presets.css"` -> Must return 0 matches.
-4. `rtk grep -rn "#[0-9a-fA-F]\{3,8\}" src/ | grep "\.vue"` -> Must return 0 matches.
-5. `rtk npm --prefix apps/frontend run build` -> Must pass with 0 errors.
-6. `rtk node --test tests/*.test.mjs` -> Must pass 100% of tests.
+### 1. Modular CSS Architecture
+- **Shared Foundations & Primitives** (`src/styles/`):
+  - `tokens.css`: Definisi `@theme` Tailwind CSS v4. Seluruh palet warna wajib merujuk ke token semantik ini (`--color-canvas`, `--color-surface`, `--color-ink`, `--color-accent`, dsb.).
+  - `base.css`: Reset global `#root`, `html`, `body`, button, focus rings.
+  - `ui.css`: Komponen UI reusable (`.icon-button`, `.action-toast`, `.status-dot`, scrollbar).
+  - `shell.css`: Layout shell master (`.app-shell`, `.workspace`, `.workbench`).
+- **Co-located Layout Styles** (`src/components/layout/<layout-name>/<layout-name>.css`):
+  - Setiap modul layout membawahi file CSS-nya sendiri (contoh: `header/header.css`, `sidebar/sidebar.css`, `chat/chat.css`, `editor/editor.css`, dsb.).
+- **Entry-Point Aggregator** (`src/index.css`):
+  - File agregator ramping yang memuat `@import 'tailwindcss';`, disusul layer `src/styles/` dan modul layout dalam hierarki cascade teratur.
+
+### 2. Mandatory Frontend Verification Gates
+Before completing any task touching `src/`, the agent MUST run and pass these verification checks:
+1. `rtk npm run build` -> Must pass with 0 errors.
+2. `rtk npm run format` -> Formatting check with `oxfmt`.
+3. Reuse token color tailwind -> No arbitrary hardcoded hex colors in component TSX/styles (all color definitions must reside in `src/styles/tokens.css` or use semantic Tailwind classes / CSS variables).
+4. Component Selector Preservation -> Preserve existing class selectors 1:1 without breaking layout markup.
 
 
 ## Orchestration: Personas, Skills, and Commands

@@ -1,0 +1,96 @@
+.palette-input input {
+  min-width: 0;
+  flex: 1;
+  color: var(--color-ink);
+  background: transparent;
+  border: 0;
+  outline: 0;
+}
+
+.palette-input input::placeholder {
+  color: var(--color-ink-muted);
+}
+
+.palette-backdrop {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  padding-top: 62px;
+  background: color-mix(in srgb, var(--color-canvas) 38%, transparent);
+}
+
+.command-palette {
+  width: min(560px, calc(100vw - 48px));
+  height: max-content;
+  background: rgb(28 35 48 / 90%);
+  border: 1px solid var(--color-line-bright);
+  border-radius: 10px;
+  box-shadow: 0 20px 50px rgb(0 0 0 / 44%);
+  backdrop-filter: blur(26px) saturate(145%);
+  overflow: hidden;
+}
+
+.palette-input {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 40px;
+  margin: 7px;
+  padding: 0 10px;
+  color: var(--color-accent);
+  background: var(--color-canvas);
+  border: 1px solid var(--color-accent);
+  border-radius: 3px;
+}
+
+.palette-input input {
+  font-size: 13px;
+}
+
+.command-results {
+  padding: 3px 7px 8px;
+}
+
+.command-section {
+  display: block;
+  padding: 5px 7px;
+  color: var(--color-ink-muted);
+  font-size: 9px;
+  letter-spacing: .1em;
+}
+
+.command-results button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 9px;
+  color: var(--color-ink-soft);
+  background: transparent;
+  border-radius: 3px;
+  text-align: left;
+}
+
+.command-results button:hover,
+.command-results .command-active {
+  color: var(--color-ink);
+  background: var(--color-surface-hover);
+}
+
+.command-results button > span {
+  display: grid;
+  gap: 2px;
+}
+
+.command-results strong {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.command-results small {
+  color: var(--color-ink-muted);
+  font-size: 9px;
+}
+
