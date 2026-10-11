@@ -1160,21 +1160,25 @@
   border-color: var(--color-accent);
 }
 
-.replace-bar-toggle {
+.search-input-row,
+.replace-input-row {
   display: flex;
   align-items: center;
+  gap: 4px;
 }
 
 .replace-toggle-btn {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 4px;
+  justify-content: center;
+  width: 16px;
+  height: 24px;
   color: var(--color-ink-muted);
   background: transparent;
   border: 0;
   cursor: pointer;
-  font-size: 10px;
+  flex-shrink: 0;
+  transition: color 0.15s ease;
 }
 
 .replace-toggle-btn:hover {
@@ -1182,20 +1186,25 @@
 }
 
 .replace-all-btn {
-  padding: 2px 6px;
-  color: var(--color-canvas);
-  background: var(--color-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 4px;
+  color: var(--color-ink-muted);
+  background: transparent;
   border: 0;
   border-radius: 2px;
   cursor: pointer;
-  font-size: 9px;
-  font-weight: 700;
-  white-space: nowrap;
+  transition: color 0.15s ease;
+}
+
+.replace-all-btn:hover:not(:disabled) {
+  color: var(--color-ink);
+  background: var(--color-surface-hover);
 }
 
 .replace-all-btn:disabled {
-  color: var(--color-ink-muted);
-  background: var(--color-line);
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
@@ -1235,10 +1244,32 @@
   margin-left: auto;
   color: var(--color-ink-muted);
   font-size: 9px;
+  background: var(--color-surface-raised);
+  padding: 1px 5px;
+  border-radius: 8px;
+}
+
+.search-file-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.search-file-header:hover .search-file-badge {
+  display: none;
+}
+
+.search-file-header:hover .search-file-actions {
+  display: flex;
 }
 
 .file-replace-btn,
+.file-dismiss-btn,
 .single-replace-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 2px 4px;
   color: var(--color-ink-muted);
   background: transparent;
@@ -1247,6 +1278,7 @@
 }
 
 .file-replace-btn:hover,
+.file-dismiss-btn:hover,
 .single-replace-btn:hover {
   color: var(--color-accent);
   background: var(--color-surface-hover);
@@ -1274,6 +1306,14 @@
   color: var(--color-ink);
 }
 
+.search-match-row .single-replace-btn {
+  display: none;
+}
+
+.search-match-row:hover .single-replace-btn {
+  display: flex;
+}
+
 .match-line-num {
   color: var(--color-ink-muted);
   min-width: 18px;
@@ -1284,5 +1324,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.match-highlight {
+  background-color: var(--color-warning-soft);
+  color: var(--color-warning);
+  font-weight: 600;
+  border-radius: 2px;
+  padding: 0 1px;
 }
 

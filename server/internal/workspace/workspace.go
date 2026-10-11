@@ -405,6 +405,18 @@ func (m *Manager) Search(query string, isRegex bool, isMatchCase bool, isWholeWo
 				Filename: relPath,
 				Matches:  matches,
 			})
+		} else if pattern.MatchString(d.Name()) || pattern.MatchString(relPath) {
+			results = append(results, SearchResult{
+				Filename: relPath,
+				Matches: []SearchMatch{
+					{
+						LineNumber:  1,
+						Column:      1,
+						LineContent: d.Name(),
+						MatchText:   d.Name(),
+					},
+				},
+			})
 		}
 
 		return nil

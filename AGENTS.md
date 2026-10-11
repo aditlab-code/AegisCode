@@ -68,3 +68,20 @@ For detailed technical specifications, architecture decisions, and design refere
 - **Feature Assessment & RFC Scorecard**: [`docs/report.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/report.md)
 - **Installation, Build & Tablet Setup**: [`docs/installation.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/installation.md)
 - **Architecture Decision Records**: [`docs/adr/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr)
+- **Skills & Engineering Workflow**: [`docs/skills.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/skills.md)
+
+---
+
+## Agent skills
+
+### Issue tracker
+
+Local markdown files under `.scratch/<feature>/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context (`GLOSSARY.md` and `docs/adr/` at repo root). See `docs/agents/domain.md`.

@@ -106,6 +106,12 @@ export function Icon({ name, size = 16, className = "" }: IconProps) {
         <path d="M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5" />
       </>
     ),
+    "replace-all": (
+      <>
+        <path d="M4 14h10l-3-3m3 3-3 3" />
+        <path d="M20 10H10l3-3m-3 3 3 3" />
+      </>
+    ),
     search: (
       <>
         <circle cx="10.5" cy="10.5" r="6.5" />

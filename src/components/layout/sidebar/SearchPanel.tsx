@@ -44,6 +44,9 @@ export function SearchPanel() {
   const [collapsedFiles, setCollapsedFiles] = useState<Record<string, boolean>>(
     {},
   )
+  const [dismissedFiles, setDismissedFiles] = useState<Record<string, boolean>>(
+    {},
+  )
 
   const [backendResults, setBackendResults] = useState<FileSearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
@@ -79,12 +82,14 @@ export function SearchPanel() {
           })),
         })),
       )
-    } catch (err) {
-      console.warn("Backend search failed, fallback:", err)
+    } catch (err: any) {
+      setBackendResults([])
+      showToast(`Search failed: ${err?.message || "Unknown error"}`)
     }
-  }, [search, isRegex, isMatchCase, isWholeWord])
+  }, [search, isRegex, isMatchCase, isWholeWord, showToast])
 
   useEffect(() => {
+    setDismissedFiles({})
     if (!search.trim()) {
       setBackendResults([])
       return
@@ -102,62 +107,9 @@ export function SearchPanel() {
     return () => clearTimeout(timer)
   }, [search, isRegex, isMatchCase, isWholeWord, refreshSearch])
 
-  // Compute search results across workspace and fileBuffers
   const searchResults: FileSearchResult[] = useMemo(() => {
-    if (backendResults.length > 0) return backendResults
-    if (!search.trim()) return []
-
-    let regex: RegExp
-    try {
-      let pattern = search
-      if (!isRegex) {
-        pattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-      }
-      if (isWholeWord) {
-        pattern = `\\b${pattern}\\b`
-      }
-      const flags = isMatchCase ? "g" : "gi"
-      regex = new RegExp(pattern, flags)
-    } catch {
-      // Incomplete regex while typing
-      return []
-    }
-
-    const results: FileSearchResult[] = []
-
-    for (const [filename, buffer] of Object.entries(fileBuffers)) {
-      const content = buffer.content || ""
-      const lines = content.split("\n")
-      const fileMatches: MatchItem[] = []
-
-      lines.forEach((lineText, idx) => {
-        const lineNum = idx + 1
-        // Reset regex state per line
-        regex.lastIndex = 0
-        let match: RegExpExecArray | null
-
-        while ((match = regex.exec(lineText)) !== null) {
-          fileMatches.push({
-            filename,
-            lineNumber: lineNum,
-            column: match.index + 1,
-            lineContent: lineText,
-            matchText: match[0],
-          })
-          if (!regex.global) break
-        }
-      })
-
-      if (fileMatches.length > 0) {
-        results.push({
-          filename,
-          matches: fileMatches,
-        })
-      }
-    }
-
-    return results
-  }, [backendResults, fileBuffers, search, isRegex, isMatchCase, isWholeWord])
+    return backendResults.filter((f) => !dismissedFiles[f.filename])
+  }, [backendResults, dismissedFiles])
 
   const totalMatchesCount = useMemo(() => {
     return searchResults.reduce((acc, curr) => acc + curr.matches.length, 0)
@@ -168,6 +120,11 @@ export function SearchPanel() {
       ...prev,
       [filename]: !prev[filename],
     }))
+  }
+
+  function handleDismissFile(filename: string) {
+    setDismissedFiles((prev) => ({ ...prev, [filename]: true }))
+    setBackendResults((prev) => prev.filter((f) => f.filename !== filename))
   }
 
   // 1. Replace single match
@@ -272,92 +229,52 @@ export function SearchPanel() {
 
       await refreshSearch()
     } catch (err: any) {
-      // Fallback: update matching open buffers if backend replace is unavailable
-      try {
-        let count = 0
-        let modified = 0
-        let pattern = search
-        if (!isRegex) pattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-        if (isWholeWord) pattern = `\\b${pattern}\\b`
-        const flags = isMatchCase ? "g" : "gi"
-        const regex = new RegExp(pattern, flags)
-
-        for (const [filename, buffer] of Object.entries(fileBuffers)) {
-          const matches = (buffer.content || "").match(regex)
-          if (matches && matches.length > 0) {
-            const updated = buffer.content.replace(regex, replace)
-            updateFileContent(filename, updated)
-            await saveWorkspaceFile(filename, updated, false).catch(() => {})
-            count += matches.length
-            modified++
-          }
-        }
-        if (modified > 0) {
-          showToast(
-            `Replaced ${count} occurrences across ${modified} open files`,
-          )
-          await refreshSearch()
-          return
-        }
-      } catch {}
-
       showToast(`Replace all failed: ${err?.message || "Unknown error"}`)
     }
   }
 
+  function toggleCollapseAll() {
+    const allCollapsed = searchResults.every((f) => collapsedFiles[f.filename])
+    const next: Record<string, boolean> = {}
+    if (!allCollapsed) {
+      for (const f of searchResults) {
+        next[f.filename] = true
+      }
+    }
+    setCollapsedFiles(next)
+  }
+
+  function renderHighlightedSnippet(lineContent: string, matchText: string) {
+    const trimmed = lineContent.trim()
+    if (!matchText || !trimmed) return trimmed
+
+    const lowerLine = trimmed.toLowerCase()
+    const lowerMatch = matchText.toLowerCase()
+    const idx = lowerLine.indexOf(lowerMatch)
+
+    if (idx === -1) {
+      return trimmed
+    }
+
+    const before = trimmed.substring(0, idx)
+    const matched = trimmed.substring(idx, idx + matchText.length)
+    const after = trimmed.substring(idx + matchText.length)
+
+    return (
+      <>
+        {before}
+        <span className="match-highlight">{matched}</span>
+        {after}
+      </>
+    )
+  }
+
   return (
     <div className="tool-panel search-panel">
-      {/* Search Input Bar with Regex Modifiers */}
+      {/* Search & Replace Input Rows */}
       <div className="search-input-group">
-        <label className="panel-input search-box">
-          <Icon name="search" size={13} />
-          <input
-            aria-label="Search files with regex"
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search (supports regex)"
-            ref={searchInputRef}
-            value={search}
-          />
-          {search && (
-            <button
-              className="search-clear-btn"
-              onClick={() => setSearch("")}
-              title="Clear search"
-              type="button"
-            >
-              <Icon name="close" size={10} />
-            </button>
-          )}
-          <div className="search-modifiers">
-            <button
-              className={`modifier-btn ${isMatchCase ? "modifier-active" : ""}`}
-              onClick={() => setIsMatchCase((v) => !v)}
-              title="Match Case (Alt+C)"
-              type="button"
-            >
-              Aa
-            </button>
-            <button
-              className={`modifier-btn ${isWholeWord ? "modifier-active" : ""}`}
-              onClick={() => setIsWholeWord((v) => !v)}
-              title="Match Whole Word (Alt+W)"
-              type="button"
-            >
-              \b
-            </button>
-            <button
-              className={`modifier-btn ${isRegex ? "modifier-active" : ""}`}
-              onClick={() => setIsRegex((v) => !v)}
-              title="Use Regular Expression (Alt+R)"
-              type="button"
-            >
-              .*
-            </button>
-          </div>
-        </label>
-
-        {/* Replace Bar Toggle & Input */}
-        <div className="replace-bar-toggle">
+        {/* Search Input Row with Chevron */}
+        <div className="search-input-row">
           <button
             className="replace-toggle-btn"
             onClick={() => setReplaceOpen((v) => !v)}
@@ -367,20 +284,71 @@ export function SearchPanel() {
             <span
               className={`chevron-arrow ${replaceOpen ? "chevron-open" : ""}`}
             >
-              <Icon name="chevron" size={12} />
+              <Icon name="chevron" size={11} />
             </span>
-            <span>Replace</span>
           </button>
+          <label className="panel-input search-box flex-1">
+            <Icon name="search" size={13} />
+            <input
+              aria-label="Search files with regex"
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search (supports regex)"
+              ref={searchInputRef}
+              value={search}
+            />
+            {search && (
+              <button
+                className="search-clear-btn"
+                onClick={() => setSearch("")}
+                title="Clear search"
+                type="button"
+              >
+                <Icon name="close" size={10} />
+              </button>
+            )}
+            <div className="search-modifiers">
+              <button
+                className={`modifier-btn ${
+                  isMatchCase ? "modifier-active" : ""
+                }`}
+                onClick={() => setIsMatchCase((v) => !v)}
+                title="Match Case (Alt+C)"
+                type="button"
+              >
+                Aa
+              </button>
+              <button
+                className={`modifier-btn ${
+                  isWholeWord ? "modifier-active" : ""
+                }`}
+                onClick={() => setIsWholeWord((v) => !v)}
+                title="Match Whole Word (Alt+W)"
+                type="button"
+              >
+                \b
+              </button>
+              <button
+                className={`modifier-btn ${isRegex ? "modifier-active" : ""}`}
+                onClick={() => setIsRegex((v) => !v)}
+                title="Use Regular Expression (Alt+R)"
+                type="button"
+              >
+                .*
+              </button>
+            </div>
+          </label>
         </div>
 
+        {/* Replace Input Row */}
         {replaceOpen && (
-          <div className="replace-input-wrapper">
-            <label className="panel-input replace-box">
+          <div className="replace-input-row">
+            <div className="w-4 shrink-0" />
+            <label className="panel-input replace-box flex-1">
               <Icon name="edit" size={12} />
               <input
                 aria-label="Replace matches"
                 onChange={(event) => setReplace(event.target.value)}
-                placeholder="Replace with..."
+                placeholder="Replace"
                 value={replace}
               />
               <button
@@ -390,29 +358,62 @@ export function SearchPanel() {
                 title="Replace All across workspace"
                 type="button"
               >
-                Replace All
+                <Icon name="replace-all" size={12} />
               </button>
             </label>
           </div>
         )}
       </div>
 
-      <div className="panel-options">
-        <span>files to include</span>
-        <span>src/**, *.ts, *.tsx</span>
-      </div>
-
       {/* Results Tree */}
       {search ? (
         <div className="search-results">
-          <div className="result-summary">
-            {totalMatchesCount} {totalMatchesCount === 1 ? "result" : "results"}{" "}
-            in {searchResults.length}{" "}
-            {searchResults.length === 1 ? "file" : "files"}
+          <div className="result-summary flex items-center justify-between">
+            <span>
+              {totalMatchesCount}{" "}
+              {totalMatchesCount === 1 ? "result" : "results"} in{" "}
+              {searchResults.length}{" "}
+              {searchResults.length === 1 ? "file" : "files"}
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                className="p-0.5 text-ink-muted hover:text-ink cursor-pointer"
+                onClick={refreshSearch}
+                title="Refresh Search"
+                type="button"
+              >
+                <Icon name="refresh" size={11} />
+              </button>
+              <button
+                className="p-0.5 text-ink-muted hover:text-ink cursor-pointer"
+                onClick={() => setSearch("")}
+                title="Clear Search Results"
+                type="button"
+              >
+                <Icon name="close" size={10} />
+              </button>
+              <button
+                className="p-0.5 text-ink-muted hover:text-ink cursor-pointer"
+                onClick={toggleCollapseAll}
+                title="Collapse / Expand All"
+                type="button"
+              >
+                <Icon name="chevron" size={11} />
+              </button>
+            </div>
           </div>
 
           {searchResults.map((fileRes) => {
             const isCollapsed = collapsedFiles[fileRes.filename]
+            const normalized = fileRes.filename.replace(/\\/g, "/")
+            const lastSlash = normalized.lastIndexOf("/")
+            const fileName =
+              lastSlash !== -1
+                ? normalized.substring(lastSlash + 1)
+                : normalized
+            const dirPath =
+              lastSlash !== -1 ? normalized.substring(0, lastSlash) : ""
+
             return (
               <div className="search-file-group" key={fileRes.filename}>
                 <div className="search-file-header">
@@ -428,25 +429,46 @@ export function SearchPanel() {
                     >
                       <Icon name="chevron" size={11} />
                     </span>
-                    <Icon name="code" size={13} />
-                    <span className="search-filename">{fileRes.filename}</span>
+                    <Icon name="file" size={12} />
+                    <span className="search-filename">{fileName}</span>
+                    {dirPath && (
+                      <span className="search-filepath text-ink-muted text-[10px] font-normal truncate ml-1">
+                        {dirPath}
+                      </span>
+                    )}
                     <small className="search-file-badge">
                       {fileRes.matches.length}
                     </small>
                   </button>
 
-                  {/* Replace all in this file button */}
-                  <button
-                    className="file-replace-btn"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      handleReplaceInFile(fileRes.filename)
-                    }}
-                    title={`Replace all in ${fileRes.filename}`}
-                    type="button"
-                  >
-                    <Icon name="edit" size={11} />
-                  </button>
+                  <div className="search-file-actions">
+                    {/* Replace all in this file button */}
+                    {replaceOpen && (
+                      <button
+                        className="file-replace-btn"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleReplaceInFile(fileRes.filename)
+                        }}
+                        title={`Replace all in ${fileRes.filename}`}
+                        type="button"
+                      >
+                        <Icon name="edit" size={11} />
+                      </button>
+                    )}
+                    {/* Dismiss file from results button */}
+                    <button
+                      className="file-dismiss-btn"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDismissFile(fileRes.filename)
+                      }}
+                      title={`Dismiss ${fileName}`}
+                      type="button"
+                    >
+                      <Icon name="close" size={10} />
+                    </button>
+                  </div>
                 </div>
 
                 {!isCollapsed && (
@@ -473,20 +495,25 @@ export function SearchPanel() {
                           className="match-snippet"
                           title={match.lineContent}
                         >
-                          {match.lineContent.trim()}
+                          {renderHighlightedSnippet(
+                            match.lineContent,
+                            match.matchText,
+                          )}
                         </span>
                         {/* Replace this single occurrence */}
-                        <button
-                          className="single-replace-btn"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleReplaceSingle(match)
-                          }}
-                          title="Replace this match"
-                          type="button"
-                        >
-                          <Icon name="edit" size={10} />
-                        </button>
+                        {replaceOpen && (
+                          <button
+                            className="single-replace-btn"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleReplaceSingle(match)
+                            }}
+                            title="Replace this match"
+                            type="button"
+                          >
+                            <Icon name="edit" size={10} />
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>

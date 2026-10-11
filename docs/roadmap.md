@@ -49,7 +49,7 @@
 - **Deliverables**:
   - **Explorer File Tree**: Nested directory view with folder collapse/expand, indent guidelines, and hidden files toggle.
   - **Inline File CRUD**: Create file, create folder, inline rename, delete file, and right-click context menu (Copy Path, Copy Relative Path).
-  - **Search & Replace Engine**: Regex search across open files and workspace, case matching, whole word filtering, and single/all replace operations.
+  - **Search & Replace Engine (VS Code Parity)**: Live workspace regex search and granular replace engine (single match, per-file, workspace-wide) with inline chevron toggle, embedded replace-all icon, keyword match highlighting (`.match-highlight`), hover-only action buttons (`group-hover`), clean root path formatting, and automatic search refresh backed directly by the Go backend server.
   - **Source Control Git UI**: Staged and unstaged file lists, commit message input with Ctrl+Enter shortcut, branch graph visualization, and action triggers (commit, push, pull).
 - **Exit Criteria**: Complete file tree management works seamlessly in memory and binds cleanly to backend workspace APIs once connected.
 
@@ -91,6 +91,7 @@
 ### Phase 6: Go Core Server, SQLite Storage, & Bundled DAP Debugger
 - **Status**: 🟡 Active / Next (Backend Foundation)
 - **Deliverables**:
+  - **Live Workspace Engine**: REST endpoints for directory browsing, file CRUD, recursive regex search (content + filename matching), and workspace-wide string replacement (`/api/v1/workspace/*`).
   - **Single Cross-Platform Binary**: Go Core Server compiled for macOS (Darwin arm64/amd64), Linux, and Windows.
   - **Embedded Frontend Distribution**: Production web assets (`dist/`) embedded into the Go executable via `embed.FS` for instant zero-install distribution.
   - **Stateless/Immutable Runtime Design**: Configuration loaded immutably into memory; all user data, settings, and agent history isolated in `~/.aegis/data/aegis.db` (SQLite).

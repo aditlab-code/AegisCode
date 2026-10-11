@@ -66,8 +66,13 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
     - Workspace file tree with folder expansion, tree guides, hidden file visibility toggle, inline CRUD actions (New File, New Folder, Rename, Delete).
     - Context menu on right-click (Copy Path, Copy Relative Path, Delete, Rename).
   - **Search Panel**:
-    - Workspace-wide regex query input, case matching, whole word matching.
-    - Granular replace engine (replace single occurrence, replace in file, replace all).
+    - **Integrated Search & Replace Box**: Chevron toggle (`>` / `v`) located directly to the left of the Search input box; when expanded, renders the Replace input box directly beneath with an embedded Replace All action icon button (`Icon name="replace-all"`).
+    - **Search Modifiers**: Match Case (`Aa`), Match Whole Word (`\b`), and Use Regular Expression (`.*`).
+    - **Results Toolbar**: Header actions for Refresh Search (`⟳`), Clear Results (`✕`), and Collapse/Expand All (`⊞`).
+    - **Match Keyword Highlighting**: Matched terms inside code snippets highlighted with semantic token `--color-warning-soft` / `--color-warning` (`.match-highlight`).
+    - **Hover-Only File & Match Actions**: Count badges displayed by default; Replace in File (`[edit]`), Dismiss File (`[✕]`), and Replace Match (`[edit]`) action buttons revealed dynamically on row hover (`:hover`).
+    - **Clean Directory Path Formatting**: Files at root workspace display clean filename only (no `./`); subfolder paths displayed in muted text (`text-ink-muted`).
+    - **Direct Backend Engine**: Live workspace regex search and granular replace (single occurrence, file-level, workspace-wide) backed directly by Go server API with immediate search result refresh.
   - **Source Control Panel**:
     - Active repository switcher, branch indicators.
     - Git toolbar: Pull, Push, Commit message input with Ctrl+Enter dispatch.

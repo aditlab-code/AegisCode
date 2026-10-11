@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 
 interface IconButtonProps {
   active?: boolean
+  disabled?: boolean
   children: ReactNode
   label: string
   onClick?: () => void
@@ -10,6 +11,7 @@ interface IconButtonProps {
 
 export function IconButton({
   active = false,
+  disabled = false,
   children,
   label,
   onClick,
@@ -21,6 +23,7 @@ export function IconButton({
       className={`icon-button ${
         active ? "icon-button-active" : ""
       } ${className}`}
+      disabled={disabled}
       onClick={onClick}
       title={label}
       type="button"

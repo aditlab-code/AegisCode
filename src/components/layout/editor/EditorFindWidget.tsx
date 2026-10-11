@@ -211,7 +211,7 @@ export function EditorFindWidget({
 
   return (
     <div
-      className="absolute right-4 top-12 z-20 flex flex-col gap-1.5 rounded border border-[var(--color-line)] bg-[var(--color-surface-raised)] p-2 shadow-lg backdrop-blur-md"
+      className="absolute right-4 top-12 z-20 flex flex-col gap-1.5 rounded border border-line bg-surface-raised p-2 shadow-lg backdrop-blur-md"
       onKeyDown={(e) => {
         if (e.key === "Escape") {
           onClose()
@@ -221,7 +221,7 @@ export function EditorFindWidget({
       {/* Row 1: Find Input & Controls */}
       <div className="flex items-center gap-1.5">
         <button
-          className="p-1 rounded text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-hover)] transition-colors cursor-pointer"
+          className="p-1 rounded text-ink-muted hover:text-ink hover:bg-surface-hover transition-colors cursor-pointer"
           onClick={() => setLocalReplaceOpen((v) => !v)}
           title="Toggle Replace (Ctrl+H)"
           type="button"
@@ -235,15 +235,11 @@ export function EditorFindWidget({
           </span>
         </button>
 
-        <div className="flex items-center gap-1.5 rounded bg-[var(--color-canvas)] px-2 py-1 border border-[var(--color-line)]">
-          <Icon
-            className="text-[var(--color-ink-soft)]"
-            name="search"
-            size={13}
-          />
+        <div className="flex items-center gap-1.5 rounded bg-canvas px-2 py-1 border border-line">
+          <Icon className="text-ink-soft" name="search" size={13} />
           <input
             autoFocus
-            className="w-44 bg-transparent text-[11px] text-[var(--color-ink)] outline-none placeholder:text-[var(--color-ink-muted)]"
+            className="w-44 bg-transparent text-[11px] text-ink outline-none placeholder:text-ink-muted"
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleFindKeyDown}
             placeholder="Find in editor..."
@@ -253,8 +249,8 @@ export function EditorFindWidget({
           <button
             className={`px-1 py-0.5 text-[10px] rounded font-mono transition-colors cursor-pointer ${
               caseSensitive
-                ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                : "text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
+                ? "bg-accent-soft text-accent"
+                : "text-ink-muted hover:text-ink"
             }`}
             onClick={() => setCaseSensitive((v) => !v)}
             title="Match Case (Alt+C)"
@@ -265,8 +261,8 @@ export function EditorFindWidget({
           <button
             className={`px-1 py-0.5 text-[10px] rounded font-mono transition-colors cursor-pointer ${
               matchWord
-                ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                : "text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
+                ? "bg-accent-soft text-accent"
+                : "text-ink-muted hover:text-ink"
             }`}
             onClick={() => setMatchWord((v) => !v)}
             title="Match Whole Word (Alt+W)"
@@ -277,8 +273,8 @@ export function EditorFindWidget({
           <button
             className={`px-1 py-0.5 text-[10px] rounded font-mono transition-colors cursor-pointer ${
               isRegex
-                ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                : "text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
+                ? "bg-accent-soft text-accent"
+                : "text-ink-muted hover:text-ink"
             }`}
             onClick={() => setIsRegex((v) => !v)}
             title="Use Regular Expression (Alt+R)"
@@ -288,7 +284,7 @@ export function EditorFindWidget({
           </button>
         </div>
 
-        <span className="min-w-14 text-center text-[10px] text-[var(--color-ink-muted)] font-mono">
+        <span className="min-w-14 text-center text-[10px] text-ink-muted font-mono">
           {matches.length > 0
             ? `${safeIndex + 1} of ${matches.length}`
             : query
@@ -318,14 +314,10 @@ export function EditorFindWidget({
       {/* Row 2: Replace Input & Action Buttons */}
       {localReplaceOpen && (
         <div className="flex items-center gap-1.5 pl-6">
-          <div className="flex items-center gap-1.5 rounded bg-[var(--color-canvas)] px-2 py-1 border border-[var(--color-line)] flex-1">
-            <Icon
-              className="text-[var(--color-ink-soft)]"
-              name="edit"
-              size={12}
-            />
+          <div className="flex items-center gap-1.5 rounded bg-canvas px-2 py-1 border border-line flex-1">
+            <Icon className="text-ink-soft" name="edit" size={12} />
             <input
-              className="w-full bg-transparent text-[11px] text-[var(--color-ink)] outline-none placeholder:text-[var(--color-ink-muted)]"
+              className="w-full bg-transparent text-[11px] text-ink outline-none placeholder:text-ink-muted"
               onChange={(e) => setReplaceText(e.target.value)}
               onKeyDown={handleReplaceKeyDown}
               placeholder="Replace with..."
@@ -335,7 +327,7 @@ export function EditorFindWidget({
           </div>
 
           <button
-            className="px-2 py-1 text-[10px] font-medium rounded border border-[var(--color-line)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            className="px-2 py-1 text-[10px] font-medium rounded border border-line bg-surface hover:bg-surface-hover text-ink disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
             disabled={matches.length === 0}
             onClick={handleReplaceCurrent}
             title="Replace Current Match (Enter)"
@@ -344,7 +336,7 @@ export function EditorFindWidget({
             Replace
           </button>
           <button
-            className="px-2 py-1 text-[10px] font-medium rounded border border-[var(--color-line)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            className="px-2 py-1 text-[10px] font-medium rounded border border-line bg-surface hover:bg-surface-hover text-ink disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
             disabled={matches.length === 0}
             onClick={handleReplaceAll}
             title="Replace All in File (Alt+Enter)"
