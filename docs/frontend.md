@@ -2,7 +2,7 @@
 
 > **Purpose**: Single source of truth for the active UI design and visual layout structure.  
 > **Rule**: Must be updated whenever visual components, layout regions, or styling paradigms change.  
-> **Design Principles**: Reusable Tailwind tokens, reusable UI components, zero arbitrary hex codes, lightweight modular layouts.
+> **Design Principles**: Reusable Tailwind tokens, reusable UI components, zero arbitrary hex codes, lightweight modular layouts, universal on-demand code-splitting for all non-code viewers (.canvas, .pdf, .csv, .xls, .svg, .png, .jpg, .md).
 
 ---
 

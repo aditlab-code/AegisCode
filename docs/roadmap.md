@@ -160,10 +160,21 @@
   - Subprocess supervisor with fail-fast crash isolation for language servers and terminal shells.
 
 #### Sub-Phase 6.4: Stateless/Immutable Runtime & SQLite Data Isolation
-- **Status**: ⚪ Planned
+- **Status**: ⚪ Planned (Prepared)
 - **Deliverables**:
-  - User preferences, agent sessions, and indexing metadata persisted strictly in `~/.aegis/data/aegis.db`.
-  - Immutable runtime configuration parsing.
+  - **OS App-Level Storage Isolation (`~/.aegis/data/aegis.db`)**:
+    - All system state, user preferences, API keys, and AI chat histories persisted strictly in the OS user profile (`~/.aegis/data/aegis.db` on macOS/Linux, `%APPDATA%/AegisCode` on Windows).
+    - **Zero Repo Pollution**: Active project repositories remain 100% clean and free of `.db` files, preventing Git status clutter, merge conflicts, and accidental leakage of private chat logs or API tokens to public version control.
+  - **Multi-Workspace & Multi-Provider Data Partitioning**:
+    - **Workspace Namespacing**: Dynamic workspace identification by normalized root path hash (`workspace_id`), isolating sessions and settings per project so switching or opening multiple workspaces never conflates histories.
+    - **Provider Isolation**: Explicit relational partitioning for AI chat providers (`anthropic`, `openai`, `gemini`, `ollama`), separating configurations, model parameters, and raw JSON metadata (`provider_metadata`) to prevent schema collisions across heterogeneous LLM backends.
+  - **Embedded SQLite Engine (`server/internal/store`)**:
+    - Flat, lightweight Go SQLite client using a single connection pool with WAL (Write-Ahead Logging) mode to guarantee concurrency safety and eliminate database lock errors.
+    - Core relational schema: `workspaces`, `chat_sessions`, `chat_messages`, `provider_keys`, and `user_preferences`.
+  - **Non-Destructive Legacy Migration ([ADR 0002](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0002-app-data-directory-and-legacy-migration.md), [ADR 0007](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0007-non-destructive-shadow-migration.md))**:
+    - Startup adapter detects legacy v1 artifacts (`data/settings.json`, `.aegis/auth.json`, legacy `aegis.db`) and executes a non-destructive read-only shadow migration into `~/.aegis/data/aegis.db`.
+  - **Immutable Runtime Configuration**:
+    - Read-only runtime configuration parsed into immutable Go structs at boot time; zero mutating global server state.
 
 #### Sub-Phase 6.5: Bundled DAP Debugger (Delve `dlv`) Engine
 - **Status**: ⚪ Planned
@@ -197,13 +208,18 @@
 ### Phase 7: Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`)
 - **Status**: ⚪ Upcoming (Next UI Frontier)
 - **Objectives & Deliverables**:
-  - **Sub-Phase 7.1: Multi-Viewer Tab Dispatcher Foundation**:
+  - **Sub-Phase 7.1: Multi-Viewer Tab Dispatcher & Universal On-Demand Code Splitting**:
     - Abstraction of workbench editor tabs from pure text buffers to a versatile MIME/Extension viewer dispatcher.
-    - Native `ImageViewerPane` supporting `.png`, `.jpg`, `.jpeg`, `.svg`, `.webp` with pan, zoom, and transparent checkerboard.
-    - Native `CsvViewerPane` for tabular data browsing with fast sorting and row virtualization (`.csv`, `.tsv`).
-    - Markdown preview splitter (`.md`) with live rendered preview and math notation.
+    - **PWA Dynamic Code-Splitting Rule for ALL Viewers**: To prevent application bundle bloat beyond 50MB+ and protect client memory, **every** non-code viewer pane and its third-party parsing/rendering engines **MUST NEVER** be imported in the initial boot bundle. All non-text viewers are partitioned into isolated asynchronous chunks via `React.lazy()` and dynamic `import()`:
+      - **Media Pan-Zoom Pane (`ImageViewerPane`)**: Dynamically loaded on-demand strictly upon opening `.png`, `.jpg`, `.jpeg`, `.svg`, `.webp` (with pan, zoom, pixel grid, and checkerboard).
+      - **Spreadsheet & Tabular Pane (`SpreadsheetViewerPane`)**: Dynamically loaded on-demand strictly upon opening `.csv`, `.tsv`, `.xls`, `.xlsx` (row virtualization, column sorting, and sheet parser).
+      - **Live Markdown Splitter (`MarkdownPreviewPane`)**: Dynamically loaded on-demand strictly upon toggling preview on `.md` (live rendered preview and math notation).
+      - **PDF Document Viewer (`PdfViewerPane`)**: Dynamically loaded on-demand strictly upon opening `.pdf` (PDF.js rendering and SyncTeX).
+      - **Vector Canvas Studio (`WireframeStudioPane`)**: Dynamically loaded on-demand strictly upon opening `.canvas`, `.design` (`@tldraw/tldraw`).
+    - **Zero-RAM Code Studio Guarantee**: While developers are editing standard code (`.go`, `.ts`, `.tsx`, `.py`, `.json`, `.css`), none of these viewer chunks are downloaded, parsed, or loaded into computer RAM.
   - **Sub-Phase 7.2: Vector Canvas Wireframe Studio (`tldraw`)**:
-    - Integration of `@tldraw/tldraw` infinite vector canvas engine inside editor tab groups for `.canvas` and `.design` files.
+    - Integration of `@tldraw/tldraw` infinite vector canvas engine isolated strictly inside an on-demand dynamic chunk (`tldraw-chunk.js`).
+    - **Zero-Footprint in Code Studio**: The tldraw chunk is downloaded and mounted into RAM **only** when the user opens `.canvas` or `.design` files. While editing standard code (`.go`, `.ts`, `.tsx`, `.py`), tldraw assets consume 0 MB of computer memory and 0 KB initial network bandwidth.
     - Zero-overhead state persistence: canvas state saved as structured JSON directly through Go workspace file endpoints (`/api/v1/workspace/file`) with full Git version tracking.
     - Wireframe UI toolkit: Rectangles, Frames (Artboards for Mobile/Desktop screens), UI buttons, input boxes, typography, arrows, and sticky annotations.
   - **Sub-Phase 7.3: Design-to-Code & Perspective Presets**:
@@ -218,7 +234,7 @@
 - **Objectives & Deliverables**:
   - **Sub-Phase 8.1: LaTeX Compilation & Live PDF Synchronization**:
     - Go supervisor asynchronous job runner executing `tectonic` / `pdflatex` CLI with streaming build logs to Output Panel via SSE.
-    - Native `PdfViewerPane` powered by PDF.js with SyncTeX bidirectional click-to-code navigation.
+    - Native `PdfViewerPane` powered by PDF.js, **dynamically code-split via `React.lazy()`** so PDF.js engine is only downloaded and instantiated when opening a `.pdf` file. Bidirectional SyncTeX click-to-code navigation.
   - **Sub-Phase 8.2: BibTeX Reference Manager**:
     - Dedicated sidebar panel and in-editor autocomplete (`\cite{...}`) backed by `.bib` file parser.
   - **Sub-Phase 8.3: Data Science Python / R & Interactive Analytics**:

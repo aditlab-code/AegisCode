@@ -169,7 +169,7 @@ This section documents the formal architectural assessment for every completed a
 
 #### Sub-Phase 6.3–6.5: Superstructures, Process Supervisor, SQLite & DAP (Active / Planned)
 - **Sub-Phase 6.3 (Active / Next)**: Process Supervisor and native cross-platform PTY terminal streaming (`/api/v1/terminal/*`) over WebSocket/SSE.
-- **Sub-Phase 6.4 (Planned)**: Stateless runtime config with SQLite user state persistence in `~/.aegis/data/aegis.db`.
+- **Sub-Phase 6.4 (Planned)**: Stateless runtime config with SQLite storage strictly in `~/.aegis/data/aegis.db` (app-level isolation, zero repo pollution, workspace namespacing & provider partitioning).
 - **Sub-Phase 6.5 (Planned)**: Bundled Delve DAP debugger proxy for step-by-step Go code execution in the web UI.
 
 #### Sub-Phase 6.6: Single Standalone Binary, Embedded Frontend (`embed.FS`) & Native Desktop Window
@@ -181,11 +181,13 @@ This section documents the formal architectural assessment for every completed a
 - **Verification**: Verified with 32 Vitest frontend unit tests, 7 Go backend test suites, and end-to-end smoke testing of DMG mount and execution.
 
 #### Phase 7: Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`) (Upcoming)
-- **Scope**: Workbench editor tab abstraction supporting non-text MIME viewers (`ImageViewerPane`, `CsvViewerPane`, live Markdown splitter) and `@tldraw/tldraw` infinite vector canvas for `.canvas` and `.design` wireframes.
-- **Lightweight Fit**: Canvas state serialized as lightweight JSON saved directly through Go workspace file endpoints (`/api/v1/workspace/file`) with full Git version tracking.
+- **Scope**: Workbench editor tab abstraction supporting non-text MIME viewers (`ImageViewerPane` for `.png`/`.jpg`/`.svg`, `SpreadsheetViewerPane` for `.csv`/`.xls`, `MarkdownPreviewPane` for `.md`) and `@tldraw/tldraw` infinite vector canvas for `.canvas`/`.design` wireframes.
+- **Lightweight Fit & Universal Dynamic Code Splitting**: All specialized viewers and parsers are partitioned into on-demand asynchronous chunks loaded via `React.lazy()`. While editing standard code, non-code viewer assets consume 0 MB RAM and remain unparsed, preserving a lightweight sub-1MB initial PWA bundle and preventing 50MB+ bundle bloat.
+- **Zero-Overhead Persistence**: Canvas state serialized as lightweight JSON saved directly through Go workspace file endpoints (`/api/v1/workspace/file`) with full Git version tracking.
 
 #### Phase 8: Research Workshop & Data Science Studio (Planned)
 - **Scope**: Asynchronous LaTeX compiler CLI supervisor (`tectonic`/`pdflatex`), live SyncTeX PDF.js viewer, BibTeX reference manager, and Python/R DataFrame visualizers.
+- **Dynamic Chunking**: PDF.js (`pdfjs-dist`) is dynamically imported on-demand only when opening `.pdf` files.
 
 #### Phase 9: Web-Based Remote Pairing & Tablet Companion Display (Deferred / Final Milestone)
 - **Scope**: Local network pairing (mDNS / pairing PIN), Web Preview host tab, and touch-optimized distraction-free Focus Editor tab (`/?mode=companion`).

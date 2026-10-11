@@ -39,6 +39,7 @@ AegisCode enforces the use of **RTK (Rust Token Killer)** (`~/.local/bin/rtk`) t
 2. **Reuse UI Primitives**: Atomic UI components (`Icon`, `IconButton`, `Toast`) must be reused from [`src/components/ui/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/ui/). Do not duplicate primitives.
 3. **Co-locate CSS**: Each layout module in [`src/components/layout/<name>/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout) owns its CSS stylesheet.
 4. **Preserve Selectors**: Maintain existing class names and layout selectors 1:1.
+5. **Universal On-Demand Code Splitting for All Viewers**: Non-code viewer panes (e.g. `@tldraw/tldraw` for `.canvas`/`.design`, PDF preview for `.pdf`, Markdown live preview for `.md`, Tabular/Spreadsheet viewer for `.csv`/`.tsv`/`.xls`/`.xlsx`, and Media Pan-Zoom for `.png`/`.jpg`/`.jpeg`/`.svg`/`.webp`) MUST NEVER be imported into the main initial bundle. Always load them via `React.lazy()` / dynamic `import()` triggered strictly on-demand when the user opens a matching file extension. During standard code editing, all specialized viewer runtimes, parsers, and canvas assets must consume zero RAM, remain unparsed, and never inflate application bundle sizes beyond 50MB+.
 
 ### Backend Constraints
 1. **DO NOT Catch Errors Silently**: If an error occurs, break the function immediately and report the error explicitly. Never use empty catch/error blocks.

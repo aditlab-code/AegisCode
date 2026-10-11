@@ -62,6 +62,7 @@ flowchart TB
 2. **Cross-Platform & Single Standalone Binary (`embed.FS`)**: Compiled into a single zero-dependency standalone native binary (~7.5 MB) for macOS, Linux, and Windows, embedding the production React 19 frontend via Go `embed.FS` (`server/internal/web`). The backend runtime is stateless and immutable; dynamic states are isolated exclusively inside SQLite in the OS App Data directory.
 3. **Bundled Backend Debugging**: Debug Adapter Protocol (DAP) and native debugger runners (such as Delve) are bundled directly into the backend supervision engine.
 4. **Resilient Isolation**: Heavy or crash-prone tasks (LSP engines, PTY terminal shells, agent reasoning) run as supervised external worker processes so crashes never terminate the core server or freeze editor UI buffers.
+5. **Zero-Footprint On-Demand Viewers (Universal PWA Code Splitting)**: To prevent application bundle bloat beyond 50MB+ and protect client memory, every specialized non-code viewer and external parser (including `@tldraw/tldraw` for Wireframe Studio `.canvas`/`.design`, PDF.js for `.pdf`, spreadsheet engines for `.csv`/`.xls`, media viewers for `.svg`/`.png`/`.jpg`, and rich Markdown preview for `.md`) is strictly partitioned into asynchronous dynamic chunks loaded via `React.lazy()` and dynamic `import()`. During standard code editing, all specialized viewer runtimes consume 0 MB RAM, remain unparsed, and never inflate initial load times.
 
 ---
 
