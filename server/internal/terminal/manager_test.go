@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"bytes"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -173,5 +174,69 @@ func TestProcessGroupTermination(t *testing.T) {
 	case <-sess.Wait():
 	case <-time.After(1 * time.Second):
 		t.Fatal("session did not finish within timeout")
+	}
+}
+
+func TestKillProcessGroupInvalidPid(t *testing.T) {
+	if err := killProcessGroup(0, syscall.SIGTERM); err == nil {
+		t.Fatal("expected error when killing process group with PID 0, got nil")
+	}
+
+	if err := killProcessGroup(-5, syscall.SIGTERM); err == nil {
+		t.Fatal("expected error when killing process group with negative PID, got nil")
+	}
+}
+
+func TestRecreateSessionAfterAllTerminated(t *testing.T) {
+	mgr := NewManager()
+
+	// 1. Create first session and terminate it
+	sess1, err := mgr.CreateSession("term-alpha", "sh", "", 80, 24)
+	if err != nil {
+		t.Fatalf("failed to create term-alpha: %v", err)
+	}
+
+	if err := mgr.CloseSession(sess1.ID); err != nil {
+		t.Fatalf("failed to close term-alpha: %v", err)
+	}
+
+	if len(mgr.ListSessions()) != 0 {
+		t.Fatalf("expected 0 active sessions after terminating all, got %d", len(mgr.ListSessions()))
+	}
+
+	// 2. Re-create new session when all previous sessions are terminated
+	sess2, err := mgr.CreateSession("term-beta", "sh", "", 80, 24)
+	if err != nil {
+		t.Fatalf("failed to re-create term-beta after all sessions terminated: %v", err)
+	}
+	defer func() { _ = mgr.CloseSession(sess2.ID) }()
+
+	sub, unsub, err := mgr.Subscribe("term-beta")
+	if err != nil {
+		t.Fatalf("failed to subscribe to re-created session: %v", err)
+	}
+	defer unsub()
+
+	if err := mgr.WriteInput("term-beta", []byte("echo REACTIVATED_OK\n")); err != nil {
+		t.Fatalf("failed to write input to re-created session: %v", err)
+	}
+
+	var output bytes.Buffer
+	deadline := time.After(3 * time.Second)
+	found := false
+
+	for !found {
+		select {
+		case chunk, ok := <-sub:
+			if !ok {
+				t.Fatalf("subscription closed prematurely")
+			}
+			output.Write(chunk)
+			if bytes.Contains(output.Bytes(), []byte("REACTIVATED_OK")) {
+				found = true
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for output from re-created session, received: %q", output.String())
+		}
 	}
 }

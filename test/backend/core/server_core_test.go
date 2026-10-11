@@ -572,5 +572,29 @@ func TestTerminalSessionSSEWorkflow(t *testing.T) {
 	if delResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 OK on terminal delete, got %d", delResp.StatusCode)
 	}
+
+	// 6. Verify recreating a new terminal session after all sessions terminated
+	resp2, err := harness.HTTPClient.Post(harness.BaseURL+"/api/v1/terminal/create", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("failed to recreate terminal session after termination: %v", err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK from recreated terminal session, got %d", resp2.StatusCode)
+	}
+
+	var createRes2 map[string]any
+	_ = json.NewDecoder(resp2.Body).Decode(&createRes2)
+	sessionID2, ok := createRes2["sessionId"].(string)
+	if !ok || sessionID2 == "" || sessionID2 == sessionID {
+		t.Fatalf("invalid recreated sessionId: %v", createRes2)
+	}
+
+	delReq2, _ := http.NewRequest(http.MethodDelete, harness.BaseURL+"/api/v1/terminal/"+sessionID2, nil)
+	delResp2, err := harness.HTTPClient.Do(delReq2)
+	if err != nil {
+		t.Fatalf("failed to delete recreated terminal: %v", err)
+	}
+	_ = delResp2.Body.Close()
 }
 

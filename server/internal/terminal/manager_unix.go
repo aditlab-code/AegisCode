@@ -3,6 +3,7 @@
 package terminal
 
 import (
+	"errors"
 	"os/exec"
 	"syscall"
 )
@@ -19,5 +20,8 @@ func setProcessGroup(cmd *exec.Cmd) {
 
 // killProcessGroup sends a signal to the entire process group (-pid).
 func killProcessGroup(pid int, sig syscall.Signal) error {
+	if pid <= 0 {
+		return errors.New("invalid process group pid")
+	}
 	return syscall.Kill(-pid, sig)
 }

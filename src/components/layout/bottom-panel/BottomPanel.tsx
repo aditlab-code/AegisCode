@@ -18,6 +18,8 @@ export function BottomPanel() {
     activeTerminalSessionId,
     setActiveTerminalSessionId,
     createTerminalSession,
+    restartTerminalSession,
+    terminateTerminalSession,
     closeTerminalSession,
     clearTerminal,
     activeBottomTab,
@@ -243,7 +245,13 @@ export function BottomPanel() {
                 label={
                   terminalRunning ? "Terminate terminal" : "Restart terminal"
                 }
-                onClick={() => setTerminalRunning((v) => !v)}
+                onClick={() => {
+                  if (terminalRunning) {
+                    terminateTerminalSession(activeTerminalSessionId)
+                  } else {
+                    restartTerminalSession(activeTerminalSessionId, newShell)
+                  }
+                }}
               >
                 <Icon name={terminalRunning ? "close" : "play"} size={14} />
               </IconButton>

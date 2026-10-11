@@ -720,6 +720,8 @@ export function useWorkbenchFacade() {
     activeTerminalSession: terminal.activeTerminalSession,
     setActiveTerminalSessionId: terminal.setActiveTerminalSessionId,
     createTerminalSession: terminal.createTerminalSession,
+    restartTerminalSession: terminal.restartTerminalSession,
+    terminateTerminalSession: terminal.terminateTerminalSession,
     closeTerminalSession: terminal.closeTerminalSession,
     terminalLines: terminal.terminalLines,
     terminalRunning: terminal.terminalRunning,

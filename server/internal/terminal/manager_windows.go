@@ -3,6 +3,7 @@
 package terminal
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"syscall"
@@ -15,6 +16,9 @@ func setProcessGroup(cmd *exec.Cmd) {
 
 // killProcessGroup terminates the process on Windows.
 func killProcessGroup(pid int, sig syscall.Signal) error {
+	if pid <= 0 {
+		return errors.New("invalid process group pid")
+	}
 	p, err := os.FindProcess(pid)
 	if err != nil {
 		return err
