@@ -2,7 +2,11 @@ import { useState, useRef, useEffect, useMemo, type MouseEvent } from "react"
 import { createPortal } from "react-dom"
 import { Icon } from "../../ui/Icon"
 import { useWorkbench } from "../../../context/WorkbenchContext"
-import type { FileItem, OutlineSymbol } from "../../../types/workbench"
+import type {
+  FileItem,
+  GitCommitNode,
+  OutlineSymbol,
+} from "../../../types/workbench"
 
 function extractSymbols(code?: string): OutlineSymbol[] {
   if (!code) return []
@@ -116,12 +120,45 @@ export function ExplorerPanel() {
     recentProjects,
     removeRecentProject,
     clearRecentProjects,
+    fetchTimeline,
+    isGitRepo,
+    gitCommits,
+    openGitDiff,
   } = useWorkbench()
 
   const [openEditorsOpen, setOpenEditorsOpen] = useState(true)
   const [workspaceOpen, setWorkspaceOpen] = useState(true)
   const [outlineOpen, setOutlineOpen] = useState(true)
   const [timelineOpen, setTimelineOpen] = useState(false)
+  const [timelineCommits, setTimelineCommits] = useState<GitCommitNode[]>([])
+  const [timelineLoading, setTimelineLoading] = useState(false)
+
+  const activeEditorFile =
+    focusedGroup === "group1" ? group1.activeTab : group2.activeTab
+
+  useEffect(() => {
+    if (!timelineOpen || !isGitRepo) return
+    let isMounted = true
+    setTimelineLoading(true)
+
+    fetchTimeline(activeEditorFile || "", 30)
+      .then((res) => {
+        if (isMounted) {
+          setTimelineCommits(res.length > 0 ? res : gitCommits.slice(0, 15))
+          setTimelineLoading(false)
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setTimelineCommits(gitCommits.slice(0, 15))
+          setTimelineLoading(false)
+        }
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [activeEditorFile, fetchTimeline, gitCommits, isGitRepo, timelineOpen])
 
   // Drag and Drop target highlight state
   const [dragTarget, setDragTarget] = useState<string | null>(null)
@@ -926,16 +963,74 @@ export function ExplorerPanel() {
           <Icon name="chevron" size={12} />
         </span>
         <span>TIMELINE</span>
+        {activeEditorFile && (
+          <span className="ml-auto text-[10px] text-[var(--color-ink-muted)] truncate max-w-[120px] font-normal">
+            {activeEditorFile}
+          </span>
+        )}
       </button>
       {timelineOpen && (
-        <div className="timeline-content">
-          <div className="timeline-item">
-            <span className="timeline-dot" />
-            <div className="timeline-details">
-              <strong>Local File History</strong>
-              <small>Workspace changes tracked in real-time</small>
+        <div className="timeline-content p-2">
+          {!isGitRepo ? (
+            <div className="p-3 text-center text-[11px] text-[var(--color-ink-muted)]">
+              No Git repository detected.
             </div>
-          </div>
+          ) : timelineLoading ? (
+            <div className="flex items-center justify-center p-3 text-[11px] text-[var(--color-ink-muted)]">
+              <span className="animate-spin mr-2">
+                <Icon name="refresh" size={12} />
+              </span>
+              Loading history...
+            </div>
+          ) : timelineCommits.length === 0 ? (
+            <div className="p-3 text-center text-[11px] text-[var(--color-ink-muted)]">
+              {activeEditorFile
+                ? `No commits found for ${activeEditorFile}`
+                : "Open a file to view commit timeline."}
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {timelineCommits.map((item) => (
+                <div
+                  className="group flex items-start gap-2 p-1.5 rounded hover:bg-[var(--color-surface-hover)] cursor-pointer transition-colors"
+                  key={item.hash}
+                  onClick={() => {
+                    if (activeEditorFile) {
+                      openGitDiff(activeEditorFile, false, item.hash)
+                    } else {
+                      navigator.clipboard?.writeText(item.hash)
+                      showToast(
+                        `Copied commit hash [${item.shortHash || item.hash.slice(0, 7)}]`,
+                      )
+                    }
+                  }}
+                  title={
+                    activeEditorFile
+                      ? "Click to open comparison in editor"
+                      : "Click to copy hash"
+                  }
+                >
+                  <span className="mt-1 w-2 h-2 rounded-full bg-[var(--color-accent)] shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-mono text-[10px] text-[var(--color-ink-muted)]">
+                        {item.shortHash || item.hash.slice(0, 7)}
+                      </span>
+                      <span className="text-[10px] text-[var(--color-ink-muted)]">
+                        {item.timestamp}
+                      </span>
+                    </div>
+                    <p className="text-[11px] font-medium text-[var(--color-ink)] truncate mt-0.5">
+                      {item.message}
+                    </p>
+                    <p className="text-[10px] text-[var(--color-ink-soft)] truncate">
+                      {item.author}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </>

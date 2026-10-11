@@ -6,6 +6,11 @@ import { useGitCore } from "./gitCore"
 import { useTerminalCore } from "./terminalCore"
 import { useChatCore } from "./chatCore"
 import { detectLanguage, validateSyntax } from "../../utils/linter"
+import {
+  isGitDiffTab,
+  makeGitDiffTab,
+  parseGitDiffTab,
+} from "../../utils/gitDiffTab"
 
 export interface ConfirmCloseState {
   group: "group1" | "group2"
@@ -42,7 +47,6 @@ export function useWorkbenchFacade() {
 
   // Sub-modules
   const layout = useLayoutCore()
-  const git = useGitCore({ showToast })
   const terminal = useTerminalCore()
   const chat = useChatCore()
 
@@ -52,7 +56,14 @@ export function useWorkbenchFacade() {
 
   const onFileRequested = useCallback((filename: string) => {
     if (workspaceRef.current) {
-      workspaceRef.current.ensureFileBuffer(filename)
+      if (isGitDiffTab(filename)) {
+        const diffInfo = parseGitDiffTab(filename)
+        if (diffInfo?.file) {
+          workspaceRef.current.ensureFileBuffer(diffInfo.file)
+        }
+      } else {
+        workspaceRef.current.ensureFileBuffer(filename)
+      }
     }
   }, [])
 
@@ -60,8 +71,7 @@ export function useWorkbenchFacade() {
   const editorRef = useRef(editor)
   editorRef.current = editor
 
-  const gitRef = useRef(git)
-  gitRef.current = git
+  const gitRef = useRef<ReturnType<typeof useGitCore> | null>(null)
 
   const onFileRenamed = useCallback((oldPath: string, newPath: string) => {
     editorRef.current.renameTabsInBothGroups(oldPath, newPath)
@@ -75,38 +85,21 @@ export function useWorkbenchFacade() {
     editorRef.current.resetAllGroups()
   }, [])
 
-  const onGitStatusUpdated = useCallback(
-    (repo: {
-      isRepo: boolean
-      branch: string
-      repoName: string
-      rootPath: string
-    }) => {
-      const gitInstance = gitRef.current
-      if (!gitInstance) return
-      if (repo.isRepo) {
-        gitInstance.setActiveBranch(repo.branch || "main")
-        gitInstance.setActiveRepo(repo.repoName)
-        gitInstance.setGitRepos([
-          {
-            id: "repo-root",
-            name: repo.repoName,
-            branch: repo.branch || "main",
-            path: repo.rootPath,
-          },
-        ])
-      } else {
-        gitInstance.setActiveBranch("no git")
-        gitInstance.setActiveRepo(repo.repoName)
-        gitInstance.setGitRepos([])
-      }
-    },
-    [],
-  )
+  const onGitStatusUpdated = useCallback(() => {
+    gitRef.current?.refreshGit()
+  }, [])
 
   const openFileInPane = useCallback((filename: string) => {
     editorRef.current.openFileInPane(filename)
   }, [])
+
+  const openGitDiff = useCallback(
+    (file: string, staged = false, commit = "") => {
+      const tabId = makeGitDiffTab(file, staged, commit)
+      editorRef.current.openFileInPane(tabId)
+    },
+    [],
+  )
 
   const setCursorPosition = useCallback((pos: CursorCoordinates) => {
     editorRef.current.setCursorPosition(pos)
@@ -121,6 +114,12 @@ export function useWorkbenchFacade() {
     openFileInPane,
     setCursorPosition,
   })
+
+  const git = useGitCore({
+    showToast,
+    rootWorkspacePath: workspace.rootWorkspacePath,
+  })
+  gitRef.current = git
 
   useEffect(() => {
     workspaceRef.current = {
@@ -177,6 +176,7 @@ export function useWorkbenchFacade() {
     async (filenameToSave?: string) => {
       const target = filenameToSave || editor.activeTab
       await workspace.saveFile(target)
+      await gitRef.current?.refreshGit()
     },
     [editor.activeTab, workspace],
   )
@@ -518,6 +518,7 @@ export function useWorkbenchFacade() {
     markNotificationRead: workspace.markNotificationRead,
 
     // Git
+    isGitRepo: git.isGitRepo,
     activeBranch: git.activeBranch,
     setActiveBranch: git.setActiveBranch,
     activeRepo: git.activeRepo,
@@ -526,13 +527,35 @@ export function useWorkbenchFacade() {
     gitChanges: git.gitChanges,
     stagedChanges: git.stagedChanges,
     gitCommits: git.gitCommits,
+    gitBranches: git.gitBranches,
+    gitTags: git.gitTags,
+    gitProfile: git.gitProfile,
+    ahead: git.ahead,
+    behind: git.behind,
+    upstream: git.upstream,
+    commitHash: git.commitHash,
+    isLoadingGit: git.isLoadingGit,
+    gitError: git.gitError,
+    refreshGit: git.refreshGit,
+    initRepo: git.initRepo,
+    checkoutBranch: git.checkoutBranch,
+    createBranch: git.createBranch,
     stageChange: git.stageChange,
     unstageChange: git.unstageChange,
     stageAllChanges: git.stageAllChanges,
     unstageAllChanges: git.unstageAllChanges,
+    discardChange: git.discardChange,
+    discardAllChanges: git.discardAllChanges,
     commitChanges: git.commitChanges,
     gitPull: git.gitPull,
     gitPush: git.gitPush,
+    gitSync: git.gitSync,
+    createTag: git.createTag,
+    pushTags: git.pushTags,
+    addRemote: git.addRemote,
+    fetchDiff: git.fetchDiff,
+    fetchTimeline: git.fetchTimeline,
+    openGitDiff,
 
     // Terminal
     terminalSessions: terminal.terminalSessions,

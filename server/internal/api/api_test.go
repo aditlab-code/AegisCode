@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
+	"github.com/aditwicaksono/aegiscode/server/internal/git"
 	"github.com/aditwicaksono/aegiscode/server/internal/platform"
 	"github.com/aditwicaksono/aegiscode/server/internal/workspace"
 )
@@ -267,3 +269,190 @@ func TestPlatformPickAndBrowseEndpoints(t *testing.T) {
 		t.Fatalf("expected cancelled status, got: %+v", pCancelRes)
 	}
 }
+
+func TestGitEndpoints(t *testing.T) {
+	_, handler, tempDir := setupTestServer(t, "")
+	defer os.RemoveAll(tempDir)
+
+	// Init git repo
+	cmd := exec.Command("git", "init", "-b", "main")
+	cmd.Dir = tempDir
+	if err := cmd.Run(); err != nil {
+		fallback := exec.Command("git", "init")
+		fallback.Dir = tempDir
+		_ = fallback.Run()
+	}
+	_ = exec.Command("git", "-C", tempDir, "config", "user.name", "Tester").Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.email", "tester@example.com").Run()
+
+	// 1. Git Status
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/v1/git/status", nil)
+	rrStatus := executeRequest(handler, statusReq)
+	if rrStatus.Code != http.StatusOK {
+		t.Fatalf("expected 200 for status, got %d", rrStatus.Code)
+	}
+
+	// 2. Write file
+	testFile := filepath.Join(tempDir, "sample.txt")
+	_ = os.WriteFile(testFile, []byte("line1\nline2\n"), 0644)
+
+	// 3. Stage
+	stageBody, _ := json.Marshal(StageFilesRequest{Files: []string{"sample.txt"}})
+	stageReq := httptest.NewRequest(http.MethodPost, "/api/v1/git/stage", bytes.NewReader(stageBody))
+	rrStage := executeRequest(handler, stageReq)
+	if rrStage.Code != http.StatusOK {
+		t.Fatalf("expected 200 for stage, got %d", rrStage.Code)
+	}
+
+	// 4. Commit
+	commitBody, _ := json.Marshal(CommitRequest{Message: "initial sample"})
+	commitReq := httptest.NewRequest(http.MethodPost, "/api/v1/git/commit", bytes.NewReader(commitBody))
+	rrCommit := executeRequest(handler, commitReq)
+	if rrCommit.Code != http.StatusOK {
+		t.Fatalf("expected 200 for commit, got %d", rrCommit.Code)
+	}
+
+	// 5. Branches
+	branchesReq := httptest.NewRequest(http.MethodGet, "/api/v1/git/branches", nil)
+	rrBranches := executeRequest(handler, branchesReq)
+	if rrBranches.Code != http.StatusOK {
+		t.Fatalf("expected 200 for branches, got %d", rrBranches.Code)
+	}
+
+	// 6. Log
+	logReq := httptest.NewRequest(http.MethodGet, "/api/v1/git/log?limit=10", nil)
+	rrLog := executeRequest(handler, logReq)
+	if rrLog.Code != http.StatusOK {
+		t.Fatalf("expected 200 for log, got %d", rrLog.Code)
+	}
+	var logRes LogResponse
+	_ = json.Unmarshal(rrLog.Body.Bytes(), &logRes)
+	if len(logRes.Commits) != 1 {
+		t.Fatalf("expected 1 commit in log, got %d", len(logRes.Commits))
+	}
+
+	// 7. Diff
+	_ = os.WriteFile(testFile, []byte("line1\nmodified line\n"), 0644)
+	diffReq := httptest.NewRequest(http.MethodGet, "/api/v1/git/diff?file=sample.txt", nil)
+	rrDiff := executeRequest(handler, diffReq)
+	if rrDiff.Code != http.StatusOK {
+		t.Fatalf("expected 200 for diff, got %d", rrDiff.Code)
+	}
+}
+
+func TestGitInitStageUnstage_E2E(t *testing.T) {
+	_, handler, tempDir := setupTestServer(t, "")
+	defer os.RemoveAll(tempDir)
+
+	// 1. Initially not a git repo
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/v1/git/status", nil)
+	rrStatus := executeRequest(handler, statusReq)
+	if rrStatus.Code != http.StatusOK {
+		t.Fatalf("expected 200 for initial status, got %d", rrStatus.Code)
+	}
+	var st1 git.RepoStatus
+	_ = json.Unmarshal(rrStatus.Body.Bytes(), &st1)
+	if st1.IsRepo {
+		t.Fatalf("expected isRepo false before init")
+	}
+
+	// 2. Initialize repository via POST /api/v1/git/init
+	initReq := httptest.NewRequest(http.MethodPost, "/api/v1/git/init", nil)
+	rrInit := executeRequest(handler, initReq)
+	if rrInit.Code != http.StatusOK {
+		t.Fatalf("expected 200 for init, got %d: %s", rrInit.Code, rrInit.Body.String())
+	}
+
+	_ = exec.Command("git", "-C", tempDir, "config", "user.name", "Tester").Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.email", "tester@example.com").Run()
+
+	// Verify status after init
+	rrStatus2 := executeRequest(handler, statusReq)
+	var st2 git.RepoStatus
+	_ = json.Unmarshal(rrStatus2.Body.Bytes(), &st2)
+	if !st2.IsRepo {
+		t.Fatalf("expected isRepo true after init")
+	}
+
+	// 3. Create sample files
+	fileA := filepath.Join(tempDir, "doc.txt")
+	_ = os.WriteFile(fileA, []byte("content doc"), 0644)
+	subDir := filepath.Join(tempDir, "nested")
+	_ = os.MkdirAll(subDir, 0755)
+	fileB := filepath.Join(subDir, "file.txt")
+	_ = os.WriteFile(fileB, []byte("content nested"), 0644)
+
+	// Check status has 2 unstaged
+	rrStatus3 := executeRequest(handler, statusReq)
+	var st3 git.RepoStatus
+	_ = json.Unmarshal(rrStatus3.Body.Bytes(), &st3)
+	if len(st3.Unstaged) != 2 {
+		t.Fatalf("expected 2 unstaged files, got %d", len(st3.Unstaged))
+	}
+
+	// 4. Stage single file
+	stageBody, _ := json.Marshal(StageFilesRequest{Files: []string{"doc.txt"}})
+	stageReq := httptest.NewRequest(http.MethodPost, "/api/v1/git/stage", bytes.NewReader(stageBody))
+	rrStage := executeRequest(handler, stageReq)
+	if rrStage.Code != http.StatusOK {
+		t.Fatalf("expected 200 for stage doc.txt, got %d: %s", rrStage.Code, rrStage.Body.String())
+	}
+
+	// Verify 1 staged, 1 unstaged
+	rrStatus4 := executeRequest(handler, statusReq)
+	var st4 git.RepoStatus
+	_ = json.Unmarshal(rrStatus4.Body.Bytes(), &st4)
+	if len(st4.Staged) != 1 || len(st4.Unstaged) != 1 {
+		t.Fatalf("expected 1 staged and 1 unstaged, got staged=%d, unstaged=%d", len(st4.Staged), len(st4.Unstaged))
+	}
+
+	// 5. Unstage single file BEFORE initial commit (no HEAD)
+	unstageBody, _ := json.Marshal(UnstageFilesRequest{Files: []string{"doc.txt"}})
+	unstageReq := httptest.NewRequest(http.MethodPost, "/api/v1/git/unstage", bytes.NewReader(unstageBody))
+	rrUnstage := executeRequest(handler, unstageReq)
+	if rrUnstage.Code != http.StatusOK {
+		t.Fatalf("expected 200 for unstage doc.txt without HEAD, got %d: %s", rrUnstage.Code, rrUnstage.Body.String())
+	}
+
+	// Verify 0 staged, 2 unstaged
+	rrStatus5 := executeRequest(handler, statusReq)
+	var st5 git.RepoStatus
+	_ = json.Unmarshal(rrStatus5.Body.Bytes(), &st5)
+	if len(st5.Staged) != 0 || len(st5.Unstaged) != 2 {
+		t.Fatalf("expected 0 staged and 2 unstaged after unstage without HEAD, got staged=%d, unstaged=%d", len(st5.Staged), len(st5.Unstaged))
+	}
+
+	// 6. Stage all
+	stageAllBody, _ := json.Marshal(StageFilesRequest{All: true})
+	rrStageAll := executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/git/stage", bytes.NewReader(stageAllBody)))
+	if rrStageAll.Code != http.StatusOK {
+		t.Fatalf("expected 200 for stage all, got %d", rrStageAll.Code)
+	}
+
+	// 7. Unstage all BEFORE initial commit (no HEAD)
+	unstageAllBody, _ := json.Marshal(UnstageFilesRequest{All: true})
+	rrUnstageAll := executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/git/unstage", bytes.NewReader(unstageAllBody)))
+	if rrUnstageAll.Code != http.StatusOK {
+		t.Fatalf("expected 200 for unstage all without HEAD, got %d: %s", rrUnstageAll.Code, rrUnstageAll.Body.String())
+	}
+
+	// 8. Stage all and commit to create HEAD
+	executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/git/stage", bytes.NewReader(stageAllBody)))
+	commitBody, _ := json.Marshal(CommitRequest{Message: "feat: initial commit"})
+	rrCommit := executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/git/commit", bytes.NewReader(commitBody)))
+	if rrCommit.Code != http.StatusOK {
+		t.Fatalf("expected 200 for commit, got %d", rrCommit.Code)
+	}
+
+	// 9. Modify file and stage it with HEAD existing
+	_ = os.WriteFile(fileA, []byte("content doc modified"), 0644)
+	executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/git/stage", bytes.NewReader(stageBody)))
+
+	// 10. Unstage single file with HEAD existing
+	rrUnstageWithHead := executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/git/unstage", bytes.NewReader(unstageBody)))
+	if rrUnstageWithHead.Code != http.StatusOK {
+		t.Fatalf("expected 200 for unstage doc.txt with HEAD, got %d: %s", rrUnstageWithHead.Code, rrUnstageWithHead.Body.String())
+	}
+}
+
+

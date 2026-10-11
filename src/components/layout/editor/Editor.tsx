@@ -5,8 +5,10 @@ import { useWorkbench } from "../../../context/WorkbenchContext"
 import { EditorTabs } from "./EditorTabs"
 import { EditorBreadcrumbs } from "./EditorBreadcrumbs"
 import { CodePane } from "./CodePane"
+import { DiffEditorPane } from "./DiffEditorPane"
 import { EditorFindWidget } from "./EditorFindWidget"
 import { EditorEmptyState } from "./EditorEmptyState"
+import { isGitDiffTab } from "../../../utils/gitDiffTab"
 
 export function Editor() {
   const {
@@ -86,11 +88,15 @@ export function Editor() {
           onToggleReplace={() => toggleFind("group1", true)}
         />
         <div className="editor-panes">
-          <CodePane
-            filename={group1.activeTab}
-            isFocused={focusedGroup === "group1"}
-            paneId="primary"
-          />
+          {isGitDiffTab(group1.activeTab) ? (
+            <DiffEditorPane groupId="group1" tab={group1.activeTab} />
+          ) : (
+            <CodePane
+              filename={group1.activeTab}
+              isFocused={focusedGroup === "group1"}
+              paneId="primary"
+            />
+          )}
         </div>
       </section>
     )
@@ -123,11 +129,15 @@ export function Editor() {
               onToggleReplace={() => toggleFind("group1", true)}
             />
             <div className="editor-panes">
-              <CodePane
-                filename={group1.activeTab}
-                isFocused={focusedGroup === "group1"}
-                paneId="primary"
-              />
+              {isGitDiffTab(group1.activeTab) ? (
+                <DiffEditorPane groupId="group1" tab={group1.activeTab} />
+              ) : (
+                <CodePane
+                  filename={group1.activeTab}
+                  isFocused={focusedGroup === "group1"}
+                  paneId="primary"
+                />
+              )}
             </div>
           </>
         ) : (
@@ -181,11 +191,15 @@ export function Editor() {
               onToggleReplace={() => toggleFind("group2", true)}
             />
             <div className="editor-panes">
-              <CodePane
-                filename={group2.activeTab}
-                isFocused={focusedGroup === "group2"}
-                paneId="secondary"
-              />
+              {isGitDiffTab(group2.activeTab) ? (
+                <DiffEditorPane groupId="group2" tab={group2.activeTab} />
+              ) : (
+                <CodePane
+                  filename={group2.activeTab}
+                  isFocused={focusedGroup === "group2"}
+                  paneId="secondary"
+                />
+              )}
             </div>
           </>
         ) : (

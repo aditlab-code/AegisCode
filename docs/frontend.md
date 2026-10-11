@@ -74,17 +74,29 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
     - **Clean Directory Path Formatting**: Files at root workspace display clean filename only (no `./`); subfolder paths displayed in muted text (`text-ink-muted`).
     - **Direct Backend Engine**: Live workspace regex search and granular replace (single occurrence, file-level, workspace-wide) backed directly by Go server API with immediate search result refresh.
   - **Source Control Panel**:
-    - Active repository switcher, branch indicators.
-    - Git toolbar: Pull, Push, Commit message input with Ctrl+Enter dispatch.
-    - Staged Changes and Unstaged Changes collapsible groups.
+    - **Header & Action Menu**: Action bar with Refresh Git status (`⟳`) and '...' menu (Pull, Push, Fetch & Sync, Create Tag, Push Tags, Add Remote).
+    - **Repositories Section**: Displays active repository folder, branch badge with dirty state (`*`), and live Sync button with ahead/behind counters (`↓behind ↑ahead`).
+    - **Changes & Staged Changes**: Collapsible lists with granular file status codes (`M` modified, `A` added, `D` deleted, `U` untracked), additions/deletions counts, hover actions for Stage (`+`), Unstage (`-`), and Discard (`⎌`).
+    - **Commit Box**: Multi-line message input with `⌘Enter` / `Ctrl+Enter` commit dispatch, AI commit message draft generator (`sparkle` icon).
+    - **Responsive Split Commit Button**: Full-width container with primary Commit button, vertical dividing line, and chevron dropdown (`Commit`, `Commit & Push`).
+    - **Interactive SVG Commit Graph**: Visual commit log with clickable branch pills (clicking switches branch via `checkoutBranch`), tag badges, author, and timestamp.
+    - **Dynamic Git Profile Footer**: Reads real user profile directly from `git config user.name`/`user.email` without hardcoding.
+    - **Zero Fake Fallback Empty States**: Clean "Initialize Repository" and "No Folder Open" guide screens when no Git repo or folder is loaded.
 
 ### 4. Workbench Text Editor (`editor/`)
 - **Path**: [`src/components/layout/editor/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/editor)
-- **Primary Components**: `Editor.tsx`, `EditorTabs.tsx`, `EditorBreadcrumbs.tsx`, `CodePane.tsx`, `Minimap.tsx`, `EditorFindWidget.tsx`, `DiagnosticHoverCard.tsx`, `editor.css`
+- **Primary Components**: `Editor.tsx`, `EditorTabs.tsx`, `EditorBreadcrumbs.tsx`, `CodePane.tsx`, `DiffEditorPane.tsx`, `Minimap.tsx`, `EditorFindWidget.tsx`, `DiagnosticHoverCard.tsx`, `editor.css`
 - **Visual Design**:
   - **Dual Window Groups (Split Pane)**: Group 1 and Group 2 side-by-side or stacked, divided by a draggable splitter sash.
   - **Editor Tabs**: Tab bar supporting drag-and-drop (HTML5 native DND) between groups, dirty unsaved indicator dot, close button.
-  - **Editor Breadcrumbs**: Clean path navigation bar (`src > components > layout > editor > Editor.tsx`).
+    - **Git Diff Tab Integration**: Special diff tab format (`git-diff:<file>?staged=true...`) parsed via [`src/utils/gitDiffTab.ts`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/utils/gitDiffTab.ts), rendering Git branch icon and semantic titles (`file (Working Tree)`, `file (Index)`, `file (commit)`).
+  - **In-Editor Side-by-Side Git Diff (`DiffEditorPane.tsx`)**:
+    - Replaces over-engineered popup modals with a native in-editor diff view matching VS Code.
+    - **Left Pane (Original)**: Read-only display of HEAD or previous commit revision with red background diff highlights.
+    - **Right Pane (Modified)**: Live-editable buffer connected directly to `fileBuffers` (when viewing working copy), saveable via `⌘S` / `Ctrl+S`, with green background diff highlights.
+    - **Synchronized Scrolling**: Dual-pane vertical and horizontal scroll synchronization.
+    - **Diff Toolbar**: File path, additions/deletions stats, "Open in Normal Editor", "Stage / Unstage", and "Discard" actions.
+  - **Editor Breadcrumbs**: Clean path navigation bar (`src > components > layout > editor > Editor.tsx`). Displays `diff > [git] file (Working Tree)` when a diff tab is active.
   - **Code Pane**: Lightweight custom buffer editor with line numbers, active line highlight, auto-indentation, and syntax highlighting via semantic token parser.
   - **Inline Find Widget**: Floating widget in top-right corner (`Ctrl+F`) with match count and Next/Previous navigation.
   - **Minimap**: Scaled visual overview on the right edge of the editor buffer with click-to-scroll viewport box.
@@ -115,7 +127,10 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
 - **Primary Components**: `StatusBar.tsx`, `BranchPopover.tsx`, `ProblemsPopover.tsx`, `NotificationsPopover.tsx`, `status-bar.css`
 - **Visual Design**:
   - Slim 24px footer anchored at the bottom edge.
-  - Left section: Active Git branch button (opens branch switch popover), error and warning counts (opens Problems popover).
+  - Left section:
+    - **Active Git Branch Button**: Displays active branch with dirty indicator (`*`) when working tree has uncommitted changes. Clicking opens `BranchPopover.tsx` with search filter and branch creation.
+    - **Cloud Sync Status**: Interactive button with `↓behind ↑ahead` counters; clicking triggers `gitSync`.
+    - **Problems Counter**: Error and warning counts opening the Problems popover.
   - Right section: Cursor position (`Ln 42, Col 18`), spaces/indent size, active encoding (`UTF-8`), active language mode badge, notification bell with unread count.
 
 ### 8. Settings Overlay (`settings/`)

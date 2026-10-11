@@ -89,16 +89,56 @@
 ---
 
 ### Phase 6: Go Core Server, SQLite Storage, & Bundled DAP Debugger
-- **Status**: 🟡 Active / Next (Backend Foundation)
+- **Status**: 🟡 Active (Backend Foundation & Worker Superstructures)
+
+#### Sub-Phase 6.1: Live Workspace Engine & File Operations
+- **Status**: ✅ Completed
 - **Deliverables**:
-  - **Live Workspace Engine**: REST endpoints for directory browsing, file CRUD, recursive regex search (content + filename matching), and workspace-wide string replacement (`/api/v1/workspace/*`).
-  - **Single Cross-Platform Binary**: Go Core Server compiled for macOS (Darwin arm64/amd64), Linux, and Windows.
-  - **Embedded Frontend Distribution**: Production web assets (`dist/`) embedded into the Go executable via `embed.FS` for instant zero-install distribution.
-  - **Stateless/Immutable Runtime Design**: Configuration loaded immutably into memory; all user data, settings, and agent history isolated in `~/.aegis/data/aegis.db` (SQLite).
-  - **Worker Supervisor**: Resilient process monitor for LSP servers and native PTY terminal shells with fail-fast crash isolation.
-  - **Bundled DAP Debugger**: Integrated Debug Adapter Protocol runner with embedded/bundled Delve (`dlv`) for step-by-step Go and backend debugging directly through the AegisCode web UI.
-  - **Typed TypeScript Contracts**: Automatic Go struct to TypeScript interface generation (`tygo`).
-- **Exit Criteria**: Core server binary launches in under 30ms with <30MB RAM overhead, serves frontend web UI, runs native terminals, and controls debug breakpoints without external tools.
+  - Direct Go backend endpoints for directory browsing, file CRUD, recursive regex search, and workspace-wide string replacement (`/api/v1/workspace/*`).
+  - Thread-safe workspace manager with path normalization and clean open/close lifecycle states.
+
+#### Sub-Phase 6.2: Native Git CLI Synchronization & In-Editor Side-by-Side Diff
+- **Status**: ✅ Completed
+- **Deliverables**:
+  - **Zero Fake Fallback**: 100% real Git CLI execution via 17 native Go backend endpoints (`/api/v1/git/*`).
+  - **Dynamic User Profile**: Dynamic extraction of user name and email from local/global `git config` without hardcoding.
+  - **VS Code Parity Source Control Sidebar**:
+    - Repositories list with active repo, branch pill (`*` dirty indicator), and sync trigger.
+    - Staged Changes and Changes collapsible lists with status code badges (`M`, `A`, `D`, `U`), line diff stats, stage/unstage/discard actions.
+    - Responsive split Commit button with chevron dropdown options (`Commit`, `Commit & Push`) and AI commit draft generator (`sparkle` button).
+    - Interactive SVG commit graph with clickable branch pills for instant branch switching.
+    - Zero fake fallback empty states ("Initialize Repository" and "Open Folder").
+  - **In-Editor Side-by-Side Git Diff (`DiffEditorPane.tsx`)**:
+    - Complete elimination of over-engineered popup modal overlays.
+    - Side-by-side comparison in the main editor pane: read-only original (HEAD/Commit) on left; live-editable working copy connected to `fileBuffers` on right (saveable via `⌘S` / `Ctrl+S`).
+    - Synchronized line scrolling and diff toolbar actions (Open File, Stage, Unstage, Discard, Close).
+    - Integrated with `EditorTabs.tsx` via `gitDiffTab.ts` (`filename (Working Tree)`, `filename (Index)`, `filename (commit)`).
+  - **Explorer Timeline Integration**: File-specific commit history in Explorer panel with one-click diff opening and commit hash copying.
+  - **Status Bar Integration**: Branch indicator with dirty state asterisk (`*`), live sync counter (`↓behind ↑ahead`), and branch switcher popover.
+
+#### Sub-Phase 6.3: Process Supervisor & Native PTY Terminal Shells
+- **Status**: 🟡 Active / Next
+- **Deliverables**:
+  - Native PTY terminal session manager (`server/internal/terminal`) with cross-platform pseudo-terminal support (`pty`).
+  - Real-time PTY streaming over WebSocket / SSE (`/api/v1/terminal/*`).
+  - Subprocess supervisor with fail-fast crash isolation for language servers and terminal shells.
+
+#### Sub-Phase 6.4: Stateless/Immutable Runtime & SQLite Data Isolation
+- **Status**: ⚪ Planned
+- **Deliverables**:
+  - User preferences, agent sessions, and indexing metadata persisted strictly in `~/.aegis/data/aegis.db`.
+  - Immutable runtime configuration parsing.
+
+#### Sub-Phase 6.5: Bundled DAP Debugger (Delve `dlv`) Engine
+- **Status**: ⚪ Planned
+- **Deliverables**:
+  - Debug Adapter Protocol (DAP) client proxy and bundled Delve runner for step-by-step Go and backend debugging through the web UI.
+
+#### Sub-Phase 6.6: Single Cross-Platform Binary & Embedded Frontend (`embed.FS`)
+- **Status**: ⚪ Planned
+- **Deliverables**:
+  - Single executable distribution with embedded `dist/` web assets.
+  - Target platforms: macOS (ARM64/AMD64), Linux (AMD64/ARM64), Windows (AMD64).
 
 ---
 

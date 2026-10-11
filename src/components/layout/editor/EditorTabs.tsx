@@ -3,6 +3,7 @@ import { createPortal } from "react-dom"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { useWorkbench } from "../../../context/WorkbenchContext"
+import { isGitDiffTab, parseGitDiffTab } from "../../../utils/gitDiffTab"
 
 interface ContextMenuData {
   x: number
@@ -167,7 +168,12 @@ export function EditorTabs({
       >
         {currentGroup.tabs.map((tab, index) => {
           const isActive = tab === currentGroup.activeTab
-          const isDirty = fileBuffers[tab]?.isDirty
+          const isDiff = isGitDiffTab(tab)
+          const diffInfo = isDiff ? parseGitDiffTab(tab) : null
+          const tabLabel = diffInfo ? diffInfo.displayName : tab
+          const isDirty = isDiff
+            ? Boolean(fileBuffers[diffInfo?.file || ""]?.isDirty)
+            : Boolean(fileBuffers[tab]?.isDirty)
 
           return (
             <button
@@ -189,10 +195,17 @@ export function EditorTabs({
               }}
               onDragStart={(e) => handleDragStart(e, tab, index)}
               onDrop={(e) => handleTabDrop(e, index)}
+              title={tabLabel}
               type="button"
             >
-              <Icon name="code" size={14} />
-              <span>{tab}</span>
+              <Icon
+                className={
+                  isDiff ? "text-[var(--color-accent)] shrink-0" : "shrink-0"
+                }
+                name={isDiff ? "git" : "code"}
+                size={14}
+              />
+              <span className="truncate">{tabLabel}</span>
               <span className="tab-actions-container">
                 {isDirty && (
                   <span

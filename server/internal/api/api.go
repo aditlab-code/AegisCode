@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aditwicaksono/aegiscode/server/internal/git"
 	"github.com/aditwicaksono/aegiscode/server/internal/platform"
 	"github.com/aditwicaksono/aegiscode/server/internal/workspace"
 )
@@ -15,12 +16,14 @@ import (
 type Server struct {
 	ws     *workspace.Manager
 	picker platform.FolderPicker
+	git    *git.Service
 }
 
 func NewServer(ws *workspace.Manager, picker platform.FolderPicker) *Server {
 	return &Server{
 		ws:     ws,
 		picker: picker,
+		git:    git.NewService(ws),
 	}
 }
 
@@ -67,8 +70,26 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/workspace/search", s.handleWorkspaceSearch)
 	mux.HandleFunc("/api/v1/workspace/replace-all", s.handleWorkspaceReplaceAll)
 
-	// Git API endpoint
+	// Git API endpoints
 	mux.HandleFunc("/api/v1/git/status", s.handleGitStatus)
+	mux.HandleFunc("/api/v1/git/init", s.handleGitInit)
+	mux.HandleFunc("/api/v1/git/branches", s.handleGitBranches)
+	mux.HandleFunc("/api/v1/git/branch/checkout", s.handleGitBranchCheckout)
+	mux.HandleFunc("/api/v1/git/branch/create", s.handleGitBranchCreate)
+	mux.HandleFunc("/api/v1/git/log", s.handleGitLog)
+	mux.HandleFunc("/api/v1/git/timeline", s.handleGitTimeline)
+	mux.HandleFunc("/api/v1/git/stage", s.handleGitStage)
+	mux.HandleFunc("/api/v1/git/unstage", s.handleGitUnstage)
+	mux.HandleFunc("/api/v1/git/discard", s.handleGitDiscard)
+	mux.HandleFunc("/api/v1/git/commit", s.handleGitCommit)
+	mux.HandleFunc("/api/v1/git/push", s.handleGitPush)
+	mux.HandleFunc("/api/v1/git/pull", s.handleGitPull)
+	mux.HandleFunc("/api/v1/git/sync", s.handleGitSync)
+	mux.HandleFunc("/api/v1/git/tags", s.handleGitTags)
+	mux.HandleFunc("/api/v1/git/tag", s.handleGitTagCreate)
+	mux.HandleFunc("/api/v1/git/tag/push", s.handleGitTagPush)
+	mux.HandleFunc("/api/v1/git/remote/add", s.handleGitAddRemote)
+	mux.HandleFunc("/api/v1/git/diff", s.handleGitDiff)
 
 	return corsMiddleware(mux)
 }
@@ -412,7 +433,7 @@ func (s *Server) handleGitStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status, err := s.ws.GetGitStatus()
+	status, err := s.git.GetStatus(r.Context())
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -420,3 +441,336 @@ func (s *Server) handleGitStatus(w http.ResponseWriter, r *http.Request) {
 
 	jsonResponse(w, http.StatusOK, status)
 }
+
+func (s *Server) handleGitInit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if err := s.git.Init(r.Context()); err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, GitOperationResponse{Status: "ok"})
+}
+
+func (s *Server) handleGitBranches(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	branches, err := s.git.GetBranches(r.Context())
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, BranchesResponse{Branches: branches})
+}
+
+func (s *Server) handleGitBranchCheckout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req CheckoutBranchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	if err := s.git.CheckoutBranch(r.Context(), req.Branch); err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, GitOperationResponse{Status: "ok"})
+}
+
+func (s *Server) handleGitBranchCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req CreateBranchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	if err := s.git.CreateBranch(r.Context(), req.Name, req.Checkout); err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, GitOperationResponse{Status: "ok"})
+}
+
+func (s *Server) handleGitLog(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	limit := 50
+	if lStr := r.URL.Query().Get("limit"); lStr != "" {
+		if l, err := strconv.Atoi(lStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+
+	commits, err := s.git.GetLog(r.Context(), limit)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, LogResponse{Commits: commits})
+}
+
+func (s *Server) handleGitTimeline(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	filePath := r.URL.Query().Get("file")
+	limit := 30
+	if lStr := r.URL.Query().Get("limit"); lStr != "" {
+		if l, err := strconv.Atoi(lStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+
+	commits, err := s.git.GetTimeline(r.Context(), filePath, limit)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, TimelineResponse{Commits: commits})
+}
+
+func (s *Server) handleGitStage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req StageFilesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	if err := s.git.Stage(r.Context(), req.Files, req.All); err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, GitOperationResponse{Status: "ok"})
+}
+
+func (s *Server) handleGitUnstage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req UnstageFilesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	if err := s.git.Unstage(r.Context(), req.Files, req.All); err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, GitOperationResponse{Status: "ok"})
+}
+
+func (s *Server) handleGitDiscard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req DiscardFilesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	if err := s.git.Discard(r.Context(), req.Files, req.All); err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, GitOperationResponse{Status: "ok"})
+}
+
+func (s *Server) handleGitCommit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req CommitRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	node, err := s.git.Commit(r.Context(), req.Message, req.AutoStage)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, CommitResponse{
+		Status: "ok",
+		Commit: node,
+	})
+}
+
+func (s *Server) handleGitPush(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req PushRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	if err := s.git.Push(r.Context(), req.SetUpstream); err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, GitOperationResponse{Status: "ok"})
+}
+
+func (s *Server) handleGitPull(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if err := s.git.Pull(r.Context()); err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, GitOperationResponse{Status: "ok"})
+}
+
+func (s *Server) handleGitSync(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if err := s.git.Sync(r.Context()); err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, GitOperationResponse{Status: "ok"})
+}
+
+func (s *Server) handleGitTags(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	tags, err := s.git.GetTags(r.Context())
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, TagsResponse{Tags: tags})
+}
+
+func (s *Server) handleGitTagCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req CreateTagRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	if err := s.git.CreateTag(r.Context(), req.Name, req.Message); err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, GitOperationResponse{Status: "ok"})
+}
+
+func (s *Server) handleGitTagPush(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if err := s.git.PushTags(r.Context()); err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, GitOperationResponse{Status: "ok"})
+}
+
+func (s *Server) handleGitDiff(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	file := r.URL.Query().Get("file")
+	staged := r.URL.Query().Get("staged") == "true"
+	commit := r.URL.Query().Get("commit")
+
+	res, err := s.git.GetDiff(r.Context(), file, staged, commit)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, res)
+}
+
+func (s *Server) handleGitAddRemote(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req AddRemoteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	if err := s.git.AddRemote(r.Context(), req.Name, req.URL); err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, GitOperationResponse{Status: "ok"})
+}
+
+

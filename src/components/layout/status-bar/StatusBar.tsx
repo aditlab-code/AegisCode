@@ -7,7 +7,13 @@ import { NotificationsPopover } from "./NotificationsPopover"
 
 export function StatusBar() {
   const {
+    isGitRepo,
     activeBranch,
+    gitChanges,
+    stagedChanges,
+    ahead,
+    behind,
+    gitSync,
     diagnostics,
     notifications,
     activeLanguage,
@@ -19,6 +25,7 @@ export function StatusBar() {
   const [activePanel, setActivePanel] =
     useState<"branch" | "notifications" | "problems" | null>(null)
 
+  const isDirty = gitChanges.length > 0 || stagedChanges.length > 0
   const unreadCount = notifications.filter((item) => !item.read).length
   const errorCount = diagnostics.filter((d) => d.type === "error").length
   const warningCount = diagnostics.filter((d) => d.type === "warning").length
@@ -36,13 +43,34 @@ export function StatusBar() {
   return (
     <footer className="status-bar">
       <div className="status-group">
-        <button
-          className={activePanel === "branch" ? "status-button-active" : ""}
-          onClick={() => togglePanel("branch")}
-          type="button"
-        >
-          <Icon name="branch" size={13} /> {activeBranch}*
-        </button>
+        {isGitRepo && activeBranch ? (
+          <>
+            <button
+              className={activePanel === "branch" ? "status-button-active" : ""}
+              onClick={() => togglePanel("branch")}
+              title={`Active Branch: ${activeBranch}${
+                isDirty ? " (modified)" : ""
+              }`}
+              type="button"
+            >
+              <Icon name="branch" size={13} /> {activeBranch}
+              {isDirty ? "*" : ""}
+            </button>
+            <button
+              className="sync-button hover:text-[var(--color-ink)]"
+              onClick={gitSync}
+              title={`Synchronize Changes with Remote (${behind} behind, ${ahead} ahead)`}
+              type="button"
+            >
+              <Icon name="cloud" size={13} />
+              {(behind > 0 || ahead > 0) && (
+                <span className="text-[10px]">
+                  {behind}↓ {ahead}↑
+                </span>
+              )}
+            </button>
+          </>
+        ) : null}
         <button
           className={activePanel === "problems" ? "status-button-active" : ""}
           onClick={handleProblemsClick}

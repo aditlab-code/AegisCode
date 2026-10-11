@@ -1,6 +1,9 @@
 package api
 
-import "github.com/aditwicaksono/aegiscode/server/internal/workspace"
+import (
+	"github.com/aditwicaksono/aegiscode/server/internal/git"
+	"github.com/aditwicaksono/aegiscode/server/internal/workspace"
+)
 
 // WorkspaceInfoResponse models the current workspace metadata.
 type WorkspaceInfoResponse struct {
@@ -120,3 +123,87 @@ type ReplaceAllResponse struct {
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
+
+// CheckoutBranchRequest models branch checkout payload.
+type CheckoutBranchRequest struct {
+	Branch string `json:"branch"`
+}
+
+// CreateBranchRequest models branch creation payload.
+type CreateBranchRequest struct {
+	Name     string `json:"name"`
+	Checkout bool   `json:"checkout"`
+}
+
+// BranchesResponse models the branch listing payload.
+type BranchesResponse struct {
+	Branches []git.BranchInfo `json:"branches"`
+}
+
+// StageFilesRequest models staging files payload.
+type StageFilesRequest struct {
+	Files []string `json:"files"`
+	All   bool     `json:"all"`
+}
+
+// UnstageFilesRequest models unstaging files payload.
+type UnstageFilesRequest struct {
+	Files []string `json:"files"`
+	All   bool     `json:"all"`
+}
+
+// DiscardFilesRequest models discarding changes payload.
+type DiscardFilesRequest struct {
+	Files []string `json:"files"`
+	All   bool     `json:"all"`
+}
+
+// CommitRequest models commit payload.
+type CommitRequest struct {
+	Message   string `json:"message"`
+	AutoStage bool   `json:"autoStage"`
+}
+
+// CommitResponse models commit result payload.
+type CommitResponse struct {
+	Status string          `json:"status"`
+	Commit *git.CommitNode `json:"commit,omitempty"`
+}
+
+// PushRequest models push payload.
+type PushRequest struct {
+	SetUpstream bool `json:"setUpstream"`
+}
+
+// LogResponse models git commit log payload.
+type LogResponse struct {
+	Commits []git.CommitNode `json:"commits"`
+}
+
+// TimelineResponse models git timeline payload for a file.
+type TimelineResponse struct {
+	Commits []git.CommitNode `json:"commits"`
+}
+
+// TagsResponse models git tags payload.
+type TagsResponse struct {
+	Tags []string `json:"tags"`
+}
+
+// CreateTagRequest models tag creation payload.
+type CreateTagRequest struct {
+	Name    string `json:"name"`
+	Message string `json:"message"`
+}
+
+// GitOperationResponse models standard Git operation response.
+type GitOperationResponse struct {
+	Status string `json:"status"`
+}
+
+// AddRemoteRequest models remote registration payload.
+type AddRemoteRequest struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+

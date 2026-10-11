@@ -1,0 +1,839 @@
+package git
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/aditwicaksono/aegiscode/server/internal/workspace"
+)
+
+// GitChange represents a changed file in the working tree or index.
+type GitChange struct {
+	Code      string `json:"code"` // "M", "A", "D", "R", "?"
+	File      string `json:"file"`
+	Directory string `json:"directory,omitempty"`
+	Status    string `json:"status"` // "modified", "added", "deleted", "renamed", "untracked"
+	OldFile   string `json:"oldFile,omitempty"`
+}
+
+// GitUser represents the active Git user identity.
+type GitUser struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+// RepoStatus models full git status including branch, tracking, ahead/behind, and changes.
+type RepoStatus struct {
+	IsRepo     bool        `json:"isRepo"`
+	Branch     string      `json:"branch"`
+	RepoName   string      `json:"repoName"`
+	CommitHash string      `json:"commitHash"`
+	Upstream   string      `json:"upstream"`
+	Ahead      int         `json:"ahead"`
+	Behind     int         `json:"behind"`
+	Staged     []GitChange `json:"staged"`
+	Unstaged   []GitChange `json:"unstaged"`
+	User       GitUser     `json:"user"`
+}
+
+// BranchInfo models a local or remote git branch.
+type BranchInfo struct {
+	Name     string `json:"name"`
+	IsHead   bool   `json:"isHead"`
+	IsRemote bool   `json:"isRemote"`
+	Upstream string `json:"upstream,omitempty"`
+}
+
+// CommitNode models a commit in the git history graph or timeline.
+type CommitNode struct {
+	ID        string   `json:"id"`
+	Hash      string   `json:"hash"`
+	ShortHash string   `json:"shortHash"`
+	Author    string   `json:"author"`
+	Email     string   `json:"email"`
+	Message   string   `json:"message"`
+	Timestamp string   `json:"timestamp"`
+	UnixTime  int64    `json:"unixTime"`
+	Branch    string   `json:"branch,omitempty"`
+	IsHead    bool     `json:"isHead"`
+	Tags      []string `json:"tags,omitempty"`
+}
+
+// Service provides native Git CLI operations on the active workspace root.
+type Service struct {
+	ws *workspace.Manager
+}
+
+// NewService creates a new Git service wrapping workspace Manager.
+func NewService(ws *workspace.Manager) *Service {
+	return &Service{ws: ws}
+}
+
+func (s *Service) root() (string, error) {
+	rootPath, _ := s.ws.GetRoot()
+	clean := strings.TrimSpace(rootPath)
+	if clean == "" {
+		return "", errors.New("no active workspace root")
+	}
+	return clean, nil
+}
+
+func (s *Service) runGit(ctx context.Context, args ...string) (string, error) {
+	root, err := s.root()
+	if err != nil {
+		return "", err
+	}
+
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = root
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	runErr := cmd.Run()
+	if runErr != nil {
+		errOut := strings.TrimSpace(stderr.String())
+		if errOut != "" {
+			return "", fmt.Errorf("git %s failed: %s", args[0], errOut)
+		}
+		return "", fmt.Errorf("git %s failed: %w", args[0], runErr)
+	}
+
+	return stdout.String(), nil
+}
+
+// IsRepo checks if the active workspace is a git repository.
+func (s *Service) IsRepo(ctx context.Context) (bool, error) {
+	root, err := s.root()
+	if err != nil {
+		return false, nil
+	}
+
+	gitDir := filepath.Join(root, ".git")
+	st, err := os.Stat(gitDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return st.IsDir() || !st.IsDir(), nil
+}
+
+// Init initializes a new git repository in the active workspace.
+func (s *Service) Init(ctx context.Context) error {
+	if _, err := s.runGit(ctx, "init", "-b", "main"); err == nil {
+		return nil
+	}
+	_, err := s.runGit(ctx, "init")
+	return err
+}
+
+// AddRemote registers a remote Git repository URL.
+func (s *Service) AddRemote(ctx context.Context, name string, url string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "origin"
+	}
+	url = strings.TrimSpace(url)
+	if url == "" {
+		return errors.New("remote URL cannot be empty")
+	}
+
+	_, err := s.runGit(ctx, "remote", "add", name, url)
+	return err
+}
+
+// GetUser returns configured git user name and email.
+func (s *Service) GetUser(ctx context.Context) GitUser {
+	name, _ := s.runGit(ctx, "config", "user.name")
+	email, _ := s.runGit(ctx, "config", "user.email")
+	return GitUser{
+		Name:  strings.TrimSpace(name),
+		Email: strings.TrimSpace(email),
+	}
+}
+
+// GetStatus parses git status --porcelain=v2 --branch.
+func (s *Service) GetStatus(ctx context.Context) (RepoStatus, error) {
+	root, err := s.root()
+	if err != nil {
+		return RepoStatus{IsRepo: false}, nil
+	}
+
+	isRepo, _ := s.IsRepo(ctx)
+	if !isRepo {
+		return RepoStatus{
+			IsRepo:   false,
+			RepoName: filepath.Base(root),
+			Staged:   []GitChange{},
+			Unstaged: []GitChange{},
+		}, nil
+	}
+
+	out, err := s.runGit(ctx, "status", "--porcelain=v2", "--branch", "-uall")
+	if err != nil {
+		headPath := filepath.Join(root, ".git", "HEAD")
+		if headBytes, rErr := os.ReadFile(headPath); rErr == nil {
+			headContent := strings.TrimSpace(string(headBytes))
+			branch := ""
+			if strings.HasPrefix(headContent, "ref: refs/heads/") {
+				branch = strings.TrimPrefix(headContent, "ref: refs/heads/")
+			} else if len(headContent) >= 7 {
+				branch = headContent[:7]
+			}
+			return RepoStatus{
+				IsRepo:   true,
+				Branch:   branch,
+				RepoName: filepath.Base(root),
+				Staged:   []GitChange{},
+				Unstaged: []GitChange{},
+			}, nil
+		}
+		return RepoStatus{}, err
+	}
+
+	user := s.GetUser(ctx)
+	status := RepoStatus{
+		IsRepo:   true,
+		RepoName: filepath.Base(root),
+		Staged:   make([]GitChange, 0),
+		Unstaged: make([]GitChange, 0),
+		User:     user,
+	}
+
+	lines := strings.Split(out, "\n")
+	for _, rawLine := range lines {
+		line := strings.TrimRight(rawLine, "\r")
+		if line == "" {
+			continue
+		}
+
+		if strings.HasPrefix(line, "# ") {
+			parts := strings.Fields(line)
+			if len(parts) >= 3 {
+				switch parts[1] {
+				case "branch.oid":
+					if parts[2] != "(initial)" {
+						status.CommitHash = parts[2]
+					}
+				case "branch.head":
+					status.Branch = parts[2]
+				case "branch.upstream":
+					status.Upstream = parts[2]
+				case "branch.ab":
+					if len(parts) >= 4 {
+						status.Ahead, _ = strconv.Atoi(strings.TrimPrefix(parts[2], "+"))
+						status.Behind, _ = strconv.Atoi(strings.TrimPrefix(parts[3], "-"))
+					}
+				}
+			}
+			continue
+		}
+
+		// Ordinary changed entry: 1 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <path>
+		if strings.HasPrefix(line, "1 ") {
+			parts := strings.SplitN(line, " ", 9)
+			if len(parts) >= 9 {
+				xy := parts[1]
+				filePath := parts[8]
+				dir := filepath.Dir(filePath)
+				if dir == "." {
+					dir = ""
+				}
+
+				stagedChar := xy[0]
+				unstagedChar := xy[1]
+
+				if stagedChar != '.' {
+					status.Staged = append(status.Staged, GitChange{
+						Code:      string(stagedChar),
+						File:      filePath,
+						Directory: dir,
+						Status:    mapStatusCode(string(stagedChar)),
+					})
+				}
+				if unstagedChar != '.' {
+					status.Unstaged = append(status.Unstaged, GitChange{
+						Code:      string(unstagedChar),
+						File:      filePath,
+						Directory: dir,
+						Status:    mapStatusCode(string(unstagedChar)),
+					})
+				}
+			}
+			continue
+		}
+
+		// Renamed/copied entry: 2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <X><score> <path><tab><origPath>
+		if strings.HasPrefix(line, "2 ") {
+			parts := strings.SplitN(line, " ", 10)
+			if len(parts) >= 10 {
+				xy := parts[1]
+				rest := parts[9]
+				pathParts := strings.Split(rest, "\t")
+				filePath := pathParts[0]
+				oldFile := ""
+				if len(pathParts) > 1 {
+					oldFile = pathParts[1]
+				}
+
+				dir := filepath.Dir(filePath)
+				if dir == "." {
+					dir = ""
+				}
+
+				stagedChar := xy[0]
+				unstagedChar := xy[1]
+
+				if stagedChar != '.' {
+					status.Staged = append(status.Staged, GitChange{
+						Code:      string(stagedChar),
+						File:      filePath,
+						Directory: dir,
+						Status:    mapStatusCode(string(stagedChar)),
+						OldFile:   oldFile,
+					})
+				}
+				if unstagedChar != '.' {
+					status.Unstaged = append(status.Unstaged, GitChange{
+						Code:      string(unstagedChar),
+						File:      filePath,
+						Directory: dir,
+						Status:    mapStatusCode(string(unstagedChar)),
+						OldFile:   oldFile,
+					})
+				}
+			}
+			continue
+		}
+
+		// Untracked entry: ? <path>
+		if strings.HasPrefix(line, "? ") {
+			filePath := strings.TrimPrefix(line, "? ")
+			dir := filepath.Dir(filePath)
+			if dir == "." {
+				dir = ""
+			}
+			status.Unstaged = append(status.Unstaged, GitChange{
+				Code:      "A",
+				File:      filePath,
+				Directory: dir,
+				Status:    "untracked",
+			})
+			continue
+		}
+	}
+
+	return status, nil
+}
+
+func mapStatusCode(code string) string {
+	switch code {
+	case "M":
+		return "modified"
+	case "A":
+		return "added"
+	case "D":
+		return "deleted"
+	case "R":
+		return "renamed"
+	case "C":
+		return "copied"
+	case "U":
+		return "conflict"
+	case "?":
+		return "untracked"
+	default:
+		return "modified"
+	}
+}
+
+// GetBranches returns all local and remote branches.
+func (s *Service) GetBranches(ctx context.Context) ([]BranchInfo, error) {
+	out, err := s.runGit(ctx, "branch", "-a", "--format=%(refname:short)|%(HEAD)|%(upstream:short)")
+	if err != nil {
+		return nil, err
+	}
+
+	branches := make([]BranchInfo, 0)
+	lines := strings.Split(out, "\n")
+	for _, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if trimmed == "" {
+			continue
+		}
+
+		parts := strings.Split(trimmed, "|")
+		if len(parts) >= 2 {
+			name := parts[0]
+			isHead := parts[1] == "*"
+			upstream := ""
+			if len(parts) >= 3 {
+				upstream = parts[2]
+			}
+
+			isRemote := strings.HasPrefix(name, "origin/") || strings.Contains(name, "/")
+			branches = append(branches, BranchInfo{
+				Name:     name,
+				IsHead:   isHead,
+				IsRemote: isRemote,
+				Upstream: upstream,
+			})
+		}
+	}
+
+	return branches, nil
+}
+
+// CheckoutBranch checks out the specified branch.
+func (s *Service) CheckoutBranch(ctx context.Context, branch string) error {
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return errors.New("branch name cannot be empty")
+	}
+
+	// If remote branch, checkout local tracking branch
+	if strings.HasPrefix(branch, "origin/") {
+		localName := strings.TrimPrefix(branch, "origin/")
+		_, err := s.runGit(ctx, "checkout", "-B", localName, branch)
+		return err
+	}
+
+	_, err := s.runGit(ctx, "checkout", branch)
+	return err
+}
+
+// CreateBranch creates a branch and optionally checks it out.
+func (s *Service) CreateBranch(ctx context.Context, name string, checkout bool) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("branch name cannot be empty")
+	}
+
+	if checkout {
+		_, err := s.runGit(ctx, "checkout", "-b", name)
+		return err
+	}
+
+	_, err := s.runGit(ctx, "branch", name)
+	return err
+}
+
+// GetLog returns commit nodes with hash, author, message, timestamp, branches, and tags.
+func (s *Service) GetLog(ctx context.Context, limit int) ([]CommitNode, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	out, err := s.runGit(ctx, "log", fmt.Sprintf("-n%d", limit), "--pretty=format:%H|%h|%an|%ae|%at|%s|%D")
+	if err != nil {
+		// Fresh repo without commits yet
+		if strings.Contains(err.Error(), "does not have any commits") || strings.Contains(err.Error(), "fatal: your current branch") {
+			return []CommitNode{}, nil
+		}
+		return nil, err
+	}
+
+	activeBranch := ""
+	if st, err := s.GetStatus(ctx); err == nil {
+		activeBranch = st.Branch
+	}
+
+	nodes := make([]CommitNode, 0)
+	lines := strings.Split(out, "\n")
+	for idx, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if trimmed == "" {
+			continue
+		}
+
+		parts := strings.Split(trimmed, "|")
+		if len(parts) >= 6 {
+			hash := parts[0]
+			shortHash := parts[1]
+			author := parts[2]
+			email := parts[3]
+			rawTime := parts[4]
+			msg := parts[5]
+
+			refString := ""
+			if len(parts) >= 7 {
+				refString = parts[6]
+			}
+
+			tags := make([]string, 0)
+			commitBranch := ""
+
+			if refString != "" {
+				refs := strings.Split(refString, ",")
+				for _, r := range refs {
+					r = strings.TrimSpace(r)
+					if strings.HasPrefix(r, "tag: ") {
+						tags = append(tags, strings.TrimPrefix(r, "tag: "))
+					} else if strings.HasPrefix(r, "HEAD -> ") {
+						commitBranch = strings.TrimPrefix(r, "HEAD -> ")
+					} else if commitBranch == "" && !strings.Contains(r, "/") && !strings.HasPrefix(r, "tag:") {
+						commitBranch = r
+					}
+				}
+			}
+
+			if commitBranch == "" {
+				commitBranch = activeBranch
+			}
+
+			unixSec, _ := strconv.ParseInt(rawTime, 10, 64)
+			t := time.Unix(unixSec, 0)
+			relTime := formatRelativeTime(t)
+
+			nodes = append(nodes, CommitNode{
+				ID:        shortHash,
+				Hash:      hash,
+				ShortHash: shortHash,
+				Author:    author,
+				Email:     email,
+				Message:   msg,
+				Timestamp: relTime,
+				UnixTime:  unixSec,
+				Branch:    commitBranch,
+				IsHead:    idx == 0,
+				Tags:      tags,
+			})
+		}
+	}
+
+	return nodes, nil
+}
+
+// GetTimeline returns commit history affecting a specific file.
+func (s *Service) GetTimeline(ctx context.Context, relPath string, limit int) ([]CommitNode, error) {
+	if limit <= 0 {
+		limit = 30
+	}
+
+	args := []string{"log", fmt.Sprintf("-n%d", limit), "--pretty=format:%H|%h|%an|%ae|%at|%s"}
+	if relPath != "" {
+		args = append(args, "--follow", "--", relPath)
+	}
+
+	out, err := s.runGit(ctx, args...)
+	if err != nil {
+		if strings.Contains(err.Error(), "does not have any commits") {
+			return []CommitNode{}, nil
+		}
+		return nil, err
+	}
+
+	nodes := make([]CommitNode, 0)
+	lines := strings.Split(out, "\n")
+	for idx, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if trimmed == "" {
+			continue
+		}
+
+		parts := strings.Split(trimmed, "|")
+		if len(parts) >= 6 {
+			unixSec, _ := strconv.ParseInt(parts[4], 10, 64)
+			t := time.Unix(unixSec, 0)
+			relTime := formatRelativeTime(t)
+
+			nodes = append(nodes, CommitNode{
+				ID:        parts[1],
+				Hash:      parts[1],
+				ShortHash: parts[1],
+				Author:    parts[2],
+				Email:     parts[3],
+				Message:   parts[5],
+				Timestamp: relTime,
+				UnixTime:  unixSec,
+				IsHead:    idx == 0,
+			})
+		}
+	}
+
+	return nodes, nil
+}
+
+func formatRelativeTime(t time.Time) string {
+	diff := time.Since(t)
+	if diff < time.Minute {
+		return "Just now"
+	} else if diff < time.Hour {
+		m := int(diff.Minutes())
+		if m == 1 {
+			return "1 minute ago"
+		}
+		return fmt.Sprintf("%d minutes ago", m)
+	} else if diff < 24*time.Hour {
+		h := int(diff.Hours())
+		if h == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", h)
+	} else if diff < 30*24*time.Hour {
+		d := int(diff.Hours() / 24)
+		if d == 1 {
+			return "Yesterday"
+		}
+		return fmt.Sprintf("%d days ago", d)
+	}
+	return t.Format("Jan 02, 2006")
+}
+
+// Stage stages specified files or all changes.
+func (s *Service) Stage(ctx context.Context, files []string, all bool) error {
+	if all || len(files) == 0 {
+		_, err := s.runGit(ctx, "add", "-A")
+		return err
+	}
+
+	args := append([]string{"add", "--"}, files...)
+	_, err := s.runGit(ctx, args...)
+	return err
+}
+
+// Unstage unstages specified files or all changes from the index.
+func (s *Service) Unstage(ctx context.Context, files []string, all bool) error {
+	hasHead := true
+	if _, err := s.runGit(ctx, "rev-parse", "--verify", "HEAD"); err != nil {
+		hasHead = false
+	}
+
+	if hasHead {
+		var err error
+		if all || len(files) == 0 {
+			_, err = s.runGit(ctx, "restore", "--staged", ".")
+		} else {
+			args := append([]string{"restore", "--staged", "--"}, files...)
+			_, err = s.runGit(ctx, args...)
+		}
+		if err == nil {
+			return nil
+		}
+	}
+
+	// When HEAD does not exist (initial commit state) or restore fails:
+	if all || len(files) == 0 {
+		_, err := s.runGit(ctx, "rm", "--cached", "-r", ".")
+		return err
+	}
+
+	args := append([]string{"rm", "--cached", "-r", "--"}, files...)
+	_, err := s.runGit(ctx, args...)
+	return err
+}
+
+// Discard discards working tree changes for specified files or all.
+func (s *Service) Discard(ctx context.Context, files []string, all bool) error {
+	root, err := s.root()
+	if err != nil {
+		return err
+	}
+
+	if all || len(files) == 0 {
+		_, _ = s.runGit(ctx, "restore", ".")
+		_, _ = s.runGit(ctx, "clean", "-fd")
+		return nil
+	}
+
+	// For specific files, restore tracked and remove untracked
+	for _, f := range files {
+		cleanPath := strings.TrimSpace(f)
+		if cleanPath == "" {
+			continue
+		}
+		fullPath := filepath.Join(root, cleanPath)
+		// Check if file is untracked
+		if _, err := s.runGit(ctx, "restore", "--", cleanPath); err != nil {
+			// Might be untracked, remove directly
+			_ = os.RemoveAll(fullPath)
+		}
+	}
+	return nil
+}
+
+// Commit creates a git commit with the given message.
+func (s *Service) Commit(ctx context.Context, message string, autoStage bool) (*CommitNode, error) {
+	msg := strings.TrimSpace(message)
+	if msg == "" {
+		return nil, errors.New("commit message cannot be empty")
+	}
+
+	if autoStage {
+		st, err := s.GetStatus(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if len(st.Staged) == 0 && len(st.Unstaged) > 0 {
+			if err := s.Stage(ctx, nil, true); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	_, err := s.runGit(ctx, "commit", "-m", msg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return created commit node
+	logNodes, err := s.GetLog(ctx, 1)
+	if err != nil || len(logNodes) == 0 {
+		return &CommitNode{Message: msg}, nil
+	}
+
+	return &logNodes[0], nil
+}
+
+// Push pushes commits to remote tracking branch.
+func (s *Service) Push(ctx context.Context, setUpstream bool) error {
+	if setUpstream {
+		st, err := s.GetStatus(ctx)
+		if err != nil {
+			return err
+		}
+		branch := st.Branch
+		if branch == "" {
+			branch = "main"
+		}
+		_, err = s.runGit(ctx, "push", "-u", "origin", branch)
+		return err
+	}
+
+	_, err := s.runGit(ctx, "push")
+	if err != nil && strings.Contains(err.Error(), "--set-upstream") {
+		// Retry with set upstream
+		st, _ := s.GetStatus(ctx)
+		branch := st.Branch
+		if branch != "" {
+			_, err = s.runGit(ctx, "push", "-u", "origin", branch)
+		}
+	}
+	return err
+}
+
+// Pull pulls commits from remote tracking branch.
+func (s *Service) Pull(ctx context.Context) error {
+	_, err := s.runGit(ctx, "pull")
+	return err
+}
+
+// Sync pulls then pushes commits.
+func (s *Service) Sync(ctx context.Context) error {
+	if err := s.Pull(ctx); err != nil {
+		return fmt.Errorf("sync pull failed: %w", err)
+	}
+	if err := s.Push(ctx, false); err != nil {
+		return fmt.Errorf("sync push failed: %w", err)
+	}
+	return nil
+}
+
+// GetTags returns all tags sorted by creation date.
+func (s *Service) GetTags(ctx context.Context) ([]string, error) {
+	out, err := s.runGit(ctx, "tag", "-l", "--sort=-creatordate")
+	if err != nil {
+		return nil, err
+	}
+
+	tags := make([]string, 0)
+	lines := strings.Split(out, "\n")
+	for _, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if trimmed != "" {
+			tags = append(tags, trimmed)
+		}
+	}
+
+	return tags, nil
+}
+
+// CreateTag creates a new git tag at HEAD.
+func (s *Service) CreateTag(ctx context.Context, name string, message string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("tag name cannot be empty")
+	}
+
+	if message != "" {
+		_, err := s.runGit(ctx, "tag", "-a", name, "-m", message)
+		return err
+	}
+
+	_, err := s.runGit(ctx, "tag", name)
+	return err
+}
+
+// PushTags pushes all tags to remote origin.
+func (s *Service) PushTags(ctx context.Context) error {
+	_, err := s.runGit(ctx, "push", "origin", "--tags")
+	return err
+}
+
+// DiffResult holds diff comparison data.
+type DiffResult struct {
+	File      string `json:"file"`
+	Staged    bool   `json:"staged"`
+	Diff      string `json:"diff"`
+	Original  string `json:"original"`
+	Modified  string `json:"modified"`
+}
+
+// GetDiff retrieves unified diff and original/modified file content for the diff viewer.
+func (s *Service) GetDiff(ctx context.Context, relPath string, staged bool, commitHash string) (*DiffResult, error) {
+	relPath = strings.TrimSpace(relPath)
+	if relPath == "" {
+		return nil, errors.New("file path cannot be empty")
+	}
+
+	root, err := s.root()
+	if err != nil {
+		return nil, err
+	}
+
+	var diffText string
+	var origContent string
+	var modContent string
+
+	// 1. Get diff text
+	if commitHash != "" {
+		diffText, _ = s.runGit(ctx, "diff", fmt.Sprintf("%s^!", commitHash), "--", relPath)
+		origContent, _ = s.runGit(ctx, "show", fmt.Sprintf("%s^:%s", commitHash, relPath))
+		modContent, _ = s.runGit(ctx, "show", fmt.Sprintf("%s:%s", commitHash, relPath))
+	} else if staged {
+		diffText, _ = s.runGit(ctx, "diff", "--cached", "--", relPath)
+		origContent, _ = s.runGit(ctx, "show", fmt.Sprintf("HEAD:%s", relPath))
+		modBytes, _ := os.ReadFile(filepath.Join(root, relPath))
+		modContent = string(modBytes)
+	} else {
+		diffText, _ = s.runGit(ctx, "diff", "--", relPath)
+		origContent, _ = s.runGit(ctx, "show", fmt.Sprintf("HEAD:%s", relPath))
+		modBytes, _ := os.ReadFile(filepath.Join(root, relPath))
+		modContent = string(modBytes)
+
+		// Untracked file handling
+		if diffText == "" && origContent == "" && modContent != "" {
+			diffText = fmt.Sprintf("@@ -0,0 +1,%d @@\n+%s", len(strings.Split(modContent, "\n")), strings.ReplaceAll(modContent, "\n", "\n+"))
+		}
+	}
+
+	return &DiffResult{
+		File:     relPath,
+		Staged:   staged,
+		Diff:     diffText,
+		Original: origContent,
+		Modified: modContent,
+	}, nil
+}

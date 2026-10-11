@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 
-export type IconName = "aegis" | "arrow-down" | "arrow-up" | "bell" | "branch" | "check" | "chevron" | "chevron-down" | "chevron-up" | "close" | "code" | "copy" | "error" | "explorer" | "file" | "folder" | "git" | "history" | "layout" | "maximize" | "moon" | "more" | "panel" | "play" | "plus" | "refresh" | "search" | "send" | "settings" | "split" | "sun" | "symbol" | "terminal" | "trash" | "warning" | "edit" | "add" | "replace-all"
+export type IconName = "aegis" | "arrow-down" | "arrow-up" | "bell" | "branch" | "check" | "chevron" | "chevron-down" | "chevron-up" | "close" | "code" | "copy" | "error" | "explorer" | "file" | "folder" | "git" | "history" | "layout" | "maximize" | "moon" | "more" | "panel" | "play" | "plus" | "refresh" | "search" | "send" | "settings" | "split" | "sun" | "symbol" | "terminal" | "trash" | "warning" | "edit" | "add" | "replace-all" | "cloud" | "sparkle" | "tag" | "discard"
 
 export type ThemeMode = "dark" | "light"
 
@@ -99,13 +99,47 @@ export interface ChatMessage {
   text: string
 }
 
+export interface GitUser {
+  name: string
+  email: string
+}
+
+export interface GitBranch {
+  name: string
+  isHead: boolean
+  isRemote: boolean
+  upstream?: string
+}
+
+export interface GitDiffResult {
+  file: string
+  staged: boolean
+  diff: string
+  original: string
+  modified: string
+}
+
 export interface GitChange {
-  code: "M" | "A" | "D"
+  code: "M" | "A" | "D" | "R" | "C" | "U" | "?"
   file: string
   directory?: string
   status?: string
+  oldFile?: string
   additions?: number
   deletions?: number
+}
+
+export interface GitStatusData {
+  isRepo: boolean
+  branch: string
+  repoName: string
+  commitHash?: string
+  upstream?: string
+  ahead: number
+  behind: number
+  staged: GitChange[]
+  unstaged: GitChange[]
+  user: GitUser
 }
 
 export interface MenuItem {
@@ -135,12 +169,16 @@ export type OutputChannel = "Linter" | "Tasks" | "Git"
 export interface GitCommitNode {
   id: string
   hash: string
+  shortHash?: string
   message: string
   author: string
+  email?: string
   time?: string
   timestamp?: string
-  branch: string
+  unixTime?: number
+  branch?: string
   isHead?: boolean
+  tags?: string[]
 }
 
 export interface GitRepo {

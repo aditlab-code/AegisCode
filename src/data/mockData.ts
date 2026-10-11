@@ -2,11 +2,8 @@ import type {
   FileItem,
   DiagnosticItem,
   NotificationItem,
-  GitChange,
   FileBuffer,
   TerminalSession,
-  GitCommitNode,
-  GitRepo,
 } from "../types/workbench"
 
 export const initialFileBuffers: Record<string, FileBuffer> = {}
@@ -24,14 +21,6 @@ export const initialNotifications: NotificationItem[] = [
     time: "now",
   },
 ]
-
-export const initialGitChanges: GitChange[] = []
-
-export const initialStagedChanges: GitChange[] = []
-
-export const initialGitRepos: GitRepo[] = []
-
-export const initialGitCommits: GitCommitNode[] = []
 
 export const initialTerminalLines: string[] = [
   "Terminal & Runner unscoped for Phase 1",

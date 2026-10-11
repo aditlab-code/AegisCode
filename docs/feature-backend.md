@@ -138,7 +138,77 @@ To enable multi-screen remote workflows on tablets without external cloud server
   - Safe behavior on empty/closed workspace (`rootPath == ""`): returns `200 OK` with `{ "isRepo": false, "branch": "", "repoName": "" }` without throwing a 500 error.
   - Response: `{ "isRepo": boolean, "branch": "string", "repoName": "string" }`
 
-### C. Server-Sent Events (SSE) Streaming
+### C. Git Native CLI Integration (Phase 6 Sub-Phase 2 Active)
+All operations interact directly with the local native Git CLI binary on the active workspace root. Zero artificial mocks or fallback simulations:
+
+- `GET /api/v1/git/status`
+  - Runs `git status --porcelain=v2 --branch -uall` and parses staged, unstaged, branch, upstream, commit hash, ahead/behind counters, and user profile (`git config user.name`/`user.email`).
+  - Response: `{ "isRepo": boolean, "branch": string, "repoName": string, "commitHash": string, "upstream": string, "ahead": number, "behind": number, "staged": [...], "unstaged": [...], "user": { "name": string, "email": string } }`
+- `POST /api/v1/git/init`
+  - Initializes a new Git repository (`git init -b main` with fallback to `git init`).
+  - Response: `{ "status": "ok" }`
+- `GET /api/v1/git/branches`
+  - Returns local and remote tracking branches (`git branch -a -vv`).
+  - Response: `{ "branches": [ { "name": string, "isHead": boolean, "isRemote": boolean, "upstream": string } ] }`
+- `POST /api/v1/git/branch/checkout`
+  - Switches branches (`git checkout <branch>` or `git checkout -B <local> origin/<remote>`).
+  - Body: `{ "branch": "string" }`
+  - Response: `{ "status": "ok" }`
+- `POST /api/v1/git/branch/create`
+  - Creates a new branch with optional checkout (`git branch <name>` or `git checkout -b <name>`).
+  - Body: `{ "name": "string", "checkout": boolean }`
+  - Response: `{ "status": "ok" }`
+- `GET /api/v1/git/log?limit=50`
+  - Retrieves git history nodes with author, message, timestamp, head status, and branch/tag decorations (`git log -n<limit> --pretty=format:%H|%h|%an|%ae|%at|%s|%D`).
+  - Response: `{ "commits": [ { "id": string, "hash": string, "shortHash": string, "author": string, "message": string, "timestamp": string, "unixTime": number, "branch": string, "tags": [...] } ] }`
+- `GET /api/v1/git/timeline?file=<path>&limit=30`
+  - Retrieves commit history specific to a file for the Explorer panel TIMELINE section (`git log -n<limit> --pretty=format:... -- <file>`).
+  - Response: `{ "commits": [...] }`
+- `POST /api/v1/git/stage`
+  - Stages specified files or all changes (`git add -- <files>` or `git add -A`).
+  - Body: `{ "files": ["string"], "all": boolean }`
+  - Response: `{ "status": "ok" }`
+- `POST /api/v1/git/unstage`
+  - Unstages specified files or all changes. Automatically detects whether `HEAD` exists: uses `git restore --staged -- <files>` if `HEAD` exists; safely falls back to `git rm --cached -r -- <files>` on initial/uncommitted repos where `HEAD` is not yet resolved.
+  - Body: `{ "files": ["string"], "all": boolean }`
+  - Response: `{ "status": "ok" }`
+- `POST /api/v1/git/discard`
+  - Discards uncommitted working copy changes (`git restore -- <files>` and `git clean -fd`).
+  - Body: `{ "files": ["string"], "all": boolean }`
+  - Response: `{ "status": "ok" }`
+- `POST /api/v1/git/commit`
+  - Creates a commit with the provided message (`git commit -m <message>`). Supports `autoStage: true` if working copy has changes and stage is empty.
+  - Body: `{ "message": "string", "autoStage": boolean }`
+  - Response: `{ "status": "ok", "commit": { "hash": string, "shortHash": string, "message": string, "author": string } }`
+- `POST /api/v1/git/push`
+  - Pushes commits to remote origin (`git push` or `git push -u origin <branch>`).
+  - Body: `{ "setUpstream": boolean }`
+  - Response: `{ "status": "ok" }`
+- `POST /api/v1/git/pull`
+  - Pulls commits from tracking remote (`git pull`).
+  - Response: `{ "status": "ok" }`
+- `POST /api/v1/git/sync`
+  - Fetches and synchronizes remote tracking branches (`git fetch --prune` and `git pull --rebase` or `git push`).
+  - Response: `{ "status": "ok" }`
+- `GET /api/v1/git/tags`
+  - Lists all repository tags (`git tag -l`).
+  - Response: `{ "tags": ["v1.0.0", ...] }`
+- `POST /api/v1/git/tag`
+  - Creates an annotated or lightweight tag (`git tag -a <name> -m <msg>` or `git tag <name>`).
+  - Body: `{ "name": "string", "message": "string" }`
+  - Response: `{ "status": "ok" }`
+- `POST /api/v1/git/tag/push`
+  - Pushes all tags to remote origin (`git push origin --tags`).
+  - Response: `{ "status": "ok" }`
+- `POST /api/v1/git/remote/add`
+  - Configures remote repository URL (`git remote add <name> <url>`).
+  - Body: `{ "name": "origin", "url": "string" }`
+  - Response: `{ "status": "ok" }`
+- `GET /api/v1/git/diff?file=<path>&staged=<bool>&commit=<hash>`
+  - Retrieves unified diff text, original content (from HEAD/commit), and modified content for the in-editor Side-by-Side diff viewer (`DiffEditorPane.tsx`).
+  - Response: `{ "file": string, "staged": boolean, "diff": string, "original": string, "modified": string }`
+
+### D. Server-Sent Events (SSE) Streaming
 - `GET /api/v1/events/workspace`
   - Headers: `Accept: text/event-stream`
   - Events: `file:created`, `file:modified`, `file:deleted`, `git:status_change`.
@@ -146,7 +216,7 @@ To enable multi-screen remote workflows on tablets without external cloud server
   - Headers: `Accept: text/event-stream`
   - Streams raw PTY byte output chunks to the terminal emulator.
 
-### D. WebSocket Event Hub (Bi-directional Sync)
+### E. WebSocket Event Hub (Bi-directional Sync)
 - `WS /api/v1/ws/sync`
   - Used for real-time document buffer synchronization between Desktop and Tablet Companion:
   - Message Types:
@@ -155,7 +225,7 @@ To enable multi-screen remote workflows on tablets without external cloud server
     - `buffer:save`: Trigger disk write.
     - `preview:reload`: Force refresh on tablet host preview.
 
-### E. Bundled Debugger (DAP Engine)
+### F. Bundled Debugger (DAP Engine)
 - `POST /api/v1/debug/start`
   - Body: `{ "program": "./cmd/server", "args": [], "mode": "debug" }`
   - Response: `{ "debugSessionId": "string", "port": 40001 }`
@@ -168,7 +238,7 @@ To enable multi-screen remote workflows on tablets without external cloud server
 - `POST /api/v1/debug/terminate`
   - Terminates the debug target process cleanly.
 
-### F. Terminal & Process Management
+### G. Terminal & Process Management
 - `POST /api/v1/terminal/create`
   - Body: `{ "shell": "zsh" | "bash", "cwd": "/path/to/project", "cols": 120, "rows": 32 }`
   - Response: `{ "sessionId": "term-1", "pid": 4821 }`

@@ -1,11 +1,33 @@
-import { useCallback, useState } from "react"
-import type { GitChange, GitCommitNode, GitRepo } from "../../types/workbench"
+import { useCallback, useEffect, useRef, useState } from "react"
+import type {
+  GitBranch,
+  GitChange,
+  GitCommitNode,
+  GitDiffResult,
+  GitRepo,
+  GitUser,
+} from "../../types/workbench"
 import {
-  initialGitChanges,
-  initialGitCommits,
-  initialGitRepos,
-  initialStagedChanges,
-} from "../../data/mockData"
+  addGitRemote,
+  checkoutGitBranch,
+  commitGitChanges,
+  createGitBranch,
+  createGitTag,
+  discardGitFiles,
+  fetchGitBranches,
+  fetchGitDiff,
+  fetchGitLog,
+  fetchGitStatus,
+  fetchGitTags,
+  fetchGitTimeline,
+  initGitRepo,
+  pullGit,
+  pushGit,
+  pushGitTags,
+  stageGitFiles,
+  syncGit,
+  unstageGitFiles,
+} from "../../utils/workspaceApi"
 
 export interface GitStageResult {
   changes: GitChange[]
@@ -19,7 +41,6 @@ export interface GitCommitResult {
   error?: string
 }
 
-// Pure state transition functions for Git operations
 export function stageChangeLogic(
   changes: GitChange[],
   staged: GitChange[],
@@ -77,7 +98,7 @@ export function commitChangesLogic(
   commits: GitCommitNode[],
   branch: string,
   message: string,
-  author = "Adit Wicaksono",
+  author = "Git User",
 ): GitCommitResult {
   const cleanMsg = message.trim()
   if (!cleanMsg) {
@@ -88,19 +109,12 @@ export function commitChangesLogic(
       error: "Please enter a commit message",
     }
   }
-  if (staged.length === 0) {
-    return {
-      staged,
-      commits,
-      newCommit: null,
-      error: "No staged changes to commit",
-    }
-  }
 
-  const commitHash = Math.random().toString(16).substring(2, 9)
+  const commitHash = "c" + Date.now().toString(16).slice(-6)
   const newCommit: GitCommitNode = {
     id: commitHash,
     hash: commitHash,
+    shortHash: commitHash,
     message: cleanMsg,
     author,
     timestamp: "Just now",
@@ -116,90 +130,357 @@ export function commitChangesLogic(
 
 export interface UseGitCoreOptions {
   showToast: (msg: string) => void
+  rootWorkspacePath?: string
 }
 
-export function useGitCore({ showToast }: UseGitCoreOptions) {
-  const [activeBranch, setActiveBranch] = useState("main")
-  const [activeRepo, setActiveRepo] = useState("aegis-code-v2")
-  const [gitRepos, setGitRepos] = useState<GitRepo[]>(initialGitRepos)
-  const [gitChanges, setGitChanges] = useState<GitChange[]>(initialGitChanges)
-  const [stagedChanges, setStagedChanges] =
-    useState<GitChange[]>(initialStagedChanges)
-  const [gitCommits, setGitCommits] =
-    useState<GitCommitNode[]>(initialGitCommits)
+export function useGitCore({
+  showToast,
+  rootWorkspacePath,
+}: UseGitCoreOptions) {
+  const [isGitRepo, setIsGitRepo] = useState(false)
+  const [activeBranch, setActiveBranchState] = useState("")
+  const [activeRepo, setActiveRepo] = useState("")
+  const [gitRepos, setGitRepos] = useState<GitRepo[]>([])
+  const [gitChanges, setGitChanges] = useState<GitChange[]>([])
+  const [stagedChanges, setStagedChanges] = useState<GitChange[]>([])
+  const [gitCommits, setGitCommits] = useState<GitCommitNode[]>([])
+  const [gitBranches, setGitBranches] = useState<GitBranch[]>([])
+  const [gitTags, setGitTags] = useState<string[]>([])
+  const [gitProfile, setGitProfile] = useState<GitUser>({ name: "", email: "" })
+  const [ahead, setAhead] = useState(0)
+  const [behind, setBehind] = useState(0)
+  const [upstream, setUpstream] = useState("")
+  const [commitHash, setCommitHash] = useState("")
+  const [isLoadingGit, setIsLoadingGit] = useState(false)
+  const [gitError, setGitError] = useState<string | null>(null)
+
+  const isRefreshingRef = useRef(false)
+
+  const refreshGit = useCallback(async () => {
+    if (isRefreshingRef.current) return
+    isRefreshingRef.current = true
+    setIsLoadingGit(true)
+
+    try {
+      const status = await fetchGitStatus()
+      if (!status.isRepo) {
+        setIsGitRepo(false)
+        setActiveBranchState("")
+        setActiveRepo(status.repoName || "")
+        setGitRepos([])
+        setGitChanges([])
+        setStagedChanges([])
+        setGitCommits([])
+        setGitBranches([])
+        setGitTags([])
+        setAhead(0)
+        setBehind(0)
+        setUpstream("")
+        setCommitHash("")
+        setGitError(null)
+        return
+      }
+
+      setIsGitRepo(true)
+      setActiveBranchState(status.branch || "main")
+      setActiveRepo(status.repoName)
+      setGitChanges(status.unstaged || [])
+      setStagedChanges(status.staged || [])
+      setGitProfile(status.user || { name: "", email: "" })
+      setAhead(status.ahead || 0)
+      setBehind(status.behind || 0)
+      setUpstream(status.upstream || "")
+      setCommitHash(status.commitHash || "")
+      setGitError(null)
+
+      setGitRepos([
+        {
+          id: status.repoName,
+          name: status.repoName,
+          branch: status.branch || "main",
+          path: rootWorkspacePath || "",
+        },
+      ])
+
+      // Concurrently fetch branches, log, and tags
+      const [branchesResult, logResult, tagsResult] = await Promise.allSettled([
+        fetchGitBranches(),
+        fetchGitLog(50),
+        fetchGitTags(),
+      ])
+
+      if (branchesResult.status === "fulfilled") {
+        setGitBranches(branchesResult.value)
+      }
+      if (logResult.status === "fulfilled") {
+        setGitCommits(logResult.value)
+      }
+      if (tagsResult.status === "fulfilled") {
+        setGitTags(tagsResult.value)
+      }
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      setGitError(errMsg)
+    } finally {
+      setIsLoadingGit(false)
+      isRefreshingRef.current = false
+    }
+  }, [rootWorkspacePath])
+
+  // Initial and reactive refresh
+  useEffect(() => {
+    refreshGit()
+  }, [refreshGit, rootWorkspacePath])
+
+  // Periodic background check every 6s
+  useEffect(() => {
+    const timer = setInterval(() => {
+      refreshGit()
+    }, 6000)
+    return () => clearInterval(timer)
+  }, [refreshGit])
+
+  const initRepo = useCallback(async () => {
+    try {
+      await initGitRepo()
+      showToast("Initialized empty Git repository")
+      await refreshGit()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      showToast(`Init failed: ${msg}`)
+    }
+  }, [refreshGit, showToast])
+
+  const checkoutBranch = useCallback(
+    async (branch: string) => {
+      try {
+        await checkoutGitBranch(branch)
+        showToast(`Switched to branch "${branch}"`)
+        await refreshGit()
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        showToast(`Checkout failed: ${msg}`)
+      }
+    },
+    [refreshGit, showToast],
+  )
+
+  const createBranch = useCallback(
+    async (name: string, checkout = true) => {
+      try {
+        await createGitBranch(name, checkout)
+        showToast(`Created branch "${name}"`)
+        await refreshGit()
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        showToast(`Create branch failed: ${msg}`)
+      }
+    },
+    [refreshGit, showToast],
+  )
 
   const stageChange = useCallback(
-    (file: string) => {
-      setGitChanges((prevChanges) => {
-        const res = stageChangeLogic(prevChanges, stagedChanges, file)
-        setStagedChanges(res.staged)
-        return res.changes
-      })
+    async (file: string) => {
+      try {
+        await stageGitFiles([file], false)
+        await refreshGit()
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        showToast(`Stage failed: ${msg}`)
+      }
     },
-    [stagedChanges],
+    [refreshGit, showToast],
   )
 
   const unstageChange = useCallback(
-    (file: string) => {
-      setStagedChanges((prevStaged) => {
-        const res = unstageChangeLogic(gitChanges, prevStaged, file)
-        setGitChanges(res.changes)
-        return res.staged
-      })
+    async (file: string) => {
+      try {
+        await unstageGitFiles([file], false)
+        await refreshGit()
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        showToast(`Unstage failed: ${msg}`)
+      }
     },
-    [gitChanges],
+    [refreshGit, showToast],
   )
 
-  const stageAllChanges = useCallback(() => {
-    setGitChanges((prevChanges) => {
-      const res = stageAllLogic(prevChanges, stagedChanges)
-      setStagedChanges(res.staged)
-      return res.changes
-    })
-    showToast("Staged all changes")
-  }, [showToast, stagedChanges])
+  const stageAllChanges = useCallback(async () => {
+    try {
+      await stageGitFiles([], true)
+      showToast("Staged all changes")
+      await refreshGit()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      showToast(`Stage all failed: ${msg}`)
+    }
+  }, [refreshGit, showToast])
 
-  const unstageAllChanges = useCallback(() => {
-    setStagedChanges((prevStaged) => {
-      const res = unstageAllLogic(gitChanges, prevStaged)
-      setGitChanges(res.changes)
-      return res.staged
-    })
-    showToast("Unstaged all changes")
-  }, [gitChanges, showToast])
+  const unstageAllChanges = useCallback(async () => {
+    try {
+      await unstageGitFiles([], true)
+      showToast("Unstaged all changes")
+      await refreshGit()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      showToast(`Unstage all failed: ${msg}`)
+    }
+  }, [refreshGit, showToast])
+
+  const discardChange = useCallback(
+    async (file: string) => {
+      try {
+        await discardGitFiles([file], false)
+        showToast(`Discarded changes in ${file}`)
+        await refreshGit()
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        showToast(`Discard failed: ${msg}`)
+      }
+    },
+    [refreshGit, showToast],
+  )
+
+  const discardAllChanges = useCallback(async () => {
+    try {
+      await discardGitFiles([], true)
+      showToast("Discarded all changes")
+      await refreshGit()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      showToast(`Discard all failed: ${msg}`)
+    }
+  }, [refreshGit, showToast])
 
   const commitChanges = useCallback(
-    (message: string) => {
-      const res = commitChangesLogic(
-        stagedChanges,
-        gitCommits,
-        activeBranch,
-        message,
-      )
-      if (res.error) {
-        showToast(res.error)
+    async (message: string, autoStage = false) => {
+      const clean = message.trim()
+      if (!clean) {
+        showToast("Please enter a commit message")
         return
       }
-      if (res.newCommit) {
-        setStagedChanges(res.staged)
-        setGitCommits(res.commits)
-        showToast(`Committed [${res.newCommit.hash}]: ${res.newCommit.message}`)
+
+      try {
+        const node = await commitGitChanges(clean, autoStage)
+        showToast(
+          `Committed [${node.shortHash || node.hash || "HEAD"}]: ${clean}`,
+        )
+        await refreshGit()
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        showToast(`Commit failed: ${msg}`)
       }
     },
-    [activeBranch, gitCommits, showToast, stagedChanges],
+    [refreshGit, showToast],
   )
 
-  const gitPull = useCallback(() => {
-    showToast(`Pulled latest changes from origin/${activeBranch}`)
-  }, [activeBranch, showToast])
+  const gitPush = useCallback(
+    async (setUpstream = false) => {
+      try {
+        await pushGit(setUpstream)
+        showToast("Pushed commits to remote")
+        await refreshGit()
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        showToast(`Push failed: ${msg}`)
+      }
+    },
+    [refreshGit, showToast],
+  )
 
-  const gitPush = useCallback(() => {
-    showToast(`Pushed commits to origin/${activeBranch}`)
-  }, [activeBranch, showToast])
+  const gitPull = useCallback(async () => {
+    try {
+      await pullGit()
+      showToast("Pulled latest changes from remote")
+      await refreshGit()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      showToast(`Pull failed: ${msg}`)
+    }
+  }, [refreshGit, showToast])
+
+  const gitSync = useCallback(async () => {
+    try {
+      await syncGit()
+      showToast("Synchronized repository with remote")
+      await refreshGit()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      showToast(`Sync failed: ${msg}`)
+    }
+  }, [refreshGit, showToast])
+
+  const createTag = useCallback(
+    async (name: string, message = "") => {
+      try {
+        await createGitTag(name, message)
+        showToast(`Created tag "${name}"`)
+        await refreshGit()
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        showToast(`Tag failed: ${msg}`)
+      }
+    },
+    [refreshGit, showToast],
+  )
+
+  const pushTags = useCallback(async () => {
+    try {
+      await pushGitTags()
+      showToast("Pushed tags to remote")
+      await refreshGit()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      showToast(`Push tags failed: ${msg}`)
+    }
+  }, [refreshGit, showToast])
+
+  const addRemote = useCallback(
+    async (url: string, name = "origin") => {
+      try {
+        await addGitRemote(url, name)
+        showToast(`Added remote "${name}": ${url}`)
+        await refreshGit()
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        showToast(`Add remote failed: ${msg}`)
+      }
+    },
+    [refreshGit, showToast],
+  )
+
+  const fetchDiff = useCallback(
+    async (
+      file: string,
+      staged = false,
+      commit = "",
+    ): Promise<GitDiffResult | null> => {
+      try {
+        return await fetchGitDiff(file, staged, commit)
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        showToast(`Failed to fetch diff: ${msg}`)
+        return null
+      }
+    },
+    [showToast],
+  )
+
+  const fetchTimeline = useCallback(
+    async (file = "", limit = 30): Promise<GitCommitNode[]> => {
+      try {
+        return await fetchGitTimeline(file, limit)
+      } catch {
+        return []
+      }
+    },
+    [],
+  )
 
   return {
+    isGitRepo,
     activeBranch,
-    setActiveBranch,
+    setActiveBranch: checkoutBranch,
     activeRepo,
     setActiveRepo,
     gitRepos,
@@ -210,12 +491,33 @@ export function useGitCore({ showToast }: UseGitCoreOptions) {
     setStagedChanges,
     gitCommits,
     setGitCommits,
+    gitBranches,
+    gitTags,
+    gitProfile,
+    ahead,
+    behind,
+    upstream,
+    commitHash,
+    isLoadingGit,
+    gitError,
+    refreshGit,
+    initRepo,
+    checkoutBranch,
+    createBranch,
     stageChange,
     unstageChange,
     stageAllChanges,
     unstageAllChanges,
+    discardChange,
+    discardAllChanges,
     commitChanges,
     gitPull,
     gitPush,
+    gitSync,
+    createTag,
+    pushTags,
+    addRemote,
+    fetchDiff,
+    fetchTimeline,
   }
 }
