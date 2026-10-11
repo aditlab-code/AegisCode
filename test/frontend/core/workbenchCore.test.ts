@@ -14,6 +14,7 @@ import {
   updateBufferContentLogic,
   markBufferSavedLogic,
   revertBufferContentLogic,
+  sanitizeContentOnSave,
   normalizeWorkspacePath,
   AsyncSequenceGuard,
 } from "@/context/core/workspaceCore"
@@ -28,6 +29,13 @@ import {
   reorderBottomTabsLogic,
   toggleThemeLogic,
 } from "@/context/core/layoutCore"
+import {
+  DEFAULT_APP_SETTINGS,
+  loadStoredSettings,
+  saveStoredSettings,
+} from "@/context/core/settingsCore"
+import { getThemeDefinition, PALETTE_OPTIONS } from "@/themes/themeRegistry"
+import { computeMinimapScaleConfig } from "@/components/layout/editor/Minimap"
 import {
   createTerminalSessionLogic,
   closeTerminalSessionLogic,
@@ -529,6 +537,121 @@ describe("AegisCode Core Test Suite (Frontend Logic Regression Engine)", () => {
 
       // Only Request 2 is current
       expect(guard.isCurrent(req2.requestId)).toBe(true)
+    })
+  })
+
+  // Settings & Theme Palettes Engine Tests
+  describe("Settings Core & Theme Palettes Engine", () => {
+    it("provides complete default settings with 500 a11y page size and font variables", () => {
+      expect(DEFAULT_APP_SETTINGS.editor.accessibilityPageSize).toBe(500)
+      expect(DEFAULT_APP_SETTINGS.editor.fontSize).toBe(13.5)
+      expect(DEFAULT_APP_SETTINGS.editor.lineHeight).toBe(22)
+      expect(DEFAULT_APP_SETTINGS.editor.wordWrap).toBe("off")
+      expect(
+        DEFAULT_APP_SETTINGS.features.sourceControl.maxVisibleChanges,
+      ).toBe(50)
+      expect(DEFAULT_APP_SETTINGS.features.sourceControl.graphPageSize).toBe(25)
+      expect(DEFAULT_APP_SETTINGS.features.timeline.maxVisibleItems).toBe(30)
+      expect(DEFAULT_APP_SETTINGS.companion.port).toBe(8080)
+    })
+
+    it("loads theme definitions correctly for all registered palettes", () => {
+      expect(PALETTE_OPTIONS).toHaveLength(3)
+
+      const defDark = getThemeDefinition("default", "dark")
+      expect(defDark.id).toBe("default-dark")
+      expect(defDark.tokens["--color-canvas"]).toBe("#090d16")
+
+      const atomDark = getThemeDefinition("atom", "dark")
+      expect(atomDark.id).toBe("atom-dark")
+      expect(atomDark.tokens["--color-canvas"]).toBe("#21252b")
+
+      const tokyoDark = getThemeDefinition("tokyo-night", "dark")
+      expect(tokyoDark.id).toBe("tokyo-night-dark")
+      expect(tokyoDark.tokens["--color-canvas"]).toBe("#1a1b26")
+    })
+
+    it("supports persistence and hydration through loadStoredSettings and saveStoredSettings", () => {
+      const storage = new Map<string, string>()
+      const mockStorage = {
+        getItem: (k: string) => storage.get(k) ?? null,
+        setItem: (k: string, v: string) => storage.set(k, v),
+        removeItem: (k: string) => storage.delete(k),
+        clear: () => storage.clear(),
+      }
+      const prevWindow = (globalThis as any).window
+      ;(globalThis as any).window = { localStorage: mockStorage }
+
+      try {
+        const customSettings = {
+          ...DEFAULT_APP_SETTINGS,
+          editor: {
+            ...DEFAULT_APP_SETTINGS.editor,
+            fontSize: 16,
+            accessibilityPageSize: 1000,
+          },
+        }
+
+        saveStoredSettings(customSettings)
+        const reloaded = loadStoredSettings()
+        expect(reloaded.editor.fontSize).toBe(16)
+        expect(reloaded.editor.accessibilityPageSize).toBe(1000)
+      } finally {
+        ;(globalThis as any).window = prevWindow
+      }
+    })
+
+    it("scales minimap typography and width relatively to editor font size and line height", () => {
+      // Default font size 13.5 and line height 22
+      const defaultSmall = computeMinimapScaleConfig("small", 13.5, 22)
+      const defaultMed = computeMinimapScaleConfig("medium", 13.5, 22)
+      const defaultLarge = computeMinimapScaleConfig("large", 13.5, 22)
+
+      expect(defaultMed.fontSize).toBeGreaterThan(defaultSmall.fontSize)
+      expect(defaultLarge.fontSize).toBeGreaterThan(defaultMed.fontSize)
+      expect(defaultMed.lineHeight).toBeGreaterThan(defaultSmall.lineHeight)
+      expect(defaultLarge.width).toBeGreaterThan(defaultMed.width)
+
+      // Increased editor font size (e.g. 18px and line height 28px)
+      const scaledMed = computeMinimapScaleConfig("medium", 18, 28)
+      expect(scaledMed.fontSize).toBeGreaterThan(defaultMed.fontSize)
+      expect(scaledMed.lineHeight).toBeGreaterThan(defaultMed.lineHeight)
+      expect(scaledMed.width).toBeGreaterThan(defaultMed.width)
+    })
+
+    it("provides core IDE defaults for files, editor indentation, and workbench layout", () => {
+      expect(DEFAULT_APP_SETTINGS.files.autoSave).toBe("afterDelay")
+      expect(DEFAULT_APP_SETTINGS.files.autoSaveDelay).toBe(1000)
+      expect(DEFAULT_APP_SETTINGS.files.trimTrailingWhitespace).toBe(true)
+      expect(DEFAULT_APP_SETTINGS.files.insertFinalNewline).toBe(true)
+      expect(DEFAULT_APP_SETTINGS.files.eol).toBe("\n")
+      expect(DEFAULT_APP_SETTINGS.files.exclude).toContain("**/node_modules/**")
+
+      expect(DEFAULT_APP_SETTINGS.editor.tabSize).toBe(2)
+      expect(DEFAULT_APP_SETTINGS.editor.insertSpaces).toBe(true)
+      expect(DEFAULT_APP_SETTINGS.editor.cursorBlinking).toBe("smooth")
+      expect(DEFAULT_APP_SETTINGS.editor.renderWhitespace).toBe("selection")
+      expect(DEFAULT_APP_SETTINGS.editor.formatOnSave).toBe(true)
+
+      expect(DEFAULT_APP_SETTINGS.workbench.sidebarPosition).toBe("left")
+      expect(DEFAULT_APP_SETTINGS.workbench.compactFolders).toBe(true)
+    })
+
+    it("sanitizes content on save with trimTrailingWhitespace, insertFinalNewline, and eol normalization", () => {
+      const rawContent = "const a = 10;   \nconst b = 20;\t\t\nconst c = 30;"
+      const sanitized = sanitizeContentOnSave(rawContent, {
+        trimTrailingWhitespace: true,
+        insertFinalNewline: true,
+        eol: "\n",
+      })
+      expect(sanitized).toBe("const a = 10;\nconst b = 20;\nconst c = 30;\n")
+
+      const crlfContent = sanitizeContentOnSave("line1  \nline2", {
+        trimTrailingWhitespace: true,
+        insertFinalNewline: true,
+        eol: "\r\n",
+      })
+      expect(crlfContent).toBe("line1\r\nline2\r\n")
     })
   })
 })

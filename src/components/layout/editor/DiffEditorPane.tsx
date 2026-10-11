@@ -29,7 +29,22 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
     discardChange,
     showToast,
     tabSize,
+    settings,
+    updateEditorSettings,
   } = useWorkbench()
+
+  const inheritEditorFont =
+    settings?.editor?.diffEditor?.inheritEditorFont ?? true
+  const wordWrap = settings?.editor?.wordWrap ?? "off"
+  const renderSideBySide =
+    settings?.editor?.diffEditor?.renderSideBySide ?? true
+  const fontStyle = inheritEditorFont
+    ? {
+        fontFamily: "var(--editor-font-family, monospace)",
+        fontSize: "var(--editor-font-size, 11px)",
+        lineHeight: "var(--editor-line-height, 20px)",
+      }
+    : undefined
 
   const diffInfo = parseGitDiffTab(tab)
   const file = diffInfo?.file || ""
@@ -163,11 +178,9 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
       <div className="flex-1 flex flex-col items-center justify-center h-full bg-[var(--color-canvas)] text-[var(--color-error)] text-xs p-4 text-center">
         <Icon className="mb-2" name="error" size={20} />
         <span className="font-semibold mb-1">Failed to load diff</span>
-        <span className="text-[11px] text-[var(--color-ink-muted)] max-w-md">
-          {loadError}
-        </span>
+        <span className="text-[11px] text-ink-muted max-w-md">{loadError}</span>
         <button
-          className="mt-3 px-3 py-1 rounded bg-[var(--color-surface-raised)] border border-[var(--color-line)] text-xs text-[var(--color-ink)] hover:bg-[var(--color-surface-hover)] cursor-pointer"
+          className="mt-3 px-3 py-1 rounded bg-surface-raised border border-line text-xs text-ink hover:bg-surface-hover cursor-pointer"
           onClick={() => openFileInPane(file)}
           type="button"
         >
@@ -178,30 +191,26 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
   }
 
   return (
-    <div className="diff-editor-container flex flex-col h-full bg-[var(--color-canvas)] select-none">
+    <div className="diff-editor-container flex flex-col h-full bg-canvas select-none">
       {/* Top Diff Navigation Toolbar */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-[var(--color-line)] bg-[var(--color-surface)] text-xs">
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-line bg-surface text-xs">
         <div className="flex items-center gap-2 truncate">
-          <span className="text-[var(--color-accent)] shrink-0">
+          <span className="text-accent shrink-0">
             <Icon name="git" size={14} />
           </span>
-          <span className="font-semibold text-[var(--color-ink)] truncate font-mono">
+          <span className="font-semibold text-ink truncate font-mono">
             {file}
           </span>
-          <span className="px-1.5 py-0.5 rounded text-[10px] bg-[var(--color-surface-raised)] border border-[var(--color-line)] text-[var(--color-ink-muted)]">
+          <span className="px-1.5 py-0.5 rounded text-[10px] bg-surface-raised border border-line text-ink-muted">
             {staged ? "INDEX" : commit ? commit.slice(0, 7) : "WORKING TREE"}
           </span>
 
           <div className="flex items-center gap-1.5 text-[10px] font-mono ml-2">
             {additions > 0 && (
-              <span className="text-[var(--color-success)] font-semibold">
-                +{additions}
-              </span>
+              <span className="text-success font-semibold">+{additions}</span>
             )}
             {deletions > 0 && (
-              <span className="text-[var(--color-error)] font-semibold">
-                -{deletions}
-              </span>
+              <span className="text-error font-semibold">-{deletions}</span>
             )}
           </div>
         </div>
@@ -209,7 +218,31 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
         {/* Toolbar Actions */}
         <div className="flex items-center gap-1.5">
           <button
-            className="flex items-center gap-1 px-2 py-1 rounded border border-[var(--color-line)] bg-[var(--color-surface-raised)] hover:bg-[var(--color-surface-hover)] text-[11px] text-[var(--color-ink)] transition-colors cursor-pointer"
+            className="flex items-center gap-1 px-2 py-1 rounded border border-line bg-surface-raised hover:bg-surface-hover text-[11px] text-ink transition-colors cursor-pointer"
+            onClick={() => {
+              updateEditorSettings((prev) => ({
+                ...prev,
+                diffEditor: {
+                  ...prev.diffEditor,
+                  renderSideBySide: !renderSideBySide,
+                },
+              }))
+            }}
+            title={
+              renderSideBySide
+                ? "Switch to Unified View"
+                : "Switch to Side-by-Side View"
+            }
+            type="button"
+          >
+            <Icon name="split" size={12} />
+            <span className="hidden sm:inline">
+              {renderSideBySide ? "Split" : "Unified"}
+            </span>
+          </button>
+
+          <button
+            className="flex items-center gap-1 px-2 py-1 rounded border border-line bg-surface-raised hover:bg-surface-hover text-[11px] text-ink transition-colors cursor-pointer"
             onClick={() => openFileInPane(file)}
             title="Open file in normal editor"
             type="button"
@@ -222,7 +255,7 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
             <>
               {staged ? (
                 <button
-                  className="flex items-center gap-1 px-2 py-1 rounded border border-[var(--color-line)] bg-[var(--color-surface-raised)] hover:bg-[var(--color-surface-hover)] text-[11px] text-[var(--color-ink)] transition-colors cursor-pointer"
+                  className="flex items-center gap-1 px-2 py-1 rounded border border-line bg-surface-raised hover:bg-surface-hover text-[11px] text-ink transition-colors cursor-pointer"
                   onClick={() => unstageChange(file)}
                   title="Unstage file"
                   type="button"
@@ -233,7 +266,7 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
               ) : (
                 <>
                   <button
-                    className="flex items-center gap-1 px-2 py-1 rounded border border-[var(--color-line)] bg-[var(--color-surface-raised)] hover:bg-[var(--color-surface-hover)] text-[11px] text-[var(--color-ink)] transition-colors cursor-pointer"
+                    className="flex items-center gap-1 px-2 py-1 rounded border border-line bg-surface-raised hover:bg-surface-hover text-[11px] text-ink transition-colors cursor-pointer"
                     onClick={() => stageChange(file)}
                     title="Stage file"
                     type="button"
@@ -242,7 +275,7 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
                     <span className="hidden sm:inline">Stage</span>
                   </button>
                   <button
-                    className="flex items-center gap-1 px-2 py-1 rounded border border-[var(--color-line)] bg-[var(--color-surface-raised)] hover:bg-[var(--color-error-soft)] text-[11px] text-[var(--color-error)] transition-colors cursor-pointer"
+                    className="flex items-center gap-1 px-2 py-1 rounded border border-line bg-surface-raised hover:bg-error-soft text-[11px] text-error transition-colors cursor-pointer"
                     onClick={() => {
                       discardChange(file)
                       closeTabInGroup(groupId, tab)
@@ -260,7 +293,7 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
 
           <button
             aria-label="Close diff"
-            className="p-1 rounded text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-hover)] transition-colors cursor-pointer"
+            className="p-1 rounded text-ink-muted hover:text-ink hover:bg-surface-hover transition-colors cursor-pointer"
             onClick={() => closeTabInGroup(groupId, tab)}
             title="Close Diff"
             type="button"
@@ -271,45 +304,57 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
       </div>
 
       {/* Side-by-Side Comparison Area */}
-      <div className="flex-1 flex min-h-0 overflow-hidden divide-x divide-[var(--color-line)]">
+      <div className="flex-1 flex min-h-0 overflow-hidden divide-x divide-line">
         {/* Left Pane: Original / HEAD */}
-        <div className="flex-1 flex flex-col min-w-0 bg-[var(--color-canvas)]">
-          <div className="flex items-center justify-between px-3 py-1 bg-[var(--color-surface-raised)] border-b border-[var(--color-line)] text-[10px] text-[var(--color-ink-muted)] font-semibold">
-            <span>
-              ORIGINAL ({commit ? `COMMIT ${commit.slice(0, 7)}` : "HEAD"})
-            </span>
-            <span className="uppercase text-[9px] opacity-75">READ-ONLY</span>
-          </div>
+        {renderSideBySide && (
+          <div className="flex-1 flex flex-col min-w-0 bg-canvas">
+            <div className="flex items-center justify-between px-3 py-1 bg-surface-raised border-b border-line text-[10px] text-ink-muted font-semibold">
+              <span>
+                ORIGINAL ({commit ? `COMMIT ${commit.slice(0, 7)}` : "HEAD"})
+              </span>
+              <span className="uppercase text-[9px] opacity-75">READ-ONLY</span>
+            </div>
 
-          <div
-            className="flex-1 overflow-auto font-mono text-xs leading-5 select-text"
-            onScroll={handleLeftScroll}
-            ref={leftScrollRef}
-          >
-            <div className="p-2 space-y-0 min-w-max">
-              {originalLines.map((line, idx) => {
-                const lineNum = idx + 1
-                return (
-                  <div
-                    className="flex items-start hover:bg-[var(--color-surface-hover)]/40 rounded-xs group"
-                    key={`orig-${lineNum}`}
-                  >
-                    <span className="w-10 shrink-0 text-right pr-3 select-none text-[11px] text-[var(--color-ink-muted)] opacity-60">
-                      {lineNum}
-                    </span>
-                    <pre className="flex-1 m-0 font-mono text-[11px] text-[var(--color-ink-soft)] whitespace-pre">
-                      {line || " "}
-                    </pre>
-                  </div>
-                )
-              })}
+            <div
+              className="flex-1 overflow-auto font-mono text-xs leading-5 select-text"
+              onScroll={handleLeftScroll}
+              ref={leftScrollRef}
+            >
+              <div className="p-2 space-y-0 min-w-max">
+                {originalLines.map((line, idx) => {
+                  const lineNum = idx + 1
+                  return (
+                    <div
+                      className="flex items-start hover:bg-surface-hover/40 rounded-xs group"
+                      key={`orig-${lineNum}`}
+                    >
+                      <span
+                        className="w-10 shrink-0 text-right pr-3 select-none text-[11px] text-ink-muted opacity-60"
+                        style={{ lineHeight: fontStyle.lineHeight }}
+                      >
+                        {lineNum}
+                      </span>
+                      <pre
+                        className={`flex-1 m-0 font-mono text-[11px] text-ink-soft ${
+                          wordWrap === "on" || wordWrap === "wordWrapColumn"
+                            ? "whitespace-pre-wrap break-words"
+                            : "whitespace-pre"
+                        }`}
+                        style={fontStyle}
+                      >
+                        {line || " "}
+                      </pre>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Right Pane: Modified / Working Copy */}
-        <div className="flex-1 flex flex-col min-w-0 bg-[var(--color-canvas)]">
-          <div className="flex items-center justify-between px-3 py-1 bg-[var(--color-surface-raised)] border-b border-[var(--color-line)] text-[10px] text-[var(--color-ink-muted)] font-semibold">
+        <div className="flex-1 flex flex-col min-w-0 bg-canvas">
+          <div className="flex items-center justify-between px-3 py-1 bg-surface-raised border-b border-line text-[10px] text-ink-muted font-semibold">
             <span>MODIFIED ({staged ? "INDEX" : "WORKING TREE"})</span>
             <span className="uppercase text-[9px] opacity-75">
               {isWorkingCopyEditable ? "EDITABLE (⌘S TO SAVE)" : "READ-ONLY"}
@@ -324,9 +369,17 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
             {isWorkingCopyEditable ? (
               <div className="relative min-h-full min-w-max p-2 flex">
                 {/* Gutter */}
-                <div className="w-10 shrink-0 text-right pr-3 select-none text-[11px] text-[var(--color-ink-muted)] opacity-60 space-y-0">
+                <div
+                  className="w-10 shrink-0 text-right pr-3 select-none text-[11px] text-ink-muted opacity-60 space-y-0"
+                  style={{ lineHeight: fontStyle.lineHeight }}
+                >
                   {modifiedLines.map((_, idx) => (
-                    <div key={`mod-num-${idx + 1}`}>{idx + 1}</div>
+                    <div
+                      key={`mod-num-${idx + 1}`}
+                      style={{ lineHeight: fontStyle.lineHeight }}
+                    >
+                      {idx + 1}
+                    </div>
                   ))}
                 </div>
 
@@ -335,12 +388,22 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
                   autoCapitalize="off"
                   autoComplete="off"
                   autoCorrect="off"
-                  className="flex-1 m-0 p-0 font-mono text-[11px] text-[var(--color-ink)] bg-transparent resize-none outline-none leading-5 whitespace-pre overflow-hidden"
+                  className={`flex-1 m-0 p-0 font-mono text-[11px] text-ink bg-transparent resize-none outline-none leading-5 overflow-hidden ${
+                    wordWrap === "on" || wordWrap === "wordWrapColumn"
+                      ? "whitespace-pre-wrap break-words"
+                      : "whitespace-pre"
+                  }`}
                   onChange={handleContentChange}
                   onKeyDown={handleKeyDown}
                   rows={Math.max(modifiedLines.length, 1)}
                   spellCheck={false}
+                  style={fontStyle}
                   value={modifiedContent}
+                  wrap={
+                    wordWrap === "on" || wordWrap === "wordWrapColumn"
+                      ? "soft"
+                      : "off"
+                  }
                 />
               </div>
             ) : (
@@ -349,13 +412,23 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
                   const lineNum = idx + 1
                   return (
                     <div
-                      className="flex items-start hover:bg-[var(--color-surface-hover)]/40 rounded-xs group"
+                      className="flex items-start hover:bg-surface-hover/40 rounded-xs group"
                       key={`mod-${lineNum}`}
                     >
-                      <span className="w-10 shrink-0 text-right pr-3 select-none text-[11px] text-[var(--color-ink-muted)] opacity-60">
+                      <span
+                        className="w-10 shrink-0 text-right pr-3 select-none text-[11px] text-ink-muted opacity-60"
+                        style={{ lineHeight: fontStyle.lineHeight }}
+                      >
                         {lineNum}
                       </span>
-                      <pre className="flex-1 m-0 font-mono text-[11px] text-[var(--color-ink)] whitespace-pre">
+                      <pre
+                        className={`flex-1 m-0 font-mono text-[11px] text-ink ${
+                          wordWrap === "on" || wordWrap === "wordWrapColumn"
+                            ? "whitespace-pre-wrap break-words"
+                            : "whitespace-pre"
+                        }`}
+                        style={fontStyle}
+                      >
                         {line || " "}
                       </pre>
                     </div>

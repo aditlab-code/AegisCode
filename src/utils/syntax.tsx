@@ -73,10 +73,68 @@ const BUILTINS = new Set([
   "Promise",
 ])
 
-export function tokenizeLine(line: string): ReactNode[] {
+export interface TodoOptions {
+  enabled?: boolean
+  keywords?: string[]
+}
+
+export function buildTodoRegex(keywords?: string[]): RegExp {
+  if (!keywords || keywords.length === 0) {
+    return /\b(TODO|FIXME|NOTE|BUG|HACK)(?::)?\b/gi
+  }
+  const escaped = keywords
+    .map((k) => k.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .filter(Boolean)
+    .join("|")
+  if (!escaped) return /\b(TODO|FIXME|NOTE|BUG|HACK)(?::)?\b/gi
+  return new RegExp(`\\b(${escaped})(?::)?\\b`, "gi")
+}
+
+function renderCommentWithTodo(
+  commentText: string,
+  keyPrefix: string,
+  todoOptions?: TodoOptions,
+): ReactNode[] {
+  if (todoOptions && todoOptions.enabled === false) {
+    return [commentText]
+  }
+
+  const parts: ReactNode[] = []
+  let lastIdx = 0
+  let match: RegExpExecArray | null
+  const regex = buildTodoRegex(todoOptions?.keywords)
+
+  while ((match = regex.exec(commentText)) !== null) {
+    if (match.index > lastIdx) {
+      parts.push(commentText.slice(lastIdx, match.index))
+    }
+    const rawTag = match[0]
+    const cleanTag = match[1].toUpperCase()
+    parts.push(
+      <span
+        className={`syntax-todo-tag syntax-todo-${cleanTag}`}
+        key={`${keyPrefix}-todo-${match.index}`}
+      >
+        {rawTag}
+      </span>,
+    )
+    lastIdx = regex.lastIndex
+  }
+
+  if (lastIdx < commentText.length) {
+    parts.push(commentText.slice(lastIdx))
+  }
+
+  return parts.length > 0 ? parts : [commentText]
+}
+
+export function tokenizeLine(
+  line: string,
+  todoOptions?: TodoOptions,
+): ReactNode[] {
   if (!line) return ["\u00a0"]
 
-  // Comment check
+  // Full line comment check
   const trimmed = line.trimStart()
   if (trimmed.startsWith("//") || trimmed.startsWith("#")) {
     const indentLen = line.length - trimmed.length
@@ -84,7 +142,20 @@ export function tokenizeLine(line: string): ReactNode[] {
     return [
       indent,
       <span className="text-muted" key="comment">
-        {trimmed}
+        {renderCommentWithTodo(trimmed, "full-comment", todoOptions)}
+      </span>,
+    ]
+  }
+
+  // Trailing line comment check
+  const commentIdx = line.indexOf("//")
+  if (commentIdx !== -1) {
+    const codePart = line.slice(0, commentIdx)
+    const commentPart = line.slice(commentIdx)
+    return [
+      ...tokenizeLine(codePart, todoOptions),
+      <span className="text-muted" key={`inline-comment-${commentIdx}`}>
+        {renderCommentWithTodo(commentPart, "inline-comment", todoOptions)}
       </span>,
     ]
   }

@@ -14,7 +14,8 @@
 | **Phase 3** | Explorer, Workspace CRUD, & Git Controls | ✅ Completed | Tree traversal, inline CRUD, regex search/replace, Git UI |
 | **Phase 4** | Status Bar & Diagnostics Engine | ✅ Completed | Dynamic cursor Ln/Col, language detection, problem popover |
 | **Phase 5** | AppDrawer AEGIS AI Agent & Session Hub | ✅ Completed | Multi-session chat, slash autocomplete, provider selector |
-| **Special** | UI Dark/Light Theme & 100% Hex Tokens | ✅ Completed | ActivityRail toggle, zero RGB tokens, ambient anti-fatigue gradients |
+| **Special** | UI Dark/Light Theme & Modular Palettes | ✅ Completed | ActivityRail toggle, modular JSON palettes (Default, Atom, Tokyo Night) |
+| **Special** | Settings Registry, Core IDE Preferences & Editor Polish | ✅ Completed | Decoupled schema registry, wildcard exclude, GPU cursor blinking, wrap column |
 | **Phase 6** | Go Core Server, SQLite & Bundled DAP Debugger | 🟡 Active / Next | Cross-platform Go binary, supervisor, SQLite DB, DAP/Delve |
 | **Phase 7** | Web-Based Remote Pairing & Tablet Companion | ⚪ Upcoming | LAN pairing, web preview host, touch-optimized editor mode |
 
@@ -86,13 +87,38 @@
 
 ---
 
-### Special Milestone: UI Dark/Light Theme & 100% Hex Tokens
+### Special Milestone: UI Dark/Light Theme & Modular Palettes
 - **Status**: ✅ Completed
 - **Deliverables**:
   - **ActivityRail Theme Toggle**: Interactive Sun/Moon icon toggle button above Settings with smooth rotation and toast confirmation.
+  - **Modular JSON Palettes**: Split theme palettes into independent JSON palette files ([`default-dark.json`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/themes/default-dark.json), [`default-light.json`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/themes/default-light.json), [`atom-dark.json`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/themes/atom-dark.json), [`atom-light.json`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/themes/atom-light.json), [`tokyo-night-dark.json`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/themes/tokyo-night-dark.json), [`tokyo-night-light.json`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/themes/tokyo-night-light.json)) loaded via [`themeRegistry.ts`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/themes/themeRegistry.ts).
   - **Strict 100% Hex Token Architecture**: Completely eliminated all hardcoded `rgb()` / `rgba()` values; standardized on Tailwind CSS v4 `@theme` Hex tokens with universal status tokens (`--color-error`, `--color-warning`, `--color-success`, `--color-info`, `--color-surface-overlay`).
   - **Anti-Fatigue Ambient Gradient**: Dual-layer ambient radial glow over linear canvas in `base.css` providing eye comfort during prolonged coding sessions.
   - **UI Design Polish**: 2px active tab accent bar, surface elevation, accent dirty dot, 13.5px / 22px code editor line height, and 11px micro-copy scale.
+
+---
+
+### Special Milestone: Settings Registry, Core IDE Preferences & Editor Polish
+- **Status**: ✅ Completed
+- **Deliverables**:
+  - **Decoupled Settings Registry Architecture**:
+    - Extracted complete schema definitions into [`settingsRegistry.ts`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/settings/settingsRegistry.ts) ([`buildSettingsSchema`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/settings/settingsRegistry.ts#L79)), reducing [`SettingsModal.tsx`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/settings/SettingsModal.tsx) by 75% down to ~240 lines.
+    - Added generic updater creator [`createSettingsUpdater`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/context/core/settingsCore.ts#L321) in [`settingsCore.ts`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/context/core/settingsCore.ts) to eliminate updater boilerplate.
+  - **Complete Core IDE Settings**:
+    - **Editor**: Unique `tabSize` (2, 4, 8), soft tabs `insertSpaces`, `cursorBlinking` (smooth, blink, solid), `renderWhitespace` (none, selection, all), `formatOnSave`, `accessibilityPageSize`, `wordWrap` & `wordWrapColumn`, `minimapScale` and `minimapSide`, diff editor font inheritance.
+    - **Files**: `autoSave` (off, afterDelay, onFocusChange), `autoSaveDelay`, save hygiene (`trimTrailingWhitespace`, `insertFinalNewline`, `eol`), and `files.exclude`.
+    - **Workbench**: Modular theme palette selection, Dark/Light modes, `sidebarPosition` (left, right), and `compactFolders`.
+    - **Features**: Terminal configuration (SSE, shortcut, cursor style/blinking, `fontFamily`, `lineHeight`), Source Control pagination limit, Explorer timeline commit limit, and dynamic `comments` TODO badges.
+    - **Companion (Tablet)** & **AI Agents**: Port, mDNS, pairing PIN, remote edit permissions, plus default LLM model (`agent.model`), temperature, token streaming, and context ingestion.
+  - **Hardware-Accelerated Editor UX Polish**:
+    - Real CSS `@keyframes aegis-caret-blink` and `@keyframes aegis-caret-smooth` in [`editor.css`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/editor/editor.css#L396).
+    - True character-measure wrapping via `max-width: calc(var(--editor-wrap-column, 80) * 1ch)`.
+    - Reactive minimap scale relative to active editor font size.
+  - **Zero-Dependency Wildcard Matching**:
+    - Fast wildcard matcher [`matchesExcludePattern`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/sidebar/ExplorerPanel.tsx#L105) for `files.exclude` supporting `*.log`, `*.tmp`, `**/*.ext`, and directory subpaths.
+  - **100% Tailwind Semantic Token Compliance**:
+    - Replaced all raw arbitrary escapes in [`DiffEditorPane.tsx`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/editor/DiffEditorPane.tsx) and [`SourceControlPanel.tsx`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/sidebar/SourceControlPanel.tsx) with semantic tokens (`border-line`, `bg-surface-raised`, `text-ink`, `text-accent`, etc.).
+- **Exit Criteria**: Fully verified through 32 Vitest frontend tests, Go backend tests, Vite production build, and oxfmt formatting with 0 errors.
 
 ---
 

@@ -286,12 +286,18 @@
 
 .line-number {
   position: relative;
-  height: 22px;
+  height: var(--editor-line-height, 22px);
   padding-right: 14px;
   color: var(--color-ink-muted);
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 11.5px;
-  line-height: 22px;
+  font-family: var(
+    --editor-font-family,
+    "SFMono-Regular",
+    Consolas,
+    "Liberation Mono",
+    monospace
+  );
+  font-size: calc(var(--editor-font-size, 13.5px) * 0.85);
+  line-height: var(--editor-line-height, 22px);
   text-align: right;
 }
 
@@ -329,17 +335,23 @@
   inset: 0;
   padding: 9px 8px 24px;
   overflow: hidden;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 13.5px;
-  line-height: 22px;
-  tab-size: 2;
+  font-family: var(
+    --editor-font-family,
+    "SFMono-Regular",
+    Consolas,
+    "Liberation Mono",
+    monospace
+  );
+  font-size: var(--editor-font-size, 13.5px);
+  line-height: var(--editor-line-height, 22px);
+  tab-size: var(--editor-tab-size, 2);
   white-space: pre;
   pointer-events: none;
 }
 
 .code-line-layer {
-  height: 22px;
-  line-height: 22px;
+  min-height: var(--editor-line-height, 22px);
+  line-height: var(--editor-line-height, 22px);
 }
 
 .current-line {
@@ -351,7 +363,7 @@
   color: var(--color-ink);
   font-family: inherit;
   font-size: inherit;
-  white-space: pre;
+  white-space: inherit;
 }
 
 .code-textarea {
@@ -363,16 +375,124 @@
   padding: 9px 8px 24px;
   overflow: auto;
   color: transparent;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 13.5px;
-  line-height: 22px;
-  tab-size: 2;
+  font-family: var(
+    --editor-font-family,
+    "SFMono-Regular",
+    Consolas,
+    "Liberation Mono",
+    monospace
+  );
+  font-size: var(--editor-font-size, 13.5px);
+  line-height: var(--editor-line-height, 22px);
+  tab-size: var(--editor-tab-size, 2);
   white-space: pre;
   background: transparent;
   border: none;
   outline: none;
   resize: none;
   caret-color: var(--color-accent);
+}
+
+/* Cursor Blinking Animations */
+@keyframes aegis-caret-blink {
+  0%,
+  49% {
+    caret-color: var(--color-accent);
+  }
+  50%,
+  100% {
+    caret-color: transparent;
+  }
+}
+
+@keyframes aegis-caret-smooth {
+  0%,
+  100% {
+    caret-color: var(--color-accent);
+  }
+  50% {
+    caret-color: transparent;
+  }
+}
+
+/* Cursor Blinking Modes */
+.code-editor[data-cursor-blinking="smooth"] .code-textarea {
+  caret-color: var(--color-accent);
+  animation: aegis-caret-smooth 1s ease-in-out infinite;
+}
+
+.code-editor[data-cursor-blinking="blink"] .code-textarea {
+  caret-color: var(--color-accent);
+  animation: aegis-caret-blink 1s steps(1) infinite;
+}
+
+.code-editor[data-cursor-blinking="solid"] .code-textarea {
+  caret-color: var(--color-accent);
+  animation: none;
+}
+
+/* Word wrap dynamic modes */
+.code-editor[data-word-wrap="on"] .syntax-layer,
+.code-editor[data-word-wrap="on"] .code-textarea {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: hidden;
+}
+
+.code-editor[data-word-wrap="off"] .syntax-layer,
+.code-editor[data-word-wrap="off"] .code-textarea {
+  white-space: pre;
+  word-break: normal;
+  overflow-x: auto;
+}
+
+.code-editor[data-word-wrap="wordWrapColumn"] .syntax-layer,
+.code-editor[data-word-wrap="wordWrapColumn"] .code-textarea {
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-width: calc(var(--editor-wrap-column, 80) * 1ch);
+}
+
+/* Minimap side layout */
+.code-editor.minimap-side-left {
+  flex-direction: row-reverse;
+}
+
+.code-editor.minimap-side-left .minimap-container {
+  border-left: none;
+  border-right: 1px solid var(--color-line);
+}
+
+/* Comment & TODO Syntax Tags */
+.syntax-todo-tag {
+  display: inline-block;
+  font-weight: 700;
+  font-size: 0.9em;
+  padding: 1px 5px;
+  margin: 0 3px;
+  border-radius: 3px;
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+}
+
+.syntax-todo-TODO {
+  background: color-mix(in srgb, var(--color-warning) 22%, transparent);
+  color: var(--color-warning);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 40%, transparent);
+}
+
+.syntax-todo-FIXME,
+.syntax-todo-BUG {
+  background: color-mix(in srgb, var(--color-error) 22%, transparent);
+  color: var(--color-error);
+  border: 1px solid color-mix(in srgb, var(--color-error) 40%, transparent);
+}
+
+.syntax-todo-NOTE,
+.syntax-todo-HACK {
+  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  color: var(--color-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
 }
 
 .code-textarea::selection {
@@ -426,7 +546,13 @@
   white-space: pre;
   overflow: hidden;
   text-overflow: clip;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-family: var(
+    --editor-font-family,
+    "SFMono-Regular",
+    Consolas,
+    "Liberation Mono",
+    monospace
+  );
   opacity: 0.85;
   letter-spacing: -0.2px;
   transition: opacity 0.15s ease;

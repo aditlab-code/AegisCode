@@ -102,6 +102,51 @@ interface ContextMenuData {
   file: FileItem
 }
 
+export function matchesExcludePattern(
+  filePath: string,
+  label: string,
+  pattern: string,
+): boolean {
+  if (!pattern) return false
+  const trimmed = pattern.trim()
+  if (!trimmed) return false
+
+  // 1. Extension wildcard matching: e.g. "*.log", "*.tmp", "**/*.log"
+  if (trimmed.startsWith("*.") || trimmed.startsWith("**/*.")) {
+    const ext = trimmed.slice(trimmed.lastIndexOf("."))
+    if (label.endsWith(ext) || filePath.endsWith(ext)) {
+      return true
+    }
+  }
+
+  // 2. Cleaned folder / name matching: e.g. "**/node_modules/**" -> "node_modules"
+  const clean = trimmed
+    .replace(/^\*\*\//, "")
+    .replace(/\/\*\*$/, "")
+    .replace(/^\*\*/, "")
+    .replace(/\*\*$/, "")
+
+  if (clean && (filePath.includes(clean) || label === clean)) {
+    return true
+  }
+
+  // 3. Simple glob-to-regex fallback: '*' matches within path segments, '**' matches across path segments
+  try {
+    const escaped = trimmed
+      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*\*/g, ".*")
+      .replace(/(?<!\.)\*/g, "[^/]*")
+    const regex = new RegExp(`(^|/)${escaped}($|/)`)
+    if (regex.test(filePath) || regex.test(label)) {
+      return true
+    }
+  } catch {
+    // Fallback on regex failure
+  }
+
+  return false
+}
+
 export function ExplorerPanel() {
   const {
     files,
@@ -131,7 +176,10 @@ export function ExplorerPanel() {
     isGitRepo,
     gitCommits,
     openGitDiff,
+    settings,
   } = useWorkbench()
+
+  const timelineMaxVisible = settings?.features?.timeline?.maxVisibleItems ?? 30
 
   const [openEditorsOpen, setOpenEditorsOpen] = useState(true)
   const [workspaceOpen, setWorkspaceOpen] = useState(true)
@@ -148,16 +196,18 @@ export function ExplorerPanel() {
     let isMounted = true
     setTimelineLoading(true)
 
-    fetchTimeline(activeEditorFile || "", 30)
+    fetchTimeline(activeEditorFile || "", timelineMaxVisible)
       .then((res) => {
         if (isMounted) {
-          setTimelineCommits(res.length > 0 ? res : gitCommits.slice(0, 15))
+          const list =
+            res.length > 0 ? res : gitCommits.slice(0, timelineMaxVisible)
+          setTimelineCommits(list.slice(0, timelineMaxVisible))
           setTimelineLoading(false)
         }
       })
       .catch(() => {
         if (isMounted) {
-          setTimelineCommits(gitCommits.slice(0, 15))
+          setTimelineCommits(gitCommits.slice(0, timelineMaxVisible))
           setTimelineLoading(false)
         }
       })
@@ -165,7 +215,14 @@ export function ExplorerPanel() {
     return () => {
       isMounted = false
     }
-  }, [activeEditorFile, fetchTimeline, gitCommits, isGitRepo, timelineOpen])
+  }, [
+    activeEditorFile,
+    fetchTimeline,
+    gitCommits,
+    isGitRepo,
+    timelineOpen,
+    timelineMaxVisible,
+  ])
 
   // Drag and Drop target highlight state
   const [dragTarget, setDragTarget] = useState<string | null>(null)
@@ -253,6 +310,21 @@ export function ExplorerPanel() {
     setCollapsedFolders(allCollapsed)
   }, [files])
 
+  const excludePatterns = settings?.files?.exclude ?? []
+
+  const isExcluded = useCallback(
+    (filePath: string, label: string) => {
+      if (!excludePatterns || excludePatterns.length === 0) return false
+      for (const pattern of excludePatterns) {
+        if (matchesExcludePattern(filePath, label, pattern)) {
+          return true
+        }
+      }
+      return false
+    },
+    [excludePatterns],
+  )
+
   // Visible files with hierarchical folder collapse pruning
   const visibleFiles = useMemo(() => {
     const result: FileItem[] = []
@@ -264,6 +336,13 @@ export function ExplorerPanel() {
           continue
         }
         skipUntilDepth = null
+      }
+
+      if (isExcluded(file.path, file.label)) {
+        if (file.icon === "folder" || file.type === "folder") {
+          skipUntilDepth = file.depth
+        }
+        continue
       }
 
       result.push(file)
@@ -278,7 +357,7 @@ export function ExplorerPanel() {
     }
 
     return result
-  }, [files, collapsedFolders])
+  }, [files, collapsedFolders, isExcluded])
 
   // Outline symbols of active tab
   const activeSymbols = useMemo(() => {

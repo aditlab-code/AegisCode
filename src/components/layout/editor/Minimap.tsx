@@ -2,6 +2,53 @@ import { useRef, type MouseEvent } from "react"
 import { tokenizeLine } from "../../../utils/syntax"
 import type { MinimapScale } from "../../../types/workbench"
 
+export interface MinimapScaleConfig {
+  fontSize: number
+  lineHeight: number
+  width: number
+}
+
+export function computeMinimapScaleConfig(
+  scale: MinimapScale = "medium",
+  editorFontSize: number = 13.5,
+  editorLineHeight: number = 22,
+): MinimapScaleConfig {
+  const scaleMultiplier = {
+    small: { fontRatio: 0.45, lineRatio: 0.45, widthRatio: 7.2, minWidth: 88 },
+    medium: {
+      fontRatio: 0.55,
+      lineRatio: 0.55,
+      widthRatio: 8.8,
+      minWidth: 108,
+    },
+    large: { fontRatio: 0.7, lineRatio: 0.7, widthRatio: 10.6, minWidth: 132 },
+  }[scale] || {
+    fontRatio: 0.55,
+    lineRatio: 0.55,
+    widthRatio: 8.8,
+    minWidth: 108,
+  }
+
+  const computedFontSize = Math.max(
+    5.5,
+    Math.round(editorFontSize * scaleMultiplier.fontRatio * 10) / 10,
+  )
+  const computedLineHeight = Math.max(
+    8,
+    Math.round(editorLineHeight * scaleMultiplier.lineRatio * 10) / 10,
+  )
+  const computedWidth = Math.max(
+    scaleMultiplier.minWidth,
+    Math.round(editorFontSize * scaleMultiplier.widthRatio),
+  )
+
+  return {
+    fontSize: computedFontSize,
+    lineHeight: computedLineHeight,
+    width: computedWidth,
+  }
+}
+
 interface MinimapProps {
   lines: string[]
   scrollTop: number
@@ -9,6 +56,8 @@ interface MinimapProps {
   clientHeight: number
   onScrollToLine: (lineIndex: number) => void
   scale?: MinimapScale
+  editorFontSize?: number
+  editorLineHeight?: number
 }
 
 export function Minimap({
@@ -18,14 +67,16 @@ export function Minimap({
   clientHeight,
   onScrollToLine,
   scale = "medium",
+  editorFontSize = 13.5,
+  editorLineHeight = 22,
 }: MinimapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const scaleConfig = {
-    small: { fontSize: 3.5, lineHeight: 5, width: 78 },
-    medium: { fontSize: 4.5, lineHeight: 6.5, width: 88 },
-    large: { fontSize: 6, lineHeight: 8.5, width: 100 },
-  }[scale] || { fontSize: 4.5, lineHeight: 6.5, width: 88 }
+  const scaleConfig = computeMinimapScaleConfig(
+    scale,
+    editorFontSize,
+    editorLineHeight,
+  )
 
   const effectiveScrollHeight = Math.max(1, scrollHeight)
   const effectiveClientHeight = Math.max(1, clientHeight)
@@ -46,12 +97,31 @@ export function Minimap({
   )
   const minimapOffsetY = isOverflowing ? scrollRatio * maxMinimapScroll : 0
 
-  // Calculate viewport slider box position in percentage
-  const sliderHeightPercent = Math.min(
-    100,
-    Math.max(8, (effectiveClientHeight / effectiveScrollHeight) * 100),
-  )
-  const sliderTopPercent = (scrollTop / effectiveScrollHeight) * 100
+  // Calculate viewport slider box position in pixels
+  let sliderTopPx = 0
+  let sliderHeightPx = 0
+
+  if (isOverflowing) {
+    sliderHeightPx = Math.max(
+      16,
+      Math.min(
+        effectiveClientHeight,
+        (effectiveClientHeight / effectiveScrollHeight) * effectiveClientHeight,
+      ),
+    )
+    const maxSliderTravel = effectiveClientHeight - sliderHeightPx
+    sliderTopPx = scrollRatio * maxSliderTravel
+  } else {
+    sliderHeightPx = Math.max(
+      16,
+      Math.min(
+        totalMinimapHeight,
+        (effectiveClientHeight / effectiveScrollHeight) * totalMinimapHeight,
+      ),
+    )
+    const maxSliderTravel = totalMinimapHeight - sliderHeightPx
+    sliderTopPx = maxSliderTravel > 0 ? scrollRatio * maxSliderTravel : 0
+  }
 
   // Windowing for smooth 60fps rendering across large files
   const bufferLines = 15
@@ -74,15 +144,8 @@ export function Minimap({
     if (!containerRef.current) return
     const rect = containerRef.current.getBoundingClientRect()
     const clickY = e.clientY - rect.top
-
-    let targetLine = 0
-    if (isOverflowing) {
-      const totalY = clickY + minimapOffsetY
-      targetLine = Math.floor(totalY / scaleConfig.lineHeight)
-    } else {
-      const ratio = Math.max(0, Math.min(1, clickY / rect.height))
-      targetLine = Math.floor(ratio * lines.length)
-    }
+    const totalY = clickY + minimapOffsetY
+    const targetLine = Math.floor(totalY / scaleConfig.lineHeight)
 
     onScrollToLine(Math.max(0, Math.min(lines.length - 1, targetLine)))
   }
@@ -99,8 +162,8 @@ export function Minimap({
       <div
         className="minimap-slider"
         style={{
-          top: `${sliderTopPercent}%`,
-          height: `${sliderHeightPercent}%`,
+          top: `${sliderTopPx}px`,
+          height: `${sliderHeightPx}px`,
         }}
       />
       <div

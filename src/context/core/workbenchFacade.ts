@@ -5,6 +5,7 @@ import { useWorkspaceCore, type CursorCoordinates } from "./workspaceCore"
 import { useGitCore } from "./gitCore"
 import { useTerminalCore } from "./terminalCore"
 import { useChatCore } from "./chatCore"
+import { useSettingsCore } from "./settingsCore"
 import { detectLanguage, validateSyntax } from "../../utils/linter"
 import {
   isGitDiffTab,
@@ -79,6 +80,7 @@ export function useWorkbenchFacade() {
   const layout = useLayoutCore()
   const terminal = useTerminalCore()
   const chat = useChatCore()
+  const settingsCore = useSettingsCore()
 
   const workspaceRef = useRef<{
     ensureFileBuffer: (file: string) => void
@@ -206,11 +208,70 @@ export function useWorkbenchFacade() {
   const saveFile = useCallback(
     async (filenameToSave?: string) => {
       const target = filenameToSave || editor.activeTab
-      await workspace.saveFile(target)
+      const hygiene = {
+        trimTrailingWhitespace:
+          settingsCore.settings.files.trimTrailingWhitespace,
+        insertFinalNewline: settingsCore.settings.files.insertFinalNewline,
+        eol: settingsCore.settings.files.eol,
+      }
+      await workspace.saveFile(target, hygiene)
       await gitRef.current?.refreshGit()
     },
-    [editor.activeTab, workspace],
+    [editor.activeTab, settingsCore.settings.files, workspace],
   )
+
+  // Auto-Save Engine: afterDelay
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+  useEffect(() => {
+    const { autoSave, autoSaveDelay } = settingsCore.settings.files
+    if (autoSave !== "afterDelay") return
+
+    const dirtyFiles = Object.entries(workspace.fileBuffers)
+      .filter(([_, buf]) => buf.isDirty)
+      .map(([filename]) => filename)
+
+    if (dirtyFiles.length === 0) return
+
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current)
+    }
+
+    autoSaveTimerRef.current = setTimeout(
+      async () => {
+        for (const file of dirtyFiles) {
+          await saveFile(file)
+        }
+      },
+      Math.max(300, autoSaveDelay || 1000),
+    )
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current)
+      }
+    }
+  }, [workspace.fileBuffers, settingsCore.settings.files, saveFile])
+
+  // Auto-Save Engine: onFocusChange
+  useEffect(() => {
+    const { autoSave } = settingsCore.settings.files
+    if (autoSave !== "onFocusChange" || typeof window === "undefined") return
+
+    const handleWindowBlur = () => {
+      const dirtyFiles = Object.entries(workspace.fileBuffers)
+        .filter(([_, buf]) => buf.isDirty)
+        .map(([filename]) => filename)
+
+      for (const file of dirtyFiles) {
+        saveFile(file)
+      }
+    }
+
+    window.addEventListener("blur", handleWindowBlur)
+    return () => {
+      window.removeEventListener("blur", handleWindowBlur)
+    }
+  }, [workspace.fileBuffers, settingsCore.settings.files, saveFile])
 
   const createFileAndOpen = useCallback(
     async (name: string, isFolder = false, parentFolder?: string) => {
@@ -449,9 +510,27 @@ export function useWorkbenchFacade() {
     settingsModalOpen: layout.settingsModalOpen,
     setSettingsModalOpen: layout.setSettingsModalOpen,
     toggleSettingsModal: layout.toggleSettingsModal,
-    theme: layout.theme,
-    setTheme: layout.setTheme,
-    toggleTheme: layout.toggleTheme,
+    theme: settingsCore.settings.workbench.appearance.mode,
+    themePalette: settingsCore.settings.workbench.appearance.palette,
+    setTheme: (mode: ThemeMode) => {
+      layout.setTheme(mode)
+      settingsCore.setThemeMode(mode)
+    },
+    setThemePalette: settingsCore.setThemePalette,
+    toggleTheme: () => {
+      layout.toggleTheme()
+      settingsCore.toggleThemeMode()
+    },
+    settings: settingsCore.settings,
+    setSettings: settingsCore.setSettings,
+    updateEditorSettings: settingsCore.updateEditorSettings,
+    updateWorkbenchSettings: settingsCore.updateWorkbenchSettings,
+    updateFilesSettings: settingsCore.updateFilesSettings,
+    updateFeaturesSettings: settingsCore.updateFeaturesSettings,
+    updateCompanionSettings: settingsCore.updateCompanionSettings,
+    updateLinterSettings: settingsCore.updateLinterSettings,
+    updateAgentSettings: settingsCore.updateAgentSettings,
+    resetSettings: settingsCore.resetSettings,
     sidebarWidth: layout.sidebarWidth,
     setSidebarWidth: layout.setSidebarWidth,
     resetSidebarWidth: layout.resetSidebarWidth,
@@ -463,11 +542,25 @@ export function useWorkbenchFacade() {
     resetBottomPanelHeight: layout.resetBottomPanelHeight,
 
     // Editor
-    minimapEnabled: editor.minimapEnabled,
-    setMinimapEnabled: editor.setMinimapEnabled,
-    toggleMinimap: editor.toggleMinimap,
-    minimapScale: editor.minimapScale,
-    setMinimapScale: editor.setMinimapScale,
+    minimapEnabled: settingsCore.settings.editor.minimapEnabled,
+    setMinimapEnabled: (val: boolean | ((prev: boolean) => boolean)) => {
+      const next =
+        typeof val === "function"
+          ? val(settingsCore.settings.editor.minimapEnabled)
+          : val
+      editor.setMinimapEnabled(next)
+      settingsCore.updateEditorSettings({ minimapEnabled: next })
+    },
+    toggleMinimap: () => {
+      const next = !settingsCore.settings.editor.minimapEnabled
+      editor.setMinimapEnabled(next)
+      settingsCore.updateEditorSettings({ minimapEnabled: next })
+    },
+    minimapScale: settingsCore.settings.editor.minimapScale,
+    setMinimapScale: (scale: MinimapScale) => {
+      editor.setMinimapScale(scale)
+      settingsCore.updateEditorSettings({ minimapScale: scale })
+    },
     findStateGroup1: editor.findStateGroup1,
     findStateGroup2: editor.findStateGroup2,
     setFindStateGroup1: editor.setFindStateGroup1,
@@ -519,13 +612,23 @@ export function useWorkbenchFacade() {
     saveFile,
     cursorPosition: editor.cursorPosition,
     setCursorPosition: editor.setCursorPosition,
-    tabSize: editor.tabSize,
-    setTabSize: editor.setTabSize,
-    toggleTabSize: editor.toggleTabSize,
+    tabSize: settingsCore.settings.editor.tabSize,
+    setTabSize: (size: number) => {
+      editor.setTabSize(size)
+      settingsCore.updateEditorSettings({ tabSize: size })
+    },
+    toggleTabSize: () => {
+      const next = settingsCore.settings.editor.tabSize === 2 ? 4 : 2
+      editor.setTabSize(next)
+      settingsCore.updateEditorSettings({ tabSize: next })
+    },
     encoding: editor.encoding,
     setEncoding: editor.setEncoding,
-    linterSettings: workspace.linterSettings,
-    setLinterSettings: workspace.setLinterSettings,
+    linterSettings: settingsCore.settings.linter,
+    setLinterSettings: (updater: any) => {
+      workspace.setLinterSettings(updater)
+      settingsCore.updateLinterSettings(updater)
+    },
     navigateToDiagnostic: workspace.navigateToDiagnostic,
 
     // Workspace & Root

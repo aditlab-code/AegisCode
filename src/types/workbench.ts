@@ -3,6 +3,97 @@ import type { ReactNode } from "react"
 export type IconName = "aegis" | "arrow-down" | "arrow-up" | "bell" | "branch" | "check" | "chevron" | "chevron-down" | "chevron-up" | "close" | "code" | "copy" | "error" | "explorer" | "file" | "folder" | "git" | "history" | "layout" | "maximize" | "moon" | "more" | "panel" | "play" | "plus" | "refresh" | "search" | "send" | "settings" | "split" | "sun" | "symbol" | "terminal" | "trash" | "warning" | "edit" | "add" | "replace-all" | "cloud" | "sparkle" | "tag" | "discard" | "collapse-all"
 
 export type ThemeMode = "dark" | "light"
+export type ThemePaletteId = "default" | "atom" | "tokyo-night"
+
+export interface EditorSettings {
+  accessibilityPageSize: number
+  fontSize: number
+  fontFamily: string
+  lineHeight: number
+  wordWrap: "off" | "on" | "wordWrapColumn"
+  wordWrapColumn: number
+  tabSize: number
+  insertSpaces: boolean
+  cursorBlinking: "smooth" | "blink" | "solid"
+  renderWhitespace: "none" | "selection" | "all"
+  formatOnSave: boolean
+  minimapEnabled: boolean
+  minimapScale: MinimapScale
+  minimapSide: "right" | "left"
+  diffEditor: {
+    renderSideBySide: boolean
+    ignoreTrimWhitespace: boolean
+    inheritEditorFont: boolean
+  }
+}
+
+export interface WorkbenchAppearanceSettings {
+  palette: ThemePaletteId
+  mode: ThemeMode
+  fontSize: number
+  fontFamily: string
+  lineHeight: number
+}
+
+export interface FilesSettings {
+  autoSave: "off" | "afterDelay" | "onFocusChange"
+  autoSaveDelay: number
+  trimTrailingWhitespace: boolean
+  insertFinalNewline: boolean
+  eol: "\n" | "\r\n"
+  exclude: string[]
+}
+
+export interface FeaturesSettings {
+  sourceControl: {
+    maxVisibleChanges: number
+    graphPageSize: number
+  }
+  timeline: {
+    maxVisibleItems: number
+  }
+  comments: {
+    enableTodoHighlight: boolean
+    todoKeywords: string
+  }
+  terminal: {
+    sseEnabled: boolean
+    shortcut: string
+    cursorStyle: "block" | "line" | "underline"
+    cursorBlinking: boolean
+    fontSize: number
+    fontFamily: string
+    lineHeight: number
+  }
+}
+
+export interface CompanionSettings {
+  port: number
+  mdnsDiscovery: boolean
+  pairingPin: string
+  allowRemoteEdit: boolean
+}
+
+export interface AgentSettings {
+  model: string
+  temperature: number
+  streaming: boolean
+  contextIngestion: boolean
+}
+
+export interface AppSettings {
+  editor: EditorSettings
+  workbench: {
+    appearance: WorkbenchAppearanceSettings
+    sidebarPosition: "left" | "right"
+    compactFolders: boolean
+  }
+  files: FilesSettings
+  features: FeaturesSettings
+  companion: CompanionSettings
+  linter: LinterSettings
+  agent: AgentSettings
+}
 
 export type ChatProvider = "antigravity" | "opencode" | "openrouter"
 

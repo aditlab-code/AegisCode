@@ -41,6 +41,47 @@
   grid-template-columns: 44px minmax(0, 1fr);
 }
 
+/* Right-sided sidebar layout modes */
+.workspace-sidebar-right .activity-rail {
+  order: 4;
+}
+
+.workspace-sidebar-right .sidebar {
+  order: 3;
+}
+
+.workspace-sidebar-right .workbench {
+  order: 1;
+}
+
+.workspace-sidebar-right .chat-drawer {
+  order: 2;
+}
+
+.workspace-sidebar-right.workspace-chat-closed {
+  grid-template-columns: minmax(0, 1fr) var(--sidebar-width, 220px) 44px;
+}
+
+.workspace-sidebar-right.workspace-chat-open {
+  grid-template-columns: minmax(0, 1fr) var(--chat-width, 300px) var(--sidebar-width, 220px) 44px;
+}
+
+.workspace-sidebar-right.workspace-chat-open.workspace-chat-expanded {
+  grid-template-columns: minmax(0, 1fr) var(--chat-width, 500px) var(--sidebar-width, 220px) 44px;
+}
+
+.workspace-sidebar-right.workspace-sidebar-closed.workspace-chat-closed {
+  grid-template-columns: minmax(0, 1fr) 44px;
+}
+
+.workspace-sidebar-right.workspace-sidebar-closed.workspace-chat-open {
+  grid-template-columns: minmax(0, 1fr) var(--chat-width, 300px) 44px;
+}
+
+.workspace-sidebar-right.workspace-sidebar-closed.workspace-chat-open.workspace-chat-expanded {
+  grid-template-columns: minmax(0, 1fr) var(--chat-width, 500px) 44px;
+}
+
 .workbench {
   display: grid;
   grid-template-rows: minmax(180px, 1fr) var(--bottom-height, 180px);

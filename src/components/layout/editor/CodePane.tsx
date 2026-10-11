@@ -2,6 +2,7 @@ import {
   useRef,
   useState,
   useEffect,
+  useMemo,
   type ChangeEvent,
   type KeyboardEvent,
   type MouseEvent,
@@ -45,7 +46,33 @@ export function CodePane({
     openFind,
     focusedGroup,
     tabSize,
+    settings,
   } = useWorkbench()
+
+  const editorFontSize = settings?.editor?.fontSize ?? 13.5
+  const editorLineHeight = settings?.editor?.lineHeight ?? 22
+  const wordWrap = settings?.editor?.wordWrap ?? "off"
+  const wordWrapColumn = settings?.editor?.wordWrapColumn ?? 80
+  const minimapSide = settings?.editor?.minimapSide ?? "right"
+  const accessibilityPageSize = settings?.editor?.accessibilityPageSize ?? 500
+  const currentTabSize = settings?.editor?.tabSize ?? tabSize ?? 2
+  const insertSpaces = settings?.editor?.insertSpaces ?? true
+  const cursorBlinking = settings?.editor?.cursorBlinking ?? "smooth"
+  const renderWhitespace = settings?.editor?.renderWhitespace ?? "selection"
+
+  const commentsSettings = settings?.features?.comments
+  const todoOptions = useMemo(() => {
+    if (!commentsSettings) return undefined
+    return {
+      enabled: commentsSettings.enableTodoHighlight,
+      keywords: commentsSettings.todoKeywords
+        ? commentsSettings.todoKeywords
+            .split(",")
+            .map((k) => k.trim())
+            .filter(Boolean)
+        : undefined,
+    }
+  }, [commentsSettings?.enableTodoHighlight, commentsSettings?.todoKeywords])
 
   const gutterRef = useRef<HTMLDivElement>(null)
   const syntaxRef = useRef<HTMLDivElement>(null)
@@ -102,7 +129,7 @@ export function CodePane({
     if (!textareaRef.current) return
     const rect = textareaRef.current.getBoundingClientRect()
     const relativeY = e.clientY - rect.top + textareaRef.current.scrollTop - 9
-    const lineNum = Math.floor(relativeY / 21) + 1
+    const lineNum = Math.floor(relativeY / editorLineHeight) + 1
 
     if (lineNum >= 1 && lineNum <= lines.length) {
       const diag = getLineDiagnostic(lineNum)
@@ -136,8 +163,7 @@ export function CodePane({
 
   function handleScrollToLine(lineIndex: number) {
     if (!textareaRef.current) return
-    const lineHeight = 21
-    const targetScroll = Math.max(0, lineIndex * lineHeight - 60)
+    const targetScroll = Math.max(0, lineIndex * editorLineHeight - 60)
     textareaRef.current.scrollTop = targetScroll
     if (syntaxRef.current) syntaxRef.current.scrollTop = targetScroll
     if (gutterRef.current) gutterRef.current.scrollTop = targetScroll
@@ -193,20 +219,22 @@ export function CodePane({
       return
     }
 
-    // Tab key: Insert spaces matching tabSize
+    // Tab key: Insert spaces or tab matching editor settings
     if (event.key === "Tab") {
       event.preventDefault()
       const textarea = textareaRef.current
       if (!textarea) return
 
-      const spaces = " ".repeat(tabSize || 2)
+      const insertStr = insertSpaces ? " ".repeat(currentTabSize) : "\t"
       const start = textarea.selectionStart
       const end = textarea.selectionEnd
-      const newContent = content.slice(0, start) + spaces + content.slice(end)
+      const newContent =
+        content.slice(0, start) + insertStr + content.slice(end)
 
       updateFileContent(filename, newContent)
       requestAnimationFrame(() => {
-        textarea.selectionStart = textarea.selectionEnd = start + spaces.length
+        textarea.selectionStart = textarea.selectionEnd =
+          start + insertStr.length
         updateCursor()
       })
       return
@@ -278,8 +306,20 @@ export function CodePane({
 
       <div
         aria-label={`${filename} code editor`}
-        className="code-editor"
+        className={`code-editor ${
+          minimapSide === "left" ? "minimap-side-left" : ""
+        }`}
+        data-accessibility-page-size={accessibilityPageSize}
+        data-cursor-blinking={cursorBlinking}
+        data-render-whitespace={renderWhitespace}
+        data-word-wrap={wordWrap}
         role="region"
+        style={
+          {
+            "--editor-tab-size": currentTabSize,
+            "--editor-wrap-column": wordWrapColumn,
+          } as any
+        }
       >
         <div className="code-editor-layout">
           {/* Gutter with line numbers and diagnostic dots */}
@@ -354,7 +394,7 @@ export function CodePane({
                           : ""
                       }
                     >
-                      {tokenizeLine(lineText)}
+                      {tokenizeLine(lineText, todoOptions)}
                     </code>
                   </div>
                 )
@@ -381,7 +421,11 @@ export function CodePane({
               ref={textareaRef}
               spellCheck={false}
               value={content}
-              wrap="off"
+              wrap={
+                wordWrap === "on" || wordWrap === "wordWrapColumn"
+                  ? "soft"
+                  : "off"
+              }
             />
           </div>
         </div>
@@ -389,6 +433,8 @@ export function CodePane({
         {minimapEnabled && (
           <Minimap
             clientHeight={scrollInfo.clientHeight}
+            editorFontSize={editorFontSize}
+            editorLineHeight={editorLineHeight}
             lines={lines}
             onScrollToLine={handleScrollToLine}
             scale={minimapScale}

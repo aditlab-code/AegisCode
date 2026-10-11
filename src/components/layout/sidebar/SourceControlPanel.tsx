@@ -37,7 +37,16 @@ export function SourceControlPanel() {
     rootWorkspaceName,
     openFolderPicker,
     showToast,
+    settings,
   } = useWorkbench()
+
+  const maxVisibleChanges =
+    settings?.features?.sourceControl?.maxVisibleChanges ?? 50
+  const graphPageSize = settings?.features?.sourceControl?.graphPageSize ?? 25
+
+  const [showAllStaged, setShowAllStaged] = useState(false)
+  const [showAllChanges, setShowAllChanges] = useState(false)
+  const [visibleCommitCount, setVisibleCommitCount] = useState(graphPageSize)
 
   const [commitMessage, setCommitMessage] = useState("")
   const [repositoriesOpen, setRepositoriesOpen] = useState(true)
@@ -573,7 +582,10 @@ export function SourceControlPanel() {
 
                 {stagedOpen && (
                   <div className="divide-y divide-transparent">
-                    {stagedChanges.map((change) => (
+                    {(showAllStaged
+                      ? stagedChanges
+                      : stagedChanges.slice(0, maxVisibleChanges)
+                    ).map((change) => (
                       <div
                         className="group flex items-center gap-2 px-2 py-1 rounded text-[11px] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-hover)] cursor-pointer"
                         key={`staged-${change.file}`}
@@ -606,6 +618,18 @@ export function SourceControlPanel() {
                         </div>
                       </div>
                     ))}
+
+                    {stagedChanges.length > maxVisibleChanges && (
+                      <button
+                        className="w-full text-center py-1 text-[10px] text-accent hover:underline cursor-pointer"
+                        onClick={() => setShowAllStaged((v) => !v)}
+                        type="button"
+                      >
+                        {showAllStaged
+                          ? "Show Less"
+                          : `Showing ${maxVisibleChanges} of ${stagedChanges.length} (Show All)`}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -657,51 +681,68 @@ export function SourceControlPanel() {
               {changesOpen && (
                 <div className="divide-y divide-transparent">
                   {gitChanges.length > 0 ? (
-                    gitChanges.map((change) => (
-                      <div
-                        className="group flex items-center gap-2 px-2 py-1 rounded text-[11px] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-hover)] cursor-pointer"
-                        key={`change-${change.file}`}
-                        onClick={() => openGitDiff(change.file, false)}
-                      >
-                        <span
-                          className={`change-badge change-${
-                            change.status || "modified"
-                          }`}
+                    <>
+                      {(showAllChanges
+                        ? gitChanges
+                        : gitChanges.slice(0, maxVisibleChanges)
+                      ).map((change) => (
+                        <div
+                          className="group flex items-center gap-2 px-2 py-1 rounded text-[11px] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-hover)] cursor-pointer"
+                          key={`change-${change.file}`}
+                          onClick={() => openGitDiff(change.file, false)}
                         >
-                          {change.code}
-                        </span>
-                        <span className="truncate flex-1 font-mono text-[11px]">
-                          {change.file}
-                        </span>
+                          <span
+                            className={`change-badge change-${
+                              change.status || "modified"
+                            }`}
+                          >
+                            {change.code}
+                          </span>
+                          <span className="truncate flex-1 font-mono text-[11px]">
+                            {change.file}
+                          </span>
 
-                        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
-                          <button
-                            aria-label={`Discard ${change.file}`}
-                            className="p-1 hover:text-[var(--color-error)] cursor-pointer"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              discardChange(change.file)
-                            }}
-                            title="Discard change"
-                            type="button"
-                          >
-                            <Icon name="discard" size={11} />
-                          </button>
-                          <button
-                            aria-label={`Stage ${change.file}`}
-                            className="p-1 hover:text-[var(--color-success)] cursor-pointer"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              stageChange(change.file)
-                            }}
-                            title="Stage change"
-                            type="button"
-                          >
-                            <Icon name="add" size={11} />
-                          </button>
+                          <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
+                            <button
+                              aria-label={`Discard ${change.file}`}
+                              className="p-1 hover:text-[var(--color-error)] cursor-pointer"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                discardChange(change.file)
+                              }}
+                              title="Discard change"
+                              type="button"
+                            >
+                              <Icon name="discard" size={11} />
+                            </button>
+                            <button
+                              aria-label={`Stage ${change.file}`}
+                              className="p-1 hover:text-[var(--color-success)] cursor-pointer"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                stageChange(change.file)
+                              }}
+                              title="Stage change"
+                              type="button"
+                            >
+                              <Icon name="add" size={11} />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      ))}
+
+                      {gitChanges.length > maxVisibleChanges && (
+                        <button
+                          className="w-full text-center py-1 text-[10px] text-accent hover:underline cursor-pointer"
+                          onClick={() => setShowAllChanges((v) => !v)}
+                          type="button"
+                        >
+                          {showAllChanges
+                            ? "Show Less"
+                            : `Showing ${maxVisibleChanges} of ${gitChanges.length} (Show All)`}
+                        </button>
+                      )}
+                    </>
                   ) : (
                     <div className="px-2 py-2 text-[11px] text-[var(--color-ink-muted)] italic">
                       Working tree clean
@@ -756,136 +797,152 @@ export function SourceControlPanel() {
           <div className="flex-1 overflow-y-auto px-2 py-2">
             {gitCommits.length > 0 ? (
               <div className="space-y-0.5">
-                {gitCommits.map((commit, index) => {
-                  const isHead = commit.isHead || index === 0
-                  const isLast = index === gitCommits.length - 1
-                  const isCurrentBranch =
-                    commit.branch === activeBranch || isHead
+                {gitCommits
+                  .slice(0, visibleCommitCount)
+                  .map((commit, index) => {
+                    const isHead = commit.isHead || index === 0
+                    const isLast = index === gitCommits.length - 1
+                    const isCurrentBranch =
+                      commit.branch === activeBranch || isHead
 
-                  return (
-                    <div
-                      className="group flex items-start gap-2 p-1.5 rounded hover:bg-[var(--color-surface-hover)] cursor-pointer transition-colors"
-                      key={commit.hash}
-                      onClick={() => {
-                        navigator.clipboard?.writeText(commit.hash)
-                        showToast(
-                          `Copied commit hash [${commit.shortHash || commit.hash.slice(0, 7)}]`,
-                        )
-                      }}
-                      onDoubleClick={() => {
-                        if (commit.branch && commit.branch !== activeBranch) {
-                          checkoutBranch(commit.branch)
-                        }
-                      }}
-                      title="Double-click to checkout branch, single-click to copy hash"
-                    >
-                      {/* Visual SVG Timeline Line + Dot */}
-                      <div className="shrink-0 w-4.5 pt-0.5 flex flex-col items-center">
-                        <svg
-                          aria-hidden="true"
-                          className="w-4.5 h-6"
-                          viewBox="0 0 18 24"
-                        >
-                          {!isHead && (
-                            <line
-                              stroke="var(--color-line-bright)"
-                              strokeWidth="2"
-                              x1="9"
-                              x2="9"
-                              y1="0"
-                              y2="12"
-                            />
-                          )}
-                          {!isLast && (
-                            <line
-                              stroke="var(--color-line-bright)"
-                              strokeWidth="2"
-                              x1="9"
-                              x2="9"
-                              y1="12"
-                              y2="24"
-                            />
-                          )}
-                          <circle
-                            cx="9"
-                            cy="12"
-                            fill={
-                              isHead
-                                ? "var(--color-canvas)"
-                                : "var(--color-surface)"
-                            }
-                            r={isHead ? "5.5" : "4.5"}
-                            stroke={
-                              isCurrentBranch
-                                ? "var(--color-accent)"
-                                : "var(--color-cyan)"
-                            }
-                            strokeWidth="2"
-                          />
-                          {isHead && (
+                    return (
+                      <div
+                        className="group flex items-start gap-2 p-1.5 rounded hover:bg-[var(--color-surface-hover)] cursor-pointer transition-colors"
+                        key={commit.hash}
+                        onClick={() => {
+                          navigator.clipboard?.writeText(commit.hash)
+                          showToast(
+                            `Copied commit hash [${commit.shortHash || commit.hash.slice(0, 7)}]`,
+                          )
+                        }}
+                        onDoubleClick={() => {
+                          if (commit.branch && commit.branch !== activeBranch) {
+                            checkoutBranch(commit.branch)
+                          }
+                        }}
+                        title="Double-click to checkout branch, single-click to copy hash"
+                      >
+                        {/* Visual SVG Timeline Line + Dot */}
+                        <div className="shrink-0 w-4.5 pt-0.5 flex flex-col items-center">
+                          <svg
+                            aria-hidden="true"
+                            className="w-4.5 h-6"
+                            viewBox="0 0 18 24"
+                          >
+                            {!isHead && (
+                              <line
+                                stroke="var(--color-line-bright)"
+                                strokeWidth="2"
+                                x1="9"
+                                x2="9"
+                                y1="0"
+                                y2="12"
+                              />
+                            )}
+                            {!isLast && (
+                              <line
+                                stroke="var(--color-line-bright)"
+                                strokeWidth="2"
+                                x1="9"
+                                x2="9"
+                                y1="12"
+                                y2="24"
+                              />
+                            )}
                             <circle
                               cx="9"
                               cy="12"
-                              fill="var(--color-accent)"
-                              r="2.5"
+                              fill={
+                                isHead
+                                  ? "var(--color-canvas)"
+                                  : "var(--color-surface)"
+                              }
+                              r={isHead ? "5.5" : "4.5"}
+                              stroke={
+                                isCurrentBranch
+                                  ? "var(--color-accent)"
+                                  : "var(--color-cyan)"
+                              }
+                              strokeWidth="2"
                             />
-                          )}
-                        </svg>
-                      </div>
-
-                      {/* Commit details */}
-                      <div className="flex-1 min-w-0 leading-tight">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-mono text-[10px] text-[var(--color-ink-muted)]">
-                            {commit.shortHash || commit.hash.slice(0, 7)}
-                          </span>
-
-                          {/* Branch pill badge (Click to switch branch) */}
-                          {commit.branch && (
-                            <button
-                              className={`flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9px] font-semibold cursor-pointer transition-transform hover:scale-105 ${
-                                commit.branch === activeBranch
-                                  ? "bg-[var(--color-accent)] text-white"
-                                  : "bg-[var(--color-surface-raised)] border border-[var(--color-line)] text-[var(--color-ink-soft)]"
-                              }`}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                if (commit.branch !== activeBranch) {
-                                  checkoutBranch(commit.branch)
-                                }
-                              }}
-                              title={`Checkout branch ${commit.branch}`}
-                              type="button"
-                            >
-                              <Icon name="branch" size={9} />
-                              <span>{commit.branch}</span>
-                            </button>
-                          )}
-
-                          {/* Tag badge(s) */}
-                          {commit.tags &&
-                            commit.tags.map((tag) => (
-                              <span
-                                className="flex items-center gap-0.5 px-1.5 py-0.2 rounded-full bg-[var(--color-success-soft)] text-[var(--color-success)] text-[9px] font-semibold"
-                                key={tag}
-                              >
-                                <Icon name="tag" size={9} />
-                                <span>{tag}</span>
-                              </span>
-                            ))}
-
-                          <span className="text-[10px] text-[var(--color-ink-muted)] ml-auto shrink-0">
-                            {commit.timestamp}
-                          </span>
+                            {isHead && (
+                              <circle
+                                cx="9"
+                                cy="12"
+                                fill="var(--color-accent)"
+                                r="2.5"
+                              />
+                            )}
+                          </svg>
                         </div>
 
-                        <p className="text-[11px] text-[var(--color-ink)] truncate font-medium mt-0.5">
-                          {commit.message}
-                        </p>
+                        {/* Commit details */}
+                        <div className="flex-1 min-w-0 leading-tight">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono text-[10px] text-[var(--color-ink-muted)]">
+                              {commit.shortHash || commit.hash.slice(0, 7)}
+                            </span>
+
+                            {/* Branch pill badge (Click to switch branch) */}
+                            {commit.branch && (
+                              <button
+                                className={`flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9px] font-semibold cursor-pointer transition-transform hover:scale-105 ${
+                                  commit.branch === activeBranch
+                                    ? "bg-[var(--color-accent)] text-white"
+                                    : "bg-[var(--color-surface-raised)] border border-[var(--color-line)] text-[var(--color-ink-soft)]"
+                                }`}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (commit.branch !== activeBranch) {
+                                    checkoutBranch(commit.branch)
+                                  }
+                                }}
+                                title={`Checkout branch ${commit.branch}`}
+                                type="button"
+                              >
+                                <Icon name="branch" size={9} />
+                                <span>{commit.branch}</span>
+                              </button>
+                            )}
+
+                            {/* Tag badge(s) */}
+                            {commit.tags &&
+                              commit.tags.map((tag) => (
+                                <span
+                                  className="flex items-center gap-0.5 px-1.5 py-0.2 rounded-full bg-[var(--color-success-soft)] text-[var(--color-success)] text-[9px] font-semibold"
+                                  key={tag}
+                                >
+                                  <Icon name="tag" size={9} />
+                                  <span>{tag}</span>
+                                </span>
+                              ))}
+
+                            <span className="text-[10px] text-[var(--color-ink-muted)] ml-auto shrink-0">
+                              {commit.timestamp}
+                            </span>
+                          </div>
+
+                          <p className="text-[11px] text-[var(--color-ink)] truncate font-medium mt-0.5">
+                            {commit.message}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  )
-                })}
+                    )
+                  })}
+
+                {gitCommits.length > visibleCommitCount && (
+                  <button
+                    className="w-full text-center py-1.5 mt-2 text-[10px] text-accent hover:bg-surface-hover rounded border border-line cursor-pointer"
+                    onClick={() =>
+                      setVisibleCommitCount((c) => c + graphPageSize)
+                    }
+                    type="button"
+                  >
+                    Load More Commits (
+                    {Math.min(visibleCommitCount, gitCommits.length)} of{" "}
+                    {gitCommits.length})
+                  </button>
+                )}
               </div>
             ) : (
               <div className="px-3 py-4 text-center text-xs text-[var(--color-ink-muted)]">

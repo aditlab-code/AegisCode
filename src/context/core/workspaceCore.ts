@@ -109,6 +109,37 @@ export function updateBufferContentLogic(
   }
 }
 
+export interface FileHygieneOptions {
+  trimTrailingWhitespace?: boolean
+  insertFinalNewline?: boolean
+  eol?: "\n" | "\r\n"
+}
+
+export function sanitizeContentOnSave(
+  content: string,
+  options: FileHygieneOptions = {},
+): string {
+  let result = content
+  const targetEol = options.eol || "\n"
+
+  if (options.trimTrailingWhitespace) {
+    result = result
+      .split(/\r?\n/)
+      .map((line) => line.replace(/[ \t]+$/, ""))
+      .join(targetEol)
+  } else if (options.eol) {
+    result = result.split(/\r?\n/).join(targetEol)
+  }
+
+  if (options.insertFinalNewline && result.length > 0) {
+    if (!result.endsWith(targetEol)) {
+      result = result + targetEol
+    }
+  }
+
+  return result
+}
+
 export function markBufferSavedLogic(
   buffers: Record<string, FileBuffer>,
   filename: string,
@@ -601,13 +632,18 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
   )
 
   const saveFile = useCallback(
-    async (filenameToSave?: string) => {
+    async (filenameToSave?: string, options?: FileHygieneOptions) => {
       if (!filenameToSave) return
 
       const buf = fileBuffers[filenameToSave]
+      let contentToSave = buf?.content ?? ""
+      if (buf && options) {
+        contentToSave = sanitizeContentOnSave(contentToSave, options)
+      }
+
       if (buf) {
         try {
-          await saveWorkspaceFile(filenameToSave, buf.content, false)
+          await saveWorkspaceFile(filenameToSave, contentToSave, false)
         } catch (err: any) {
           console.error("Failed to save to backend:", err)
           showToast(`Save failed: ${err.message || "Failed to write file"}`)
@@ -615,12 +651,30 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
         }
       }
 
-      setFileBuffers((prev) => markBufferSavedLogic(prev, filenameToSave))
+      setFileBuffers((prev) => {
+        const marked = markBufferSavedLogic(prev, filenameToSave)
+        if (
+          options &&
+          marked[filenameToSave] &&
+          contentToSave !== prev[filenameToSave]?.content
+        ) {
+          return {
+            ...marked,
+            [filenameToSave]: {
+              ...marked[filenameToSave],
+              content: contentToSave,
+              savedContent: contentToSave,
+              isDirty: false,
+            },
+          }
+        }
+        return marked
+      })
 
       if (linterSettings.enabled && buf) {
         const fileDiags = validateSyntax(
           filenameToSave,
-          buf.content,
+          contentToSave,
           linterSettings.showWarnings,
         )
         setDiagnostics((prev) => [

@@ -35,7 +35,10 @@ function AppShell() {
     fileBuffers,
     cursorPosition,
     diagnostics,
+    settings,
   } = useWorkbench()
+
+  const sidebarPosition = settings?.workbench?.sidebarPosition ?? "left"
 
   const activeFile =
     splitEditor && focusedGroup === "group2"
@@ -70,7 +73,9 @@ function AppShell() {
     <div className="app-shell">
       <Header />
       <main
-        className={`workspace ${gridClass}`}
+        className={`workspace ${gridClass} ${
+          sidebarPosition === "right" ? "workspace-sidebar-right" : ""
+        }`}
         style={
           {
             "--sidebar-width": `${sidebarWidth}px`,
