@@ -1,31 +1,15 @@
 package workspace
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"sync"
 )
-
-type DirectoryItem struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
-}
-
-type DirectoryBrowseResult struct {
-	CurrentPath string          `json:"currentPath"`
-	ParentPath  string          `json:"parentPath"`
-	HomePath    string          `json:"homePath"`
-	RootPath    string          `json:"rootPath"`
-	Directories []DirectoryItem `json:"directories"`
-}
 
 type FileNode struct {
 	Path     string     `json:"path"`
@@ -45,6 +29,12 @@ type SearchMatch struct {
 type SearchResult struct {
 	Filename string        `json:"filename"`
 	Matches  []SearchMatch `json:"matches"`
+}
+
+type RepoStatus struct {
+	IsRepo   bool   `json:"isRepo"`
+	Branch   string `json:"branch"`
+	RepoName string `json:"repoName"`
 }
 
 type Manager struct {
@@ -233,14 +223,27 @@ func (m *Manager) GetFile(relPath string) (string, error) {
 	return string(bytes), nil
 }
 
-func (m *Manager) WriteFile(relPath string, content string, isFolder bool) error {
+func (m *Manager) CreateFolder(relPath string) (string, error) {
+	if strings.TrimSpace(relPath) == "" {
+		return "", errors.New("folder path cannot be empty")
+	}
+
+	fullPath, err := m.resolvePath(relPath)
+	if err != nil {
+		return "", err
+	}
+
+	if err := os.MkdirAll(fullPath, 0755); err != nil {
+		return "", err
+	}
+
+	return fullPath, nil
+}
+
+func (m *Manager) WriteFile(relPath string, content string) error {
 	fullPath, err := m.resolvePath(relPath)
 	if err != nil {
 		return err
-	}
-
-	if isFolder {
-		return os.MkdirAll(fullPath, 0755)
 	}
 
 	parentDir := filepath.Dir(fullPath)
@@ -511,128 +514,59 @@ func (m *Manager) ReplaceAll(query string, replacement string, isRegex bool, isM
 	return totalReplacements, modifiedFiles, nil
 }
 
-// BrowseDirectory lists subdirectories at dirPath. If dirPath is empty, defaults to the user's home directory.
-func BrowseDirectory(dirPath string, showHidden bool) (*DirectoryBrowseResult, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		homeDir = "/"
+// GetGitStatus detects the active Git repository status within the active workspace root.
+func (m *Manager) GetGitStatus() (RepoStatus, error) {
+	m.mu.RLock()
+	root := m.rootPath
+	m.mu.RUnlock()
+
+	if strings.TrimSpace(root) == "" {
+		return RepoStatus{
+			IsRepo:   false,
+			Branch:   "",
+			RepoName: "",
+		}, nil
 	}
 
-	target := dirPath
-	if target == "" {
-		target = homeDir
+	gitDir := filepath.Join(root, ".git")
+	stat, err := os.Stat(gitDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return RepoStatus{
+				IsRepo:   false,
+				Branch:   "",
+				RepoName: filepath.Base(root),
+			}, nil
+		}
+		return RepoStatus{}, err
 	}
 
-	absTarget, err := filepath.Abs(target)
-	if err != nil {
-		return nil, fmt.Errorf("invalid path: %w", err)
-	}
-
-	stat, err := os.Stat(absTarget)
-	if err != nil {
-		return nil, fmt.Errorf("path does not exist: %w", err)
-	}
 	if !stat.IsDir() {
-		return nil, fmt.Errorf("path is not a directory: %s", absTarget)
+		return RepoStatus{
+			IsRepo:   false,
+			Branch:   "",
+			RepoName: filepath.Base(root),
+		}, nil
 	}
 
-	entries, err := os.ReadDir(absTarget)
+	headPath := filepath.Join(gitDir, "HEAD")
+	headBytes, err := os.ReadFile(headPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read directory: %w", err)
+		return RepoStatus{}, err
 	}
 
-	parentPath := filepath.Dir(absTarget)
-	if parentPath == absTarget {
-		parentPath = ""
+	headContent := strings.TrimSpace(string(headBytes))
+	branch := ""
+	if strings.HasPrefix(headContent, "ref: refs/heads/") {
+		branch = strings.TrimPrefix(headContent, "ref: refs/heads/")
+	} else if len(headContent) >= 7 {
+		branch = headContent[:7]
 	}
 
-	dirs := make([]DirectoryItem, 0)
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if !showHidden && strings.HasPrefix(name, ".") {
-			continue
-		}
-		dirs = append(dirs, DirectoryItem{
-			Name: name,
-			Path: filepath.Join(absTarget, name),
-		})
-	}
-
-	return &DirectoryBrowseResult{
-		CurrentPath: absTarget,
-		ParentPath:  parentPath,
-		HomePath:    homeDir,
-		RootPath:    string(filepath.Separator),
-		Directories: dirs,
+	return RepoStatus{
+		IsRepo:   true,
+		Branch:   branch,
+		RepoName: filepath.Base(root),
 	}, nil
 }
 
-// PickFolderNative opens the native OS directory picker dialog (Finder on macOS, File Explorer on Windows, zenity/kdialog on Linux).
-func PickFolderNative(ctx context.Context) (string, bool, error) {
-	switch runtime.GOOS {
-	case "darwin":
-		cmd := exec.CommandContext(ctx, "osascript", "-e", `POSIX path of (choose folder with prompt "Select Project Folder:")`)
-		out, err := cmd.Output()
-		if err != nil {
-			var exitErr *exec.ExitError
-			if errors.As(err, &exitErr) {
-				combined := strings.ToLower(string(exitErr.Stderr) + " " + err.Error())
-				if strings.Contains(combined, "user canceled") || strings.Contains(combined, "canceled") || exitErr.ExitCode() == 1 {
-					return "", true, nil
-				}
-			}
-			return "", false, fmt.Errorf("osascript dialog failed: %w", err)
-		}
-		chosen := strings.TrimSpace(string(out))
-		if chosen == "" {
-			return "", true, nil
-		}
-		return filepath.Clean(chosen), false, nil
-
-	case "windows":
-		psScript := `[System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = 'Select Project Folder'; $f.ShowNewFolderButton = $true; if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath } else { Write-Output 'CANCELLED' }`
-		cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command", psScript)
-		out, err := cmd.Output()
-		if err != nil {
-			return "", false, fmt.Errorf("powershell dialog failed: %w", err)
-		}
-		chosen := strings.TrimSpace(string(out))
-		if chosen == "" || chosen == "CANCELLED" {
-			return "", true, nil
-		}
-		return filepath.Clean(chosen), false, nil
-
-	case "linux":
-		if _, lookErr := exec.LookPath("zenity"); lookErr == nil {
-			cmd := exec.CommandContext(ctx, "zenity", "--file-selection", "--directory", "--title=Select Project Folder")
-			out, err := cmd.Output()
-			if err != nil {
-				return "", true, nil
-			}
-			chosen := strings.TrimSpace(string(out))
-			if chosen == "" {
-				return "", true, nil
-			}
-			return filepath.Clean(chosen), false, nil
-		}
-		if _, lookErr := exec.LookPath("kdialog"); lookErr == nil {
-			cmd := exec.CommandContext(ctx, "kdialog", "--getexistingdirectory")
-			out, err := cmd.Output()
-			if err != nil {
-				return "", true, nil
-			}
-			chosen := strings.TrimSpace(string(out))
-			if chosen == "" {
-				return "", true, nil
-			}
-			return filepath.Clean(chosen), false, nil
-		}
-		return "", false, errors.New("no native file dialog tool available on linux (zenity or kdialog required)")
-
-	default:
-		return "", false, fmt.Errorf("native file dialog is not supported on %s", runtime.GOOS)
-	}
-}

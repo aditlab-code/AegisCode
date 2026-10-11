@@ -19,10 +19,10 @@ func TestWorkspaceOperations(t *testing.T) {
 	}
 
 	// 1. Write file (relative and with leading slash)
-	if err := mgr.WriteFile("test.txt", "hello aegis world\nsecond line", false); err != nil {
+	if err := mgr.WriteFile("test.txt", "hello aegis world\nsecond line"); err != nil {
 		t.Fatalf("failed to write file: %v", err)
 	}
-	if err := mgr.WriteFile("/leading_slash.txt", "content from slash path", false); err != nil {
+	if err := mgr.WriteFile("/leading_slash.txt", "content from slash path"); err != nil {
 		t.Fatalf("failed to write file with leading slash: %v", err)
 	}
 
@@ -45,9 +45,21 @@ func TestWorkspaceOperations(t *testing.T) {
 		t.Fatalf("failed to delete file with leading slash: %v", err)
 	}
 
-	// 3. Create folder and move
-	if err := mgr.WriteFile("subfolder", "", true); err != nil {
+	// 3. Create folder and containment verification
+	createdPath, err := mgr.CreateFolder("subfolder")
+	if err != nil {
 		t.Fatalf("failed to create folder: %v", err)
+	}
+	if createdPath != filepath.Join(tempDir, "subfolder") {
+		t.Fatalf("unexpected created folder path: %s", createdPath)
+	}
+
+	// Escape attempt must fail
+	if _, err := mgr.CreateFolder("../../outside"); err == nil {
+		t.Fatalf("expected error when folder escapes root, got nil")
+	}
+	if _, err := mgr.CreateFolder(""); err == nil {
+		t.Fatalf("expected error for empty folder path, got nil")
 	}
 	newPath, err := mgr.Move("test.txt", "subfolder")
 	if err != nil {
@@ -102,42 +114,6 @@ func TestWorkspaceOperations(t *testing.T) {
 	}
 }
 
-func TestBrowseDirectory(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "browse-test-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	if err := os.Mkdir(filepath.Join(tempDir, "visible_dir"), 0755); err != nil {
-		t.Fatalf("failed to create dir: %v", err)
-	}
-	if err := os.Mkdir(filepath.Join(tempDir, ".hidden_dir"), 0755); err != nil {
-		t.Fatalf("failed to create hidden dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(tempDir, "file.txt"), []byte("hi"), 0644); err != nil {
-		t.Fatalf("failed to create file: %v", err)
-	}
-
-	// 1. Browse without hidden
-	res, err := BrowseDirectory(tempDir, false)
-	if err != nil {
-		t.Fatalf("BrowseDirectory failed: %v", err)
-	}
-	if len(res.Directories) != 1 || res.Directories[0].Name != "visible_dir" {
-		t.Fatalf("expected 1 visible dir, got: %+v", res.Directories)
-	}
-
-	// 2. Browse with hidden
-	resHidden, err := BrowseDirectory(tempDir, true)
-	if err != nil {
-		t.Fatalf("BrowseDirectory with hidden failed: %v", err)
-	}
-	if len(resHidden.Directories) != 2 {
-		t.Fatalf("expected 2 directories with hidden, got: %d", len(resHidden.Directories))
-	}
-}
-
 func TestWorkspaceClose(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "ws-close-test-*")
 	if err != nil {
@@ -170,5 +146,85 @@ func TestWorkspaceClose(t *testing.T) {
 	}
 	if len(tree) != 0 {
 		t.Fatalf("expected empty tree, got: %d", len(tree))
+	}
+}
+
+func TestGetGitStatus(t *testing.T) {
+	// Case 1: Empty / closed manager
+	emptyMgr := &Manager{rootPath: ""}
+	status, err := emptyMgr.GetGitStatus()
+	if err != nil {
+		t.Fatalf("unexpected error for empty manager: %v", err)
+	}
+	if status.IsRepo {
+		t.Fatalf("expected isRepo false for empty manager, got true")
+	}
+
+	// Case 2: Non-repo workspace
+	tempDir, err := os.MkdirTemp("", "ws-git-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	mgr, err := NewManager(tempDir)
+	if err != nil {
+		t.Fatalf("failed to initialize manager: %v", err)
+	}
+
+	status, err = mgr.GetGitStatus()
+	if err != nil {
+		t.Fatalf("unexpected error for non-repo: %v", err)
+	}
+	if status.IsRepo {
+		t.Fatalf("expected isRepo false, got true")
+	}
+	if status.RepoName != filepath.Base(tempDir) {
+		t.Fatalf("expected repoName '%s', got '%s'", filepath.Base(tempDir), status.RepoName)
+	}
+
+	// Case 3: Repo with branch ref
+	gitDir := filepath.Join(tempDir, ".git")
+	if err := os.Mkdir(gitDir, 0755); err != nil {
+		t.Fatalf("failed to create .git: %v", err)
+	}
+	headFile := filepath.Join(gitDir, "HEAD")
+	if err := os.WriteFile(headFile, []byte("ref: refs/heads/main\n"), 0644); err != nil {
+		t.Fatalf("failed to write HEAD: %v", err)
+	}
+
+	status, err = mgr.GetGitStatus()
+	if err != nil {
+		t.Fatalf("unexpected error for git repo: %v", err)
+	}
+	if !status.IsRepo {
+		t.Fatalf("expected isRepo true, got false")
+	}
+	if status.Branch != "main" {
+		t.Fatalf("expected branch 'main', got '%s'", status.Branch)
+	}
+
+	// Case 4: Detached HEAD
+	if err := os.WriteFile(headFile, []byte("1234567890abcdef\n"), 0644); err != nil {
+		t.Fatalf("failed to update HEAD: %v", err)
+	}
+	status, err = mgr.GetGitStatus()
+	if err != nil {
+		t.Fatalf("unexpected error for detached HEAD: %v", err)
+	}
+	if status.Branch != "1234567" {
+		t.Fatalf("expected branch '1234567', got '%s'", status.Branch)
+	}
+
+	// Case 5: Workspace closed
+	if err := mgr.Close(); err != nil {
+		t.Fatalf("failed to close manager: %v", err)
+	}
+	status, err = mgr.GetGitStatus()
+	if err != nil {
+		t.Fatalf("unexpected error after close: %v", err)
+	}
+	if status.IsRepo {
+		t.Fatalf("expected isRepo false after close, got true")
 	}
 }
