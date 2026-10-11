@@ -6,21 +6,37 @@ import type {
   CompanionSettings,
   FilesSettings,
   AgentSettings,
+  ChatProvider,
   ThemePaletteId,
   ThemeMode,
 } from "../../../types/workbench"
+import {
+  CHAT_PROVIDERS,
+  getMergedProviderModels,
+} from "../../../data/chatConstants"
+import { testProviderConnection } from "../../../utils/storeApi"
 
 export interface SettingItem {
   id: string
   category: "Editor" | "Files" | "Workbench" | "Window" | "Features" | "Companion" | "AI"
   title: string
   description: string
-  type: "boolean" | "select" | "text" | "number" | "info"
+  type: "boolean" | "select" | "text" | "number" | "password" | "custom-models" | "provider-test" | "info"
   value?: boolean | string | number
   options?: string[]
   onChange?: (val: any) => void
   isFutureNotice?: boolean
   futureNoticeText?: string
+  customModels?: string[]
+  onAddCustomModel?: (modelId: string) => void
+  onRemoveCustomModel?: (modelId: string) => void
+  providerId?: string
+  onTestConnection?: () => Promise<{
+    success: boolean
+    latencyMs?: number
+    message?: string
+    error?: string
+  }>
 }
 
 export interface SettingsRegistryCallbacks {
@@ -771,20 +787,46 @@ export function buildSettingsSchema(
     },
 
     // 7. AI Agents
+    // 7.1 General Settings
+    {
+      id: "agent.defaultProvider",
+      category: "AI",
+      title: "AI: Default Provider",
+      description: "Default AI provider used when creating new agent sessions.",
+      type: "select",
+      value: settings?.agent?.defaultProvider ?? "antigravity",
+      options: CHAT_PROVIDERS.map((p) => p.id),
+      onChange: (v) => {
+        const prov = v as ChatProvider
+        const models = getMergedProviderModels(
+          prov,
+          settings?.agent?.customModels,
+        )
+        const fallbackModel = models[0]?.id || "gemini-3.8-flash"
+        updateAgentSettings?.((prev) => ({
+          ...prev,
+          defaultProvider: prov,
+          model: fallbackModel,
+        }))
+        showToast(`Default AI provider set to ${prov}`)
+      },
+    },
     {
       id: "agent.model",
       category: "AI",
-      title: "AI: Default LLM Model",
+      title: "AI: Default Model",
       description:
-        "Select the default language model powering coding suggestions and agent tasks.",
+        "Default model corresponding to the active default provider.",
       type: "select",
-      value: settings?.agent?.model ?? "claude-3-7-sonnet",
-      options: ["claude-3-7-sonnet", "gpt-4o", "gemini-2.0-pro", "deepseek-r1"],
+      value: settings?.agent?.model ?? "gemini-3.8-flash",
+      options: getMergedProviderModels(
+        (settings?.agent?.defaultProvider ?? "antigravity") as ChatProvider,
+        settings?.agent?.customModels,
+      ).map((m) => m.id),
       onChange: (v) => {
         updateAgentSettings?.({ model: v })
-        showToast(`Agent model set to ${v}`)
+        showToast(`Default model set to ${v}`)
       },
-      isFutureNotice: true,
     },
     {
       id: "agent.temperature",
@@ -799,35 +841,114 @@ export function buildSettingsSchema(
         updateAgentSettings?.({ temperature: Number(v) || 0.7 })
         showToast(`Agent temperature set to ${v}`)
       },
-      isFutureNotice: true,
     },
     {
       id: "agent.modelStreaming",
       category: "AI",
       title: "AI: Streaming Token Telemetry",
       description:
-        "Renders model response tokens incrementally with live diff streaming.",
+        "Renders model response tokens incrementally with live markdown streaming.",
       type: "boolean",
       value: settings?.agent?.streaming ?? true,
       onChange: (v) => {
         updateAgentSettings?.({ streaming: Boolean(v) })
         showToast(`Agent token streaming ${v ? "enabled" : "disabled"}`)
       },
-      isFutureNotice: true,
     },
     {
       id: "agent.autoContext",
       category: "AI",
       title: "AI: Auto Context Ingestion",
       description:
-        "Automatically includes active editor tab buffer and cursor location in agent prompts.",
+        "Automatically extracts active editor tab buffer and cursor selection into agent prompts.",
       type: "boolean",
       value: settings?.agent?.contextIngestion ?? true,
       onChange: (v) => {
         updateAgentSettings?.({ contextIngestion: Boolean(v) })
         showToast(`Agent auto context ${v ? "enabled" : "disabled"}`)
       },
-      isFutureNotice: true,
+    },
+
+    // 7.2 Antigravity Provider
+    {
+      id: "agent.antigravity.command",
+      category: "AI",
+      title: "Antigravity: CLI Command / Path",
+      description:
+        "Local command or binary path used for OAuth manual login and token lifecycle (default: antigravity).",
+      type: "text",
+      value: settings?.agent?.bypassCommands?.antigravity ?? "antigravity",
+      onChange: (v) => {
+        updateAgentSettings?.((prev) => ({
+          ...prev,
+          bypassCommands: { ...prev.bypassCommands, antigravity: v },
+        }))
+      },
+    },
+
+    // 7.3 Claude Provider
+    {
+      id: "agent.claude.command",
+      category: "AI",
+      title: "Claude: CLI Command / Path",
+      description:
+        "Local command or binary path used for Claude OAuth manual login and token lifecycle (default: claude).",
+      type: "text",
+      value: settings?.agent?.bypassCommands?.claude ?? "claude",
+      onChange: (v) => {
+        updateAgentSettings?.((prev) => ({
+          ...prev,
+          bypassCommands: { ...prev.bypassCommands, claude: v },
+        }))
+      },
+    },
+
+    // 7.4 OpenCode Provider
+    {
+      id: "agent.opencode.baseUrl",
+      category: "AI",
+      title: "OpenCode: API Base URL",
+      description: "OpenAI-compatible endpoint URL for OpenCode gateway.",
+      type: "text",
+      value:
+        settings?.agent?.providerBaseUrls?.opencode ??
+        "https://api.opencode.ai/v1",
+      onChange: (v) => {
+        updateAgentSettings?.((prev) => ({
+          ...prev,
+          providerBaseUrls: { ...prev.providerBaseUrls, opencode: v },
+        }))
+      },
+    },
+    {
+      id: "agent.opencode.apiKey",
+      category: "AI",
+      title: "OpenCode: API Key",
+      description: "API authorization token for OpenCode gateway.",
+      type: "password",
+      value: settings?.agent?.providerKeys?.opencode ?? "",
+      onChange: (v) => {
+        updateAgentSettings?.((prev) => ({
+          ...prev,
+          providerKeys: { ...prev.providerKeys, opencode: v },
+        }))
+      },
+    },
+
+    // 7.5 OpenRouter Provider
+    {
+      id: "agent.openrouter.apiKey",
+      category: "AI",
+      title: "OpenRouter: API Key",
+      description: "OpenRouter authorization key (https://openrouter.ai/keys).",
+      type: "password",
+      value: settings?.agent?.providerKeys?.openrouter ?? "",
+      onChange: (v) => {
+        updateAgentSettings?.((prev) => ({
+          ...prev,
+          providerKeys: { ...prev.providerKeys, openrouter: v },
+        }))
+      },
     },
   ]
 }

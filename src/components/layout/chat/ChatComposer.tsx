@@ -13,8 +13,42 @@ interface ChatComposerProps {
 }
 
 export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
-  const { files, activeTab, setActiveTab } = useWorkbench()
+  const {
+    files,
+    contextItems,
+    dismissContextItem,
+    toggleContextItemMode,
+    addMentionContext,
+    activeProvider,
+    settings,
+    setSettingsModalOpen,
+    showToast,
+  } = useWorkbench()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const isProviderConfigured = useCallback(() => {
+    if (!settings?.agent) return true
+    if (activeProvider === "openrouter") {
+      return Boolean(settings.agent.providerKeys?.openrouter?.trim())
+    }
+    if (activeProvider === "opencode") {
+      return Boolean(settings.agent.providerKeys?.opencode?.trim())
+    }
+    return true
+  }, [activeProvider, settings])
+
+  const configured = isProviderConfigured()
+
+  function handleSendWithCheck() {
+    if (!configured) {
+      showToast(
+        `Kredensial untuk ${activeProvider} belum diatur. Mengalihkan ke Settings...`,
+      )
+      setSettingsModalOpen(true)
+      return
+    }
+    onSend()
+  }
 
   const [popoverType, setPopoverType] = useState<PopoverType>(null)
   const [popoverQuery, setPopoverQuery] = useState("")
@@ -129,10 +163,12 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
           const q = popoverQuery.toLowerCase()
           const matched = files.filter((f) => f.label.toLowerCase().includes(q))
           if (matched[selectedIndex]) {
-            const isFolder = matched[selectedIndex].icon === "folder"
-            handleSelectToken(
-              `@${matched[selectedIndex].label}${isFolder ? "/" : ""} `,
-            )
+            const item = matched[selectedIndex]
+            const isFolder = item.icon === "folder"
+            if (!isFolder && addMentionContext) {
+              addMentionContext(item.path || item.label)
+            }
+            handleSelectToken(`@${item.label}${isFolder ? "/" : ""} `)
             return
           }
         }
@@ -146,7 +182,7 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
 
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault()
-      onSend()
+      handleSendWithCheck()
       setPopoverType(null)
     }
   }
@@ -179,6 +215,64 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
       )}
 
       <div className="composer">
+        {contextItems && contextItems.length > 0 && (
+          <div
+            className="composer-context-chips"
+            role="region"
+            aria-label="Attached context chips"
+          >
+            {contextItems.map((item) => {
+              const basename = item.path.split("/").pop() || item.path
+              return (
+                <div key={item.id} className="composer-context-chip">
+                  <button
+                    type="button"
+                    className="composer-chip-toggle"
+                    onClick={() => toggleContextItemMode(item.id)}
+                    title={`Click to toggle selection vs full file: ${item.path}`}
+                  >
+                    <Icon name="file" size={11} className="text-muted" />
+                    <span className="composer-chip-filename">{basename}</span>
+                    {item.lineRange ? (
+                      <span className="composer-chip-range">
+                        ({item.lineRange})
+                      </span>
+                    ) : item.mode === "selection" ? (
+                      <span className="composer-chip-range">(Selection)</span>
+                    ) : (
+                      <span className="composer-chip-range">(Full)</span>
+                    )}
+                  </button>
+                  <span
+                    className="composer-chip-tokens"
+                    title={`${item.charCount} characters`}
+                  >
+                    ~{item.estimatedTokens} tokens
+                  </span>
+                  {item.isTruncated && (
+                    <span
+                      className="composer-chip-truncated flex items-center gap-1"
+                      title="File exceeded 50,000 characters and was truncated to protect token limits"
+                    >
+                      <Icon name="warning" size={10} />
+                      <span>Truncated</span>
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="composer-chip-dismiss"
+                    onClick={() => dismissContextItem(item.id)}
+                    title="Dismiss context"
+                    aria-label={`Dismiss context ${basename}`}
+                  >
+                    <Icon name="close" size={10} />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
         <textarea
           ref={textareaRef}
           aria-label="Message AEGIS"
@@ -196,19 +290,31 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
         <div className="composer-footer">
           <div className="composer-footer-left">
             <ChatProviderSelect />
-            {activeTab && (
+            {!configured && (
               <button
                 type="button"
-                className="composer-context-pill"
-                onClick={() => setActiveTab(activeTab)}
-                title={`Active in context: ${activeTab}`}
+                className="composer-setup-warning flex items-center gap-1"
+                onClick={() => setSettingsModalOpen(true)}
+                title="Click to configure credentials in Settings"
               >
-                <span className="status-dot" />
-                <span className="composer-context-name">{activeTab}</span>
+                <Icon name="warning" size={11} />
+                <span>Setup needed</span>
               </button>
             )}
+            {contextItems && contextItems.length > 0 && (
+              <span
+                className="composer-context-summary"
+                title={`${contextItems.length} context item(s) attached`}
+              >
+                <span className="status-dot" />
+                <span>
+                  {contextItems.length} context
+                  {contextItems.length > 1 ? "s" : ""}
+                </span>
+              </span>
+            )}
           </div>
-          <IconButton label="Send message" onClick={onSend}>
+          <IconButton label="Send message" onClick={handleSendWithCheck}>
             <Icon name="send" size={15} />
           </IconButton>
         </div>

@@ -1,18 +1,26 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useLayoutCore } from "./layoutCore"
 import { useEditorCore } from "./editorCore"
 import { useWorkspaceCore, type CursorCoordinates } from "./workspaceCore"
 import { useGitCore } from "./gitCore"
 import { useTerminalCore } from "./terminalCore"
-import { useChatCore } from "./chatCore"
+import { useChatCore, DEFAULT_PROVIDER } from "./chatCore"
 import { useSettingsCore } from "./settingsCore"
+import {
+  extractEditorContext,
+  buildMentionContextItem,
+} from "./contextExtractorCore"
 import { detectLanguage, validateSyntax } from "../../utils/linter"
 import {
   isGitDiffTab,
   makeGitDiffTab,
   parseGitDiffTab,
 } from "../../utils/gitDiffTab"
-import type { WorkspaceChangeEvent } from "../../types/workbench"
+import type {
+  ChatProvider,
+  ContextItem,
+  WorkspaceChangeEvent,
+} from "../../types/workbench"
 
 export interface ConfirmCloseState {
   group: "group1" | "group2"
@@ -282,6 +290,107 @@ export function useWorkbenchFacade() {
     }
   }, [workspace.fileBuffers, settingsCore.settings.files, saveFile])
 
+  // --- AI Context Extractor Logic (Sub-Phase 6.7) ---
+  const [manualMentions, setManualMentions] = useState<ContextItem[]>([])
+  const [dismissedPaths, setDismissedPaths] = useState<Set<string>>(new Set())
+  const [contextModeOverrides, setContextModeOverrides] =
+    useState<Record<string, "selection" | "full">>({})
+
+  // Re-enable dismissed chip if user selects new text in active file
+  useEffect(() => {
+    if (editor.selection.selectedText && editor.activeTab) {
+      setDismissedPaths((prev) => {
+        if (!prev.has(editor.activeTab)) return prev
+        const next = new Set(prev)
+        next.delete(editor.activeTab)
+        return next
+      })
+    }
+  }, [editor.selection.selectedText, editor.activeTab])
+
+  const activeBuffer = editor.activeTab
+    ? workspace.fileBuffers[editor.activeTab]?.content
+    : undefined
+  const excludePatterns = settingsCore.settings.files?.exclude
+
+  const activeContextItem = useMemo(() => {
+    if (
+      !editor.activeTab ||
+      !activeBuffer ||
+      dismissedPaths.has(editor.activeTab)
+    ) {
+      return null
+    }
+    const mode = contextModeOverrides[editor.activeTab]
+    return extractEditorContext({
+      path: editor.activeTab,
+      content: activeBuffer,
+      selectedText: editor.selection.selectedText,
+      selectionRange: {
+        startLine: editor.selection.startLine,
+        endLine: editor.selection.endLine,
+      },
+      excludePatterns,
+      mode,
+    })
+  }, [
+    editor.activeTab,
+    activeBuffer,
+    editor.selection,
+    dismissedPaths,
+    contextModeOverrides,
+    excludePatterns,
+  ])
+
+  const contextItems = useMemo(() => {
+    const items: ContextItem[] = []
+    if (activeContextItem) items.push(activeContextItem)
+    items.push(...manualMentions)
+    return items
+  }, [activeContextItem, manualMentions])
+
+  const dismissContextItem = useCallback(
+    (id: string) => {
+      if (activeContextItem && activeContextItem.id === id) {
+        setDismissedPaths((prev) => new Set([...prev, activeContextItem.path]))
+        return
+      }
+      setManualMentions((prev) => prev.filter((m) => m.id !== id))
+    },
+    [activeContextItem],
+  )
+
+  const toggleContextItemMode = useCallback(
+    (id: string) => {
+      if (activeContextItem && activeContextItem.id === id) {
+        setContextModeOverrides((prev) => {
+          const current = prev[activeContextItem.path] || activeContextItem.mode
+          const next = current === "selection" ? "full" : "selection"
+          return { ...prev, [activeContextItem.path]: next }
+        })
+      }
+    },
+    [activeContextItem],
+  )
+
+  const addMentionContext = useCallback(
+    (path: string) => {
+      const buf = workspace.fileBuffers[path]?.content || ""
+      const item = buildMentionContextItem(path, buf)
+      if (item) {
+        setManualMentions((prev) => {
+          if (prev.some((p) => p.path === path)) return prev
+          return [...prev, item]
+        })
+      }
+    },
+    [workspace.fileBuffers],
+  )
+
+  const clearManualMentions = useCallback(() => {
+    setManualMentions([])
+  }, [])
+
   const createFileAndOpen = useCallback(
     async (name: string, isFolder = false, parentFolder?: string) => {
       const newPath = await workspace.createFile(name, isFolder, parentFolder)
@@ -496,6 +605,26 @@ export function useWorkbenchFacade() {
     saveFile,
   ])
 
+  const createSessionWithSettings = useCallback(
+    (provider?: ChatProvider, model?: string) => {
+      const p =
+        provider ||
+        settingsCore.settings.agent.defaultProvider ||
+        DEFAULT_PROVIDER
+      const m =
+        model ||
+        (p === settingsCore.settings.agent.defaultProvider
+          ? settingsCore.settings.agent.model
+          : undefined)
+      return chat.createSession(p, m)
+    },
+    [
+      chat.createSession,
+      settingsCore.settings.agent.defaultProvider,
+      settingsCore.settings.agent.model,
+    ],
+  )
+
   return {
     // Layout
     sidebarOpen: layout.sidebarOpen,
@@ -620,12 +749,14 @@ export function useWorkbenchFacade() {
     activeLanguage: workspace.activeLanguage,
     setActiveLanguage: workspace.setActiveLanguage,
 
-    // Buffer & Linter & Cursor
+    // Buffer & Linter & Cursor & Selection
     fileBuffers: workspace.fileBuffers,
     updateFileContent: workspace.updateFileContent,
     saveFile,
     cursorPosition: editor.cursorPosition,
     setCursorPosition: editor.setCursorPosition,
+    selection: editor.selection,
+    setSelection: editor.setSelection,
     tabSize: settingsCore.settings.editor.tabSize,
     setTabSize: (size: number) => {
       editor.setTabSize(size)
@@ -729,18 +860,28 @@ export function useWorkbenchFacade() {
     sendTerminalCommand: terminal.sendTerminalCommand,
     clearTerminal: terminal.clearTerminal,
 
-    // Chat
+    // Chat & Context Extractor
     sessions: chat.sessions,
     activeSessionId: chat.activeSessionId,
     activeSession: chat.activeSession,
     activeProvider: chat.activeProvider,
     activeModel: chat.activeModel,
-    createSession: chat.createSession,
+    createSession: createSessionWithSettings,
     switchSession: chat.switchSession,
     deleteSession: chat.deleteSession,
     setSessionModel: chat.setSessionModel,
     chatMessages: chat.chatMessages,
-    sendChatMessage: chat.sendChatMessage,
+    sendChatMessage: (text: string, customContext?: ContextItem[]) => {
+      const itemsToSend =
+        customContext !== undefined ? customContext : contextItems
+      chat.sendChatMessage(text, itemsToSend)
+      clearManualMentions()
+    },
+    contextItems,
+    dismissContextItem,
+    toggleContextItemMode,
+    addMentionContext,
+    clearManualMentions,
 
     // Global
     toast,

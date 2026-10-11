@@ -3,6 +3,7 @@ import type {
   ChatMessage,
   ChatProvider,
   ChatSession,
+  ContextItem,
 } from "../../types/workbench"
 import { CHAT_MODELS } from "../../data/chatConstants"
 import {
@@ -13,14 +14,18 @@ import {
 } from "../../utils/storeApi"
 
 export const DEFAULT_PROVIDER: ChatProvider = "antigravity"
-export const DEFAULT_MODEL = "gemini-2.5-flash"
+export const DEFAULT_MODEL = "gemini-3.8-flash"
 
-export function createDefaultSession(id = "session-1"): ChatSession {
+export function createDefaultSession(
+  id = "session-1",
+  provider: ChatProvider = DEFAULT_PROVIDER,
+  model = DEFAULT_MODEL,
+): ChatSession {
   return {
     id,
     title: "New Session",
-    provider: DEFAULT_PROVIDER,
-    model: DEFAULT_MODEL,
+    provider,
+    model,
     messages: [
       {
         id: "msg-1",
@@ -61,13 +66,18 @@ export function generateContextualReply(
   text: string,
   provider: ChatProvider,
   model: string,
+  context?: ContextItem[],
 ): string {
   const skillMatch = text.match(/^\/(spec|plan|review|debug|simplify)\b/i)
   const mentions = Array.from(text.matchAll(/@([a-zA-Z0-9_\-./]+)/g)).map(
     (m) => m[0],
   )
   const contextNote =
-    mentions.length > 0 ? `\n• Context: ${mentions.join(", ")}` : ""
+    mentions.length > 0
+      ? `\n• Context: ${mentions.join(", ")}`
+      : Array.isArray(context) && context.length > 0
+        ? `\n• Attached Context: ${context.map((c) => `${c.path}${c.lineRange ? ` (${c.lineRange})` : ""}`).join(", ")}`
+        : ""
 
   if (skillMatch) {
     const cmd = skillMatch[1].toLowerCase()
@@ -87,6 +97,10 @@ export function generateContextualReply(
 
   if (mentions.length > 0) {
     return `[${provider} · ${model}] Inspected context for ${mentions.join(", ")}. Ready to proceed with implementation or answer questions.`
+  }
+
+  if (context && context.length > 0) {
+    return `[${provider} · ${model}] Inspected ${context.length} attached context item(s) (${context.map((c) => c.path).join(", ")}). Ready to assist with your codebase.`
   }
 
   return `[${provider} · ${model}] Received: "${
@@ -171,34 +185,44 @@ export function sendChatMessageLogic(
   sessions: ChatSession[],
   activeId: string,
   text: string,
+  context?: ContextItem[],
 ): ChatSession[] {
   const cleanText = text.trim()
-  if (!cleanText) return sessions
+  const hasValidContext = Array.isArray(context) && context.length > 0
+  if (!cleanText && !hasValidContext) return sessions
 
   const userMsg: ChatMessage = {
     id: `msg-${Date.now()}`,
     role: "user",
     text: cleanText,
+    timestamp: Date.now(),
+    context: hasValidContext ? context : undefined,
   }
 
   return sessions.map((s) => {
     if (s.id !== activeId) return s
 
     const newMessages = [...s.messages, userMsg]
+    const fallbackTitle =
+      cleanText ||
+      (hasValidContext ? context[0]?.path || "New Session" : "New Session")
     const newTitle =
       s.title === "New Session"
-        ? cleanText.slice(0, 26).trim() + (cleanText.length > 26 ? "..." : "")
+        ? fallbackTitle.slice(0, 26).trim() +
+          (fallbackTitle.length > 26 ? "..." : "")
         : s.title
 
     const agentReplyText = generateContextualReply(
       cleanText,
       s.provider,
       s.model,
+      context,
     )
     const agentMsg: ChatMessage = {
       id: `msg-${Date.now() + 1}`,
       role: "agent",
       text: agentReplyText,
+      timestamp: Date.now() + 1,
     }
 
     return {
@@ -304,8 +328,10 @@ export function useChatCore() {
   )
 
   const sendChatMessage = useCallback(
-    (text: string) => {
-      setSessions((prev) => sendChatMessageLogic(prev, activeSessionId, text))
+    (text: string, context?: ContextItem[]) => {
+      setSessions((prev) =>
+        sendChatMessageLogic(prev, activeSessionId, text, context),
+      )
     },
     [activeSessionId],
   )

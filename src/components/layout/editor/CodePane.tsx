@@ -36,6 +36,7 @@ export function CodePane({
     updateFileContent,
     setCursorPosition,
     cursorPosition,
+    setSelection,
     diagnostics,
     setFocusedPane,
     saveFile,
@@ -175,14 +176,41 @@ export function CodePane({
     })
   }
 
+  const selectionTimerRef = useRef<NodeJS.Timeout | null>(null)
+
   function updateCursor() {
     if (!textareaRef.current) return
-    const pos = textareaRef.current.selectionStart
-    const textUpToCursor = textareaRef.current.value.slice(0, pos)
+    const el = textareaRef.current
+    const pos = el.selectionStart
+    const textUpToCursor = el.value.slice(0, pos)
     const currentLines = textUpToCursor.split("\n")
     const line = currentLines.length
     const col = currentLines[currentLines.length - 1].length + 1
     setCursorPosition({ line, col })
+
+    if (setSelection) {
+      if (selectionTimerRef.current) {
+        clearTimeout(selectionTimerRef.current)
+      }
+      selectionTimerRef.current = setTimeout(() => {
+        if (!textareaRef.current) return
+        const s = textareaRef.current.selectionStart
+        const e = textareaRef.current.selectionEnd
+        if (s === e) {
+          setSelection({ startLine: line, endLine: line, selectedText: "" })
+          return
+        }
+        const selected = textareaRef.current.value.slice(s, e)
+        const textBefore = textareaRef.current.value.slice(0, s)
+        const startLine = textBefore.split("\n").length
+        const endLine = startLine + selected.split("\n").length - 1
+        setSelection({
+          startLine,
+          endLine,
+          selectedText: selected,
+        })
+      }, 150)
+    }
   }
 
   function handleChange(event: ChangeEvent<HTMLTextAreaElement>) {
@@ -461,6 +489,7 @@ export function CodePane({
               }}
               onKeyDown={handleKeyDown}
               onKeyUp={updateCursor}
+              onMouseUp={updateCursor}
               onMouseMove={handleTextareaMouseMove}
               onScroll={syncScroll}
               ref={textareaRef}

@@ -142,10 +142,13 @@ func (s *Store) GetConfig() (*Config, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &Config{
-				BypassTokens: make(map[string]string),
-				ProviderKeys: make(map[string]string),
-				Settings:     make(map[string]any),
-				UpdatedAt:    time.Now().UnixMilli(),
+				BypassTokens:     make(map[string]string),
+				ProviderKeys:     make(map[string]string),
+				ProviderBaseURLs: make(map[string]string),
+				BypassCommands:   make(map[string]string),
+				CustomModels:     make(map[string][]string),
+				Settings:         make(map[string]any),
+				UpdatedAt:        time.Now().UnixMilli(),
 			}, nil
 		}
 		return nil, fmt.Errorf("failed to read config file: %w", err)
@@ -161,6 +164,15 @@ func (s *Store) GetConfig() (*Config, error) {
 	}
 	if cfg.ProviderKeys == nil {
 		cfg.ProviderKeys = make(map[string]string)
+	}
+	if cfg.ProviderBaseURLs == nil {
+		cfg.ProviderBaseURLs = make(map[string]string)
+	}
+	if cfg.BypassCommands == nil {
+		cfg.BypassCommands = make(map[string]string)
+	}
+	if cfg.CustomModels == nil {
+		cfg.CustomModels = make(map[string][]string)
 	}
 	if cfg.Settings == nil {
 		cfg.Settings = make(map[string]any)

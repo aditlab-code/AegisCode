@@ -3,6 +3,7 @@ import type {
   ActivityType,
   CursorPosition,
   EditorGroupState,
+  EditorSelectionRange,
   FindWidgetState,
   MinimapScale,
 } from "../../types/workbench"
@@ -196,6 +197,11 @@ export function useEditorCore(onFileRequested?: (filename: string) => void) {
   const [cursorPosition, setCursorPosition] = useState<CursorPosition>({
     line: 1,
     col: 1,
+  })
+  const [selection, setSelection] = useState<EditorSelectionRange>({
+    startLine: 1,
+    endLine: 1,
+    selectedText: "",
   })
 
   const [minimapEnabled, setMinimapEnabledState] = useState<boolean>(
@@ -563,6 +569,8 @@ export function useEditorCore(onFileRequested?: (filename: string) => void) {
     toggleFind,
     cursorPosition,
     setCursorPosition,
+    selection,
+    setSelection,
     currentFocusedFile,
     renameTabsInBothGroups,
     closeTabInBothGroups,

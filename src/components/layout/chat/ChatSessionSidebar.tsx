@@ -21,9 +21,11 @@ export function ChatSessionSidebar() {
           const providerTag =
             session.provider === "antigravity"
               ? "AGY"
-              : session.provider === "opencode"
-                ? "OC"
-                : "OR"
+              : session.provider === "claude"
+                ? "CLD"
+                : session.provider === "opencode"
+                  ? "OC"
+                  : "OR"
 
           return (
             <div

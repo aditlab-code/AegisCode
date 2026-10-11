@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 
-export type IconName = "aegis" | "arrow-down" | "arrow-up" | "bell" | "branch" | "check" | "chevron" | "chevron-down" | "chevron-up" | "close" | "code" | "copy" | "error" | "explorer" | "file" | "folder" | "git" | "history" | "layout" | "maximize" | "moon" | "more" | "panel" | "play" | "plus" | "refresh" | "search" | "send" | "settings" | "split" | "sun" | "symbol" | "terminal" | "trash" | "warning" | "edit" | "add" | "replace-all" | "cloud" | "sparkle" | "tag" | "discard" | "collapse-all"
+export type IconName = "aegis" | "arrow-down" | "arrow-up" | "bell" | "branch" | "check" | "chevron" | "chevron-down" | "chevron-up" | "close" | "code" | "copy" | "error" | "explorer" | "file" | "folder" | "git" | "history" | "layout" | "maximize" | "moon" | "more" | "panel" | "play" | "plus" | "refresh" | "search" | "send" | "settings" | "split" | "sun" | "symbol" | "terminal" | "trash" | "warning" | "edit" | "add" | "replace-all" | "cloud" | "sparkle" | "tag" | "discard" | "collapse-all" | "brain"
 
 export type ThemeMode = "dark" | "light"
 export type ThemePaletteId = "default" | "atom" | "tokyo-night"
@@ -75,10 +75,15 @@ export interface CompanionSettings {
 }
 
 export interface AgentSettings {
+  defaultProvider: ChatProvider
   model: string
   temperature: number
   streaming: boolean
   contextIngestion: boolean
+  providerKeys: Record<string, string>
+  providerBaseUrls: Record<string, string>
+  bypassCommands: Record<string, string>
+  customModels: Record<string, string[]>
 }
 
 export interface AppSettings {
@@ -95,13 +100,14 @@ export interface AppSettings {
   agent: AgentSettings
 }
 
-export type ChatProvider = "antigravity" | "opencode" | "openrouter"
+export type ChatProvider = "antigravity" | "claude" | "opencode" | "openrouter"
 
 export interface ProviderModel {
   id: string
   name: string
   provider: ChatProvider
   description?: string
+  isCustom?: boolean
 }
 
 export interface ChatSession {
@@ -193,10 +199,30 @@ export interface NotificationItem {
   level?: "info" | "warning" | "error" | "success"
 }
 
+export interface ContextItem {
+  id: string
+  type: "file" | "selection"
+  path: string
+  lineRange?: string
+  content: string
+  charCount: number
+  estimatedTokens: number
+  isTruncated?: boolean
+  mode: "selection" | "full"
+}
+
+export interface EditorSelectionRange {
+  startLine: number
+  endLine: number
+  selectedText: string
+}
+
 export interface ChatMessage {
   id: string
-  role: "agent" | "user"
+  role: "agent" | "user" | "system"
   text: string
+  timestamp?: number
+  context?: ContextItem[]
 }
 
 export interface GitUser {

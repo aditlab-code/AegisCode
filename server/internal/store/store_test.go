@@ -41,9 +41,13 @@ func TestConfigPersistence(t *testing.T) {
 
 	// 2. Save config
 	cfg.Theme = "light"
+	cfg.DefaultProvider = "openrouter"
 	cfg.DefaultModel = "claude-3-7-sonnet"
 	cfg.BypassTokens["antigravity"] = "test-token-123"
 	cfg.ProviderKeys["openrouter"] = "sk-or-test"
+	cfg.ProviderBaseURLs["opencode"] = "https://custom.opencode.ai/v1"
+	cfg.BypassCommands["claude"] = "claude auth status"
+	cfg.CustomModels["openrouter"] = []string{"meta-llama/llama-3.3-70b", "deepseek/deepseek-chat"}
 	cfg.Settings["editor.tabSize"] = 4
 
 	if err := st.SaveConfig(cfg); err != nil {
@@ -58,6 +62,9 @@ func TestConfigPersistence(t *testing.T) {
 	if loaded.Theme != "light" {
 		t.Errorf("expected theme 'light', got %s", loaded.Theme)
 	}
+	if loaded.DefaultProvider != "openrouter" {
+		t.Errorf("expected defaultProvider 'openrouter', got %s", loaded.DefaultProvider)
+	}
 	if loaded.DefaultModel != "claude-3-7-sonnet" {
 		t.Errorf("expected defaultModel 'claude-3-7-sonnet', got %s", loaded.DefaultModel)
 	}
@@ -66,6 +73,15 @@ func TestConfigPersistence(t *testing.T) {
 	}
 	if loaded.ProviderKeys["openrouter"] != "sk-or-test" {
 		t.Errorf("expected provider key 'sk-or-test', got %s", loaded.ProviderKeys["openrouter"])
+	}
+	if loaded.ProviderBaseURLs["opencode"] != "https://custom.opencode.ai/v1" {
+		t.Errorf("expected provider baseURL, got %s", loaded.ProviderBaseURLs["opencode"])
+	}
+	if loaded.BypassCommands["claude"] != "claude auth status" {
+		t.Errorf("expected bypass command, got %s", loaded.BypassCommands["claude"])
+	}
+	if len(loaded.CustomModels["openrouter"]) != 2 || loaded.CustomModels["openrouter"][0] != "meta-llama/llama-3.3-70b" {
+		t.Errorf("expected custom models array, got %v", loaded.CustomModels["openrouter"])
 	}
 }
 
@@ -158,7 +174,7 @@ func TestChatSessionsCRUD(t *testing.T) {
 		ID:       "session-alpha",
 		Title:    "Refactor Store",
 		Provider: "antigravity",
-		Model:    "gemini-2.5-flash",
+		Model:    "gemini-3.8-flash",
 		Messages: []ChatMessage{
 			{ID: "m1", Role: "user", Text: "Can we use flat files?"},
 			{ID: "m2", Role: "agent", Text: "Yes, flat files are lean and zero-CGO."},

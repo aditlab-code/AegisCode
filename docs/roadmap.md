@@ -225,27 +225,44 @@
   - **Verification**: 100% verified via automated frontend Vitest suite (32 tests), Go backend suite (7 suites), and live standalone DMG execution.
 
 #### Sub-Phase 6.7: UI State & Context Extractor (Frontend PWA Focus)
-- **Status**: ⚪ Planned
+- **Status**: ✅ Completed
 - **Deliverables**:
-  - **Context Extractor Core**: Passive real-time context capture engine (`ContextManager` in React Context) collecting:
-    - `activeFilePath`: Relative path of the currently focused editor tab.
-    - `selectedText`: Instant cursor text selection.
-    - `entireBuffer`: Full editor buffer content with character threshold guardrail (>50,000 chars falls back to active selection with warning badge).
-  - **Token Exclude Filter**: Seamless integration with `matchesExcludePattern` from IDE settings (`files.exclude`) to ensure giant files, binary artifacts, or build output (`node_modules/`, `dist/`, `*.log`) are stripped client-side prior to network dispatch.
-  - **Context Chip Badge in AppComposer**: Visual pills in composer displaying active file and selection tags (`@file.go`, `Selection (Ln 12-45)`) with one-click dismiss.
+  - **Context Extractor Core (`src/context/core/contextExtractorCore.ts`)**:
+    - Passive real-time context capture engine collecting `activeFilePath`, `selectedText` with debounced (150ms) listener in `CodePane.tsx`, and `entireBuffer`.
+    - Token ceiling estimation based on ~4 characters per token heuristic (`estimateTokens`).
+    - Character threshold guardrail (>50,000 chars falls back with truncated content and `⚠️ Truncated` warning badge).
+  - **Token Exclude Filter (`isPathExcluded`)**:
+    - Seamless filtering against exclusion patterns (`node_modules/`, `.git/`, `dist/`, `target/`, `*.log`, `*.lock`, `.DS_Store`) preventing unwanted file and artifact context bloat.
+  - **Interactive Context Chip Badges in `ChatComposer.tsx`**:
+    - Dismissible chip badges in composer showing active file, line range (e.g. `(Ln 12–45)`), token estimates (`~180 tokens`), and truncation alerts.
+    - One-click toggle between active Selection and Full File mode.
+    - Dismiss memory state: dismissed file context remains hidden until tab switch or new active selection.
+    - Multi-context support: seamlessly merges active editor context with manual `@mentions`.
+  - **Message Context Persistence & Collapsible Banner in `ChatMessageList.tsx`**:
+    - Attached `ChatMessage.context: ContextItem[]` serialized and persisted into Go backend flat-file store (`~/.aegis/chats/<id>.json`).
+    - Collapsible `<details>` context banner in message list with file path, line range badges, total token count, and code preview snippet.
+  - **Verification**: 100% verified via 5 new regression scenarios in `test/frontend/core/workbenchCore.test.ts` (37 tests passing), covering passive extraction, 50k char guardrails, exclusion filtering, metadata persistence, and dirty flag preservation during active AI chat tab switches.
 
-#### Sub-Phase 6.8: Go API Bridge & Token Lifecycle (Auth Context)
-- **Status**: ⚪ Planned
+#### Sub-Phase 6.8: Go API Bridge & Token Lifecycle (Auth Context & Provider Settings)
+- **Status**: ✅ Completed
 - **Deliverables**:
-  - **Global Config Read (`~/.aegis/config.json`)**: Thread-safe configuration reader accessing persisted provider API keys, model preferences, and CLI bypass tokens.
-  - **OAuth CMD Bypass & Manual Login Handling**:
-    - Support for 4 unified AI providers:
-      1. **Antigravity**: OAuth CMD / CLI bypass token (manual user login via CLI).
-      2. **OpenCode**: OpenAI-compatible API gateway (configurable base URL & API key).
-      3. **OpenRouter**: Multi-model gateway (`https://openrouter.ai/api/v1`) via API key.
-      4. **Claude**: OAuth CMD / CLI bypass token (manual user login via CLI).
-    - If credentials expire (401 response from upstream), Go triggers background refresh command or dispatches auth notification.
-  - **Real-Time Auth Status Stream via SSE**: Dispatches `auth:refreshing` and `auth:ready` signals to PWA over `/api/v1/events/workspace` to keep UI updated without modal popups.
+  - **Global Config & Provider Schema (`server/internal/store` & `~/.aegis/config.json`)**:
+    - Thread-safe configuration reader & writer persisting `DefaultProvider`, `DefaultModel`, `ProviderKeys`, `ProviderBaseURLs`, `BypassCommands`, and `CustomModels`.
+  - **4 Unified AI Providers & Model Upgrades**:
+    1. **Antigravity**: OAuth CLI (`agy` / `antigravity`) with updated models `gemini-3.8-flash` (default) & `gemini-3.8-medium` (legacy `gemini-2.5` deprecated).
+    2. **Claude**: OAuth CLI (`claude auth`) with `claude-3.7-sonnet` and `claude-3.5-haiku`.
+    3. **OpenCode**: OpenAI-compatible HTTP gateway with configurable base URL and API key.
+    4. **OpenRouter**: Multi-gateway HTTP endpoint (`https://openrouter.ai/api/v1`) with API key.
+  - **Dynamic Custom Model Registry**:
+    - Support for user-defined arbitrary model IDs across all 4 providers via interactive Tag Chips (`+ Add` / `✕`) in Settings Modal.
+    - Seamlessly merged into `ChatProviderSelect` dropdown with `[Custom]` badges via `getMergedProviderModels()`.
+  - **Backend AI Test Probe Engine (`POST /api/v1/ai/test`)**:
+    - Fast, zero-token cost HTTP GET `/models` probes for OpenCode & OpenRouter.
+    - Safe `exec.LookPath` CLI path verification and `--version` probe with 5-second timeout for Antigravity & Claude.
+    - Live Test Connection buttons in Settings Modal displaying real-time spinner, latency (ms), and error tooltips.
+  - **Chat Composer Configuration Guard**:
+    - Displays `⚠️ Setup needed` badge when the active provider lacks credentials, redirecting users directly to the Settings Modal upon send.
+  - **Verification**: 100% verified across Go backend tests (`server/internal/ai/probe_test.go`, `server/internal/store/store_test.go`, `server/internal/api/api_test.go`) and Vitest frontend regression tests (`test/frontend/core/workbenchCore.test.ts`, 45 tests passing).
 
 #### Sub-Phase 6.9: Isolated Engine & SSE Streaming (Backend Provider Go)
 - **Status**: ⚪ Planned
@@ -319,3 +336,7 @@
     - **Focus Code Editor Tab**: Distraction-free, single-buffer touch-optimized text editor allowing tablet users to edit active code files with instant synchronization to the desktop workspace.
   - **Realtime Sync Protocol**: WebSocket / SSE event bus keeping file buffers and cursor states synchronized between desktop and tablet.
 - **Exit Criteria**: A developer can open AegisCode on an iPad/tablet on the same Wi-Fi, run the web application preview on the tablet, and edit code buffers with zero desktop layout corruption.
+
+Jalankan server mDNS/Bonjour kecil di daemon Go (misal: mengekspos aegis.local:5173).
+
+Sediakan modal kecil di status bar yang menampilkan QR Code / Pair URL berisi session token lokal sekali pakai, sehingga laptop kedua langsung terhubung begitu link dibuka.

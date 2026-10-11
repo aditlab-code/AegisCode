@@ -45,7 +45,23 @@ import {
   createSessionLogic,
   deleteSessionLogic,
   sendChatMessageLogic,
+  setSessionModelLogic,
+  generateContextualReply,
+  DEFAULT_PROVIDER,
+  DEFAULT_MODEL,
 } from "@/context/core/chatCore"
+import {
+  CHAT_PROVIDERS,
+  CHAT_MODELS,
+  getMergedProviderModels,
+} from "@/data/chatConstants"
+import {
+  extractEditorContext,
+  buildMentionContextItem,
+  estimateTokens,
+  isPathExcluded,
+  MAX_CONTEXT_CHARS,
+} from "@/context/core/contextExtractorCore"
 import type {
   EditorGroupState,
   FileItem,
@@ -55,6 +71,8 @@ import type {
   BottomTab,
   TerminalSession,
   ChatSession,
+  ChatProvider,
+  ContextItem,
 } from "@/types/workbench"
 
 /**
@@ -73,6 +91,7 @@ export interface CoreWorkbenchHarness {
   terminals: TerminalSession[]
   chatSessions: ChatSession[]
   activeChatId: string
+  lastExtractedContext?: ContextItem | null
 }
 
 export function createCoreWorkbenchHarness(): CoreWorkbenchHarness {
@@ -119,7 +138,7 @@ export function createCoreWorkbenchHarness(): CoreWorkbenchHarness {
         id: "chat-1",
         title: "Initial Session",
         provider: "antigravity",
-        model: "gemini-2.5-flash",
+        model: "gemini-3.8-flash",
         messages: [{ id: "m-1", role: "agent", text: "Connected" }],
         createdAt: 1000,
       },
@@ -346,7 +365,7 @@ export const coreRegressionScenarios: RegressionScenario[] = [
       const newChat = createSessionLogic(
         h.chatSessions,
         "antigravity",
-        "gemini-2.5-flash",
+        "gemini-3.8-flash",
       )
       h.chatSessions = newChat.sessions
       h.activeChatId = newChat.newSession.id
@@ -494,6 +513,181 @@ export const coreRegressionScenarios: RegressionScenario[] = [
       expect(h.group1.tabs).not.toContain("src/index.ts")
       expect(h.buffers["src/index.ts"]?.content).toBe("console.log('hello')")
       expect(h.buffers["src/index.ts"]?.isDirty).toBe(false)
+    },
+  },
+
+  // 15. Context Extractor Core: Passive extraction & token calculation
+  {
+    id: "CTX-EXTRACT-01",
+    description:
+      "Passive editor context extractor captures active buffer and calculates token estimation",
+    execute: (h) => {
+      const ctx = extractEditorContext({
+        path: h.group1.activeTab,
+        content: h.buffers[h.group1.activeTab]?.content ?? "",
+        selectedText: "console.log('hello')",
+        selectionRange: { startLine: 1, endLine: 1 },
+      })
+      h.lastExtractedContext = ctx
+    },
+    verify: (h) => {
+      expect(h.lastExtractedContext).toBeDefined()
+      expect(h.lastExtractedContext?.path).toBe("src/index.ts")
+      expect(h.lastExtractedContext?.mode).toBe("selection")
+      expect(h.lastExtractedContext?.lineRange).toBe("Ln 1")
+      expect(h.lastExtractedContext?.content).toBe("console.log('hello')")
+      expect(h.lastExtractedContext?.estimatedTokens).toBe(
+        estimateTokens("console.log('hello')"),
+      )
+      expect(h.lastExtractedContext?.isTruncated).toBe(false)
+    },
+  },
+
+  // 16. Context Extractor Core: 50k character threshold guardrail
+  {
+    id: "CTX-GUARD-01",
+    description:
+      "Context extractor enforces 50,000 character limit guardrail with isTruncated flag",
+    execute: (h) => {
+      const hugeContent = "X".repeat(60_000)
+      const ctx = extractEditorContext({
+        path: "src/huge.ts",
+        content: hugeContent,
+        mode: "full",
+      })
+      h.lastExtractedContext = ctx
+    },
+    verify: (h) => {
+      expect(h.lastExtractedContext).toBeDefined()
+      expect(h.lastExtractedContext?.isTruncated).toBe(true)
+      expect(h.lastExtractedContext?.charCount).toBe(MAX_CONTEXT_CHARS)
+      expect(h.lastExtractedContext?.content.length).toBe(MAX_CONTEXT_CHARS)
+      expect(h.lastExtractedContext?.estimatedTokens).toBe(
+        estimateTokens("X".repeat(MAX_CONTEXT_CHARS)),
+      )
+    },
+  },
+
+  // 17. Context Extractor Core: Exclude pattern filtering
+  {
+    id: "CTX-EXCLUDE-01",
+    description:
+      "Context extractor filters excluded paths (node_modules, dist, *.log) to prevent prompt bloat",
+    execute: (h) => {
+      const nodeModulesCtx = extractEditorContext({
+        path: "node_modules/lodash/index.js",
+        content: "module.exports = {}",
+      })
+      const gitCtx = extractEditorContext({
+        path: ".git/HEAD",
+        content: "ref: refs/heads/main",
+      })
+      const logCtx = extractEditorContext({
+        path: "debug.log",
+        content: "2026-10-12 info message",
+      })
+      const validCtx = extractEditorContext({
+        path: "src/valid.ts",
+        content: "export const x = 1",
+      })
+
+      h.lastExtractedContext = validCtx
+      expect(nodeModulesCtx).toBeNull()
+      expect(gitCtx).toBeNull()
+      expect(logCtx).toBeNull()
+    },
+    verify: (h) => {
+      expect(h.lastExtractedContext).not.toBeNull()
+      expect(h.lastExtractedContext?.path).toBe("src/valid.ts")
+    },
+  },
+
+  // 18. Chat Metadata Persistence: Attached Context Items
+  {
+    id: "CHAT-CTX-PERSIST-01",
+    description:
+      "Chat messaging preserves attached ContextItem array in message context metadata",
+    execute: (h) => {
+      const attachedCtx: ContextItem[] = [
+        {
+          id: "ctx-1",
+          type: "selection",
+          path: "src/index.ts",
+          content: "console.log('hello')",
+          charCount: 20,
+          estimatedTokens: 5,
+          mode: "selection",
+          lineRange: "Ln 1",
+        },
+      ]
+
+      h.chatSessions = sendChatMessageLogic(
+        h.chatSessions,
+        h.activeChatId,
+        "Explain this snippet",
+        attachedCtx,
+      )
+    },
+    verify: (h) => {
+      const session = h.chatSessions.find((s) => s.id === h.activeChatId)!
+      expect(session).toBeDefined()
+      const userMsg = session.messages.find(
+        (m) => m.role === "user" && m.text === "Explain this snippet",
+      )
+      expect(userMsg).toBeDefined()
+      expect(userMsg?.context).toBeDefined()
+      expect(userMsg?.context).toHaveLength(1)
+      expect(userMsg?.context?.[0].path).toBe("src/index.ts")
+      expect(userMsg?.context?.[0].lineRange).toBe("Ln 1")
+    },
+  },
+
+  // 19. Tab Switching During AI Streaming / Operations & Dirty Flag Preservation
+  {
+    id: "EDITOR-STREAM-TAB-01",
+    description:
+      "Switching active tabs during AI chat operations preserves editor buffer dirty flags and content state",
+    execute: (h) => {
+      // 1. Mark active tab as dirty
+      h.buffers["src/index.ts"] = updateBufferContentLogic(
+        h.buffers,
+        "src/index.ts",
+        "console.log('modified while chatting')",
+      )["src/index.ts"]!
+
+      expect(h.buffers["src/index.ts"]?.isDirty).toBe(true)
+
+      // 2. Open a second file tab
+      h.group1 = openTabInGroupLogic(h.group1, "README.md")
+      expect(h.group1.activeTab).toBe("README.md")
+
+      // 3. Simulate chat exchange occurring while README.md is active
+      const ctxItem: ContextItem = {
+        id: "ctx-readme",
+        type: "file",
+        path: "README.md",
+        content: "# AegisCode",
+        charCount: 11,
+        estimatedTokens: 3,
+        mode: "full",
+      }
+      h.chatSessions = sendChatMessageLogic(
+        h.chatSessions,
+        h.activeChatId,
+        "Review README",
+        [ctxItem],
+      )
+
+      // 4. Switch back to src/index.ts
+      h.group1 = openTabInGroupLogic(h.group1, "src/index.ts")
+    },
+    verify: (h) => {
+      expect(h.group1.activeTab).toBe("src/index.ts")
+      // Dirty flag must NOT be corrupted or reset
+      expect(h.buffers["src/index.ts"]?.isDirty).toBe(true)
+      expect(h.buffers["src/index.ts"]?.content).toBe(
+        "console.log('modified while chatting')",
+      )
     },
   },
 ]
@@ -652,6 +846,147 @@ describe("AegisCode Core Test Suite (Frontend Logic Regression Engine)", () => {
         eol: "\r\n",
       })
       expect(crlfContent).toBe("line1\r\nline2\r\n")
+    })
+  })
+
+  // Context Extractor & Token Lifecycle Engine Tests (Sub-Phase 6.7)
+  describe("Context Extractor & Token Lifecycle Engine", () => {
+    it("estimates tokens based on ~4 chars per token ceiling calculation", () => {
+      expect(estimateTokens("")).toBe(0)
+      expect(estimateTokens("a")).toBe(1)
+      expect(estimateTokens("abcd")).toBe(1)
+      expect(estimateTokens("abcde")).toBe(2)
+      expect(estimateTokens("a".repeat(100))).toBe(25)
+    })
+
+    it("correctly evaluates default exclusion patterns", () => {
+      expect(isPathExcluded("node_modules/pkg/index.js")).toBe(true)
+      expect(isPathExcluded(".git/config")).toBe(true)
+      expect(isPathExcluded("dist/bundle.js")).toBe(true)
+      expect(isPathExcluded("app.log")).toBe(true)
+      expect(isPathExcluded("package-lock.json")).toBe(false)
+      expect(isPathExcluded("src/components/App.tsx")).toBe(false)
+    })
+
+    it("builds mention context items with mode full", () => {
+      const mention = buildMentionContextItem(
+        "src/utils.ts",
+        "export const PI = 3.14",
+      )
+      expect(mention).not.toBeNull()
+      expect(mention?.id).toBe("ctx-src/utils.ts-mention")
+      expect(mention?.mode).toBe("full")
+      expect(mention?.content).toBe("export const PI = 3.14")
+      expect(mention?.estimatedTokens).toBe(
+        estimateTokens("export const PI = 3.14"),
+      )
+    })
+  })
+
+  // Sub-Phase 6.8: Go API Bridge & Token Lifecycle (Auth Context & Provider Settings)
+  describe("Sub-Phase 6.8: AI Providers & Custom Models Registry", () => {
+    it("registers all 4 standard AI providers with updated model catalogs", () => {
+      expect(CHAT_PROVIDERS).toHaveLength(4)
+      const ids = CHAT_PROVIDERS.map((p) => p.id)
+      expect(ids).toEqual(["antigravity", "claude", "opencode", "openrouter"])
+
+      // Verify Antigravity model updates (gemini-3.8-flash & gemini-3.8-medium)
+      const agyModels = CHAT_MODELS.antigravity
+      expect(agyModels.some((m) => m.id === "gemini-3.8-flash")).toBe(true)
+      expect(agyModels.some((m) => m.id === "gemini-3.8-medium")).toBe(true)
+      expect(agyModels.some((m) => m.id === "gemini-2.5-flash")).toBe(false)
+
+      // Verify Claude models
+      const claudeModels = CHAT_MODELS.claude
+      expect(claudeModels.some((m) => m.id === "claude-3.7-sonnet")).toBe(true)
+      expect(claudeModels.some((m) => m.id === "claude-3.5-haiku")).toBe(true)
+    })
+
+    it("merges dynamic custom models cleanly across providers via getMergedProviderModels", () => {
+      const customModelsMap = {
+        claude: ["claude-3-opus-20240229", "claude-custom-finetune"],
+        openrouter: ["meta-llama/llama-3.3-70b", "deepseek/deepseek-r1"],
+      }
+
+      // Test claude merged models
+      const claudeMerged = getMergedProviderModels("claude", customModelsMap)
+      expect(claudeMerged.length).toBe(CHAT_MODELS.claude.length + 2)
+      const customItem = claudeMerged.find(
+        (m) => m.id === "claude-custom-finetune",
+      )
+      expect(customItem).toBeDefined()
+      expect(customItem?.isCustom).toBe(true)
+      expect(customItem?.description).toBe("Custom user-configured model")
+
+      // Test deduplication if custom model ID already exists in built-in
+      const dupMap = {
+        antigravity: ["gemini-3.8-flash", "my-gemini-custom"],
+      }
+      const agyMerged = getMergedProviderModels("antigravity", dupMap)
+      expect(agyMerged.length).toBe(CHAT_MODELS.antigravity.length + 1)
+      expect(agyMerged.filter((m) => m.id === "gemini-3.8-flash").length).toBe(
+        1,
+      )
+    })
+
+    it("creates sessions with proper default model and handles custom model assignment", () => {
+      const initialSessions: ChatSession[] = []
+
+      // Default session creation
+      const res1 = createSessionLogic(initialSessions)
+      expect(res1.newSession.provider).toBe(DEFAULT_PROVIDER)
+      expect(res1.newSession.model).toBe(DEFAULT_MODEL)
+      expect(res1.newSession.model).toBe("gemini-3.8-flash")
+
+      // Explicit provider + custom model
+      const res2 = createSessionLogic(
+        res1.sessions,
+        "openrouter",
+        "deepseek/deepseek-r1",
+      )
+      expect(res2.newSession.provider).toBe("openrouter")
+      expect(res2.newSession.model).toBe("deepseek/deepseek-r1")
+      expect(res2.sessions.length).toBe(2)
+
+      // Switch active session model via setSessionModelLogic
+      const updated = setSessionModelLogic(
+        res2.sessions,
+        res2.newSession.id,
+        "claude",
+        "claude-3.7-sonnet",
+      )
+      const switched = updated.find((s) => s.id === res2.newSession.id)
+      expect(switched?.provider).toBe("claude")
+      expect(switched?.model).toBe("claude-3.7-sonnet")
+    })
+
+    it("verifies settings registry defaults for AI providers and custom model state", () => {
+      expect(DEFAULT_APP_SETTINGS.agent.defaultProvider).toBe("antigravity")
+      expect(DEFAULT_APP_SETTINGS.agent.model).toBe("gemini-3.8-flash")
+      expect(DEFAULT_APP_SETTINGS.agent.customModels).toEqual({
+        antigravity: [],
+        claude: [],
+        opencode: [],
+        openrouter: [],
+      })
+      expect(DEFAULT_APP_SETTINGS.agent.providerKeys).toEqual({})
+      expect(DEFAULT_APP_SETTINGS.agent.providerBaseUrls).toHaveProperty(
+        "opencode",
+      )
+      expect(DEFAULT_APP_SETTINGS.agent.bypassCommands).toEqual({
+        antigravity: "antigravity",
+        claude: "claude",
+      })
+    })
+
+    it("generates contextual replies for Claude and custom models correctly", () => {
+      const reply = generateContextualReply(
+        "/spec microservice authentication bridge",
+        "claude",
+        "claude-3.7-sonnet",
+      )
+      expect(reply).toContain("[claude · claude-3.7-sonnet]")
+      expect(reply).toContain("Specification Draft generated")
     })
   })
 })

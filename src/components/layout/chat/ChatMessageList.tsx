@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbench } from "../../../context/WorkbenchContext"
+import { CHAT_PROVIDERS } from "../../../data/chatConstants"
 
 function renderMessageContent(text: string) {
   const lines = text.split("\n")
@@ -36,8 +37,12 @@ function renderMessageContent(text: string) {
 }
 
 export function ChatMessageList() {
-  const { chatMessages, activeModel, showToast } = useWorkbench()
+  const { chatMessages, activeProvider, activeModel, showToast } =
+    useWorkbench()
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  const providerObj =
+    CHAT_PROVIDERS.find((p) => p.id === activeProvider) || CHAT_PROVIDERS[0]
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -78,7 +83,12 @@ export function ChatMessageList() {
                   {item.role === "agent" ? "AEGIS" : "You"}
                 </strong>
                 {item.role === "agent" && (
-                  <span className="msg-model-badge">{activeModel}</span>
+                  <div className="flex items-center gap-1">
+                    <span className={`provider-tag tag-${activeProvider}`}>
+                      {providerObj.tag}
+                    </span>
+                    <span className="msg-model-badge">{activeModel}</span>
+                  </div>
                 )}
               </div>
 
@@ -93,6 +103,59 @@ export function ChatMessageList() {
                 </button>
               )}
             </div>
+
+            {item.context && item.context.length > 0 && (
+              <div className="message-context-banner">
+                <details className="message-context-details">
+                  <summary className="message-context-summary">
+                    <Icon name="file" size={11} />
+                    <span>
+                      {item.context.length} Context Item
+                      {item.context.length > 1 ? "s" : ""} (
+                      {item.context
+                        .map((c) => c.path.split("/").pop())
+                        .join(", ")}
+                      )
+                    </span>
+                    <span className="context-tokens-badge">
+                      ~
+                      {item.context.reduce(
+                        (acc, c) => acc + c.estimatedTokens,
+                        0,
+                      )}{" "}
+                      tokens
+                    </span>
+                  </summary>
+                  <div className="message-context-content">
+                    {item.context.map((c, cIdx) => (
+                      <div key={cIdx} className="message-context-item">
+                        <div className="context-item-header">
+                          <span className="context-item-path">{c.path}</span>
+                          {c.lineRange && (
+                            <span className="context-item-range">
+                              {c.lineRange}
+                            </span>
+                          )}
+                          {c.isTruncated && (
+                            <span className="context-item-truncated flex items-center gap-1">
+                              <Icon name="warning" size={10} />
+                              <span>Truncated</span>
+                            </span>
+                          )}
+                        </div>
+                        <pre className="context-item-code">
+                          <code>
+                            {c.content.length > 300
+                              ? c.content.slice(0, 300) + "\n..."
+                              : c.content}
+                          </code>
+                        </pre>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              </div>
+            )}
 
             <div className="message-body">
               {renderMessageContent(item.text)}

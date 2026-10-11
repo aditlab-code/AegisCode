@@ -2,6 +2,15 @@ import { useState, useMemo } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbench } from "../../../context/WorkbenchContext"
 import { buildSettingsSchema, type SettingItem } from "./settingsRegistry"
+import {
+  CHAT_PROVIDERS,
+  getMergedProviderModels,
+} from "../../../data/chatConstants"
+import {
+  testProviderConnection,
+  type ProviderTestResponse,
+} from "../../../utils/storeApi"
+import type { ChatProvider } from "../../../types/workbench"
 
 export function SettingsModal() {
   const {
@@ -23,6 +32,168 @@ export function SettingsModal() {
   const [activeCategory, setActiveCategory] = useState<string>("Editor")
   const [searchQuery, setSearchQuery] = useState("")
   const [isRegex, setIsRegex] = useState(false)
+  const [showPassword, setShowPassword] = useState<Record<string, boolean>>({})
+
+  // AI Tab State
+  const [modelFilter, setModelFilter] = useState<"all" | ChatProvider>("all")
+  const [modelSearch, setModelSearch] = useState("")
+  const [newModelProvider, setNewModelProvider] =
+    useState<ChatProvider>("openrouter")
+  const [newModelId, setNewModelId] = useState("")
+  const [modelTestStates, setModelTestStates] = useState<Record<string, {
+    loading: boolean
+    result?: ProviderTestResponse
+  }>>({})
+
+  // Compute all models (built-in + custom) across all providers
+  const allModels = useMemo(() => {
+    const list: {
+      provider: ChatProvider
+      id: string
+      name: string
+      description?: string
+      isCustom?: boolean
+    }[] = []
+
+    for (const p of CHAT_PROVIDERS) {
+      const pModels = getMergedProviderModels(
+        p.id,
+        settings?.agent?.customModels,
+      )
+      for (const m of pModels) {
+        list.push({
+          provider: p.id,
+          id: m.id,
+          name: m.name,
+          description: m.description,
+          isCustom: m.isCustom,
+        })
+      }
+    }
+    return list
+  }, [settings?.agent?.customModels])
+
+  // Filtered models for table
+  const filteredModels = useMemo(() => {
+    return allModels.filter((m) => {
+      if (modelFilter !== "all" && m.provider !== modelFilter) return false
+      if (modelSearch.trim()) {
+        const q = modelSearch.toLowerCase()
+        return (
+          m.id.toLowerCase().includes(q) ||
+          m.name.toLowerCase().includes(q) ||
+          (m.description && m.description.toLowerCase().includes(q))
+        )
+      }
+      return true
+    })
+  }, [allModels, modelFilter, modelSearch])
+
+  // Test connection for a specific model
+  async function handleTestSpecificModel(
+    provider: ChatProvider,
+    modelId: string,
+  ) {
+    const testKey = `${provider}:${modelId}`
+    setModelTestStates((prev) => ({
+      ...prev,
+      [testKey]: { loading: true },
+    }))
+
+    let apiKey: string | undefined
+    let baseUrl: string | undefined
+    let command: string | undefined
+
+    if (provider === "antigravity") {
+      command = settings?.agent?.bypassCommands?.antigravity || "antigravity"
+    } else if (provider === "claude") {
+      command = settings?.agent?.bypassCommands?.claude || "claude"
+    } else if (provider === "opencode") {
+      apiKey = settings?.agent?.providerKeys?.opencode
+      baseUrl = settings?.agent?.providerBaseUrls?.opencode
+    } else if (provider === "openrouter") {
+      apiKey = settings?.agent?.providerKeys?.openrouter
+    }
+
+    try {
+      const res = await testProviderConnection({
+        provider,
+        model: modelId,
+        apiKey,
+        baseUrl,
+        command,
+      })
+
+      setModelTestStates((prev) => ({
+        ...prev,
+        [testKey]: { loading: false, result: res },
+      }))
+
+      if (res.success) {
+        showToast(`${res.message} (${res.latencyMs}ms)`)
+      } else {
+        showToast(res.error || res.message)
+      }
+    } catch (err: any) {
+      setModelTestStates((prev) => ({
+        ...prev,
+        [testKey]: {
+          loading: false,
+          result: {
+            success: false,
+            provider,
+            latencyMs: 0,
+            message: "Connection test failed",
+            error: err?.message,
+          },
+        },
+      }))
+      showToast("Connection test failed")
+    }
+  }
+
+  // Set model as global default
+  function handleSetModelDefault(provider: ChatProvider, modelId: string) {
+    updateAgentSettings?.({
+      defaultProvider: provider,
+      model: modelId,
+    })
+    showToast(`Default model set to ${modelId} (${provider})`)
+  }
+
+  // Remove custom model
+  function handleRemoveModelCustom(provider: ChatProvider, modelId: string) {
+    const cur = settings?.agent?.customModels?.[provider] || []
+    updateAgentSettings?.((prev) => ({
+      ...prev,
+      customModels: {
+        ...prev.customModels,
+        [provider]: cur.filter((m) => m !== modelId),
+      },
+    }))
+    showToast(`Removed custom model ${modelId}`)
+  }
+
+  // Add custom model
+  function handleAddCustomModel() {
+    const cleanId = newModelId.trim()
+    if (!cleanId) return
+    const cur = settings?.agent?.customModels?.[newModelProvider] || []
+    if (cur.includes(cleanId)) {
+      showToast(`Model ${cleanId} already exists in ${newModelProvider}`)
+      return
+    }
+
+    updateAgentSettings?.((prev) => ({
+      ...prev,
+      customModels: {
+        ...prev.customModels,
+        [newModelProvider]: [...cur, cleanId],
+      },
+    }))
+    showToast(`Added custom model ${cleanId} to ${newModelProvider}`)
+    setNewModelId("")
+  }
 
   const settingsList: SettingItem[] = useMemo(
     () =>
@@ -82,7 +253,7 @@ export function SettingsModal() {
     { id: "Window", label: "Window", badge: "Future" },
     { id: "Features", label: "Features", badge: "" },
     { id: "Companion", label: "Companion (Tablet)", badge: "Future" },
-    { id: "AI", label: "AI Agents", badge: "Future" },
+    { id: "AI", label: "AI Agents", badge: "" },
   ]
 
   return (
@@ -114,12 +285,12 @@ export function SettingsModal() {
               autoFocus
               className="settings-search-input"
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search settings (supports regex)..."
+              placeholder="Search settings..."
               value={searchQuery}
             />
             {searchQuery && (
               <button
-                className="settings-clear-btn"
+                className="settings-search-clear"
                 onClick={() => setSearchQuery("")}
                 title="Clear query"
                 type="button"
@@ -188,7 +359,600 @@ export function SettingsModal() {
 
           {/* Right Settings Content List */}
           <div className="settings-content-column">
-            {filteredSettings.length > 0 ? (
+            {activeCategory === "AI" && !searchQuery.trim() ? (
+              <div className="ai-settings-page">
+                {/* 1. General AI Preferences */}
+                <div className="ai-section">
+                  <div className="ai-section-header">
+                    <span className="ai-section-title">
+                      General AI Preferences
+                    </span>
+                    <span className="ai-section-subtitle">
+                      Runtime defaults and telemetry configuration for code
+                      agents.
+                    </span>
+                  </div>
+                  <div className="ai-general-grid">
+                    <div className="ai-general-item">
+                      <label className="ai-field-label">
+                        Creativity Temperature
+                      </label>
+                      <select
+                        aria-label="Creativity Temperature"
+                        className="settings-select"
+                        value={String(settings?.agent?.temperature ?? "0.7")}
+                        onChange={(e) => {
+                          const v = Number(e.target.value) || 0.7
+                          updateAgentSettings?.({ temperature: v })
+                          showToast(`Agent temperature set to ${v}`)
+                        }}
+                      >
+                        <option value="0.2">0.2 - Strict & Precise</option>
+                        <option value="0.7">0.7 - Balanced</option>
+                        <option value="1.0">1.0 - Creative</option>
+                      </select>
+                    </div>
+
+                    <div className="ai-general-item">
+                      <label className="ai-field-label">Token Streaming</label>
+                      <label className="settings-toggle-label mt-1">
+                        <input
+                          type="checkbox"
+                          className="settings-checkbox"
+                          checked={settings?.agent?.streaming ?? true}
+                          onChange={(e) => {
+                            updateAgentSettings?.({
+                              streaming: e.target.checked,
+                            })
+                            showToast(
+                              `Agent token streaming ${
+                                e.target.checked ? "enabled" : "disabled"
+                              }`,
+                            )
+                          }}
+                        />
+                        <span>
+                          {settings?.agent?.streaming
+                            ? "Enabled (Live tokens)"
+                            : "Disabled (Block)"}
+                        </span>
+                      </label>
+                    </div>
+
+                    <div className="ai-general-item">
+                      <label className="ai-field-label">
+                        Auto Context Ingestion
+                      </label>
+                      <label className="settings-toggle-label mt-1">
+                        <input
+                          type="checkbox"
+                          className="settings-checkbox"
+                          checked={settings?.agent?.contextIngestion ?? true}
+                          onChange={(e) => {
+                            updateAgentSettings?.({
+                              contextIngestion: e.target.checked,
+                            })
+                            showToast(
+                              `Agent auto context ${
+                                e.target.checked ? "enabled" : "disabled"
+                              }`,
+                            )
+                          }}
+                        />
+                        <span>
+                          {settings?.agent?.contextIngestion
+                            ? "Enabled (Buffer & selection)"
+                            : "Disabled"}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Provider Credentials Grid (Compact) */}
+                <div className="ai-section">
+                  <div className="ai-section-header">
+                    <span className="ai-section-title">
+                      Provider Authentication & Credentials
+                    </span>
+                    <span className="ai-section-subtitle">
+                      Local CLI commands and upstream API keys across the 4
+                      standard providers.
+                    </span>
+                  </div>
+
+                  <div className="ai-credentials-grid">
+                    {/* Antigravity */}
+                    <div
+                      className="ai-cred-card"
+                      title="Login via 'agy' di terminal luar. Kredensial & brain otomatis terbaca dari ~/.gemini"
+                    >
+                      <div className="ai-cred-card-header">
+                        <div className="flex items-center gap-1.5">
+                          <span className="provider-tag tag-antigravity">
+                            AGY
+                          </span>
+                          <span className="ai-cred-name">Antigravity</span>
+                        </div>
+                        <span
+                          className="ai-cred-type"
+                          title="Login via 'agy' di terminal luar"
+                        >
+                          OAuth CLI
+                        </span>
+                      </div>
+                      <div className="ai-cred-field">
+                        <label>Command / Binary Path</label>
+                        <input
+                          aria-label="Antigravity Command"
+                          type="text"
+                          className="settings-text-input"
+                          value={
+                            settings?.agent?.bypassCommands?.antigravity ??
+                            "antigravity"
+                          }
+                          placeholder="antigravity"
+                          title="Binary command Antigravity CLI (default: antigravity atau agy)"
+                          onChange={(e) =>
+                            updateAgentSettings?.((prev) => ({
+                              ...prev,
+                              bypassCommands: {
+                                ...prev.bypassCommands,
+                                antigravity: e.target.value,
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div
+                        className="ai-cred-hint"
+                        title="Jalankan 'agy' di terminal luar untuk login Google OAuth"
+                      >
+                        <Icon
+                          name="sparkle"
+                          size={11}
+                          className="text-accent shrink-0"
+                        />
+                        <span>
+                          Kredensial & brain otomatis terbaca dari{" "}
+                          <code>~/.gemini</code>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Claude */}
+                    <div className="ai-cred-card">
+                      <div className="ai-cred-card-header">
+                        <div className="flex items-center gap-1.5">
+                          <span className="provider-tag tag-claude">CLD</span>
+                          <span className="ai-cred-name">Claude</span>
+                        </div>
+                        <span className="ai-cred-type">OAuth CLI</span>
+                      </div>
+                      <div className="ai-cred-field">
+                        <label>Command / Binary Path</label>
+                        <input
+                          aria-label="Claude Command"
+                          type="text"
+                          className="settings-text-input"
+                          value={
+                            settings?.agent?.bypassCommands?.claude ?? "claude"
+                          }
+                          placeholder="claude"
+                          onChange={(e) =>
+                            updateAgentSettings?.((prev) => ({
+                              ...prev,
+                              bypassCommands: {
+                                ...prev.bypassCommands,
+                                claude: e.target.value,
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    {/* OpenCode */}
+                    <div className="ai-cred-card">
+                      <div className="ai-cred-card-header">
+                        <div className="flex items-center gap-1.5">
+                          <span className="provider-tag tag-opencode">OC</span>
+                          <span className="ai-cred-name">OpenCode</span>
+                        </div>
+                        <span className="ai-cred-type">OpenAI Gateway</span>
+                      </div>
+                      <div className="ai-cred-field">
+                        <label>Base URL</label>
+                        <input
+                          aria-label="OpenCode Base URL"
+                          type="text"
+                          className="settings-text-input"
+                          value={
+                            settings?.agent?.providerBaseUrls?.opencode ??
+                            "https://api.opencode.ai/v1"
+                          }
+                          placeholder="https://api.opencode.ai/v1"
+                          onChange={(e) =>
+                            updateAgentSettings?.((prev) => ({
+                              ...prev,
+                              providerBaseUrls: {
+                                ...prev.providerBaseUrls,
+                                opencode: e.target.value,
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="ai-cred-field mt-1">
+                        <label>API Key</label>
+                        <div className="settings-password-wrapper">
+                          <input
+                            aria-label="OpenCode API Key"
+                            type={
+                              showPassword["opencode"] ? "text" : "password"
+                            }
+                            className="settings-text-input"
+                            value={
+                              settings?.agent?.providerKeys?.opencode ?? ""
+                            }
+                            placeholder="Enter API key..."
+                            onChange={(e) =>
+                              updateAgentSettings?.((prev) => ({
+                                ...prev,
+                                providerKeys: {
+                                  ...prev.providerKeys,
+                                  opencode: e.target.value,
+                                },
+                              }))
+                            }
+                          />
+                          <button
+                            type="button"
+                            className="settings-show-pwd-btn"
+                            onClick={() =>
+                              setShowPassword((prev) => ({
+                                ...prev,
+                                opencode: !prev["opencode"],
+                              }))
+                            }
+                          >
+                            {showPassword["opencode"] ? "Hide" : "Show"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* OpenRouter */}
+                    <div className="ai-cred-card">
+                      <div className="ai-cred-card-header">
+                        <div className="flex items-center gap-1.5">
+                          <span className="provider-tag tag-openrouter">
+                            OR
+                          </span>
+                          <span className="ai-cred-name">OpenRouter</span>
+                        </div>
+                        <span className="ai-cred-type">Multi-Gateway</span>
+                      </div>
+                      <div className="ai-cred-field">
+                        <label>API Key</label>
+                        <div className="settings-password-wrapper">
+                          <input
+                            aria-label="OpenRouter API Key"
+                            type={
+                              showPassword["openrouter"] ? "text" : "password"
+                            }
+                            className="settings-text-input"
+                            value={
+                              settings?.agent?.providerKeys?.openrouter ?? ""
+                            }
+                            placeholder="Enter API key..."
+                            onChange={(e) =>
+                              updateAgentSettings?.((prev) => ({
+                                ...prev,
+                                providerKeys: {
+                                  ...prev.providerKeys,
+                                  openrouter: e.target.value,
+                                },
+                              }))
+                            }
+                          />
+                          <button
+                            type="button"
+                            className="settings-show-pwd-btn"
+                            onClick={() =>
+                              setShowPassword((prev) => ({
+                                ...prev,
+                                openrouter: !prev["openrouter"],
+                              }))
+                            }
+                          >
+                            {showPassword["openrouter"] ? "Hide" : "Show"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Models Management Table */}
+                <div className="ai-section">
+                  <div className="ai-section-header">
+                    <span className="ai-section-title">
+                      Models & Connections Registry
+                    </span>
+                    <span className="ai-section-subtitle">
+                      Manage built-in and custom models across all providers
+                      with per-model connection testing.
+                    </span>
+                  </div>
+
+                  <div className="ai-models-table-container">
+                    {/* Toolbar */}
+                    <div className="ai-models-toolbar">
+                      <div className="ai-filter-tabs">
+                        {([
+                          "all",
+                          "antigravity",
+                          "claude",
+                          "opencode",
+                          "openrouter",
+                        ] as const).map((tab) => (
+                          <button
+                            key={tab}
+                            type="button"
+                            className={`ai-filter-tab ${
+                              modelFilter === tab ? "active" : ""
+                            }`}
+                            onClick={() => setModelFilter(tab)}
+                          >
+                            {tab === "all"
+                              ? "All Models"
+                              : tab === "antigravity"
+                                ? "Antigravity"
+                                : tab === "claude"
+                                  ? "Claude"
+                                  : tab === "opencode"
+                                    ? "OpenCode"
+                                    : "OpenRouter"}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="ai-models-search-box">
+                        <Icon name="search" size={12} />
+                        <input
+                          type="text"
+                          className="ai-models-search-input"
+                          placeholder="Filter models..."
+                          value={modelSearch}
+                          onChange={(e) => setModelSearch(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Add Custom Model Bar */}
+                    <div className="ai-add-model-bar">
+                      <span className="text-[11px] font-medium text-ink-muted shrink-0">
+                        Add Model:
+                      </span>
+                      <select
+                        aria-label="Add Model Provider"
+                        className="settings-select text-xs h-7 shrink-0"
+                        value={newModelProvider}
+                        onChange={(e) =>
+                          setNewModelProvider(e.target.value as ChatProvider)
+                        }
+                      >
+                        {CHAT_PROVIDERS.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        className="settings-text-input text-xs h-7 flex-1 min-w-[180px]"
+                        placeholder="Model ID (e.g. meta-llama/llama-3.3-70b-instruct, gemini-3.8-pro-exp)..."
+                        value={newModelId}
+                        onChange={(e) => setNewModelId(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault()
+                            handleAddCustomModel()
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="custom-model-add-btn h-7 shrink-0"
+                        onClick={handleAddCustomModel}
+                      >
+                        <Icon name="plus" size={12} />
+                        <span>Add Model</span>
+                      </button>
+                    </div>
+
+                    {/* Table */}
+                    <div className="ai-table-scroll">
+                      <table className="ai-models-table">
+                        <thead>
+                          <tr>
+                            <th style={{ width: "90px" }}>Provider</th>
+                            <th>Model ID</th>
+                            <th style={{ width: "130px" }}>Type</th>
+                            <th style={{ width: "170px" }}>Connection Test</th>
+                            <th style={{ width: "130px", textAlign: "right" }}>
+                              Actions
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredModels.map((m) => {
+                            const testKey = `${m.provider}:${m.id}`
+                            const testState = modelTestStates[testKey]
+                            const isDefault =
+                              settings?.agent?.defaultProvider === m.provider &&
+                              settings?.agent?.model === m.id
+
+                            return (
+                              <tr
+                                key={testKey}
+                                className={isDefault ? "row-default" : ""}
+                              >
+                                <td>
+                                  <span
+                                    className={`provider-tag tag-${m.provider}`}
+                                  >
+                                    {m.provider === "antigravity"
+                                      ? "AGY"
+                                      : m.provider === "claude"
+                                        ? "CLD"
+                                        : m.provider === "opencode"
+                                          ? "OC"
+                                          : "OR"}
+                                  </span>
+                                </td>
+                                <td>
+                                  <div className="model-cell-id">
+                                    <span className="model-cell-title">
+                                      {m.id}
+                                    </span>
+                                    {m.description && (
+                                      <span className="model-cell-desc">
+                                        {m.description}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span
+                                      className={`model-kind-badge ${
+                                        m.isCustom
+                                          ? "kind-custom"
+                                          : "kind-builtin"
+                                      }`}
+                                    >
+                                      {m.isCustom ? "Custom" : "Built-in"}
+                                    </span>
+                                    {isDefault && (
+                                      <span className="model-default-tag flex items-center gap-1">
+                                        <Icon name="sparkle" size={10} />
+                                        <span>Default</span>
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      className="model-test-action-btn"
+                                      disabled={testState?.loading}
+                                      onClick={() =>
+                                        handleTestSpecificModel(
+                                          m.provider,
+                                          m.id,
+                                        )
+                                      }
+                                      title="Test connection for this model"
+                                    >
+                                      {testState?.loading ? (
+                                        <span className="test-spinner" />
+                                      ) : (
+                                        <Icon name="refresh" size={11} />
+                                      )}
+                                      <span>
+                                        {testState?.loading
+                                          ? "Testing"
+                                          : "Test"}
+                                      </span>
+                                    </button>
+
+                                    {testState?.result && (
+                                      <div
+                                        className={`model-test-status ${
+                                          testState.result.success
+                                            ? "status-success"
+                                            : "status-error"
+                                        }`}
+                                        title={
+                                          testState.result.error ||
+                                          testState.result.message
+                                        }
+                                      >
+                                        {testState.result.success ? (
+                                          <>
+                                            <Icon name="check" size={11} />
+                                            <span>
+                                              {testState.result.latencyMs}ms
+                                            </span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Icon name="error" size={11} />
+                                            <span>Failed</span>
+                                          </>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                                <td>
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    {!isDefault && (
+                                      <button
+                                        type="button"
+                                        className="model-set-default-btn"
+                                        onClick={() =>
+                                          handleSetModelDefault(
+                                            m.provider,
+                                            m.id,
+                                          )
+                                        }
+                                        title="Set as default model"
+                                      >
+                                        <Icon name="sparkle" size={11} />
+                                        <span>Default</span>
+                                      </button>
+                                    )}
+                                    {m.isCustom && (
+                                      <button
+                                        type="button"
+                                        className="model-delete-action-btn"
+                                        onClick={() =>
+                                          handleRemoveModelCustom(
+                                            m.provider,
+                                            m.id,
+                                          )
+                                        }
+                                        title="Delete custom model"
+                                      >
+                                        <Icon name="trash" size={12} />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                          {filteredModels.length === 0 && (
+                            <tr>
+                              <td
+                                colSpan={5}
+                                className="text-center py-6 text-ink-muted text-xs"
+                              >
+                                No models found matching your filter.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : filteredSettings.length > 0 ? (
               filteredSettings.map((setting) => (
                 <div className="settings-item-card" key={setting.id}>
                   <div className="settings-item-header">
@@ -260,6 +1024,34 @@ export function SettingsModal() {
                         type="number"
                         value={Number(setting.value ?? 0)}
                       />
+                    )}
+
+                    {setting.type === "password" && (
+                      <div className="settings-password-wrapper">
+                        <input
+                          aria-label={setting.title}
+                          className="settings-text-input"
+                          type={showPassword[setting.id] ? "text" : "password"}
+                          onChange={(e) =>
+                            setting.onChange && setting.onChange(e.target.value)
+                          }
+                          value={String(setting.value ?? "")}
+                          placeholder="Enter API key..."
+                        />
+                        <button
+                          type="button"
+                          className="settings-show-pwd-btn"
+                          onClick={() =>
+                            setShowPassword((prev) => ({
+                              ...prev,
+                              [setting.id]: !prev[setting.id],
+                            }))
+                          }
+                          title={showPassword[setting.id] ? "Hide" : "Show"}
+                        >
+                          {showPassword[setting.id] ? "Hide" : "Show"}
+                        </button>
+                      </div>
                     )}
 
                     {setting.type === "info" && (

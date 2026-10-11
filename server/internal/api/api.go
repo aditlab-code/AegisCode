@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aditwicaksono/aegiscode/server/internal/ai"
 	"github.com/aditwicaksono/aegiscode/server/internal/git"
 	"github.com/aditwicaksono/aegiscode/server/internal/platform"
 	"github.com/aditwicaksono/aegiscode/server/internal/store"
@@ -193,6 +194,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/state/recent", s.handleStateRecent)
 	mux.HandleFunc("/api/v1/chats", s.handleChatsList)
 	mux.HandleFunc("/api/v1/chats/", s.handleChatOperations)
+
+	// AI Provider Connection Probe (Sub-Phase 6.8)
+	mux.HandleFunc("/api/v1/ai/test", s.handleAITest)
 
 	return corsMiddleware(mux)
 }
@@ -1558,5 +1562,21 @@ func (s *Server) handleChatOperations(w http.ResponseWriter, r *http.Request) {
 	default:
 		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func (s *Server) handleAITest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req ai.ProbeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	res := ai.ProbeProvider(r.Context(), req)
+	jsonResponse(w, http.StatusOK, res)
 }
 

@@ -732,7 +732,7 @@ func TestStorageEndpoints(t *testing.T) {
 
 	// 2. POST /api/v1/config
 	cfg.Theme = "tokyo-night"
-	cfg.DefaultModel = "gemini-2.5-flash"
+	cfg.DefaultModel = "gemini-3.8-flash"
 	cfg.BypassTokens = map[string]string{"antigravity": "token-xyz"}
 	cfgBody, _ := json.Marshal(cfg)
 	resp, err = http.Post(ts.URL+"/api/v1/config", "application/json", bytes.NewReader(cfgBody))
@@ -815,7 +815,7 @@ func TestStorageEndpoints(t *testing.T) {
 		ID:       "session-101",
 		Title:    "Architecture Review",
 		Provider: "antigravity",
-		Model:    "gemini-2.5-flash",
+		Model:    "gemini-3.8-flash",
 		Messages: []store.ChatMessage{
 			{ID: "m1", Role: "user", Text: "Hello AI"},
 		},
@@ -881,6 +881,45 @@ func TestStorageEndpoints(t *testing.T) {
 	}
 	if len(storedState.RecentProjects) == 0 || storedState.RecentProjects[0] != tempDir {
 		t.Errorf("expected recent projects to contain %s, got %v", tempDir, storedState.RecentProjects)
+	}
+}
+
+func TestAIProbeEndpoint(t *testing.T) {
+	server, handler, tempDir := setupTestServer(t, "")
+	defer os.RemoveAll(tempDir)
+	defer func() { _ = server.ws.Close() }()
+
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+
+	// 1. Test unsupported provider -> 200 with success: false
+	probeReq := map[string]string{
+		"provider": "unknown-provider",
+	}
+	b, _ := json.Marshal(probeReq)
+	resp, err := http.Post(ts.URL+"/api/v1/ai/test", "application/json", bytes.NewReader(b))
+	if err != nil {
+		t.Fatalf("failed to call ai test endpoint: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+
+	var res struct {
+		Success  bool   `json:"success"`
+		Provider string `json:"provider"`
+		Error    string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if res.Success {
+		t.Errorf("expected success to be false for unknown provider")
+	}
+	if res.Provider != "unknown-provider" {
+		t.Errorf("expected provider 'unknown-provider', got %s", res.Provider)
 	}
 }
 

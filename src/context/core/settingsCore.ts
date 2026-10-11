@@ -98,10 +98,25 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     showWarnings: true,
   },
   agent: {
-    model: "claude-3-7-sonnet",
+    defaultProvider: "antigravity",
+    model: "gemini-3.8-flash",
     temperature: 0.7,
     streaming: true,
     contextIngestion: true,
+    providerKeys: {},
+    providerBaseUrls: {
+      opencode: "https://api.opencode.ai/v1",
+    },
+    bypassCommands: {
+      antigravity: "antigravity",
+      claude: "claude",
+    },
+    customModels: {
+      antigravity: [],
+      claude: [],
+      opencode: [],
+      openrouter: [],
+    },
   },
 }
 
@@ -259,12 +274,39 @@ export function useSettingsCore() {
   useEffect(() => {
     fetchBackendConfig()
       .then((cfg) => {
-        if (cfg?.settings && typeof cfg.settings === "object") {
-          setSettings((prev) => ({
-            ...prev,
-            ...cfg.settings,
-          }))
-        }
+        if (!cfg) return
+        setSettings((prev) => {
+          const next = { ...prev, ...(cfg.settings || {}) }
+          const agentPatch: Partial<AgentSettings> = {}
+          if (cfg.defaultProvider)
+            agentPatch.defaultProvider = (cfg.defaultProvider as any)
+          if (cfg.defaultModel) agentPatch.model = cfg.defaultModel
+          if (cfg.providerKeys)
+            agentPatch.providerKeys = {
+              ...prev.agent.providerKeys,
+              ...cfg.providerKeys,
+            }
+          if (cfg.providerBaseUrls)
+            agentPatch.providerBaseUrls = {
+              ...prev.agent.providerBaseUrls,
+              ...cfg.providerBaseUrls,
+            }
+          if (cfg.bypassCommands)
+            agentPatch.bypassCommands = {
+              ...prev.agent.bypassCommands,
+              ...cfg.bypassCommands,
+            }
+          if (cfg.customModels)
+            agentPatch.customModels = {
+              ...prev.agent.customModels,
+              ...cfg.customModels,
+            }
+
+          return {
+            ...next,
+            agent: { ...next.agent, ...agentPatch },
+          }
+        })
       })
       .catch(() => {})
   }, [])
@@ -277,6 +319,12 @@ export function useSettingsCore() {
     saveStoredSettings(settings)
     saveBackendConfig({
       theme: mode,
+      defaultProvider: settings.agent.defaultProvider,
+      defaultModel: settings.agent.model,
+      providerKeys: settings.agent.providerKeys,
+      providerBaseUrls: settings.agent.providerBaseUrls,
+      bypassCommands: settings.agent.bypassCommands,
+      customModels: settings.agent.customModels,
       settings: settings as any,
     }).catch(() => {})
   }, [settings])

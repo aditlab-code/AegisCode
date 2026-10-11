@@ -8,7 +8,8 @@ describe("Settings, Explorer Exclude, and Syntax Highlighting", () => {
   describe("AppSettings and Defaults", () => {
     it("includes agent configuration in DEFAULT_APP_SETTINGS", () => {
       expect(DEFAULT_APP_SETTINGS.agent).toBeDefined()
-      expect(DEFAULT_APP_SETTINGS.agent.model).toBe("claude-3-7-sonnet")
+      expect(DEFAULT_APP_SETTINGS.agent.defaultProvider).toBe("antigravity")
+      expect(DEFAULT_APP_SETTINGS.agent.model).toBe("gemini-3.8-flash")
       expect(DEFAULT_APP_SETTINGS.agent.temperature).toBe(0.7)
       expect(DEFAULT_APP_SETTINGS.agent.streaming).toBe(true)
       expect(DEFAULT_APP_SETTINGS.agent.contextIngestion).toBe(true)
