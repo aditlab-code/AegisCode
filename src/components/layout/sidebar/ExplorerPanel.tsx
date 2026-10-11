@@ -1,4 +1,11 @@
-import { useState, useRef, useEffect, useMemo, type MouseEvent } from "react"
+import {
+  useState,
+  useRef,
+  useEffect,
+  useMemo,
+  useCallback,
+  type MouseEvent,
+} from "react"
 import { createPortal } from "react-dom"
 import { Icon } from "../../ui/Icon"
 import { useWorkbench } from "../../../context/WorkbenchContext"
@@ -163,10 +170,6 @@ export function ExplorerPanel() {
   // Drag and Drop target highlight state
   const [dragTarget, setDragTarget] = useState<string | null>(null)
 
-  // Filter state
-  const [filterActive, setFilterActive] = useState(false)
-  const [filterQuery, setFilterQuery] = useState("")
-
   // Delete confirmation modal state
   const [deleteConfirmTarget, setDeleteConfirmTarget] =
     useState<FileItem | null>(null)
@@ -223,41 +226,39 @@ export function ExplorerPanel() {
     useState<Record<string, boolean>>(() => {
       const initial: Record<string, boolean> = {}
       files.forEach((f) => {
-        if (f.icon === "folder" && f.open === false) {
+        if ((f.icon === "folder" || f.type === "folder") && f.open === false) {
+          const key = f.path || f.label
+          initial[key] = true
           initial[f.label] = true
         }
       })
       return initial
     })
 
-  function toggleFolder(folderLabel: string) {
+  function toggleFolder(folderKey: string) {
     setCollapsedFolders((prev) => ({
       ...prev,
-      [folderLabel]: !prev[folderLabel],
+      [folderKey]: !prev[folderKey],
     }))
   }
 
-  // Filtered files
-  const filteredFiles = useMemo(() => {
-    if (!filterQuery.trim()) return files
-    const query = filterQuery.toLowerCase().trim()
-    return files.filter(
-      (f) =>
-        f.label.toLowerCase().includes(query) ||
-        (f.path && f.path.toLowerCase().includes(query)),
-    )
-  }, [files, filterQuery])
+  const handleCollapseAllFolders = useCallback(() => {
+    const allCollapsed: Record<string, boolean> = {}
+    files.forEach((f) => {
+      if (f.icon === "folder" || f.type === "folder") {
+        allCollapsed[f.path || f.label] = true
+        allCollapsed[f.label] = true
+      }
+    })
+    setCollapsedFolders(allCollapsed)
+  }, [files])
 
   // Visible files with hierarchical folder collapse pruning
   const visibleFiles = useMemo(() => {
-    if (filterQuery.trim()) {
-      return filteredFiles
-    }
-
     const result: FileItem[] = []
     let skipUntilDepth: number | null = null
 
-    for (const file of filteredFiles) {
+    for (const file of files) {
       if (skipUntilDepth !== null) {
         if (file.depth > skipUntilDepth) {
           continue
@@ -267,13 +268,17 @@ export function ExplorerPanel() {
 
       result.push(file)
 
-      if (file.icon === "folder" && collapsedFolders[file.label]) {
+      const key = file.path || file.label
+      if (
+        (file.icon === "folder" || file.type === "folder") &&
+        (collapsedFolders[key] ?? collapsedFolders[file.label])
+      ) {
         skipUntilDepth = file.depth
       }
     }
 
     return result
-  }, [filteredFiles, collapsedFolders, filterQuery])
+  }, [files, collapsedFolders])
 
   // Outline symbols of active tab
   const activeSymbols = useMemo(() => {
@@ -547,17 +552,6 @@ export function ExplorerPanel() {
             <Icon name="plus" size={13} />
           </button>
           <button
-            className={`action-icon-btn ${filterActive ? "btn-active" : ""}`}
-            onClick={() => {
-              setFilterActive((prev) => !prev)
-              if (filterActive) setFilterQuery("")
-            }}
-            title="Filter Files"
-            type="button"
-          >
-            <Icon name="search" size={12} />
-          </button>
-          <button
             className="action-icon-btn"
             onClick={() => {
               refreshWorkspace()
@@ -567,31 +561,16 @@ export function ExplorerPanel() {
           >
             <Icon name="refresh" size={12} />
           </button>
+          <button
+            className="action-icon-btn"
+            onClick={handleCollapseAllFolders}
+            title="Collapse Folders in Explorer"
+            type="button"
+          >
+            <Icon name="collapse-all" size={13} />
+          </button>
         </div>
       </div>
-
-      {/* Explorer Quick Filter Bar */}
-      {workspaceOpen && filterActive && (
-        <div className="explorer-filter-bar">
-          <Icon name="search" size={11} />
-          <input
-            autoFocus
-            className="explorer-filter-input"
-            onChange={(e) => setFilterQuery(e.target.value)}
-            placeholder="Filter files by name..."
-            value={filterQuery}
-          />
-          {filterQuery && (
-            <button
-              className="filter-clear-btn"
-              onClick={() => setFilterQuery("")}
-              type="button"
-            >
-              <Icon name="close" size={10} />
-            </button>
-          )}
-        </div>
-      )}
 
       {workspaceOpen && (
         <div
@@ -730,7 +709,9 @@ export function ExplorerPanel() {
             const isHidden = file.label.startsWith(".") || file.muted
             const isRenaming = renamingFile === fileKey
             const isFolder = file.icon === "folder" || file.type === "folder"
-            const isCollapsed = Boolean(collapsedFolders[file.label])
+            const isCollapsed = Boolean(
+              collapsedFolders[fileKey] ?? collapsedFolders[file.label],
+            )
             const isDropTarget = dragTarget === fileKey
             const isContextTarget =
               contextMenu?.file != null &&
@@ -748,7 +729,7 @@ export function ExplorerPanel() {
                 onClick={() => {
                   if (isRenaming) return
                   if (isFolder) {
-                    toggleFolder(file.label)
+                    toggleFolder(fileKey)
                   } else {
                     openFileInGroup(fileKey, focusedGroup)
                   }
@@ -819,7 +800,7 @@ export function ExplorerPanel() {
                     }`}
                     onClick={(e) => {
                       e.stopPropagation()
-                      toggleFolder(file.label)
+                      toggleFolder(fileKey)
                     }}
                     role="button"
                     tabIndex={0}

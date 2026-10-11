@@ -493,44 +493,6 @@
   background: var(--color-accent-soft);
 }
 
-.explorer-filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 24px;
-  margin: 2px 8px 6px;
-  padding: 0 6px;
-  color: var(--color-ink-muted);
-  background: var(--color-canvas);
-  border: 1px solid var(--color-line-bright);
-  border-radius: 3px;
-}
-
-.explorer-filter-input {
-  flex: 1;
-  min-width: 0;
-  color: var(--color-ink);
-  background: transparent;
-  border: 0;
-  outline: 0;
-  font-size: 11px;
-}
-
-.explorer-filter-input::placeholder {
-  color: var(--color-ink-muted);
-}
-
-.filter-clear-btn {
-  padding: 1px;
-  color: var(--color-ink-muted);
-  background: transparent;
-  cursor: pointer;
-}
-
-.filter-clear-btn:hover {
-  color: var(--color-ink);
-}
-
 .file-muted {
   opacity: 0.65;
   color: var(--color-ink-muted);

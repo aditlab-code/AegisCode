@@ -63,7 +63,7 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
   - Resizable horizontal width (default 260px) bounded by an interactive drag sash (`ResizeSash.tsx`).
   - **Explorer Panel**:
     - "OPEN EDITORS" section showing pinned tabs across editor groups.
-    - Workspace file tree with folder expansion, tree guides, hidden file visibility toggle, inline CRUD actions (New File, New Folder, Rename, Delete).
+    - Workspace file tree with folder expansion, tree guides, hidden file visibility toggle, inline CRUD actions (New File, New Folder, Rename, safe Delete confirmation modal), Refresh Explorer, and Collapse Folders in Explorer (`collapse-all`).
     - Context menu on right-click (Copy Path, Copy Relative Path, Delete, Rename).
   - **Search Panel**:
     - **Integrated Search & Replace Box**: Chevron toggle (`>` / `v`) located directly to the left of the Search input box; when expanded, renders the Replace input box directly beneath with an embedded Replace All action icon button (`Icon name="replace-all"`).

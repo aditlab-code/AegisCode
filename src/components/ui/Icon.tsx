@@ -35,6 +35,12 @@ export function Icon({ name, size = 16, className = "" }: IconProps) {
     chevron: <path d="m9 18 6-6-6-6" />,
     "chevron-down": <path d="m6 9 6 6 6-6" />,
     "chevron-up": <path d="m18 15-6-6-6 6" />,
+    "collapse-all": (
+      <>
+        <path d="M4 5h16" />
+        <path d="m18 16-6-6-6 6" />
+      </>
+    ),
     close: <path d="m7 7 10 10M17 7 7 17" />,
     code: <path d="m8 9-3 3 3 3m8-6 3 3-3 3m-3-8-2 10" />,
     copy: (
