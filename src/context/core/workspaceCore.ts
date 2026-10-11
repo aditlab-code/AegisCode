@@ -95,11 +95,15 @@ export function updateBufferContentLogic(
   content: string,
 ): Record<string, FileBuffer> {
   const existing = buffers[filename]
+  const savedContent =
+    existing?.savedContent ?? (existing ? existing.content : "")
+  const isDirty = content !== savedContent
   return {
     ...buffers,
     [filename]: {
       content,
-      isDirty: true,
+      savedContent,
+      isDirty,
       language: existing?.language || detectLanguage(filename),
     },
   }
@@ -115,6 +119,24 @@ export function markBufferSavedLogic(
     ...buffers,
     [filename]: {
       ...currentBuf,
+      savedContent: currentBuf.content,
+      isDirty: false,
+    },
+  }
+}
+
+export function revertBufferContentLogic(
+  buffers: Record<string, FileBuffer>,
+  filename: string,
+): Record<string, FileBuffer> {
+  const currentBuf = buffers[filename]
+  if (!currentBuf) return buffers
+  const revertedContent = currentBuf.savedContent ?? currentBuf.content
+  return {
+    ...buffers,
+    [filename]: {
+      ...currentBuf,
+      content: revertedContent,
       isDirty: false,
     },
   }
@@ -483,6 +505,7 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
           ...curr,
           [filename]: {
             content,
+            savedContent: content,
             isDirty: false,
             language: detectLanguage(filename),
           },
@@ -509,6 +532,7 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
             ...prev,
             [filename]: {
               content: "",
+              savedContent: "",
               isDirty: false,
               language: detectLanguage(filename),
             },
@@ -571,6 +595,27 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
       }
 
       showToast(`Saved ${filenameToSave}`)
+    },
+    [fileBuffers, linterSettings, showToast],
+  )
+
+  const revertBufferContent = useCallback(
+    (filename: string) => {
+      setFileBuffers((prev) => revertBufferContentLogic(prev, filename))
+      const buf = fileBuffers[filename]
+      const reverted = buf?.savedContent ?? buf?.content ?? ""
+      if (linterSettings.enabled) {
+        const diags = validateSyntax(
+          filename,
+          reverted,
+          linterSettings.showWarnings,
+        )
+        setDiagnostics((prev) => [
+          ...prev.filter((d) => !d.location.startsWith(filename)),
+          ...diags,
+        ])
+      }
+      showToast(`Reverted changes to ${filename}`)
     },
     [fileBuffers, linterSettings, showToast],
   )
@@ -705,6 +750,7 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
     setFileBuffers,
     updateFileContent,
     saveFile,
+    revertBufferContent,
     ensureFileBuffer,
     diagnostics,
     setDiagnostics,

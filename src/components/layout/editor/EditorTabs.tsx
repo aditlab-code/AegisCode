@@ -1,7 +1,14 @@
-import { useState, type DragEvent } from "react"
+import { useEffect, useRef, useState, type DragEvent } from "react"
+import { createPortal } from "react-dom"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { useWorkbench } from "../../../context/WorkbenchContext"
+
+interface ContextMenuData {
+  x: number
+  y: number
+  tab: string
+}
 
 interface EditorTabsProps {
   groupId?: "group1" | "group2"
@@ -28,11 +35,43 @@ export function EditorTabs({
     closeSplitEditor,
     fileBuffers,
     saveFile,
+    revertFile,
+    requestRevertFile,
     showToast,
   } = useWorkbench()
 
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [isDropTarget, setIsDropTarget] = useState(false)
+  const [contextMenu, setContextMenu] = useState<ContextMenuData | null>(null)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleDismiss(e: MouseEvent) {
+      if (
+        contextMenuRef.current &&
+        !contextMenuRef.current.contains(e.target as Node)
+      ) {
+        setContextMenu(null)
+      }
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setContextMenu(null)
+    }
+    function handleResize() {
+      setContextMenu(null)
+    }
+
+    window.addEventListener("click", handleDismiss)
+    window.addEventListener("contextmenu", handleDismiss)
+    window.addEventListener("keydown", handleKeyDown)
+    window.addEventListener("resize", handleResize)
+    return () => {
+      window.removeEventListener("click", handleDismiss)
+      window.removeEventListener("contextmenu", handleDismiss)
+      window.removeEventListener("keydown", handleKeyDown)
+      window.removeEventListener("resize", handleResize)
+    }
+  }, [])
 
   const currentGroup = groupId === "group2" ? group2 : group1
   const isFocused = focusedGroup === currentGroup.id
@@ -138,6 +177,11 @@ export function EditorTabs({
               draggable
               key={tab}
               onClick={() => setActiveTabInGroup(currentGroup.id, tab)}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setContextMenu({ x: e.clientX, y: e.clientY, tab })
+              }}
               onDragLeave={() => setDragOverIndex(null)}
               onDragOver={(e) => {
                 e.preventDefault()
@@ -149,14 +193,16 @@ export function EditorTabs({
             >
               <Icon name="code" size={14} />
               <span>{tab}</span>
-              {isDirty ? (
+              <span className="tab-actions-container">
+                {isDirty && (
+                  <span
+                    aria-label="Unsaved changes"
+                    className="tab-dirty-dot"
+                    title="Unsaved changes"
+                  />
+                )}
                 <span
-                  aria-label="Unsaved changes"
-                  className="tab-dirty-dot"
-                  title="Unsaved changes"
-                />
-              ) : (
-                <span
+                  aria-label={`Close ${tab}`}
                   className="close-tab-trigger"
                   onClick={(e) => {
                     e.stopPropagation()
@@ -164,10 +210,11 @@ export function EditorTabs({
                   }}
                   role="button"
                   tabIndex={0}
+                  title="Close tab"
                 >
                   <Icon name="close" size={12} />
                 </span>
-              )}
+              </span>
             </button>
           )
         })}
@@ -180,6 +227,17 @@ export function EditorTabs({
           onClick={onToggleFind}
         >
           <Icon name="search" size={14} />
+        </IconButton>
+        <IconButton
+          disabled={!fileBuffers[currentGroup.activeTab]?.isDirty}
+          label={
+            fileBuffers[currentGroup.activeTab]?.isDirty
+              ? "Revert / discard changes"
+              : "No changes to revert"
+          }
+          onClick={() => requestRevertFile(currentGroup.activeTab)}
+        >
+          <Icon name="history" size={14} />
         </IconButton>
         <IconButton
           label="Save file (Ctrl+S)"
@@ -207,6 +265,89 @@ export function EditorTabs({
           </IconButton>
         )}
       </div>
+
+      {/* Floating Tab Context Menu */}
+      {contextMenu &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="editor-tab-context-menu"
+            ref={contextMenuRef}
+            style={{
+              top: `${contextMenu.y}px`,
+              left: `${contextMenu.x}px`,
+            }}
+          >
+            <div className="context-menu-header">{contextMenu.tab}</div>
+            <button
+              className="context-menu-item"
+              onClick={() => {
+                closeTabInGroup(currentGroup.id, contextMenu.tab)
+                setContextMenu(null)
+              }}
+              type="button"
+            >
+              <Icon name="close" size={12} />
+              <span>Close</span>
+            </button>
+            <button
+              className="context-menu-item"
+              onClick={() => {
+                const others = currentGroup.tabs.filter(
+                  (t) => t !== contextMenu.tab,
+                )
+                for (const t of others) {
+                  closeTabInGroup(currentGroup.id, t)
+                }
+                setContextMenu(null)
+              }}
+              type="button"
+            >
+              <Icon name="close" size={12} />
+              <span>Close Others</span>
+            </button>
+            <button
+              className="context-menu-item"
+              onClick={() => {
+                const all = [...currentGroup.tabs]
+                for (const t of all) {
+                  closeTabInGroup(currentGroup.id, t)
+                }
+                setContextMenu(null)
+              }}
+              type="button"
+            >
+              <Icon name="close" size={12} />
+              <span>Close All</span>
+            </button>
+            <div className="context-menu-separator" />
+            <button
+              className="context-menu-item"
+              disabled={!fileBuffers[contextMenu.tab]?.isDirty}
+              onClick={() => {
+                requestRevertFile(contextMenu.tab)
+                setContextMenu(null)
+              }}
+              type="button"
+            >
+              <Icon name="history" size={12} />
+              <span>Revert File</span>
+            </button>
+            <button
+              className="context-menu-item"
+              disabled={!fileBuffers[contextMenu.tab]?.isDirty}
+              onClick={() => {
+                saveFile(contextMenu.tab)
+                setContextMenu(null)
+              }}
+              type="button"
+            >
+              <Icon name="check" size={12} />
+              <span>Save</span>
+            </button>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

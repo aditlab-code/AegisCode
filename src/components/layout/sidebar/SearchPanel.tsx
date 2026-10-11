@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react"
 import { Icon } from "../../ui/Icon"
+import { IconButton } from "../../ui/IconButton"
 import { useWorkbench } from "../../../context/WorkbenchContext"
 import {
   searchWorkspace,
@@ -244,13 +245,38 @@ export function SearchPanel() {
     setCollapsedFiles(next)
   }
 
-  function renderHighlightedSnippet(lineContent: string, matchText: string) {
-    const trimmed = lineContent.trim()
-    if (!matchText || !trimmed) return trimmed
+  function renderHighlightedSnippet(match: MatchItem) {
+    const { lineContent, column, matchText } = match
+    if (!lineContent || !matchText) return lineContent || ""
 
-    const lowerLine = trimmed.toLowerCase()
-    const lowerMatch = matchText.toLowerCase()
-    const idx = lowerLine.indexOf(lowerMatch)
+    const leadingSpaces = lineContent.length - lineContent.trimStart().length
+    const trimmed = lineContent.trim()
+    const startCol = column > 0 ? column - 1 : 0
+    const relCol = startCol - leadingSpaces
+
+    if (
+      relCol >= 0 &&
+      relCol + matchText.length <= trimmed.length &&
+      (isMatchCase
+        ? trimmed.substring(relCol, relCol + matchText.length) === matchText
+        : trimmed.substring(relCol, relCol + matchText.length).toLowerCase() ===
+          matchText.toLowerCase())
+    ) {
+      const before = trimmed.substring(0, relCol)
+      const matched = trimmed.substring(relCol, relCol + matchText.length)
+      const after = trimmed.substring(relCol + matchText.length)
+      return (
+        <>
+          {before}
+          <span className="match-highlight">{matched}</span>
+          {after}
+        </>
+      )
+    }
+
+    const searchTarget = isMatchCase ? trimmed : trimmed.toLowerCase()
+    const searchPattern = isMatchCase ? matchText : matchText.toLowerCase()
+    const idx = searchTarget.indexOf(searchPattern)
 
     if (idx === -1) {
       return trimmed
@@ -351,15 +377,14 @@ export function SearchPanel() {
                 placeholder="Replace"
                 value={replace}
               />
-              <button
+              <IconButton
                 className="replace-all-btn"
                 disabled={!search.trim() || totalMatchesCount === 0}
+                label="Replace All across workspace"
                 onClick={handleReplaceAll}
-                title="Replace All across workspace"
-                type="button"
               >
                 <Icon name="replace-all" size={12} />
-              </button>
+              </IconButton>
             </label>
           </div>
         )}
@@ -376,43 +401,40 @@ export function SearchPanel() {
               {searchResults.length === 1 ? "file" : "files"}
             </span>
             <div className="flex items-center gap-1">
-              <button
+              <IconButton
                 className="p-0.5 text-ink-muted hover:text-ink cursor-pointer"
+                label="Refresh Search"
                 onClick={refreshSearch}
-                title="Refresh Search"
-                type="button"
               >
                 <Icon name="refresh" size={11} />
-              </button>
-              <button
+              </IconButton>
+              <IconButton
                 className="p-0.5 text-ink-muted hover:text-ink cursor-pointer"
+                label="Clear Search Results"
                 onClick={() => setSearch("")}
-                title="Clear Search Results"
-                type="button"
               >
                 <Icon name="close" size={10} />
-              </button>
-              <button
+              </IconButton>
+              <IconButton
                 className="p-0.5 text-ink-muted hover:text-ink cursor-pointer"
+                label="Collapse / Expand All"
                 onClick={toggleCollapseAll}
-                title="Collapse / Expand All"
-                type="button"
               >
                 <Icon name="chevron" size={11} />
-              </button>
+              </IconButton>
             </div>
           </div>
 
           {searchResults.map((fileRes) => {
             const isCollapsed = collapsedFiles[fileRes.filename]
-            const normalized = fileRes.filename.replace(/\\/g, "/")
-            const lastSlash = normalized.lastIndexOf("/")
+            const cleanPath = fileRes.filename
+              .replace(/\\/g, "/")
+              .replace(/^\.\//, "")
+            const lastSlash = cleanPath.lastIndexOf("/")
             const fileName =
-              lastSlash !== -1
-                ? normalized.substring(lastSlash + 1)
-                : normalized
+              lastSlash !== -1 ? cleanPath.substring(lastSlash + 1) : cleanPath
             const dirPath =
-              lastSlash !== -1 ? normalized.substring(0, lastSlash) : ""
+              lastSlash !== -1 ? cleanPath.substring(0, lastSlash) : ""
 
             return (
               <div className="search-file-group" key={fileRes.filename}>
@@ -444,30 +466,28 @@ export function SearchPanel() {
                   <div className="search-file-actions">
                     {/* Replace all in this file button */}
                     {replaceOpen && (
-                      <button
+                      <IconButton
                         className="file-replace-btn"
+                        label={`Replace all in ${fileName}`}
                         onClick={(e) => {
                           e.stopPropagation()
                           handleReplaceInFile(fileRes.filename)
                         }}
-                        title={`Replace all in ${fileRes.filename}`}
-                        type="button"
                       >
                         <Icon name="edit" size={11} />
-                      </button>
+                      </IconButton>
                     )}
                     {/* Dismiss file from results button */}
-                    <button
+                    <IconButton
                       className="file-dismiss-btn"
+                      label={`Dismiss ${fileName}`}
                       onClick={(e) => {
                         e.stopPropagation()
                         handleDismissFile(fileRes.filename)
                       }}
-                      title={`Dismiss ${fileName}`}
-                      type="button"
                     >
                       <Icon name="close" size={10} />
-                    </button>
+                    </IconButton>
                   </div>
                 </div>
 
@@ -495,24 +515,20 @@ export function SearchPanel() {
                           className="match-snippet"
                           title={match.lineContent}
                         >
-                          {renderHighlightedSnippet(
-                            match.lineContent,
-                            match.matchText,
-                          )}
+                          {renderHighlightedSnippet(match)}
                         </span>
                         {/* Replace this single occurrence */}
                         {replaceOpen && (
-                          <button
+                          <IconButton
                             className="single-replace-btn"
+                            label="Replace this match"
                             onClick={(e) => {
                               e.stopPropagation()
                               handleReplaceSingle(match)
                             }}
-                            title="Replace this match"
-                            type="button"
                           >
                             <Icon name="edit" size={10} />
-                          </button>
+                          </IconButton>
                         )}
                       </div>
                     ))}

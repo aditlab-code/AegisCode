@@ -10,6 +10,7 @@ import {
   StatusBar,
   CommandPalette,
   SettingsModal,
+  UnsavedChangesModal,
 } from "./components/layout"
 import { Toast } from "./components/ui/Toast"
 import { syncBrowserAiContext } from "./utils/browserAiSync"
@@ -97,6 +98,7 @@ function AppShell() {
       <StatusBar />
       <CommandPalette />
       <SettingsModal />
+      <UnsavedChangesModal />
       <Toast message={toast} onDismiss={clearToast} />
     </div>
   )

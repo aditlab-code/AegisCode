@@ -13,6 +13,7 @@ import {
   renameFileInTreeLogic,
   updateBufferContentLogic,
   markBufferSavedLogic,
+  revertBufferContentLogic,
   normalizeWorkspacePath,
   AsyncSequenceGuard,
 } from "@/context/core/workspaceCore"
@@ -413,6 +414,78 @@ export const coreRegressionScenarios: RegressionScenario[] = [
         "/Users/test/dir",
       )
       expect(normalizeWorkspacePath("")).toBe("")
+    },
+  },
+
+  // 13. Buffer Revert & Clean State Tracking
+  {
+    id: "BUF-REVERT-01",
+    description:
+      "Buffer maintains savedContent, tracks dirty state on edits, and cleanly reverts changes",
+    execute: (h) => {
+      // 1. Initial buffer is clean
+      const initial = "console.log('hello')"
+      h.buffers["src/index.ts"] = {
+        content: initial,
+        savedContent: initial,
+        isDirty: false,
+        language: "TypeScript",
+      }
+
+      // 2. Edit buffer -> dirty
+      h.buffers = updateBufferContentLogic(
+        h.buffers,
+        "src/index.ts",
+        "console.log('modified')",
+      )
+      expect(h.buffers["src/index.ts"]?.isDirty).toBe(true)
+      expect(h.buffers["src/index.ts"]?.savedContent).toBe(initial)
+
+      // 3. Edit back to savedContent -> automatically clean
+      h.buffers = updateBufferContentLogic(h.buffers, "src/index.ts", initial)
+      expect(h.buffers["src/index.ts"]?.isDirty).toBe(false)
+
+      // 4. Modify again and revert via revertBufferContentLogic
+      h.buffers = updateBufferContentLogic(
+        h.buffers,
+        "src/index.ts",
+        "console.log('changed again')",
+      )
+      expect(h.buffers["src/index.ts"]?.isDirty).toBe(true)
+
+      h.buffers = revertBufferContentLogic(h.buffers, "src/index.ts")
+    },
+    verify: (h) => {
+      expect(h.buffers["src/index.ts"]?.content).toBe("console.log('hello')")
+      expect(h.buffers["src/index.ts"]?.isDirty).toBe(false)
+      expect(h.buffers["src/index.ts"]?.savedContent).toBe(
+        "console.log('hello')",
+      )
+    },
+  },
+
+  // 14. Unsaved Buffer Close & Discard Simulation
+  {
+    id: "BUF-REVERT-02",
+    description:
+      "Simulate Don't Save discard action reverting buffer and closing tab",
+    execute: (h) => {
+      const orig = "console.log('hello')"
+      h.buffers["src/index.ts"] = {
+        content: "console.log('unsaved draft')",
+        savedContent: orig,
+        isDirty: true,
+        language: "TypeScript",
+      }
+
+      // Simulate user clicking "Don't Save": revert then close
+      h.buffers = revertBufferContentLogic(h.buffers, "src/index.ts")
+      h.group1 = closeTabInGroupLogic(h.group1, "src/index.ts")
+    },
+    verify: (h) => {
+      expect(h.group1.tabs).not.toContain("src/index.ts")
+      expect(h.buffers["src/index.ts"]?.content).toBe("console.log('hello')")
+      expect(h.buffers["src/index.ts"]?.isDirty).toBe(false)
     },
   },
 ]

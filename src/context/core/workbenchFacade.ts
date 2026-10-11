@@ -7,10 +7,21 @@ import { useTerminalCore } from "./terminalCore"
 import { useChatCore } from "./chatCore"
 import { detectLanguage, validateSyntax } from "../../utils/linter"
 
+export interface ConfirmCloseState {
+  group: "group1" | "group2"
+  filename: string
+}
+
 export function useWorkbenchFacade() {
   // Toast notifications
   const [toast, setToast] = useState("")
   const toastTimerRef = useRef<number | null>(null)
+
+  const [confirmCloseFile, setConfirmCloseFile] =
+    useState<ConfirmCloseState | null>(null)
+  const [confirmRevertFile, setConfirmRevertFile] = useState<string | null>(
+    null,
+  )
 
   const showToast = useCallback((message: string) => {
     setToast(message)
@@ -180,6 +191,85 @@ export function useWorkbenchFacade() {
     [editor, workspace],
   )
 
+  const closeTabInGroup = useCallback(
+    (group: "group1" | "group2", filename: string) => {
+      const buf = workspace.fileBuffers[filename]
+      if (buf?.isDirty) {
+        setConfirmCloseFile({ group, filename })
+        return
+      }
+      editor.closeTabInGroup(group, filename)
+    },
+    [editor, workspace.fileBuffers],
+  )
+
+  const forceCloseTabInGroup = useCallback(
+    (group: "group1" | "group2", filename: string) => {
+      editor.closeTabInGroup(group, filename)
+    },
+    [editor],
+  )
+
+  const closeTab = useCallback(
+    (tabToClose?: string) => {
+      const target = tabToClose || editor.activeTab
+      if (!target) return
+      closeTabInGroup(editor.focusedGroup, target)
+    },
+    [closeTabInGroup, editor.activeTab, editor.focusedGroup],
+  )
+
+  const resolveConfirmCloseFile = useCallback(
+    async (action: "save" | "dont-save" | "cancel") => {
+      if (!confirmCloseFile) return
+      const { group, filename } = confirmCloseFile
+      if (action === "save") {
+        await workspace.saveFile(filename)
+        editor.closeTabInGroup(group, filename)
+        setConfirmCloseFile(null)
+      } else if (action === "dont-save") {
+        workspace.revertBufferContent(filename)
+        editor.closeTabInGroup(group, filename)
+        setConfirmCloseFile(null)
+      } else if (action === "cancel") {
+        setConfirmCloseFile(null)
+      }
+    },
+    [confirmCloseFile, editor, workspace],
+  )
+
+  const requestRevertFile = useCallback(
+    (filenameToRevert?: string) => {
+      const target =
+        filenameToRevert ||
+        (editor.focusedGroup === "group2"
+          ? editor.group2.activeTab
+          : editor.group1.activeTab)
+      if (!target) return
+      const buf = workspace.fileBuffers[target]
+      if (buf?.isDirty) {
+        setConfirmRevertFile(target)
+      }
+    },
+    [
+      editor.focusedGroup,
+      editor.group1.activeTab,
+      editor.group2.activeTab,
+      workspace.fileBuffers,
+    ],
+  )
+
+  const resolveConfirmRevert = useCallback(
+    (confirm: boolean) => {
+      if (!confirmRevertFile) return
+      if (confirm) {
+        workspace.revertBufferContent(confirmRevertFile)
+      }
+      setConfirmRevertFile(null)
+    },
+    [confirmRevertFile, workspace],
+  )
+
   // Global command action dispatcher
   const runAction = useCallback(
     (action: string) => {
@@ -267,7 +357,24 @@ export function useWorkbenchFacade() {
         editor.openFind(editor.focusedGroup, true)
         return
       }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "w") {
+        event.preventDefault()
+        const currentGroup =
+          editor.focusedGroup === "group2" ? editor.group2 : editor.group1
+        if (currentGroup.activeTab) {
+          closeTabInGroup(currentGroup.id, currentGroup.activeTab)
+        }
+        return
+      }
       if (event.key === "Escape") {
+        if (confirmRevertFile) {
+          setConfirmRevertFile(null)
+          return
+        }
+        if (confirmCloseFile) {
+          setConfirmCloseFile(null)
+          return
+        }
         layout.setCommandPaletteOpen(false)
         layout.setSettingsModalOpen(false)
         editor.closeFind()
@@ -276,7 +383,14 @@ export function useWorkbenchFacade() {
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [editor, layout, saveFile])
+  }, [
+    closeTabInGroup,
+    confirmCloseFile,
+    confirmRevertFile,
+    editor,
+    layout,
+    saveFile,
+  ])
 
   return {
     // Layout
@@ -341,7 +455,8 @@ export function useWorkbenchFacade() {
     focusedGroup: editor.focusedGroup,
     setFocusedGroup: editor.setFocusedGroup,
     openFileInGroup: editor.openFileInGroup,
-    closeTabInGroup: editor.closeTabInGroup,
+    closeTabInGroup,
+    forceCloseTabInGroup,
     setActiveTabInGroup: editor.setActiveTabInGroup,
     moveTabBetweenGroups: editor.moveTabBetweenGroups,
     reorderTabsInGroup: editor.reorderTabsInGroup,
@@ -355,7 +470,15 @@ export function useWorkbenchFacade() {
     activeTab: editor.activeTab,
     setActiveTab: editor.setActiveTab,
     tabs: editor.tabs,
-    closeTab: editor.closeTab,
+    closeTab,
+    confirmCloseFile,
+    setConfirmCloseFile,
+    resolveConfirmCloseFile,
+    confirmRevertFile,
+    setConfirmRevertFile,
+    requestRevertFile,
+    resolveConfirmRevert,
+    revertFile: workspace.revertBufferContent,
     activeLanguage: workspace.activeLanguage,
     setActiveLanguage: workspace.setActiveLanguage,
 

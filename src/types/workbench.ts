@@ -54,6 +54,7 @@ export interface EditorGroupState {
 
 export interface FileBuffer {
   content: string
+  savedContent?: string
   isDirty: boolean
   language: string
 }

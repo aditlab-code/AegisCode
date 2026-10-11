@@ -103,10 +103,25 @@
   white-space: nowrap;
 }
 
+.open-editor-row .tab-dirty-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--color-accent);
+  border-radius: 50%;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 .open-editor-row .close-tab-trigger {
   opacity: 0;
   margin-left: auto;
   padding: 2px;
+  border-radius: 3px;
+  transition: opacity 0.12s ease;
+}
+
+.open-editor-row .tab-dirty-dot + .close-tab-trigger {
+  margin-left: 4px;
 }
 
 .open-editor-row:hover .close-tab-trigger {
@@ -1253,11 +1268,7 @@
   display: none;
   align-items: center;
   gap: 2px;
-  margin-left: auto;
-}
-
-.search-file-header:hover .search-file-badge {
-  display: none;
+  margin-left: 4px;
 }
 
 .search-file-header:hover .search-file-actions {
