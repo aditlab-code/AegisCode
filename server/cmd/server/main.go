@@ -146,12 +146,16 @@ func main() {
 		log.Fatalf("server exited with error: %v", err)
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
 	for _, sess := range server.Terminal().ListSessions() {
 		_ = server.Terminal().CloseSession(sess.ID)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	if err := server.Supervisor().StopAll(ctx); err != nil {
+		log.Printf("Supervisor StopAll error: %v", err)
+	}
 
 	if err := httpServer.Shutdown(ctx); err != nil {
 		log.Printf("HTTP server shutdown error: %v", err)

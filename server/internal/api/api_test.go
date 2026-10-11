@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -567,6 +568,139 @@ func TestWorkspaceEventsSSE(t *testing.T) {
 	content := string(buf[:n])
 	if !bytes.Contains([]byte(content), []byte("event: connected")) {
 		t.Fatalf("expected initial connected event, got: %s", content)
+	}
+}
+
+func TestWorkersApiEndpoints(t *testing.T) {
+	server, handler, tempDir := setupTestServer(t, "")
+	defer os.RemoveAll(tempDir)
+	defer func() { _ = server.ws.Close() }()
+
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+
+	// 1. Initially no workers
+	resp, err := http.Get(ts.URL + "/api/v1/workers")
+	if err != nil {
+		t.Fatalf("failed to get workers: %v", err)
+	}
+	var listRes struct {
+		Workers []map[string]any `json:"workers"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&listRes)
+	resp.Body.Close()
+	if len(listRes.Workers) != 0 {
+		t.Fatalf("expected 0 workers, got %d", len(listRes.Workers))
+	}
+
+	// 2. Start a worker
+	startBody := `{"id":"test-echo","name":"Echo Worker","command":"sh","args":["-c","echo hello-worker; sleep 5"]}`
+	resp, err = http.Post(ts.URL+"/api/v1/workers", "application/json", strings.NewReader(startBody))
+	if err != nil {
+		t.Fatalf("failed to start worker: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	time.Sleep(100 * time.Millisecond)
+
+	// 3. Inspect worker info
+	resp, err = http.Get(ts.URL + "/api/v1/workers/test-echo")
+	if err != nil {
+		t.Fatalf("failed to get worker test-echo: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var infoRes struct {
+		Worker map[string]any `json:"worker"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&infoRes)
+	resp.Body.Close()
+	if infoRes.Worker["id"] != "test-echo" {
+		t.Fatalf("expected id test-echo, got %v", infoRes.Worker["id"])
+	}
+
+	// 4. Inspect worker logs
+	resp, err = http.Get(ts.URL + "/api/v1/workers/test-echo/logs")
+	if err != nil {
+		t.Fatalf("failed to get worker logs: %v", err)
+	}
+	var logsRes struct {
+		Logs string `json:"logs"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&logsRes)
+	resp.Body.Close()
+	if !strings.Contains(logsRes.Logs, "hello-worker") {
+		t.Fatalf("expected logs to contain 'hello-worker', got %q", logsRes.Logs)
+	}
+
+	// 5. Validation error (empty body) returns 400
+	resp, err = http.Post(ts.URL+"/api/v1/workers", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("failed to post empty worker: %v", err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// 6. Conflict error on duplicate active worker returns 409
+	resp, err = http.Post(ts.URL+"/api/v1/workers", "application/json", strings.NewReader(startBody))
+	if err != nil {
+		t.Fatalf("failed to post duplicate worker: %v", err)
+	}
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("expected 409 Conflict, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// 7. Stop worker via POST .../stop
+	resp, err = http.Post(ts.URL+"/api/v1/workers/test-echo/stop", "application/json", nil)
+	if err != nil {
+		t.Fatalf("failed to stop worker: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// 8. Delete worker via DELETE ... unregisters from supervisor
+	reqDel, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/v1/workers/test-echo", nil)
+	resp, err = http.DefaultClient.Do(reqDel)
+	if err != nil {
+		t.Fatalf("failed to delete worker: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Verify worker is gone (404)
+	resp, err = http.Get(ts.URL + "/api/v1/workers/test-echo")
+	if err != nil {
+		t.Fatalf("failed to get deleted worker: %v", err)
+	}
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found after delete, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// 9. SSE Events endpoint connection
+	resp, err = http.Get(ts.URL + "/api/v1/events/workers")
+	if err != nil {
+		t.Fatalf("failed to connect to worker SSE: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for SSE, got %d", resp.StatusCode)
+	}
+	buf := make([]byte, 256)
+	n, _ := resp.Body.Read(buf)
+	resp.Body.Close()
+	if !strings.Contains(string(buf[:n]), "connected") {
+		t.Fatalf("expected connected event in SSE stream, got %s", string(buf[:n]))
 	}
 }
 

@@ -16,7 +16,7 @@
 | **Phase 5** | AppDrawer AEGIS AI Agent & Session Hub | ✅ Completed | Multi-session chat, slash autocomplete, provider selector |
 | **Special** | UI Dark/Light Theme & Modular Palettes | ✅ Completed | ActivityRail toggle, modular JSON palettes (Default, Atom, Tokyo Night) |
 | **Special** | Settings Registry, Core IDE Preferences & Editor Polish | ✅ Completed | Decoupled schema registry, wildcard exclude, GPU cursor blinking, wrap column |
-| **Phase 6** | Go Core Server, SQLite & Bundled DAP Debugger | 🟡 Active (6.1, 6.2, 6.6 ✅) | Cross-platform Go binary & embed.FS, supervisor, SQLite DB, DAP/Delve |
+| **Phase 6** | Go Core Server, SQLite & Bundled DAP Debugger | 🟡 Active (6.1, 6.2, 6.3, 6.6 ✅) | Cross-platform Go binary & embed.FS, supervisor, SQLite DB, DAP/Delve |
 | **Phase 7** | Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`) | ⚪ Upcoming | Multi-format tab viewers (Images, CSV), vector canvas wireframing |
 | **Phase 8** | Research Workshop & Data Science Studio | ⚪ Planned | LaTeX + PDF sync, BibTeX, Python/R dataframes, Biblioshiny |
 | **Phase 9** | Web-Based Remote Pairing & Tablet Companion | ⚪ Deferred (Final) | LAN pairing, web preview host, touch-optimized editor mode |
@@ -125,7 +125,7 @@
 ---
 
 ### Phase 6: Go Core Server, SQLite Storage, & Bundled DAP Debugger
-- **Status**: 🟡 Active (Sub-Phases 6.1, 6.2, and 6.6 Completed)
+- **Status**: 🟡 Active (Sub-Phases 6.1, 6.2, 6.3, and 6.6 Completed)
 
 #### Sub-Phase 6.1: Live Workspace Engine & File Operations
 - **Status**: ✅ Completed
@@ -153,11 +153,22 @@
   - **Status Bar Integration**: Branch indicator with dirty state asterisk (`*`), live sync counter (`↓behind ↑ahead`), and branch switcher popover.
 
 #### Sub-Phase 6.3: Process Supervisor & Native PTY Terminal Shells
-- **Status**: 🟡 Active / Next
+- **Status**: ✅ Completed
 - **Deliverables**:
-  - Native PTY terminal session manager (`server/internal/terminal`) with cross-platform pseudo-terminal support (`pty`).
-  - Real-time PTY streaming over WebSocket / SSE (`/api/v1/terminal/*`).
-  - Subprocess supervisor with fail-fast crash isolation for language servers and terminal shells.
+  - **Native PTY Terminal Session Manager (`server/internal/terminal`)**:
+    - Cross-platform pseudo-terminal allocation via `creack/pty` supporting custom shell resolution (`zsh`, `bash`, `sh`), working directory scoping, and dynamic window resizing (`Cols`, `Rows`).
+    - Process group leadership (`Setsid`/`Setpgid`) and clean anti-orphan termination (`SIGTERM` + 50ms `SIGKILL` watchdog to `-pid` on Unix, process kill on Windows).
+  - **Real-Time PTY Streaming (`/api/v1/terminal/*`)**:
+    - Low-latency downlink streaming over Server-Sent Events (SSE) (`/api/v1/events/terminal/:sessionId`) with base64 data payloads and graceful exit notification.
+    - Synchronized stdin uplink via HTTP POST (`/api/v1/terminal/:sessionId/input`) with micro-batched typing latency and dynamic resize (`/api/v1/terminal/:sessionId/resize`).
+    - Seamlessly integrated with in-editor `TerminalView.tsx` powered by `@xterm/xterm` and `@xterm/addon-fit`.
+  - **Fail-Fast Process Supervisor (`server/internal/supervisor`)**:
+    - Robust child process supervisor for language servers (LSP), compiler CLI tools, and background worker jobs with fail-fast crash isolation ([ADR 0004](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0004-worker-supervision-and-agent-isolation.md)).
+    - 5 explicit lifecycle states: `Starting`, `Running`, `Backoff`, `Crashed`, `Stopped`.
+    - Resilient restart policies: `RestartNever` and `RestartOnFailure` with exponential backoff and quota limit (max 3 retries in 30s) preventing CPU infinite spin loops.
+    - In-memory 64 KB thread-safe circular ring buffer per worker capturing combined stdout/stderr for instant post-mortem diagnostics.
+    - Diagnostic observability endpoints: `GET /api/v1/workers`, `POST /api/v1/workers`, `GET /api/v1/workers/:id`, `GET /api/v1/workers/:id/logs`, and `POST /api/v1/workers/:id/stop`.
+    - Integrated with Go server graceful teardown in `server/cmd/server/main.go` and Tasks log channel (`s.BroadcastLog`).
 
 #### Sub-Phase 6.4: Stateless/Immutable Runtime & SQLite Data Isolation
 - **Status**: ⚪ Planned (Prepared)

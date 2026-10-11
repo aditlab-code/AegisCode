@@ -215,6 +215,9 @@ All operations interact directly with the local native Git CLI binary on the act
 - `GET /api/v1/events/terminal/:sessionId`
   - Headers: `Accept: text/event-stream`
   - Streams raw PTY byte output chunks to the terminal emulator.
+- `GET /api/v1/events/workers`
+  - Headers: `Accept: text/event-stream`
+  - Streams real-time fail-fast crash diagnostic events (`worker:crash`) for supervised workers and terminal shells.
 
 ### E. WebSocket Event Hub (Bi-directional Sync)
 - `WS /api/v1/ws/sync`
@@ -248,6 +251,17 @@ All operations interact directly with the local native Git CLI binary on the act
   - Body: `{ "cols": 140, "rows": 40 }`
 - `DELETE /api/v1/terminal/:sessionId`
   - Sends `SIGTERM` / `SIGKILL` to close the PTY session.
+- `GET /api/v1/workers`
+  - Retrieves live status, PID, uptime, and restart count of all supervised workers.
+- `POST /api/v1/workers`
+  - Body: `{ "id": "lsp-go", "name": "Go LSP", "command": "gopls", "args": [], "restartPolicy": "on-failure" }`
+  - Launches and registers a new supervised worker process.
+- `GET /api/v1/workers/:id`
+  - Retrieves live metadata for a specific worker.
+- `GET /api/v1/workers/:id/logs`
+  - Returns the 64 KB in-memory ring buffer log history (combined stdout/stderr).
+- `POST /api/v1/workers/:id/stop` / `DELETE /api/v1/workers/:id`
+  - Terminates the worker process group gracefully.
 
 ---
 
