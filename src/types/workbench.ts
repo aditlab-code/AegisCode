@@ -91,6 +91,7 @@ export interface NotificationItem {
   detail: string
   time: string
   read: boolean
+  level?: "info" | "warning" | "error" | "success"
 }
 
 export interface ChatMessage {

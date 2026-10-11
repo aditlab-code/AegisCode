@@ -230,6 +230,36 @@ export function useEditorCore(onFileRequested?: (filename: string) => void) {
     setMinimapEnabled((v) => !v)
   }, [setMinimapEnabled])
 
+  const [tabSize, setTabSizeState] = useState<number>(() => {
+    try {
+      const stored = window.localStorage.getItem("aegis_tab_size")
+      if (stored) {
+        const parsed = parseInt(stored, 10)
+        if (parsed === 2 || parsed === 4) return parsed
+      }
+    } catch {}
+    return 2
+  })
+
+  const [encoding, setEncoding] = useState<string>("UTF-8")
+
+  const setTabSize = useCallback((size: number) => {
+    setTabSizeState(size)
+    try {
+      window.localStorage.setItem("aegis_tab_size", String(size))
+    } catch {}
+  }, [])
+
+  const toggleTabSize = useCallback(() => {
+    setTabSizeState((prev) => {
+      const next = prev === 2 ? 4 : 2
+      try {
+        window.localStorage.setItem("aegis_tab_size", String(next))
+      } catch {}
+      return next
+    })
+  }, [])
+
   // In-editor find & replace states
   const [findStateGroup1, setFindStateGroup1] = useState<FindWidgetState>({
     isOpen: false,
@@ -537,5 +567,10 @@ export function useEditorCore(onFileRequested?: (filename: string) => void) {
     renameTabsInBothGroups,
     closeTabInBothGroups,
     resetAllGroups,
+    tabSize,
+    setTabSize,
+    toggleTabSize,
+    encoding,
+    setEncoding,
   }
 }

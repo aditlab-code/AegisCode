@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect, useRef } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbench } from "../../../context/WorkbenchContext"
 import type { IconName } from "../../../types/workbench"
@@ -154,6 +154,19 @@ export function CommandPalette() {
     toggleTheme,
   ])
 
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const listRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!listRef.current) return
+    const activeEl = listRef.current.querySelector(
+      ".command-active",
+    ) as HTMLElement | null
+    if (activeEl) {
+      activeEl.scrollIntoView({ block: "nearest" })
+    }
+  }, [selectedIndex])
+
   if (!commandPaletteOpen) return null
 
   const results = allCommands.filter(
@@ -169,6 +182,26 @@ export function CommandPalette() {
 
   function handleClose() {
     setCommandPaletteOpen(false)
+  }
+
+  function handleInputKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault()
+      if (results.length > 0) {
+        setSelectedIndex((prev) => (prev + 1) % results.length)
+      }
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault()
+      if (results.length > 0) {
+        setSelectedIndex((prev) => (prev - 1 + results.length) % results.length)
+      }
+    } else if (e.key === "Enter") {
+      e.preventDefault()
+      const target = results[selectedIndex] || results[0]
+      if (target) {
+        handleSelect(target)
+      }
+    }
   }
 
   return (
@@ -194,30 +227,41 @@ export function CommandPalette() {
           <Icon name="chevron" size={15} />
           <input
             autoFocus
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value)
+              setSelectedIndex(0)
+            }}
+            onKeyDown={handleInputKeyDown}
             placeholder="Type a command or search..."
             value={query}
           />
           <kbd>Esc</kbd>
         </label>
-        <div className="command-results">
+        <div className="command-results" ref={listRef}>
           <span className="command-section">COMMANDS</span>
-          {results.map((cmd, index) => {
-            return (
-              <button
-                className={index === 0 ? "command-active" : ""}
-                key={cmd.id}
-                onClick={() => handleSelect(cmd)}
-                type="button"
-              >
-                <Icon name={cmd.icon} size={15} />
-                <span>
-                  <strong>{cmd.label}</strong>
-                  <small>{cmd.detail}</small>
-                </span>
-              </button>
-            )
-          })}
+          {results.length === 0 ? (
+            <div className="px-3 py-4 text-xs text-center text-[var(--color-ink-muted)]">
+              No matching commands
+            </div>
+          ) : (
+            results.map((cmd, index) => {
+              return (
+                <button
+                  className={index === selectedIndex ? "command-active" : ""}
+                  key={cmd.id}
+                  onClick={() => handleSelect(cmd)}
+                  onMouseEnter={() => setSelectedIndex(index)}
+                  type="button"
+                >
+                  <Icon name={cmd.icon} size={15} />
+                  <span>
+                    <strong>{cmd.label}</strong>
+                    <small>{cmd.detail}</small>
+                  </span>
+                </button>
+              )
+            })
+          )}
         </div>
       </div>
     </div>

@@ -167,6 +167,10 @@ export function ExplorerPanel() {
   const [filterActive, setFilterActive] = useState(false)
   const [filterQuery, setFilterQuery] = useState("")
 
+  // Delete confirmation modal state
+  const [deleteConfirmTarget, setDeleteConfirmTarget] =
+    useState<FileItem | null>(null)
+
   // Inline creation state
   const [creatingType, setCreatingType] = useState<"file" | "folder" | null>(
     null,
@@ -337,7 +341,7 @@ export function ExplorerPanel() {
   }
 
   function triggerDelete(file: FileItem) {
-    deleteFile(file.path || file.label)
+    setDeleteConfirmTarget(file)
     setContextMenu(null)
   }
 
@@ -902,6 +906,68 @@ export function ExplorerPanel() {
               <Icon name="close" size={12} />
               <span>Delete</span>
             </button>
+          </div>,
+          document.body,
+        )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmTarget &&
+        createPortal(
+          <div
+            aria-modal="true"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4"
+            onClick={() => setDeleteConfirmTarget(null)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setDeleteConfirmTarget(null)
+            }}
+            role="dialog"
+          >
+            <div
+              className="w-full max-w-sm rounded-lg border border-[var(--color-line-bright)] bg-[var(--color-surface-raised)] p-5 shadow-2xl space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-3">
+                <span className="flex items-center justify-center w-8 h-8 rounded-full bg-[var(--color-error)]/20 text-[var(--color-error)] shrink-0 mt-0.5">
+                  <Icon name="warning" size={16} />
+                </span>
+                <div>
+                  <h3 className="text-sm font-semibold text-[var(--color-ink)]">
+                    Delete{" "}
+                    {deleteConfirmTarget.type === "folder" ? "Folder" : "File"}?
+                  </h3>
+                  <p className="text-xs text-[var(--color-ink-muted)] mt-1 leading-relaxed">
+                    Are you sure you want to permanently delete{" "}
+                    <strong className="text-[var(--color-ink)] font-mono">
+                      {deleteConfirmTarget.label}
+                    </strong>
+                    ? This action cannot be undone.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--color-line)]">
+                <button
+                  autoFocus
+                  className="px-3 py-1.5 text-xs font-medium rounded hover:bg-[var(--color-surface-hover)] text-[var(--color-ink-soft)] transition-colors cursor-pointer"
+                  onClick={() => setDeleteConfirmTarget(null)}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button
+                  className="px-3 py-1.5 text-xs font-medium rounded bg-[var(--color-error)] text-white hover:opacity-90 transition-opacity cursor-pointer"
+                  onClick={() => {
+                    deleteFile(
+                      deleteConfirmTarget.path || deleteConfirmTarget.label,
+                    )
+                    setDeleteConfirmTarget(null)
+                  }}
+                  type="button"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
           </div>,
           document.body,
         )}

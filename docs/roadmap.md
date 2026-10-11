@@ -60,10 +60,18 @@
 - **Deliverables**:
   - Dynamic line and column cursor reporting (`Ln X, Col Y`).
   - Automatic language detection based on active file extension.
-  - Git branch checkout popover trigger.
-  - Diagnostics error and warning counter linking to the Problems view.
-  - Notification center badge with toast popover history.
-- **Exit Criteria**: Status bar remains responsive and updates smoothly during rapid typing and editor pane switches.
+  - Interactive Git branch switcher and checkout popover with filter search and branch creation (`BranchPopover.tsx`).
+  - Cloud synchronization status button with push/pull indicator (`↓behind ↑ahead`).
+  - Diagnostics error and warning counter linking to the Problems view, with empty state handling (`ProblemsPopover.tsx`).
+  - **Dynamic Status Bar Controls (Zero Hardcoding)**:
+    - **Indentation (`Spaces: {tabSize}`)**: Dynamic reactive binding with editor configuration; clicking toggles indentation (2 ↔ 4 spaces) with confirmation toast; synchronized across Settings Modal and Sidebar.
+    - **Encoding (`UTF-8`)**: Dynamic active document encoding indicator.
+    - **Local Server Connection (`Local: Connected / Offline`)**: Dynamic backend health ping to Go Core Server (`/api/v1/workspace/info`) with live colored dot indicator (`--color-success` / `--color-error`) and click-to-reconnect/status check.
+  - **Integrated Notification Center & Toast History**:
+    - Automatic bidirectional bridge between transient toast notifications (`showToast`) and Notification Center history (`notifications`, max 30 in-memory items).
+    - Popover features: Clean empty state (`No notifications`), header actions (`Mark all read`, `Clear all`), scrollable list, and per-item dismiss action (`NotificationsPopover.tsx`).
+    - Popover dismiss interaction: Global click-outside listener and `Escape` key handling.
+- **Exit Criteria**: Status bar remains responsive, eliminates all mock/hardcoded elements, cleanly records workspace notification events, and updates smoothly during rapid typing and editor pane switches.
 
 ---
 

@@ -27,6 +27,8 @@ export function SettingsModal() {
     showToast,
     theme,
     setTheme,
+    tabSize,
+    setTabSize,
   } = useWorkbench()
 
   const [activeCategory, setActiveCategory] = useState<string>("Common")
@@ -35,7 +37,6 @@ export function SettingsModal() {
 
   // Local settings states
   const [autoSave, setAutoSave] = useState(true)
-  const [tabSize, setTabSize] = useState("2")
   const [wordWrap, setWordWrap] = useState("on")
   const [fontFamily, setFontFamily] = useState(
     "SFMono-Regular, Menlo, monospace",
@@ -107,10 +108,10 @@ export function SettingsModal() {
         title: "Editor: Tab Size",
         description: "The number of spaces a tab is equal to.",
         type: "select",
-        value: tabSize,
+        value: String(tabSize),
         options: ["2", "4", "8"],
         onChange: (v) => {
-          setTabSize(v)
+          setTabSize(Number(v))
           showToast(`Tab size set to ${v}`)
         },
       },

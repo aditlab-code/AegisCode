@@ -125,13 +125,23 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
 ### 7. Status Bar (`status-bar/`)
 - **Path**: [`src/components/layout/status-bar/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/status-bar)
 - **Primary Components**: `StatusBar.tsx`, `BranchPopover.tsx`, `ProblemsPopover.tsx`, `NotificationsPopover.tsx`, `status-bar.css`
-- **Visual Design**:
+- **Visual Design & Interactive Capabilities**:
   - Slim 24px footer anchored at the bottom edge.
-  - Left section:
+  - **Left Section**:
     - **Active Git Branch Button**: Displays active branch with dirty indicator (`*`) when working tree has uncommitted changes. Clicking opens `BranchPopover.tsx` with search filter and branch creation.
     - **Cloud Sync Status**: Interactive button with `↓behind ↑ahead` counters; clicking triggers `gitSync`.
-    - **Problems Counter**: Error and warning counts opening the Problems popover.
-  - Right section: Cursor position (`Ln 42, Col 18`), spaces/indent size, active encoding (`UTF-8`), active language mode badge, notification bell with unread count.
+    - **Problems Counter**: Error and warning counts opening `ProblemsPopover.tsx` with empty state detection and direct navigation to problems in editor/bottom panel.
+  - **Right Section (Dynamic, Zero-Hardcoding)**:
+    - **Cursor Position**: Real-time cursor coordinates (`Ln X, Col Y`).
+    - **Indentation Toggle Button**: Dynamic `Spaces: {tabSize}` button reflecting workbench editor state; clicking directly toggles between 2 and 4 spaces with feedback toast, kept in sync with Settings Modal and Sidebar.
+    - **Document Encoding**: Live file encoding indicator (`UTF-8`).
+    - **Language Mode Badge**: Active file syntax mode detected automatically from file extensions.
+    - **Server Connection Indicator**: Live Go Core Server ping (`/api/v1/workspace/info`) displaying glowing dot (`--color-success` online / `--color-error` offline) with `Local: Connected / Offline`; clicking triggers manual health check / reconnect attempt.
+    - **Notification Center Badge & Popover (`NotificationsPopover.tsx`)**:
+      - Real-time unread notification badge counter.
+      - Automated toast history bridge: transient toasts (`showToast`) automatically populate Notification Center history (up to 30 items).
+      - Popover controls: Header action buttons ("Mark all read", "Clear all"), individual dismiss button on hover, and empty state ("No notifications - You're all caught up").
+      - Global click-outside listener and `Escape` key handling to dismiss any active popover.
 
 ### 8. Settings Overlay (`settings/`)
 - **Path**: [`src/components/layout/settings/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/settings)

@@ -12,26 +12,22 @@ export const initialFiles: FileItem[] = []
 
 export const initialDiagnostics: DiagnosticItem[] = []
 
-export const initialNotifications: NotificationItem[] = [
-  {
-    id: "notif-1",
-    title: "AegisCode Ready",
-    detail: "Phase 6 Go Core Server connected",
-    read: false,
-    time: "now",
-  },
-]
+export const initialNotifications: NotificationItem[] = []
 
 export const initialTerminalLines: string[] = [
-  "Terminal & Runner unscoped for Phase 1",
+  "Aegis Terminal Session (zsh)",
+  "Local environment ready. Type commands to execute.",
 ]
 
 export const initialTerminalSessions: TerminalSession[] = [
   {
     id: "session-term-1",
-    name: "1: zsh (unscoped)",
+    name: "1: zsh",
     shell: "zsh",
-    lines: ["Terminal & Runner unscoped for Phase 1"],
+    lines: [
+      "Aegis Terminal Session (zsh)",
+      "Local environment ready. Type commands to execute.",
+    ],
     running: false,
     commandHistory: [],
   },

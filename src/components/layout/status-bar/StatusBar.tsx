@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbench } from "../../../context/WorkbenchContext"
 import { BranchPopover } from "./BranchPopover"
@@ -18,12 +18,19 @@ export function StatusBar() {
     notifications,
     activeLanguage,
     cursorPosition,
+    tabSize,
+    toggleTabSize,
+    encoding,
+    serverConnected,
+    checkServerConnection,
+    showToast,
     setPanelOpen,
     setActiveBottomTab,
   } = useWorkbench()
 
   const [activePanel, setActivePanel] =
     useState<"branch" | "notifications" | "problems" | null>(null)
+  const statusBarRef = useRef<HTMLElement>(null)
 
   const isDirty = gitChanges.length > 0 || stagedChanges.length > 0
   const unreadCount = notifications.filter((item) => !item.read).length
@@ -40,8 +47,50 @@ export function StatusBar() {
     togglePanel("problems")
   }
 
+  function handleTabSizeClick() {
+    toggleTabSize()
+    const nextSize = tabSize === 2 ? 4 : 2
+    showToast(`Indentation set to Spaces: ${nextSize}`)
+  }
+
+  async function handleServerConnectionClick() {
+    const isOk = await checkServerConnection()
+    showToast(
+      isOk
+        ? "Connected to Local Go Server"
+        : "Unable to reach Local Go Server (Offline)",
+    )
+  }
+
+  // Handle click outside and Escape key to close any active popover
+  useEffect(() => {
+    if (!activePanel) return
+
+    function handleMouseDown(e: MouseEvent) {
+      if (
+        statusBarRef.current &&
+        !statusBarRef.current.contains(e.target as Node)
+      ) {
+        setActivePanel(null)
+      }
+    }
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setActivePanel(null)
+      }
+    }
+
+    document.addEventListener("mousedown", handleMouseDown)
+    document.addEventListener("keydown", handleKeyDown)
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [activePanel])
+
   return (
-    <footer className="status-bar">
+    <footer className="status-bar" ref={statusBarRef}>
       <div className="status-group">
         {isGitRepo && activeBranch ? (
           <>
@@ -85,12 +134,37 @@ export function StatusBar() {
         <span className="status-item">
           Ln {cursorPosition.line}, Col {cursorPosition.col}
         </span>
-        <span className="status-item">Spaces: 2</span>
-        <span className="status-item">UTF-8</span>
-        <span className="status-item">{activeLanguage}</span>
-        <span className="status-item">
-          <span className="status-dot" /> Local
+        <button
+          className="status-item cursor-pointer hover:text-[var(--color-ink)]"
+          onClick={handleTabSizeClick}
+          title="Indentation (Click to toggle Spaces 2 / 4)"
+          type="button"
+        >
+          Spaces: {tabSize}
+        </button>
+        <span className="status-item" title="File Encoding">
+          {encoding}
         </span>
+        <span className="status-item" title="Language Mode">
+          {activeLanguage}
+        </span>
+        <button
+          className="status-item cursor-pointer hover:text-[var(--color-ink)]"
+          onClick={handleServerConnectionClick}
+          title={
+            serverConnected
+              ? "Connected to Local Go Server (Click to re-check)"
+              : "Disconnected from Local Go Server (Click to retry)"
+          }
+          type="button"
+        >
+          <span
+            className={`status-dot ${
+              serverConnected ? "status-dot-online" : "status-dot-offline"
+            }`}
+          />{" "}
+          Local: {serverConnected ? "Connected" : "Offline"}
+        </button>
         <button
           aria-label={`${unreadCount} unread notifications`}
           className={
@@ -111,8 +185,12 @@ export function StatusBar() {
       {activePanel === "branch" && (
         <BranchPopover onClose={() => setActivePanel(null)} />
       )}
-      {activePanel === "problems" && <ProblemsPopover />}
-      {activePanel === "notifications" && <NotificationsPopover />}
+      {activePanel === "problems" && (
+        <ProblemsPopover onClose={() => setActivePanel(null)} />
+      )}
+      {activePanel === "notifications" && (
+        <NotificationsPopover onClose={() => setActivePanel(null)} />
+      )}
     </footer>
   )
 }

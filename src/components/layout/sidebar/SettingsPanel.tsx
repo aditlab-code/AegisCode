@@ -10,6 +10,9 @@ export function SettingsPanel() {
     toggleMinimap,
     minimapScale,
     setMinimapScale,
+    tabSize,
+    setTabSize,
+    showToast,
   } = useWorkbench()
   const [settingsQuery, setSettingsQuery] = useState("")
   const [autoSave, setAutoSave] = useState(true)
@@ -81,9 +84,18 @@ export function SettingsPanel() {
               <strong>Tab Size</strong>
               <small>Spaces per indentation</small>
             </span>
-            <select aria-label="Editor tab size" defaultValue="2">
-              <option>2</option>
-              <option>4</option>
+            <select
+              aria-label="Editor tab size"
+              onChange={(e) => {
+                const next = Number(e.target.value)
+                setTabSize(next)
+                showToast(`Tab size set to ${next}`)
+              }}
+              value={tabSize}
+            >
+              <option value={2}>2</option>
+              <option value={4}>4</option>
+              <option value={8}>8</option>
             </select>
           </label>
         </div>

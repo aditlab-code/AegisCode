@@ -208,3 +208,110 @@
   font-size: 8px;
 }
 
+.status-dot-online {
+  background: var(--color-success);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-success) 60%, transparent);
+}
+
+.status-dot-offline {
+  background: var(--color-error);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-error) 60%, transparent);
+}
+
+.notification-list {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.notification-item {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  color: var(--color-ink-soft);
+  background: transparent;
+  border-bottom: 1px solid var(--color-line);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease;
+}
+
+.notification-item:hover {
+  background: var(--color-surface-hover);
+}
+
+.notification-content {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.notification-content strong {
+  color: var(--color-ink);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.notification-content small {
+  color: var(--color-ink-muted);
+  font-size: 9px;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.notification-dismiss {
+  opacity: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  color: var(--color-ink-muted);
+  background: transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.notification-item:hover .notification-dismiss {
+  opacity: 1;
+}
+
+.notification-dismiss:hover {
+  color: var(--color-ink);
+  background: var(--color-surface-hover);
+}
+
+.notification-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 28px 16px;
+  color: var(--color-ink-muted);
+  text-align: center;
+}
+
+.notification-empty svg {
+  color: var(--color-ink-muted);
+  opacity: 0.5;
+  margin-bottom: 4px;
+}
+
+.notification-empty span {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-ink-soft);
+}
+
+.notification-empty small {
+  font-size: 9px;
+}
+

@@ -21,6 +21,11 @@ export function useWorkbenchFacade() {
   // Toast notifications
   const [toast, setToast] = useState("")
   const toastTimerRef = useRef<number | null>(null)
+  const addNotificationRef = useRef<((
+    title: string,
+    detail?: string,
+    level?: "info" | "warning" | "error" | "success",
+  ) => void) | null>(null)
 
   const [confirmCloseFile, setConfirmCloseFile] =
     useState<ConfirmCloseState | null>(null)
@@ -36,6 +41,9 @@ export function useWorkbenchFacade() {
     if (typeof window !== "undefined") {
       toastTimerRef.current = window.setTimeout(() => setToast(""), 2200)
     }
+    if (addNotificationRef.current) {
+      addNotificationRef.current(message)
+    }
   }, [])
 
   const clearToast = useCallback(() => {
@@ -44,6 +52,28 @@ export function useWorkbenchFacade() {
     }
     setToast("")
   }, [])
+
+  // Server health state
+  const [serverConnected, setServerConnected] = useState<boolean>(true)
+
+  const checkServerConnection = useCallback(async () => {
+    try {
+      const res = await fetch("/api/v1/workspace/info", { method: "GET" })
+      setServerConnected(res.ok)
+      return res.ok
+    } catch {
+      setServerConnected(false)
+      return false
+    }
+  }, [])
+
+  useEffect(() => {
+    checkServerConnection()
+    const timer = setInterval(() => {
+      checkServerConnection()
+    }, 20000)
+    return () => clearInterval(timer)
+  }, [checkServerConnection])
 
   // Sub-modules
   const layout = useLayoutCore()
@@ -114,6 +144,7 @@ export function useWorkbenchFacade() {
     openFileInPane,
     setCursorPosition,
   })
+  addNotificationRef.current = workspace.addNotification
 
   const git = useGitCore({
     showToast,
@@ -488,6 +519,11 @@ export function useWorkbenchFacade() {
     saveFile,
     cursorPosition: editor.cursorPosition,
     setCursorPosition: editor.setCursorPosition,
+    tabSize: editor.tabSize,
+    setTabSize: editor.setTabSize,
+    toggleTabSize: editor.toggleTabSize,
+    encoding: editor.encoding,
+    setEncoding: editor.setEncoding,
     linterSettings: workspace.linterSettings,
     setLinterSettings: workspace.setLinterSettings,
     navigateToDiagnostic: workspace.navigateToDiagnostic,
@@ -514,6 +550,9 @@ export function useWorkbenchFacade() {
     deleteFile: workspace.deleteFile,
     diagnostics: workspace.diagnostics,
     notifications: workspace.notifications,
+    addNotification: workspace.addNotification,
+    clearAllNotifications: workspace.clearAllNotifications,
+    removeNotification: workspace.removeNotification,
     markAllNotificationsRead: workspace.markAllNotificationsRead,
     markNotificationRead: workspace.markNotificationRead,
 
@@ -587,6 +626,8 @@ export function useWorkbenchFacade() {
     toast,
     showToast,
     clearToast,
+    serverConnected,
+    checkServerConnection,
     runAction,
   }
 }

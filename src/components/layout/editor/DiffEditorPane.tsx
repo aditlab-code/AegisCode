@@ -28,6 +28,7 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
     unstageChange,
     discardChange,
     showToast,
+    tabSize,
   } = useWorkbench()
 
   const diffInfo = parseGitDiffTab(tab)
@@ -119,6 +120,28 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
     if ((e.metaKey || e.ctrlKey) && e.key === "s") {
       e.preventDefault()
       saveFile(file)
+      fetchDiff(file, staged, commit)
+        .then((res) => setDiffData(res))
+        .catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err)
+          showToast(`Failed to refresh diff: ${msg}`)
+        })
+      return
+    }
+
+    if (e.key === "Tab" && isWorkingCopyEditable) {
+      e.preventDefault()
+      const textarea = e.currentTarget
+      const spaces = " ".repeat(tabSize || 2)
+      const start = textarea.selectionStart
+      const end = textarea.selectionEnd
+      const newContent =
+        modifiedContent.slice(0, start) + spaces + modifiedContent.slice(end)
+
+      updateFileContent(file, newContent)
+      requestAnimationFrame(() => {
+        textarea.selectionStart = textarea.selectionEnd = start + spaces.length
+      })
     }
   }
 

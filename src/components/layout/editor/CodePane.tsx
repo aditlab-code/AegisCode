@@ -44,6 +44,7 @@ export function CodePane({
     minimapScale,
     openFind,
     focusedGroup,
+    tabSize,
   } = useWorkbench()
 
   const gutterRef = useRef<HTMLDivElement>(null)
@@ -192,19 +193,20 @@ export function CodePane({
       return
     }
 
-    // Tab key: Insert 2 spaces
+    // Tab key: Insert spaces matching tabSize
     if (event.key === "Tab") {
       event.preventDefault()
       const textarea = textareaRef.current
       if (!textarea) return
 
+      const spaces = " ".repeat(tabSize || 2)
       const start = textarea.selectionStart
       const end = textarea.selectionEnd
-      const newContent = content.slice(0, start) + "  " + content.slice(end)
+      const newContent = content.slice(0, start) + spaces + content.slice(end)
 
       updateFileContent(filename, newContent)
       requestAnimationFrame(() => {
-        textarea.selectionStart = textarea.selectionEnd = start + 2
+        textarea.selectionStart = textarea.selectionEnd = start + spaces.length
         updateCursor()
       })
       return

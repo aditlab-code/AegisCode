@@ -296,6 +296,41 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
     } catch {}
   }, [])
 
+  const addNotification = useCallback(
+    (
+      title: string,
+      detail: string = "",
+      level: "info" | "warning" | "error" | "success" = "info",
+    ) => {
+      const id = `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+      const now = new Date()
+      const time = now.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+      setNotifications((prev) => [
+        {
+          id,
+          title,
+          detail,
+          time,
+          read: false,
+          level,
+        },
+        ...prev.slice(0, 29),
+      ])
+    },
+    [],
+  )
+
+  const clearAllNotifications = useCallback(() => {
+    setNotifications([])
+  }, [])
+
+  const removeNotification = useCallback((id: string) => {
+    setNotifications((prev) => prev.filter((item) => item.id !== id))
+  }, [])
+
   const markAllNotificationsRead = useCallback(() => {
     setNotifications((items) => items.map((item) => ({ ...item, read: true })))
   }, [])
@@ -755,6 +790,9 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
     diagnostics,
     setDiagnostics,
     notifications,
+    addNotification,
+    clearAllNotifications,
+    removeNotification,
     markAllNotificationsRead,
     markNotificationRead,
     activeLanguage,
