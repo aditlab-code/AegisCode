@@ -412,13 +412,13 @@ export function SourceControlPanel() {
 
               {/* Branch Pill with dirty indicator */}
               <button
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--color-surface)] border border-[var(--color-line)] text-[10px] text-[var(--color-ink-soft)] hover:text-[var(--color-accent)] hover:border-[var(--color-accent)] transition-colors cursor-pointer ml-auto"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--color-surface)] border border-[var(--color-line)] text-[10px] text-[var(--color-ink-soft)] hover:text-[var(--color-accent)] hover:border-[var(--color-accent)] transition-colors cursor-pointer ml-auto max-w-[110px] min-w-0"
                 onClick={() => setShowBranchPrompt(true)}
-                title="Click to switch or create branch"
+                title={`Branch: ${activeBranch} (Click to switch or create branch)`}
                 type="button"
               >
-                <Icon name="branch" size={11} />
-                <span className="font-mono">
+                <Icon className="shrink-0" name="branch" size={11} />
+                <span className="font-mono truncate">
                   {activeBranch}
                   {isDirty ? "*" : ""}
                 </span>
@@ -470,8 +470,9 @@ export function SourceControlPanel() {
                     handleCommit(false)
                   }
                 }}
-                placeholder={`Message (⌘Enter to commit on "${activeBranch}")`}
+                placeholder="Message (⌘Enter to commit)"
                 rows={3}
+                title={`Commit changes on "${activeBranch}"`}
                 value={commitMessage}
               />
               <button
@@ -587,22 +588,23 @@ export function SourceControlPanel() {
                       : stagedChanges.slice(0, maxVisibleChanges)
                     ).map((change) => (
                       <div
-                        className="group flex items-center gap-2 px-2 py-1 rounded text-[11px] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-hover)] cursor-pointer"
+                        className="group flex items-center gap-2 px-2 py-1 rounded text-[11px] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-hover)] cursor-pointer min-w-0"
                         key={`staged-${change.file}`}
                         onClick={() => openGitDiff(change.file, true)}
+                        title={change.file}
                       >
                         <span
                           className={`change-badge change-${
                             change.status || "modified"
-                          }`}
+                          } shrink-0`}
                         >
                           {change.code}
                         </span>
-                        <span className="truncate flex-1 font-mono text-[11px]">
+                        <span className="truncate flex-1 font-mono text-[11px] min-w-0">
                           {change.file}
                         </span>
 
-                        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
+                        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 shrink-0">
                           <button
                             aria-label={`Unstage ${change.file}`}
                             className="p-1 hover:text-[var(--color-error)] cursor-pointer"
@@ -687,22 +689,23 @@ export function SourceControlPanel() {
                         : gitChanges.slice(0, maxVisibleChanges)
                       ).map((change) => (
                         <div
-                          className="group flex items-center gap-2 px-2 py-1 rounded text-[11px] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-hover)] cursor-pointer"
+                          className="group flex items-center gap-2 px-2 py-1 rounded text-[11px] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-hover)] cursor-pointer min-w-0"
                           key={`change-${change.file}`}
                           onClick={() => openGitDiff(change.file, false)}
+                          title={change.file}
                         >
                           <span
                             className={`change-badge change-${
                               change.status || "modified"
-                            }`}
+                            } shrink-0`}
                           >
                             {change.code}
                           </span>
-                          <span className="truncate flex-1 font-mono text-[11px]">
+                          <span className="truncate flex-1 font-mono text-[11px] min-w-0">
                             {change.file}
                           </span>
 
-                          <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
+                          <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 shrink-0">
                             <button
                               aria-label={`Discard ${change.file}`}
                               className="p-1 hover:text-[var(--color-error)] cursor-pointer"

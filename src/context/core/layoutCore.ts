@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useState } from "react"
 import type { BottomTab, ThemeMode } from "../../types/workbench"
 
-export const DEFAULT_SIDEBAR_WIDTH = 220
-export const MIN_SIDEBAR_WIDTH = 160
+export const DEFAULT_SIDEBAR_WIDTH = 260
+export const MIN_SIDEBAR_WIDTH = 220
 export const MAX_SIDEBAR_WIDTH = 460
+export const COLLAPSE_SIDEBAR_THRESHOLD = 160
 
-export const DEFAULT_CHAT_WIDTH = 300
-export const MIN_CHAT_WIDTH = 260
+export const DEFAULT_CHAT_WIDTH = 340
+export const MIN_CHAT_WIDTH = 300
 export const MAX_CHAT_WIDTH = 600
+export const COLLAPSE_CHAT_THRESHOLD = 180
+
+export const DEFAULT_CHAT_EXPANDED_WIDTH = 500
+export const MIN_CHAT_EXPANDED_WIDTH = 480
+export const COLLAPSE_CHAT_EXPANDED_THRESHOLD = 320
 
 export const DEFAULT_BOTTOM_HEIGHT = 180
 export const MIN_BOTTOM_HEIGHT = 100
@@ -169,7 +175,12 @@ export function useLayoutCore() {
   )
 
   const [lastSidebarWidth, setLastSidebarWidth] = useState<number>(sidebarWidth)
-  const [lastChatWidth, setLastChatWidth] = useState<number>(chatDrawerWidth)
+  const [lastNormalChatWidth, setLastNormalChatWidth] = useState<number>(() =>
+    chatDrawerWidth >= MIN_CHAT_WIDTH ? chatDrawerWidth : DEFAULT_CHAT_WIDTH,
+  )
+  const [lastExpandedChatWidth, setLastExpandedChatWidth] = useState<number>(
+    DEFAULT_CHAT_EXPANDED_WIDTH,
+  )
   const [lastBottomHeight, setLastBottomHeight] =
     useState<number>(bottomPanelHeight)
 
@@ -204,28 +215,39 @@ export function useLayoutCore() {
     (value: number | ((prev: number) => number)) => {
       setChatDrawerWidthState((prev) => {
         const next = typeof value === "function" ? value(prev) : value
-        if (next >= MIN_CHAT_WIDTH) {
-          setLastChatWidth(next)
-          try {
-            window.localStorage.setItem("aegis_chat_width", String(next))
-          } catch {}
+        if (chatSessionsOpen) {
+          if (next >= MIN_CHAT_EXPANDED_WIDTH) {
+            setLastExpandedChatWidth(next)
+          }
+        } else {
+          if (next >= MIN_CHAT_WIDTH) {
+            setLastNormalChatWidth(next)
+            try {
+              window.localStorage.setItem("aegis_chat_width", String(next))
+            } catch {}
+          }
         }
         return next
       })
     },
-    [],
+    [chatSessionsOpen],
   )
 
   const resetChatDrawerWidth = useCallback(() => {
-    setChatDrawerWidthState(DEFAULT_CHAT_WIDTH)
-    setLastChatWidth(DEFAULT_CHAT_WIDTH)
-    try {
-      window.localStorage.setItem(
-        "aegis_chat_width",
-        String(DEFAULT_CHAT_WIDTH),
-      )
-    } catch {}
-  }, [])
+    if (chatSessionsOpen) {
+      setChatDrawerWidthState(DEFAULT_CHAT_EXPANDED_WIDTH)
+      setLastExpandedChatWidth(DEFAULT_CHAT_EXPANDED_WIDTH)
+    } else {
+      setChatDrawerWidthState(DEFAULT_CHAT_WIDTH)
+      setLastNormalChatWidth(DEFAULT_CHAT_WIDTH)
+      try {
+        window.localStorage.setItem(
+          "aegis_chat_width",
+          String(DEFAULT_CHAT_WIDTH),
+        )
+      } catch {}
+    }
+  }, [chatSessionsOpen])
 
   const setBottomPanelHeight = useCallback(
     (value: number | ((prev: number) => number)) => {
@@ -289,18 +311,57 @@ export function useLayoutCore() {
   const toggleChat = useCallback(() => {
     setChatOpen((prev) => {
       const next = !prev
-      if (next && chatDrawerWidth < MIN_CHAT_WIDTH) {
-        setChatDrawerWidthState(
-          lastChatWidth >= MIN_CHAT_WIDTH ? lastChatWidth : DEFAULT_CHAT_WIDTH,
-        )
+      if (next) {
+        const minW = chatSessionsOpen ? MIN_CHAT_EXPANDED_WIDTH : MIN_CHAT_WIDTH
+        const fallbackW = chatSessionsOpen
+          ? lastExpandedChatWidth >= MIN_CHAT_EXPANDED_WIDTH
+            ? lastExpandedChatWidth
+            : DEFAULT_CHAT_EXPANDED_WIDTH
+          : lastNormalChatWidth >= MIN_CHAT_WIDTH
+            ? lastNormalChatWidth
+            : DEFAULT_CHAT_WIDTH
+        if (chatDrawerWidth < minW) {
+          setChatDrawerWidthState(fallbackW)
+        }
       }
       return next
     })
-  }, [chatDrawerWidth, lastChatWidth])
+  }, [
+    chatDrawerWidth,
+    chatSessionsOpen,
+    lastExpandedChatWidth,
+    lastNormalChatWidth,
+  ])
 
   const toggleChatSessions = useCallback(() => {
-    setChatSessionsOpen((prev) => !prev)
-  }, [])
+    setChatSessionsOpen((prev) => {
+      const willBeOpen = !prev
+      if (willBeOpen) {
+        setLastNormalChatWidth((prevNormal) => {
+          return chatDrawerWidth >= MIN_CHAT_WIDTH
+            ? chatDrawerWidth
+            : prevNormal
+        })
+        setChatDrawerWidthState(
+          lastExpandedChatWidth >= MIN_CHAT_EXPANDED_WIDTH
+            ? lastExpandedChatWidth
+            : DEFAULT_CHAT_EXPANDED_WIDTH,
+        )
+      } else {
+        setLastExpandedChatWidth((prevExpanded) => {
+          return chatDrawerWidth >= MIN_CHAT_EXPANDED_WIDTH
+            ? chatDrawerWidth
+            : prevExpanded
+        })
+        setChatDrawerWidthState(
+          lastNormalChatWidth >= MIN_CHAT_WIDTH
+            ? lastNormalChatWidth
+            : DEFAULT_CHAT_WIDTH,
+        )
+      }
+      return willBeOpen
+    })
+  }, [chatDrawerWidth, lastExpandedChatWidth, lastNormalChatWidth])
 
   const reorderBottomTabs = useCallback(
     (sourceIndex: number, targetIndex: number) => {
@@ -334,11 +395,21 @@ export function useLayoutCore() {
         const currentChat = chatOpen ? chatDrawerWidth : 0
         const availableForEditor = winWidth - 44 - currentSidebar - currentChat
         if (availableForEditor < 320 && chatOpen) {
-          const maxChatPossible = winWidth - 44 - currentSidebar - 320
-          if (maxChatPossible < MIN_CHAT_WIDTH) {
-            setChatOpen(false)
+          // If sessions open, close sessions first to preserve chat
+          if (chatSessionsOpen) {
+            setChatSessionsOpen(false)
+            setChatDrawerWidthState(
+              lastNormalChatWidth >= MIN_CHAT_WIDTH
+                ? lastNormalChatWidth
+                : DEFAULT_CHAT_WIDTH,
+            )
           } else {
-            setChatDrawerWidthState(Math.floor(maxChatPossible))
+            const maxChatPossible = winWidth - 44 - currentSidebar - 320
+            if (maxChatPossible < MIN_CHAT_WIDTH) {
+              setChatOpen(false)
+            } else {
+              setChatDrawerWidthState(Math.floor(maxChatPossible))
+            }
           }
         }
       }
@@ -346,7 +417,14 @@ export function useLayoutCore() {
 
     window.addEventListener("resize", handleResize)
     return () => window.removeEventListener("resize", handleResize)
-  }, [chatOpen, sidebarOpen, sidebarWidth, chatDrawerWidth])
+  }, [
+    chatOpen,
+    chatSessionsOpen,
+    sidebarOpen,
+    sidebarWidth,
+    chatDrawerWidth,
+    lastNormalChatWidth,
+  ])
 
   return {
     sidebarOpen,

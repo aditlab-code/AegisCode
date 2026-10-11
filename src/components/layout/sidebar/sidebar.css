@@ -1112,6 +1112,7 @@
   display: flex;
   align-items: center;
   gap: 2px;
+  flex-shrink: 0;
 }
 
 .modifier-btn {
@@ -1215,6 +1216,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .search-file-badge {
@@ -1224,6 +1226,7 @@
   background: var(--color-surface-raised);
   padding: 1px 5px;
   border-radius: 8px;
+  flex-shrink: 0;
 }
 
 .search-file-actions {
@@ -1231,6 +1234,7 @@
   align-items: center;
   gap: 2px;
   margin-left: 4px;
+  flex-shrink: 0;
 }
 
 .search-file-header:hover .search-file-actions {
@@ -1281,6 +1285,7 @@
 
 .search-match-row .single-replace-btn {
   display: none;
+  flex-shrink: 0;
 }
 
 .search-match-row:hover .single-replace-btn {
@@ -1290,6 +1295,7 @@
 .match-line-num {
   color: var(--color-ink-muted);
   min-width: 18px;
+  flex-shrink: 0;
 }
 
 .match-snippet {
@@ -1297,6 +1303,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .match-highlight {

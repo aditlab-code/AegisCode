@@ -318,7 +318,7 @@ export function SearchPanel() {
             <input
               aria-label="Search files with regex"
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search (supports regex)"
+              placeholder="Search files... (regex)"
               ref={searchInputRef}
               value={search}
             />
@@ -452,9 +452,14 @@ export function SearchPanel() {
                       <Icon name="chevron" size={11} />
                     </span>
                     <Icon name="file" size={12} />
-                    <span className="search-filename">{fileName}</span>
+                    <span className="search-filename" title={fileName}>
+                      {fileName}
+                    </span>
                     {dirPath && (
-                      <span className="search-filepath text-ink-muted text-[10px] font-normal truncate ml-1">
+                      <span
+                        className="search-filepath text-ink-muted text-[10px] font-normal truncate ml-1"
+                        title={dirPath}
+                      >
                         {dirPath}
                       </span>
                     )}

@@ -18,19 +18,19 @@
 }
 
 .workspace-chat-open {
-  grid-template-columns: 44px var(--sidebar-width, 220px) minmax(0, 1fr) var(--chat-width, 300px);
+  grid-template-columns: 44px var(--sidebar-width, 260px) minmax(0, 1fr) var(--chat-width, 340px);
 }
 
 .workspace-chat-open.workspace-chat-expanded {
-  grid-template-columns: 44px var(--sidebar-width, 220px) minmax(0, 1fr) var(--chat-width, 500px);
+  grid-template-columns: 44px var(--sidebar-width, 260px) minmax(0, 1fr) var(--chat-width, 500px);
 }
 
 .workspace-chat-closed {
-  grid-template-columns: 44px var(--sidebar-width, 220px) minmax(0, 1fr);
+  grid-template-columns: 44px var(--sidebar-width, 260px) minmax(0, 1fr);
 }
 
 .workspace-sidebar-closed.workspace-chat-open {
-  grid-template-columns: 44px minmax(0, 1fr) var(--chat-width, 300px);
+  grid-template-columns: 44px minmax(0, 1fr) var(--chat-width, 340px);
 }
 
 .workspace-sidebar-closed.workspace-chat-open.workspace-chat-expanded {
@@ -59,15 +59,15 @@
 }
 
 .workspace-sidebar-right.workspace-chat-closed {
-  grid-template-columns: minmax(0, 1fr) var(--sidebar-width, 220px) 44px;
+  grid-template-columns: minmax(0, 1fr) var(--sidebar-width, 260px) 44px;
 }
 
 .workspace-sidebar-right.workspace-chat-open {
-  grid-template-columns: minmax(0, 1fr) var(--chat-width, 300px) var(--sidebar-width, 220px) 44px;
+  grid-template-columns: minmax(0, 1fr) var(--chat-width, 340px) var(--sidebar-width, 260px) 44px;
 }
 
 .workspace-sidebar-right.workspace-chat-open.workspace-chat-expanded {
-  grid-template-columns: minmax(0, 1fr) var(--chat-width, 500px) var(--sidebar-width, 220px) 44px;
+  grid-template-columns: minmax(0, 1fr) var(--chat-width, 500px) var(--sidebar-width, 260px) 44px;
 }
 
 .workspace-sidebar-right.workspace-sidebar-closed.workspace-chat-closed {
@@ -75,7 +75,7 @@
 }
 
 .workspace-sidebar-right.workspace-sidebar-closed.workspace-chat-open {
-  grid-template-columns: minmax(0, 1fr) var(--chat-width, 300px) 44px;
+  grid-template-columns: minmax(0, 1fr) var(--chat-width, 340px) 44px;
 }
 
 .workspace-sidebar-right.workspace-sidebar-closed.workspace-chat-open.workspace-chat-expanded {

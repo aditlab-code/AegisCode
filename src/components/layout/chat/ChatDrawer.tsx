@@ -1,6 +1,15 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { ResizeSash } from "../../ui/ResizeSash"
 import { useWorkbench } from "../../../context/WorkbenchContext"
+import {
+  DEFAULT_CHAT_WIDTH,
+  MIN_CHAT_WIDTH,
+  MAX_CHAT_WIDTH,
+  COLLAPSE_CHAT_THRESHOLD,
+  DEFAULT_CHAT_EXPANDED_WIDTH,
+  MIN_CHAT_EXPANDED_WIDTH,
+  COLLAPSE_CHAT_EXPANDED_THRESHOLD,
+} from "../../../context/core/layoutCore"
 import { ChatHeader } from "./ChatHeader"
 import { ChatMessageList } from "./ChatMessageList"
 import { ChatComposer } from "./ChatComposer"
@@ -10,6 +19,7 @@ export function ChatDrawer() {
   const {
     sendChatMessage,
     chatSessionsOpen,
+    chatDrawerWidth,
     setChatDrawerWidth,
     resetChatDrawerWidth,
     setChatOpen,
@@ -17,6 +27,7 @@ export function ChatDrawer() {
     sidebarWidth,
   } = useWorkbench()
   const [inputMessage, setInputMessage] = useState("")
+  const dragWidthRef = useRef<number>(chatDrawerWidth)
 
   function handleSend() {
     if (!inputMessage.trim()) return
@@ -24,29 +35,43 @@ export function ChatDrawer() {
     setInputMessage("")
   }
 
+  const minWidth = chatSessionsOpen ? MIN_CHAT_EXPANDED_WIDTH : MIN_CHAT_WIDTH
+  const collapseThreshold = chatSessionsOpen
+    ? COLLAPSE_CHAT_EXPANDED_THRESHOLD
+    : COLLAPSE_CHAT_THRESHOLD
+  const defaultWidth = chatSessionsOpen
+    ? DEFAULT_CHAT_EXPANDED_WIDTH
+    : DEFAULT_CHAT_WIDTH
+
   return (
     <aside className={`chat-drawer ${chatSessionsOpen ? "expanded" : ""}`}>
       <ResizeSash
         className="sash-chat"
         direction="vertical"
         onDoubleClick={resetChatDrawerWidth}
+        onResizeStart={() => {
+          dragWidthRef.current = chatDrawerWidth
+        }}
         onResize={(delta) => {
-          setChatDrawerWidth((prev) => {
-            const winWidth =
-              typeof window !== "undefined" ? window.innerWidth : 1280
-            const currentSidebar = sidebarOpen ? sidebarWidth : 0
-            const maxPossible = Math.min(
-              600,
-              winWidth - currentSidebar - 44 - 320,
-            )
-            // Dragging leftwards (negative delta) expands drawer width
-            const next = prev - delta
-            if (next < 90) {
-              setChatOpen(false)
-              return 300
-            }
-            return Math.max(260, Math.min(maxPossible, next))
-          })
+          // Dragging leftwards (negative delta) expands drawer width
+          dragWidthRef.current -= delta
+          if (dragWidthRef.current < collapseThreshold) {
+            setChatOpen(false)
+            setChatDrawerWidth(defaultWidth)
+            return
+          }
+          const winWidth =
+            typeof window !== "undefined" ? window.innerWidth : 1280
+          const currentSidebar = sidebarOpen ? sidebarWidth : 0
+          const maxPossible = Math.min(
+            MAX_CHAT_WIDTH,
+            winWidth - currentSidebar - 44 - 320,
+          )
+          const clamped = Math.max(
+            minWidth,
+            Math.min(maxPossible, dragWidthRef.current),
+          )
+          setChatDrawerWidth(clamped)
         }}
         title="Drag to resize chat drawer (Double-click to reset)"
       />

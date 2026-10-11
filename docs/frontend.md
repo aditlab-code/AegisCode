@@ -29,6 +29,21 @@ The AegisCode interface utilizes a multi-column, multi-panel desktop shell (`.ap
 +----------------------------------------------------------------------------------------------------+
 ```
 
+### Shell Grid Columns & Responsive Sashes
+
+The desktop shell (`.workspace`) distributes columns dynamically according to panel states with CSS grid and inline CSS variables (`--sidebar-width`, `--chat-width`):
+- **Default open**: `44px var(--sidebar-width, 260px) minmax(0, 1fr) var(--chat-width, 340px)`
+- **Chat expanded with sessions**: `44px var(--sidebar-width, 260px) minmax(0, 1fr) var(--chat-width, 500px)`
+
+| Layout Region | Default Dimension | Minimum Dimension | Maximum Dimension | Auto-Collapse Threshold | Reopen Restores |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Activity Rail** | 44px (width) | 44px | 44px | N/A (permanent) | Permanent |
+| **Primary Sidebar** | 260px (width) | 220px | 460px | Drag < 160px | Last width or 260px |
+| **Workbench Editor** | `minmax(0, 1fr)` | 320px (target) | Viewport-bound | N/A | Flexible |
+| **Chat Drawer (Normal)** | 340px (width) | 300px | 600px | Drag < 180px | Last width or 340px |
+| **Chat Drawer (+Sessions)**| 500px (width) | 480px | 600px | Drag < 320px | Last width or 500px |
+| **Bottom Panel** | 180px (height) | 100px (height) | 800px (height) | N/A | Last height or 180px |
+
 ---
 
 ## 2. Layout Modules (by Folder)
@@ -60,26 +75,27 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
 ### 3. Sidebar (`sidebar/`)
 - **Path**: [`src/components/layout/sidebar/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/sidebar)
 - **Primary Components**: `Sidebar.tsx`, `ExplorerPanel.tsx`, `SearchPanel.tsx`, `SourceControlPanel.tsx`, `sidebar.css`
-- **Visual Design**:
-  - Resizable horizontal width (default 260px) bounded by an interactive drag sash (`ResizeSash.tsx`).
+- **Visual Design & Responsive Architecture**:
+  - **Dimensions & Drag Sash**: Default width **260px**, minimum width **220px**, maximum width **460px** bounded by an interactive vertical drag sash (`ResizeSash.tsx`). Uses a cumulative mouse movement ref (`dragWidthRef`) starting from `onResizeStart` to ensure reliable continuous drag tracking without clamp traps.
+  - **Auto-Collapse**: Dragging the sash leftwards below the threshold (**< 160px**) automatically triggers an instant collapse (`setSidebarOpen(false)`). Reopening the sidebar via Activity Rail or shortcut (`Ctrl+B`) smoothly restores the previous valid width (or default 260px).
   - **Explorer Panel**:
     - "OPEN EDITORS" section showing pinned tabs across editor groups.
     - Workspace file tree with folder expansion, tree guides, hidden file visibility toggle, inline CRUD actions (New File, New Folder, Rename, safe Delete confirmation modal), Refresh Explorer, and Collapse Folders in Explorer (`collapse-all`).
     - Context menu on right-click (Copy Path, Copy Relative Path, Delete, Rename).
   - **Search Panel**:
+    - **Compact Input & Modifiers**: Input placeholder shortened to `Search files... (regex)` to preserve readability on narrow 220px widths. Search modifiers (`Aa`, `\b`, `.*`) and clear button (`✕`) are shielded with `flex-shrink: 0`.
     - **Integrated Search & Replace Box**: Chevron toggle (`>` / `v`) located directly to the left of the Search input box; when expanded, renders the Replace input box directly beneath with an embedded Replace All action icon button (`Icon name="replace-all"`).
-    - **Search Modifiers**: Match Case (`Aa`), Match Whole Word (`\b`), and Use Regular Expression (`.*`).
     - **Results Toolbar**: Header actions for Refresh Search (`⟳`), Clear Results (`✕`), and Collapse/Expand All (`⊞`).
     - **Match Keyword Highlighting**: Matched terms inside code snippets highlighted with semantic token `--color-warning-soft` / `--color-warning` (`.match-highlight`).
-    - **Hover-Only File & Match Actions**: Count badges displayed by default; Replace in File (`[edit]`), Dismiss File (`[✕]`), and Replace Match (`[edit]`) action buttons revealed dynamically on row hover (`:hover`).
-    - **Clean Directory Path Formatting**: Files at root workspace display clean filename only (no `./`); subfolder paths displayed in muted text (`text-ink-muted`).
+    - **Hover-Only File & Match Actions**: Count badges displayed by default; Replace in File (`[edit]`), Dismiss File (`[✕]`), and Replace Match (`[edit]`) action buttons revealed dynamically on row hover (`:hover`) with `flex-shrink: 0` to prevent layout breaking.
+    - **Clean Directory Path & Filename Truncation**: Filename and subfolder paths use `min-width: 0` with ellipsis truncation and native `title` tooltips for full path inspection.
     - **Direct Backend Engine**: Live workspace regex search and granular replace (single occurrence, file-level, workspace-wide) backed directly by Go server API with immediate search result refresh.
   - **Source Control Panel**:
     - **Header & Action Menu**: Action bar with Refresh Git status (`⟳`) and '...' menu (Pull, Push, Fetch & Sync, Create Tag, Push Tags, Add Remote).
-    - **Repositories Section**: Displays active repository folder, branch badge with dirty state (`*`), and live Sync button with ahead/behind counters (`↓behind ↑ahead`).
-    - **Changes & Staged Changes**: Collapsible lists with granular file status codes (`M` modified, `A` added, `D` deleted, `U` untracked), additions/deletions counts, hover actions for Stage (`+`), Unstage (`-`), and Discard (`⎌`).
-    - **Commit Box**: Multi-line message input with `⌘Enter` / `Ctrl+Enter` commit dispatch, AI commit message draft generator (`sparkle` icon).
-    - **Responsive Split Commit Button**: Full-width container with primary Commit button, vertical dividing line, and chevron dropdown (`Commit`, `Commit & Push`).
+    - **Repositories Section**: Displays active repository folder, responsive branch badge pill (constrained to `max-w-[110px]` with ellipsis and full tooltip), and live Sync button with ahead/behind counters (`↓behind ↑ahead`).
+    - **Commit Box**: Compact multi-line input with `Message (⌘Enter to commit)` placeholder, contextual branch tooltip, `⌘Enter` / `Ctrl+Enter` commit dispatch, and AI commit message draft generator (`sparkle` icon).
+    - **Responsive Split Commit Button**: Full-width container with primary Commit button, vertical dividing line, and chevron dropdown (`Commit`, `Commit & Push`) styled to prevent horizontal scroll at 220px.
+    - **Changes & Staged Changes**: Collapsible lists with granular file status codes (`M` modified, `A` added, `D` deleted, `U` untracked), additions/deletions counts, `min-w-0` file path truncation with full path tooltips, and hover action buttons for Stage (`+`), Unstage (`-`), and Discard (`⎌`).
     - **Interactive SVG Commit Graph**: Visual commit log with clickable branch pills (clicking switches branch via `checkoutBranch`), tag badges, author, and timestamp.
     - **Dynamic Git Profile Footer**: Reads real user profile directly from `git config user.name`/`user.email` without hardcoding.
     - **Zero Fake Fallback Empty States**: Clean "Initialize Repository" and "No Folder Open" guide screens when no Git repo or folder is loaded.
@@ -116,12 +132,22 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
 ### 6. AEGIS AI Agent Drawer (`chat/`)
 - **Path**: [`src/components/layout/chat/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/chat)
 - **Primary Components**: `ChatDrawer.tsx`, `ChatHeader.tsx`, `ChatSessionSidebar.tsx`, `ChatMessageList.tsx`, `ChatSuggestions.tsx`, `ChatComposer.tsx`, `ChatCommandPopover.tsx`, `ChatProviderSelect.tsx`, `chat.css`
-- **Visual Design**:
-  - Split master-detail layout: Session history sidebar toggle on left, main chat conversation on right.
-  - Model & Provider selector: Grouped dropdown supporting local runners, cloud providers, and custom endpoints.
-  - Floating autocomplete popover triggered on `/` (Skills & Slash commands) and `@` (File paths & Context tags).
-  - Quick action suggestion pills above the input composer.
-  - Multi-line textarea composer with code snippet attachments and execution buttons.
+- **Visual Design & Responsive Architecture**:
+  - **Dual Dimension Modes & Drag Sash**: Resized along the left sash (`ResizeSash.tsx`) using cumulative drag tracking (`dragWidthRef`):
+    - **Normal Mode (Sessions closed)**: Default width **340px**, minimum width **300px**, maximum width **600px**, auto-collapse threshold **< 180px**.
+    - **Expanded Mode (Sessions open)**: Default width **500px**, minimum width **480px**, maximum width **600px**, auto-collapse threshold **< 320px**.
+  - **Dynamic Width & State Memory**: Clicking the Session History toggle (`toggleChatSessions`) preserves the current normal chat width and auto-expands the drawer to 500px (or last expanded width). Closing the session history restores the exact previous normal width.
+  - **Adaptive Viewport Observer**: When the browser window resizes (< 1200px) and available editor space drops below 320px:
+    1. First automatically closes the Sessions sidebar to keep the chat conversation visible at normal width.
+    2. If available space remains below 320px, collapses the Chat Drawer entirely.
+  - **Header & Session Sidebar Responsive Polish**:
+    - Header action buttons (`New session`, `Toggle sessions`, `Close`) shielded with `flex-shrink: 0`.
+    - Active session title and agent heading dynamically adapt with `min-width: 0`, `flex: 1`, and ellipsis truncation.
+    - Master session sidebar constrained to **180px** with session card titles styled with `flex: 1`, `min-width: 0`, and native `title` tooltips.
+  - **Model & Provider selector**: Grouped dropdown supporting local runners, cloud providers, and custom endpoints.
+  - **Floating autocomplete popover**: Triggered on `/` (Skills & Slash commands) and `@` (File paths & Context tags).
+  - **Quick action suggestion pills**: Compact horizontal chips above the composer.
+  - **Multi-line textarea composer**: Resilient composer with model badge, attachment triggers, and submit button fitting cleanly at 300px minimum width.
 
 ### 7. Status Bar (`status-bar/`)
 - **Path**: [`src/components/layout/status-bar/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/status-bar)
