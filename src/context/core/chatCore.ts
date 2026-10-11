@@ -1,16 +1,22 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import type {
   ChatMessage,
   ChatProvider,
   ChatSession,
   ContextItem,
+  ProviderModel,
+  SkillCommand,
 } from "../../types/workbench"
-import { CHAT_MODELS } from "../../data/chatConstants"
+import { CHAT_MODELS, SKILL_COMMANDS } from "../../data/chatConstants"
 import {
   deleteBackendChatSession,
+  fetchAIModels,
+  fetchAISkills,
+  fetchAITranscript,
   fetchBackendChatSession,
   fetchBackendChatSummaries,
   saveBackendChatSession,
+  streamAIChat,
 } from "../../utils/storeApi"
 
 export const DEFAULT_PROVIDER: ChatProvider = "antigravity"
@@ -31,6 +37,8 @@ export function createDefaultSession(
         id: "msg-1",
         role: "agent",
         text: "I'm connected to your local workspace. What should we build next?",
+        provider,
+        model,
       },
     ],
     createdAt: Date.now(),
@@ -60,6 +68,22 @@ export function loadStoredActiveId(sessions: ChatSession[]): string {
     }
   } catch {}
   return sessions[0]?.id || "session-1"
+}
+
+export function formatPromptWithContext(
+  text: string,
+  context?: ContextItem[],
+): string {
+  if (!context || context.length === 0) return text
+  const parts: string[] = []
+  parts.push("<context>")
+  for (const item of context) {
+    const range = item.lineRange ? ` (${item.lineRange})` : ""
+    parts.push(`File: ${item.path}${range}\n\`\`\`\n${item.content}\n\`\`\``)
+  }
+  parts.push("</context>\n")
+  parts.push(text)
+  return parts.join("\n")
 }
 
 export function generateContextualReply(
@@ -118,7 +142,6 @@ export interface ChatDeleteResult {
   nextActiveId: string
 }
 
-// Pure state transitions for AI sessions
 export function createSessionLogic(
   sessions: ChatSession[],
   provider?: ChatProvider,
@@ -137,6 +160,8 @@ export function createSessionLogic(
         id: `msg-${Date.now()}`,
         role: "agent",
         text: `[${p} · ${m}] New session started. Ready to assist with your codebase.`,
+        provider: p,
+        model: m,
       },
     ],
     createdAt: Date.now(),
@@ -223,6 +248,8 @@ export function sendChatMessageLogic(
       role: "agent",
       text: agentReplyText,
       timestamp: Date.now() + 1,
+      provider: s.provider,
+      model: s.model,
     }
 
     return {
@@ -233,11 +260,57 @@ export function sendChatMessageLogic(
   })
 }
 
+function updateAgentMessageInSessions(
+  sessions: ChatSession[],
+  sessionId: string,
+  msgId: string,
+  updater: (msg: ChatMessage) => ChatMessage,
+): ChatSession[] {
+  return sessions.map((s) => {
+    if (s.id !== sessionId) return s
+    return {
+      ...s,
+      messages: s.messages.map((m) => {
+        if (m.id !== msgId) return m
+        return updater(m)
+      }),
+    }
+  })
+}
+
 export function useChatCore() {
   const [sessions, setSessions] = useState<ChatSession[]>(loadStoredSessions)
   const [activeSessionId, setActiveSessionId] = useState<string>(() =>
     loadStoredActiveId(sessions),
   )
+  const [isGenerating, setIsGenerating] = useState<boolean>(false)
+  const [availableSkills, setAvailableSkills] =
+    useState<SkillCommand[]>(SKILL_COMMANDS)
+  const [antigravityModels, setAntigravityModels] = useState<ProviderModel[]>(
+    () => CHAT_MODELS.antigravity,
+  )
+
+  const abortControllerRef = useRef<AbortController | null>(null)
+
+  // Fetch dynamic AI models and skills from backend
+  useEffect(() => {
+    fetchAIModels()
+      .then((models) => {
+        if (Array.isArray(models) && models.length > 0) {
+          setAntigravityModels(models)
+          CHAT_MODELS.antigravity = models
+        }
+      })
+      .catch(() => {})
+
+    fetchAISkills()
+      .then((skills) => {
+        if (Array.isArray(skills) && skills.length > 0) {
+          setAvailableSkills(skills)
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   // Hydrate chat sessions from backend flat-file storage (~/.aegis/chats/*.json)
   useEffect(() => {
@@ -284,6 +357,31 @@ export function useChatCore() {
   const activeModel = activeSession.model
   const chatMessages = activeSession.messages
 
+  // Rehydrate full transcript from Antigravity brain if conversationId exists
+  useEffect(() => {
+    if (activeSession.conversationId) {
+      fetchAITranscript(activeSession.conversationId)
+        .then((messages) => {
+          if (Array.isArray(messages) && messages.length > 0) {
+            setSessions((prev) =>
+              prev.map((s) => {
+                if (s.id !== activeSessionId) return s
+                // If local messages only had user input without thinking/toolCalls, enrich them
+                if (
+                  s.messages.length <= messages.length ||
+                  !s.messages.some((m) => m.thinking || m.toolCalls?.length)
+                ) {
+                  return { ...s, messages }
+                }
+                return s
+              }),
+            )
+          }
+        })
+        .catch(() => {})
+    }
+  }, [activeSession.conversationId, activeSessionId])
+
   // Sync active session changes to backend disk storage
   useEffect(() => {
     if (activeSession) {
@@ -327,13 +425,234 @@ export function useChatCore() {
     [activeSessionId],
   )
 
+  const stopGenerating = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+    setIsGenerating(false)
+  }, [])
+
   const sendChatMessage = useCallback(
     (text: string, context?: ContextItem[]) => {
+      const cleanText = text.trim()
+      const hasValidContext = Array.isArray(context) && context.length > 0
+      if (!cleanText && !hasValidContext) return
+
+      const userMsg: ChatMessage = {
+        id: `msg-${Date.now()}`,
+        role: "user",
+        text: cleanText,
+        timestamp: Date.now(),
+        context: hasValidContext ? context : undefined,
+      }
+
+      const agentMsgId = `msg-${Date.now() + 1}`
+      const isAntigravity = activeSession.provider === "antigravity"
+
+      const initialAgentMsg: ChatMessage = {
+        id: agentMsgId,
+        role: "agent",
+        text: "",
+        thinking: "",
+        toolCalls: [],
+        isStreaming: isAntigravity,
+        provider: activeSession.provider,
+        model: activeSession.model,
+        timestamp: Date.now() + 1,
+      }
+
+      const fallbackTitle =
+        cleanText ||
+        (hasValidContext ? context[0]?.path || "New Session" : "New Session")
+      const newTitle =
+        activeSession.title === "New Session"
+          ? fallbackTitle.slice(0, 26).trim() +
+            (fallbackTitle.length > 26 ? "..." : "")
+          : activeSession.title
+
+      // Insert user message and agent placeholder
       setSessions((prev) =>
-        sendChatMessageLogic(prev, activeSessionId, text, context),
+        prev.map((s) => {
+          if (s.id !== activeSessionId) return s
+          return {
+            ...s,
+            title: newTitle,
+            messages: [...s.messages, userMsg, initialAgentMsg],
+          }
+        }),
       )
+
+      if (!isAntigravity) {
+        // Fallback simulation for non-Antigravity providers
+        setTimeout(() => {
+          const reply = generateContextualReply(
+            cleanText,
+            activeSession.provider,
+            activeSession.model,
+            context,
+          )
+          setSessions((prev) =>
+            updateAgentMessageInSessions(
+              prev,
+              activeSessionId,
+              agentMsgId,
+              (m) => ({
+                ...m,
+                isStreaming: false,
+                text: reply,
+              }),
+            ),
+          )
+        }, 300)
+        return
+      }
+
+      // Live 2-way streaming for Antigravity
+      const controller = new AbortController()
+      abortControllerRef.current = controller
+      setIsGenerating(true)
+
+      const fullPrompt = formatPromptWithContext(cleanText, context)
+      const effectiveModel =
+        activeSession.model === "gemini-3.8-flash"
+          ? "gemini-3.8-flash-high"
+          : activeSession.model
+
+      streamAIChat(
+        {
+          conversationId: activeSession.conversationId,
+          model: effectiveModel,
+          prompt: fullPrompt,
+        },
+        (event) => {
+          if (event.type === "start" && event.conversationId) {
+            setSessions((prev) =>
+              prev.map((s) =>
+                s.id === activeSessionId
+                  ? { ...s, conversationId: event.conversationId }
+                  : s,
+              ),
+            )
+          } else if (event.type === "thinking") {
+            setSessions((prev) =>
+              updateAgentMessageInSessions(
+                prev,
+                activeSessionId,
+                agentMsgId,
+                (m) => ({
+                  ...m,
+                  thinking: event.thinking || m.thinking,
+                }),
+              ),
+            )
+          } else if (event.type === "tool_call") {
+            if (event.toolCall) {
+              setSessions((prev) =>
+                updateAgentMessageInSessions(
+                  prev,
+                  activeSessionId,
+                  agentMsgId,
+                  (m) => {
+                    const existing = m.toolCalls || []
+                    const foundIdx = existing.findIndex(
+                      (t) => t.id === event.toolCall.id,
+                    )
+                    const nextTCs =
+                      foundIdx >= 0
+                        ? existing.map((t, idx) =>
+                            idx === foundIdx ? { ...t, ...event.toolCall } : t,
+                          )
+                        : [...existing, event.toolCall]
+                    return { ...m, toolCalls: nextTCs }
+                  },
+                ),
+              )
+            }
+          } else if (event.type === "chunk") {
+            if (event.delta) {
+              setSessions((prev) =>
+                updateAgentMessageInSessions(
+                  prev,
+                  activeSessionId,
+                  agentMsgId,
+                  (m) => ({
+                    ...m,
+                    text: m.text + event.delta,
+                  }),
+                ),
+              )
+            }
+          } else if (event.type === "done") {
+            setSessions((prev) =>
+              updateAgentMessageInSessions(
+                prev,
+                activeSessionId,
+                agentMsgId,
+                (m) => ({
+                  ...m,
+                  isStreaming: false,
+                  text: event.message?.text || m.text,
+                  thinking: event.message?.thinking || m.thinking,
+                  toolCalls: event.message?.toolCalls || m.toolCalls,
+                }),
+              ),
+            )
+            setIsGenerating(false)
+            abortControllerRef.current = null
+          } else if (event.type === "error") {
+            setSessions((prev) =>
+              updateAgentMessageInSessions(
+                prev,
+                activeSessionId,
+                agentMsgId,
+                (m) => ({
+                  ...m,
+                  isStreaming: false,
+                  error:
+                    event.error ||
+                    "Terjadi kesalahan saat memproses permintaan",
+                }),
+              ),
+            )
+            setIsGenerating(false)
+            abortControllerRef.current = null
+          }
+        },
+        controller.signal,
+      ).catch((err) => {
+        if (controller.signal.aborted) {
+          setSessions((prev) =>
+            updateAgentMessageInSessions(
+              prev,
+              activeSessionId,
+              agentMsgId,
+              (m) => ({
+                ...m,
+                isStreaming: false,
+                error: "Generasi dihentikan oleh pengguna.",
+              }),
+            ),
+          )
+        } else {
+          setSessions((prev) =>
+            updateAgentMessageInSessions(
+              prev,
+              activeSessionId,
+              agentMsgId,
+              (m) => ({
+                ...m,
+                isStreaming: false,
+                error: err?.message || "Koneksi ke AI terputus.",
+              }),
+            ),
+          )
+        }
+        setIsGenerating(false)
+        abortControllerRef.current = null
+      })
     },
-    [activeSessionId],
+    [activeSession, activeSessionId],
   )
 
   return {
@@ -343,6 +662,10 @@ export function useChatCore() {
     activeProvider,
     activeModel,
     chatMessages,
+    isGenerating,
+    stopGenerating,
+    skills: availableSkills,
+    antigravityModels,
     createSession,
     switchSession,
     deleteSession,

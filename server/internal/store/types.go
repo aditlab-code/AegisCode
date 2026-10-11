@@ -36,24 +36,40 @@ type ContextItem struct {
 	Mode            string `json:"mode,omitempty"`
 }
 
+// ToolCallItem represents an action taken by the AI agent during turn execution.
+type ToolCallItem struct {
+	ID      string         `json:"id"`
+	Name    string         `json:"name"`
+	Summary string         `json:"summary,omitempty"`
+	Status  string         `json:"status"` // "running" | "success" | "error"
+	Args    map[string]any `json:"args,omitempty"`
+	Output  string         `json:"output,omitempty"`
+}
+
 // ChatMessage represents a single message in an AI conversation.
 type ChatMessage struct {
-	ID        string        `json:"id"`
-	Role      string        `json:"role"` // "user" | "agent" | "system"
-	Text      string        `json:"text"`
-	Timestamp int64         `json:"timestamp,omitempty"`
-	Context   []ContextItem `json:"context,omitempty"`
+	ID        string         `json:"id"`
+	Role      string         `json:"role"` // "user" | "agent" | "system"
+	Text      string         `json:"text"`
+	Timestamp int64          `json:"timestamp,omitempty"`
+	Context   []ContextItem  `json:"context,omitempty"`
+	Provider  string         `json:"provider,omitempty"`
+	Model     string         `json:"model,omitempty"`
+	Thinking  string         `json:"thinking,omitempty"`
+	ToolCalls []ToolCallItem `json:"toolCalls,omitempty"`
+	Error     string         `json:"error,omitempty"`
 }
 
 // ChatSession represents an isolated conversation thread in ~/.aegis/chats/<session_id>.json.
 type ChatSession struct {
-	ID        string        `json:"id"`
-	Title     string        `json:"title"`
-	Provider  string        `json:"provider"`
-	Model     string        `json:"model"`
-	Messages  []ChatMessage `json:"messages"`
-	CreatedAt int64         `json:"createdAt"`
-	UpdatedAt int64         `json:"updatedAt"`
+	ID             string        `json:"id"`
+	Title          string        `json:"title"`
+	Provider       string        `json:"provider"`
+	Model          string        `json:"model"`
+	Messages       []ChatMessage `json:"messages"`
+	CreatedAt      int64         `json:"createdAt"`
+	UpdatedAt      int64         `json:"updatedAt"`
+	ConversationID string        `json:"conversationId,omitempty"`
 }
 
 // ChatSummary represents metadata of a session for quick listing without loading full message histories.

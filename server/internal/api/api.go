@@ -157,6 +157,7 @@ func (s *Server) Routes() http.Handler {
 	// Git API endpoints
 	mux.HandleFunc("/api/v1/git/status", s.handleGitStatus)
 	mux.HandleFunc("/api/v1/git/init", s.handleGitInit)
+	mux.HandleFunc("/api/v1/git/unlock", s.handleGitUnlock)
 	mux.HandleFunc("/api/v1/git/branches", s.handleGitBranches)
 	mux.HandleFunc("/api/v1/git/branch/checkout", s.handleGitBranchCheckout)
 	mux.HandleFunc("/api/v1/git/branch/create", s.handleGitBranchCreate)
@@ -195,8 +196,12 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/chats", s.handleChatsList)
 	mux.HandleFunc("/api/v1/chats/", s.handleChatOperations)
 
-	// AI Provider Connection Probe (Sub-Phase 6.8)
+	// AI Provider Connection Probe & Antigravity Endpoints
 	mux.HandleFunc("/api/v1/ai/test", s.handleAITest)
+	mux.HandleFunc("/api/v1/ai/models", s.handleAIModels)
+	mux.HandleFunc("/api/v1/ai/skills", s.handleAISkills)
+	mux.HandleFunc("/api/v1/ai/transcript/", s.handleAITranscript)
+	mux.HandleFunc("/api/v1/ai/chat", s.handleAIChatStream)
 
 	return corsMiddleware(mux)
 }
@@ -566,6 +571,25 @@ func (s *Server) handleGitInit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonResponse(w, http.StatusOK, GitOperationResponse{Status: "ok"})
+}
+
+func (s *Server) handleGitUnlock(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	res, err := s.git.Unlock(r.Context())
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, UnlockResponse{
+		Unlocked: res.Unlocked,
+		Removed:  res.Removed,
+		Message:  res.Message,
+	})
 }
 
 func (s *Server) handleGitBranches(w http.ResponseWriter, r *http.Request) {
@@ -1579,4 +1603,124 @@ func (s *Server) handleAITest(w http.ResponseWriter, r *http.Request) {
 	res := ai.ProbeProvider(r.Context(), req)
 	jsonResponse(w, http.StatusOK, res)
 }
+
+func (s *Server) handleAIModels(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	models, err := ai.ListAntigravityModels(r.Context())
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "failed to list models: "+err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"models": models,
+	})
+}
+
+func (s *Server) handleAISkills(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var rootPath string
+	if s.ws != nil {
+		rootPath, _ = s.ws.GetRoot()
+	}
+
+	skills, err := ai.ListSkills(r.Context(), rootPath)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "failed to list skills: "+err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"skills": skills,
+	})
+}
+
+func (s *Server) handleAITranscript(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	convID := strings.TrimPrefix(r.URL.Path, "/api/v1/ai/transcript/")
+	convID = strings.TrimSpace(convID)
+	if convID == "" {
+		jsonError(w, http.StatusBadRequest, "conversation id is required")
+		return
+	}
+
+	messages, err := ai.GetSessionTranscript(convID)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			jsonError(w, http.StatusNotFound, "transcript not found for conversation: "+convID)
+			return
+		}
+		jsonError(w, http.StatusInternalServerError, "failed to load transcript: "+err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"conversationId": convID,
+		"messages":       messages,
+	})
+}
+
+func (s *Server) handleAIChatStream(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		jsonError(w, http.StatusInternalServerError, "streaming unsupported by server")
+		return
+	}
+
+	var req ai.StreamChatRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	if strings.TrimSpace(req.Prompt) == "" {
+		jsonError(w, http.StatusBadRequest, "prompt cannot be empty")
+		return
+	}
+
+	if req.WorkspaceDir == "" && s.ws != nil {
+		req.WorkspaceDir, _ = s.ws.GetRoot()
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	flusher.Flush()
+
+	sendEvent := func(eventType string, data any) error {
+		payload, err := json.Marshal(data)
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventType, payload); err != nil {
+			return err
+		}
+		flusher.Flush()
+		return nil
+	}
+
+	if err := ai.StreamChat(r.Context(), req, sendEvent); err != nil {
+		// Event error was already emitted by StreamChat if relevant
+		return
+	}
+}
+
 

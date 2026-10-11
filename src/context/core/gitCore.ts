@@ -26,6 +26,7 @@ import {
   pushGitTags,
   stageGitFiles,
   syncGit,
+  unlockGitRepo,
   unstageGitFiles,
 } from "../../utils/workspaceApi"
 
@@ -153,11 +154,17 @@ export function useGitCore({
   const [commitHash, setCommitHash] = useState("")
   const [isLoadingGit, setIsLoadingGit] = useState(false)
   const [gitError, setGitError] = useState<string | null>(null)
+  const [isRepoLocked, setIsRepoLocked] = useState(false)
+  const [isOperatingGit, setIsOperatingGit] = useState(false)
 
   const isRefreshingRef = useRef(false)
+  const refreshPendingRef = useRef(false)
 
   const refreshGit = useCallback(async () => {
-    if (isRefreshingRef.current) return
+    if (isRefreshingRef.current) {
+      refreshPendingRef.current = true
+      return
+    }
     isRefreshingRef.current = true
     setIsLoadingGit(true)
 
@@ -178,10 +185,12 @@ export function useGitCore({
         setUpstream("")
         setCommitHash("")
         setGitError(null)
+        setIsRepoLocked(false)
         return
       }
 
       setIsGitRepo(true)
+      setIsRepoLocked(false)
       setActiveBranchState(status.branch || "main")
       setActiveRepo(status.repoName)
       setGitChanges(status.unstaged || [])
@@ -220,12 +229,52 @@ export function useGitCore({
       }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err)
+      if (errMsg.includes("index.lock") || errMsg.includes("File exists")) {
+        setIsRepoLocked(true)
+      }
       setGitError(errMsg)
     } finally {
       setIsLoadingGit(false)
       isRefreshingRef.current = false
+      if (refreshPendingRef.current) {
+        refreshPendingRef.current = false
+        setTimeout(() => {
+          refreshGit()
+        }, 120)
+      }
     }
   }, [rootWorkspacePath])
+
+  const handleGitOpError = useCallback(
+    (err: unknown, prefix: string) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes("index.lock") || msg.includes("File exists")) {
+        setIsRepoLocked(true)
+        showToast(
+          `${prefix}: Repository is locked by index.lock. Click 'Unlock Repository' to fix.`,
+        )
+      } else {
+        showToast(`${prefix}: ${msg}`)
+      }
+      setGitError(msg)
+    },
+    [showToast],
+  )
+
+  const unlockRepo = useCallback(async () => {
+    setIsOperatingGit(true)
+    try {
+      const res = await unlockGitRepo()
+      setIsRepoLocked(false)
+      showToast(res.message || "Repository unlocked successfully")
+      await refreshGit()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      showToast(`Unlock failed: ${msg}`)
+    } finally {
+      setIsOperatingGit(false)
+    }
+  }, [refreshGit, showToast])
 
   // Initial and reactive refresh
   useEffect(() => {
@@ -281,76 +330,88 @@ export function useGitCore({
 
   const stageChange = useCallback(
     async (file: string) => {
+      setIsOperatingGit(true)
       try {
         await stageGitFiles([file], false)
         await refreshGit()
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
-        showToast(`Stage failed: ${msg}`)
+        handleGitOpError(err, "Stage failed")
+      } finally {
+        setIsOperatingGit(false)
       }
     },
-    [refreshGit, showToast],
+    [handleGitOpError, refreshGit],
   )
 
   const unstageChange = useCallback(
     async (file: string) => {
+      setIsOperatingGit(true)
       try {
         await unstageGitFiles([file], false)
         await refreshGit()
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
-        showToast(`Unstage failed: ${msg}`)
+        handleGitOpError(err, "Unstage failed")
+      } finally {
+        setIsOperatingGit(false)
       }
     },
-    [refreshGit, showToast],
+    [handleGitOpError, refreshGit],
   )
 
   const stageAllChanges = useCallback(async () => {
+    setIsOperatingGit(true)
     try {
       await stageGitFiles([], true)
       showToast("Staged all changes")
       await refreshGit()
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
-      showToast(`Stage all failed: ${msg}`)
+      handleGitOpError(err, "Stage all failed")
+    } finally {
+      setIsOperatingGit(false)
     }
-  }, [refreshGit, showToast])
+  }, [handleGitOpError, refreshGit, showToast])
 
   const unstageAllChanges = useCallback(async () => {
+    setIsOperatingGit(true)
     try {
       await unstageGitFiles([], true)
       showToast("Unstaged all changes")
       await refreshGit()
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
-      showToast(`Unstage all failed: ${msg}`)
+      handleGitOpError(err, "Unstage all failed")
+    } finally {
+      setIsOperatingGit(false)
     }
-  }, [refreshGit, showToast])
+  }, [handleGitOpError, refreshGit, showToast])
 
   const discardChange = useCallback(
     async (file: string) => {
+      setIsOperatingGit(true)
       try {
         await discardGitFiles([file], false)
         showToast(`Discarded changes in ${file}`)
         await refreshGit()
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
-        showToast(`Discard failed: ${msg}`)
+        handleGitOpError(err, "Discard failed")
+      } finally {
+        setIsOperatingGit(false)
       }
     },
-    [refreshGit, showToast],
+    [handleGitOpError, refreshGit, showToast],
   )
 
   const discardAllChanges = useCallback(async () => {
+    setIsOperatingGit(true)
     try {
       await discardGitFiles([], true)
       showToast("Discarded all changes")
       await refreshGit()
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
-      showToast(`Discard all failed: ${msg}`)
+      handleGitOpError(err, "Discard all failed")
+    } finally {
+      setIsOperatingGit(false)
     }
-  }, [refreshGit, showToast])
+  }, [handleGitOpError, refreshGit, showToast])
 
   const commitChanges = useCallback(
     async (message: string, autoStage = false) => {
@@ -360,6 +421,7 @@ export function useGitCore({
         return
       }
 
+      setIsOperatingGit(true)
       try {
         const node = await commitGitChanges(clean, autoStage)
         showToast(
@@ -367,11 +429,12 @@ export function useGitCore({
         )
         await refreshGit()
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
-        showToast(`Commit failed: ${msg}`)
+        handleGitOpError(err, "Commit failed")
+      } finally {
+        setIsOperatingGit(false)
       }
     },
-    [refreshGit, showToast],
+    [handleGitOpError, refreshGit, showToast],
   )
 
   const gitPush = useCallback(
@@ -500,7 +563,10 @@ export function useGitCore({
     commitHash,
     isLoadingGit,
     gitError,
+    isRepoLocked,
+    isOperatingGit,
     refreshGit,
+    unlockRepo,
     initRepo,
     checkoutBranch,
     createBranch,

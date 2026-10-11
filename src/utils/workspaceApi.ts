@@ -445,6 +445,24 @@ export async function fetchGitTimeline(
   return data.commits || []
 }
 
+export interface GitUnlockResult {
+  unlocked: boolean
+  removed: string[]
+  message?: string
+}
+
+export async function unlockGitRepo(): Promise<GitUnlockResult> {
+  const res = await fetch(`${API_BASE}/api/v1/git/unlock`, {
+    method: "POST",
+  })
+  if (!res.ok) {
+    throw new Error(
+      await parseResponseError(res, "Failed to unlock git repository"),
+    )
+  }
+  return res.json()
+}
+
 export async function stageGitFiles(
   files?: string[],
   all = false,

@@ -79,10 +79,10 @@ Estimated bundle size delta and memory footprint impact.
 This section documents the formal architectural assessment for every completed and active milestone against the [Feature Assessment Scorecard](#1-feature-assessment-scorecard).
 
 ### Global Repository Health Summary (Current Milestone)
-- **Production Bundle**: **118.06 kB CSS** (19.46 kB gzip) │ **799.30 kB JS** (243.60 kB gzip) via Vite build (~220ms).
+- **Production Bundle**: **139.29 kB CSS** (22.15 kB gzip) │ **836.77 kB JS** (223.05 kB gzip) via Vite build (~230ms).
 - **CSS Token Adherence**: **100% Compliant**. Zero arbitrary hex colors or unapproved CSS variable escapes across all modules.
 - **Standalone Binaries & Packaging**: **~7.5 MB** UPX-compressed standalone binary, **~3.5 MB** DMG installer, **~88 KB** native Swift Cocoa `WKWebView` wrapper (zero Electron overhead).
-- **Verification Gates**: **32 Vitest frontend tests** + **7 Go backend test suites** passing with 0 errors; code cleanly verified and formatted via `oxfmt`.
+- **Verification Gates**: **45 Vitest frontend tests** (2 suites) + **61 Go backend tests** (9 internal packages) passing with 0 errors; code cleanly verified and formatted via `oxfmt`.
 
 ---
 
@@ -99,10 +99,12 @@ This section documents the formal architectural assessment for every completed a
 | **Special: Settings Registry & Polish** | 25/25 | 25/25 | 25/25 | 15/15 | 10/10 | **100%** | ✅ Passed |
 | **Sub-Phase 6.1: Workspace Engine** | 25/25 | 25/25 | 25/25 | 15/15 | 10/10 | **100%** | ✅ Passed |
 | **Sub-Phase 6.2: Native Git & Diff** | 25/25 | 25/25 | 25/25 | 15/15 | 10/10 | **100%** | ✅ Passed |
-| **Sub-Phase 6.3: Process Supervisor/PTY** | — | — | — | — | — | **Active** | 🟡 Next |
-| **Sub-Phase 6.4: Stateless/SQLite** | — | — | — | — | — | **Planned** | ⚪ Roadmap |
+| **Sub-Phase 6.3: Process Supervisor/PTY** | 25/25 | 25/25 | 25/25 | 15/15 | 10/10 | **100%** | ✅ Passed |
+| **Sub-Phase 6.4: Flat-File Storage & App State** | 25/25 | 25/25 | 25/25 | 15/15 | 10/10 | **100%** | ✅ Passed |
 | **Sub-Phase 6.5: Bundled DAP Debugger** | — | — | — | — | — | **Planned** | ⚪ Roadmap |
 | **Sub-Phase 6.6: Single Standalone Binary & Desktop App** | 25/25 | 25/25 | 25/25 | 15/15 | 10/10 | **100%** | ✅ Passed |
+| **Sub-Phase 6.8: AI Providers & Custom Models** | 25/25 | 25/25 | 25/25 | 15/15 | 10/10 | **100%** | ✅ Passed |
+| **Sub-Phase 6.9: Live 2-Way Antigravity & SSE Streaming** | 25/25 | 25/25 | 25/25 | 15/15 | 10/10 | **100%** | ✅ Passed |
 | **Phase 7: Multi-Viewer & Wireframe Studio (tldraw)** | — | — | — | — | — | **Upcoming** | ⚪ Roadmap |
 | **Phase 8: Research Workshop & Data Science** | — | — | — | — | — | **Planned** | ⚪ Roadmap |
 | **Phase 9: Remote Pairing & Tablet Companion** | — | — | — | — | — | **Deferred** | ⚪ Roadmap |
@@ -179,6 +181,20 @@ This section documents the formal architectural assessment for every completed a
 - **Backend Constraints & Process Safety**: Single linear validation paths in [`handler.go`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/server/internal/web/handler.go) with explicit error reporting. Cocoa wrapper enforces strict child process group cleanup via `SIGTERM` followed by a 250ms `SIGKILL` watchdog timer on window close or `Cmd+Q`, ensuring zero zombie background processes or locked TCP ports.
 - **UI & Brand Hygiene**: Removed mock window traffic lights from [`WindowControls.tsx`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/header/WindowControls.tsx) in favor of native OS window controls. Purged legacy Figma references and standardized Aegis Shield SVG branding.
 - **Verification**: Verified with 32 Vitest frontend unit tests, 7 Go backend test suites, and end-to-end smoke testing of DMG mount and execution.
+
+#### Sub-Phase 6.8: AI Providers & Custom Models Registry
+- **Scope**: Multi-provider support (Antigravity, Claude, OpenCode, OpenRouter), dynamic custom models registry with interactive tag chips, zero-token cost latency test probes (`POST /api/v1/ai/test`), upward floating provider popover (`ChatProviderSelect.tsx`), and dual header badges.
+- **Lightweight & Performance**: Zero heavy AI SDK dependencies; fast HTTP GET `/models` probes and direct CLI path verification.
+- **Anti-Over-Engineering**: Antigravity auto-discovery detects existing local OAuth creds (`~/.gemini/oauth_creds.json`) and brain directories without requiring redundant API key setup.
+- **Constraints Adherence**: 100% SVG UI `<Icon name="..." />` components across all settings cards; zero hardcoded hex colors.
+- **Verification**: 45 Vitest frontend unit tests and Go probe tests passing.
+
+#### Sub-Phase 6.9: Live 2-Way Antigravity CLI Subprocess Runner, Rich Agentic Balloon & SSE Streaming
+- **Scope**: Direct Go subprocess execution of Antigravity CLI (`agy`) with `--dangerously-skip-permissions` and `--output-format stream-json` scoped to active workspace directory; live SSE streaming (`POST /api/v1/ai/chat`); model normalization engine (`normalizeAntigravityModel`); conversation directory detection; rich agentic balloon with Thinking Process Accordion, Interactive Tool Call Action Chips, and dedicated Error Cards; in-flight Stop Generation button with `AbortController` child process kill watchdog; and full transcript rehydration from native brain logs.
+- **Lightweight & Performance**: Streaming chunked over standard HTTP SSE; zero WebSocket handshake bloat or heavy client markdown parsers. Antigravity model list cached in-memory with a 5-minute TTL.
+- **Anti-Over-Engineering**: No terminal scraping or PTY ANSI escape handling in chat balloon; clean NDJSON and SSE events directly decoded from native Antigravity events (`init`, `step_update.text_delta`, `step_update.thinking_delta`, `result.response`).
+- **Backend Constraints & Fail-Safe Process Safety**: Strict child process teardown via `cmd.Process.Kill()` on HTTP context cancellation (`r.Context().Done()`). Linear error handling path without silent swallows.
+- **Verification**: 61 Go backend tests (9 internal packages) and 45 Vitest frontend tests passing with 0 errors.
 
 #### Phase 7: Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`) (Upcoming)
 - **Scope**: Workbench editor tab abstraction supporting non-text MIME viewers (`ImageViewerPane` for `.png`/`.jpg`/`.svg`, `SpreadsheetViewerPane` for `.csv`/`.xls`, `MarkdownPreviewPane` for `.md`) and `@tldraw/tldraw` infinite vector canvas for `.canvas`/`.design` wireframes.

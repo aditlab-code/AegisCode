@@ -1,0 +1,526 @@
+import { memo, useMemo, useState, type ReactNode } from "react"
+import { Icon } from "../../ui/Icon"
+import { useWorkbench } from "../../../context/WorkbenchContext"
+import { tokenizeLine } from "../../../utils/syntax"
+
+interface MarkdownRendererProps {
+  text: string
+  isStreaming?: boolean
+}
+
+type Block =
+  | { type: "code"; lang: string; content: string; unclosed?: boolean }
+  | { type: "header"; level: 1 | 2 | 3 | 4; content: string }
+  | { type: "blockquote"; content: string[] }
+  | { type: "ul"; items: string[] }
+  | { type: "ol"; items: string[] }
+  | { type: "table"; headers: string[]; rows: string[][] }
+  | { type: "hr" }
+  | { type: "p"; content: string }
+
+export const MarkdownRenderer = memo(function MarkdownRenderer({
+  text,
+  isStreaming = false,
+}: MarkdownRendererProps) {
+  const { openFileInPane, activeTab, updateFileContent, showToast } =
+    useWorkbench()
+
+  // Parse raw text into structured markdown blocks
+  const blocks = useMemo(() => {
+    return parseMarkdownBlocks(text, isStreaming)
+  }, [text, isStreaming])
+
+  return (
+    <div className="markdown-body">
+      {blocks.map((block, idx) => {
+        switch (block.type) {
+          case "code":
+            return (
+              <CodeBlockView
+                key={`block-${idx}`}
+                lang={block.lang}
+                code={block.content}
+                unclosed={block.unclosed}
+                isStreaming={isStreaming}
+                activeTab={activeTab}
+                onApply={(code) => {
+                  if (activeTab) {
+                    updateFileContent(activeTab, code)
+                    showToast(`Applied code to ${activeTab}`)
+                  } else {
+                    showToast("No active file open in editor to apply code")
+                  }
+                }}
+                onCopy={(code) => {
+                  if (navigator?.clipboard) {
+                    navigator.clipboard.writeText(code)
+                    showToast("Code copied to clipboard")
+                  }
+                }}
+              />
+            )
+          case "header": {
+            const inline = renderInlineMarkdown(
+              block.content,
+              openFileInPane,
+              `h-${idx}`,
+            )
+            if (block.level === 1) {
+              return (
+                <h1 key={`block-${idx}`} className="markdown-h1">
+                  {inline}
+                </h1>
+              )
+            }
+            if (block.level === 2) {
+              return (
+                <h2 key={`block-${idx}`} className="markdown-h2">
+                  {inline}
+                </h2>
+              )
+            }
+            if (block.level === 3) {
+              return (
+                <h3 key={`block-${idx}`} className="markdown-h3">
+                  {inline}
+                </h3>
+              )
+            }
+            return (
+              <h4 key={`block-${idx}`} className="markdown-h4">
+                {inline}
+              </h4>
+            )
+          }
+          case "blockquote":
+            return (
+              <blockquote key={`block-${idx}`} className="markdown-blockquote">
+                {block.content.map((line, lineIdx) => (
+                  <div key={lineIdx}>
+                    {renderInlineMarkdown(
+                      line,
+                      openFileInPane,
+                      `bq-${idx}-${lineIdx}`,
+                    )}
+                  </div>
+                ))}
+              </blockquote>
+            )
+          case "ul":
+            return (
+              <ul key={`block-${idx}`} className="markdown-ul">
+                {block.items.map((item, itemIdx) => {
+                  const isTask = item.startsWith("[ ] ") || item.startsWith("[x] ")
+                  if (isTask) {
+                    const checked = item.startsWith("[x] ")
+                    const content = item.slice(4)
+                    return (
+                      <li key={itemIdx} className="markdown-task-item">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          readOnly
+                          className="mr-1.5 accent-[var(--color-accent)]"
+                        />
+                        <span>
+                          {renderInlineMarkdown(
+                            content,
+                            openFileInPane,
+                            `ul-task-${idx}-${itemIdx}`,
+                          )}
+                        </span>
+                      </li>
+                    )
+                  }
+                  return (
+                    <li key={itemIdx} className="markdown-li">
+                      {renderInlineMarkdown(
+                        item,
+                        openFileInPane,
+                        `ul-${idx}-${itemIdx}`,
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            )
+          case "ol":
+            return (
+              <ol key={`block-${idx}`} className="markdown-ol">
+                {block.items.map((item, itemIdx) => (
+                  <li key={itemIdx} className="markdown-li">
+                    {renderInlineMarkdown(
+                      item,
+                      openFileInPane,
+                      `ol-${idx}-${itemIdx}`,
+                    )}
+                  </li>
+                ))}
+              </ol>
+            )
+          case "table":
+            return (
+              <div key={`block-${idx}`} className="markdown-table-wrapper">
+                <table className="markdown-table">
+                  <thead>
+                    <tr>
+                      {block.headers.map((h, hIdx) => (
+                        <th key={hIdx}>
+                          {renderInlineMarkdown(
+                            h,
+                            openFileInPane,
+                            `th-${idx}-${hIdx}`,
+                          )}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {block.rows.map((row, rIdx) => (
+                      <tr key={rIdx}>
+                        {row.map((cell, cIdx) => (
+                          <td key={cIdx}>
+                            {renderInlineMarkdown(
+                              cell,
+                              openFileInPane,
+                              `td-${idx}-${rIdx}-${cIdx}`,
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          case "hr":
+            return <hr key={`block-${idx}`} className="markdown-hr" />
+          case "p":
+          default:
+            return (
+              <p key={`block-${idx}`} className="markdown-p">
+                {renderInlineMarkdown(
+                  block.content,
+                  openFileInPane,
+                  `p-${idx}`,
+                )}
+              </p>
+            )
+        }
+      })}
+    </div>
+  )
+})
+
+interface CodeBlockViewProps {
+  lang: string
+  code: string
+  unclosed?: boolean
+  isStreaming?: boolean
+  activeTab?: string
+  onApply: (code: string) => void
+  onCopy: (code: string) => void
+}
+
+function CodeBlockView({
+  lang,
+  code,
+  unclosed,
+  isStreaming,
+  activeTab,
+  onApply,
+  onCopy,
+}: CodeBlockViewProps) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = () => {
+    onCopy(code)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const lines = code.split("\n")
+
+  return (
+    <div className="markdown-code-block">
+      <div className="markdown-code-header">
+        <span className="markdown-code-lang">{lang || "CODE"}</span>
+        <div className="markdown-code-actions">
+          {activeTab && (
+            <button
+              type="button"
+              className="markdown-code-action-btn"
+              onClick={() => onApply(code)}
+              title={`Apply code into active file (${activeTab})`}
+            >
+              <Icon name="check" size={11} />
+              <span>Apply</span>
+            </button>
+          )}
+          <button
+            type="button"
+            className="markdown-code-action-btn"
+            onClick={handleCopy}
+            title="Copy code to clipboard"
+          >
+            <Icon name={copied ? "check" : "copy"} size={11} />
+            <span>{copied ? "Copied" : "Copy"}</span>
+          </button>
+        </div>
+      </div>
+      <pre className="markdown-code-pre">
+        <code>
+          {lines.map((line, lineIdx) => (
+            <span key={lineIdx} className="block leading-relaxed">
+              {tokenizeLine(line)}
+            </span>
+          ))}
+          {unclosed && isStreaming && (
+            <span className="streaming-cursor" />
+          )}
+        </code>
+      </pre>
+    </div>
+  )
+}
+
+function parseMarkdownBlocks(text: string, isStreaming: boolean): Block[] {
+  const lines = text.split("\n")
+  const blocks: Block[] = []
+  let i = 0
+
+  while (i < lines.length) {
+    const line = lines[i]
+
+    // 1. Fenced Code Block
+    const fenceMatch = line.match(/^```(\w+)?/)
+    if (fenceMatch) {
+      const lang = fenceMatch[1] || ""
+      const codeLines: string[] = []
+      let closed = false
+      i++
+      while (i < lines.length) {
+        if (lines[i].startsWith("```")) {
+          closed = true
+          i++
+          break
+        }
+        codeLines.push(lines[i])
+        i++
+      }
+      blocks.push({
+        type: "code",
+        lang,
+        content: codeLines.join("\n"),
+        unclosed: !closed,
+      })
+      continue
+    }
+
+    // 2. Horizontal Rule (---, ***, ___)
+    if (/^(\*{3,}|-{3,}|_{3,})$/.test(line.trim())) {
+      blocks.push({ type: "hr" })
+      i++
+      continue
+    }
+
+    // 3. Headers (#, ##, ###, ####)
+    const headerMatch = line.match(/^(#{1,4})\s+(.+)$/)
+    if (headerMatch) {
+      const level = headerMatch[1].length as 1 | 2 | 3 | 4
+      blocks.push({
+        type: "header",
+        level,
+        content: headerMatch[2].trim(),
+      })
+      i++
+      continue
+    }
+
+    // 4. Blockquote (> ...)
+    if (line.startsWith(">")) {
+      const bqLines: string[] = []
+      while (i < lines.length && (lines[i].startsWith(">") || (lines[i].trim() !== "" && bqLines.length > 0 && !lines[i].startsWith("#") && !lines[i].startsWith("-") && !lines[i].startsWith("```")))) {
+        if (lines[i].startsWith(">")) {
+          bqLines.push(lines[i].replace(/^>\s?/, ""))
+        } else {
+          bqLines.push(lines[i])
+        }
+        i++
+      }
+      blocks.push({ type: "blockquote", content: bqLines })
+      continue
+    }
+
+    // 5. Unordered List (- , * , + )
+    if (/^(\s*)[-*+]\s+(.+)$/.test(line)) {
+      const listItems: string[] = []
+      while (i < lines.length) {
+        const itemMatch = lines[i].match(/^(\s*)[-*+]\s+(.+)$/)
+        if (!itemMatch) break
+        listItems.push(itemMatch[2])
+        i++
+      }
+      blocks.push({ type: "ul", items: listItems })
+      continue
+    }
+
+    // 6. Ordered List (1. , 2. )
+    if (/^\s*\d+\.\s+(.+)$/.test(line)) {
+      const listItems: string[] = []
+      while (i < lines.length) {
+        const itemMatch = lines[i].match(/^\s*\d+\.\s+(.+)$/)
+        if (!itemMatch) break
+        listItems.push(itemMatch[1])
+        i++
+      }
+      blocks.push({ type: "ol", items: listItems })
+      continue
+    }
+
+    // 7. Markdown Table (| Col 1 | Col 2 |)
+    if (line.trim().startsWith("|") && line.trim().endsWith("|") && i + 1 < lines.length && /^\s*\|?\s*[-:]+[-| :]*\|?\s*$/.test(lines[i + 1])) {
+      const parseCells = (l: string) =>
+        l
+          .trim()
+          .replace(/^\||\|$/g, "")
+          .split("|")
+          .map((c) => c.trim())
+
+      const headers = parseCells(line)
+      i += 2 // Skip header and separator
+      const rows: string[][] = []
+      while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
+        rows.push(parseCells(lines[i]))
+        i++
+      }
+      blocks.push({ type: "table", headers, rows })
+      continue
+    }
+
+    // 8. Paragraph / Plain text
+    if (line.trim() === "") {
+      i++
+      continue
+    }
+
+    const pLines: string[] = []
+    while (
+      i < lines.length &&
+      lines[i].trim() !== "" &&
+      !lines[i].startsWith("```") &&
+      !lines[i].startsWith("#") &&
+      !lines[i].startsWith(">") &&
+      !/^(\s*)[-*+]\s+/.test(lines[i]) &&
+      !/^\s*\d+\.\s+/.test(lines[i]) &&
+      !/^(\*{3,}|-{3,}|_{3,})$/.test(lines[i].trim()) &&
+      !(lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|"))
+    ) {
+      pLines.push(lines[i])
+      i++
+    }
+    blocks.push({ type: "p", content: pLines.join("\n") })
+  }
+
+  return blocks
+}
+
+function renderInlineMarkdown(
+  text: string,
+  onOpenFile: (path: string) => void,
+  keyPrefix: string,
+): ReactNode[] {
+  // Regex parsing: inline code `...`, bold **...**, italic *...*, strikethrough ~~...~~, links [...](...), @mentions, /commands
+  const regex =
+    /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|~~[^~]+~~|\[[^\]]+\]\([^)]+\)|(?:^|\s)@[a-zA-Z0-9_\-./]+|(?:^|\s)\/[a-zA-Z0-9_\-]+)/g
+
+  const nodes: ReactNode[] = []
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index))
+    }
+
+    const raw = match[0]
+    const key = `${keyPrefix}-${match.index}`
+
+    if (raw.startsWith("`") && raw.endsWith("`") && raw.length >= 2) {
+      nodes.push(
+        <code key={key} className="markdown-inline-code">
+          {raw.slice(1, -1)}
+        </code>,
+      )
+    } else if (raw.startsWith("**") && raw.endsWith("**") && raw.length >= 4) {
+      nodes.push(
+        <strong key={key} className="font-semibold text-[var(--color-ink)]">
+          {raw.slice(2, -2)}
+        </strong>,
+      )
+    } else if (raw.startsWith("*") && raw.endsWith("*") && raw.length >= 2) {
+      nodes.push(
+        <em key={key} className="italic">
+          {raw.slice(1, -1)}
+        </em>,
+      )
+    } else if (raw.startsWith("~~") && raw.endsWith("~~") && raw.length >= 4) {
+      nodes.push(
+        <del key={key} className="line-through text-[var(--color-ink-muted)]">
+          {raw.slice(2, -2)}
+        </del>,
+      )
+    } else if (raw.startsWith("[") && raw.includes("](") && raw.endsWith(")")) {
+      const linkMatch = raw.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
+      if (linkMatch) {
+        nodes.push(
+          <a
+            key={key}
+            href={linkMatch[2]}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="markdown-link"
+          >
+            {linkMatch[1]}
+          </a>,
+        )
+      } else {
+        nodes.push(raw)
+      }
+    } else if (raw.trim().startsWith("@")) {
+      const trimmed = raw.trim()
+      const cleanPath = trimmed.slice(1)
+      const isFolder = cleanPath.endsWith("/")
+      nodes.push(
+        <button
+          key={key}
+          type="button"
+          onClick={() => onOpenFile(cleanPath)}
+          className="markdown-mention-pill"
+          title={`Open ${cleanPath} in editor`}
+        >
+          <Icon name={isFolder ? "folder" : "file"} size={11} />
+          <span>{trimmed}</span>
+        </button>,
+      )
+    } else if (raw.trim().startsWith("/")) {
+      const trimmed = raw.trim()
+      nodes.push(
+        <span key={key} className="markdown-command-chip">
+          <Icon name="code" size={11} />
+          <span>{trimmed}</span>
+        </span>,
+      )
+    } else {
+      nodes.push(raw)
+    }
+
+    lastIndex = regex.lastIndex
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex))
+  }
+
+  return nodes.length > 0 ? nodes : [text]
+}

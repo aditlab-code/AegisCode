@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/aditwicaksono/aegiscode/server/internal/git"
 	"github.com/aditwicaksono/aegiscode/server/internal/workspace"
@@ -254,6 +255,81 @@ func TestGitService_Unstage(t *testing.T) {
 	st, _ = svc.GetStatus(ctx)
 	if len(st.Staged) != 0 {
 		t.Fatalf("expected 0 staged files after unstage with HEAD, got %d", len(st.Staged))
+	}
+}
+
+func TestGitService_StaleLockRecovery(t *testing.T) {
+	tempDir, _, svc := setupTestGitRepo(t)
+	defer os.RemoveAll(tempDir)
+
+	ctx := context.Background()
+
+	testFile := filepath.Join(tempDir, "recover.txt")
+	if err := os.WriteFile(testFile, []byte("data"), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	// Create artificial stale index.lock file backdated by 5 seconds
+	lockFile := filepath.Join(tempDir, ".git", "index.lock")
+	if err := os.WriteFile(lockFile, []byte("artificial lock"), 0644); err != nil {
+		t.Fatalf("failed to create lock file: %v", err)
+	}
+	oldTime := time.Now().Add(-5 * time.Second)
+	_ = os.Chtimes(lockFile, oldTime, oldTime)
+
+	// Stage should detect that index.lock is stale (>2s), remove it, and succeed!
+	if err := svc.Stage(ctx, []string{"recover.txt"}, false); err != nil {
+		t.Fatalf("expected Stage to recover from stale lock, but got error: %v", err)
+	}
+
+	// Lock should be gone
+	if _, err := os.Stat(lockFile); !os.IsNotExist(err) {
+		t.Errorf("expected lock file to be removed, but still exists")
+	}
+
+	st, err := svc.GetStatus(ctx)
+	if err != nil || len(st.Staged) != 1 {
+		t.Fatalf("expected file to be staged after auto-recovery, got %+v", st)
+	}
+}
+
+func TestGitService_Unlock(t *testing.T) {
+	tempDir, _, svc := setupTestGitRepo(t)
+	defer os.RemoveAll(tempDir)
+
+	ctx := context.Background()
+
+	// Create artificial locks
+	indexLock := filepath.Join(tempDir, ".git", "index.lock")
+	headLock := filepath.Join(tempDir, ".git", "HEAD.lock")
+	_ = os.WriteFile(indexLock, []byte("lock1"), 0644)
+	_ = os.WriteFile(headLock, []byte("lock2"), 0644)
+
+	res, err := svc.Unlock(ctx)
+	if err != nil {
+		t.Fatalf("Unlock returned error: %v", err)
+	}
+	if !res.Unlocked {
+		t.Fatalf("expected Unlocked true, got false")
+	}
+	if len(res.Removed) < 2 {
+		t.Fatalf("expected at least 2 removed locks, got %v", res.Removed)
+	}
+
+	if _, err := os.Stat(indexLock); !os.IsNotExist(err) {
+		t.Errorf("index.lock still exists after Unlock")
+	}
+	if _, err := os.Stat(headLock); !os.IsNotExist(err) {
+		t.Errorf("HEAD.lock still exists after Unlock")
+	}
+
+	// Second unlock when no locks exist
+	res2, err := svc.Unlock(ctx)
+	if err != nil {
+		t.Fatalf("second Unlock returned error: %v", err)
+	}
+	if len(res2.Removed) != 0 {
+		t.Errorf("expected 0 removed locks on clean repo, got %v", res2.Removed)
 	}
 }
 

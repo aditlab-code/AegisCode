@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aditwicaksono/aegiscode/server/internal/workspace"
@@ -67,9 +68,17 @@ type CommitNode struct {
 	Tags      []string `json:"tags,omitempty"`
 }
 
+// UnlockResult models the outcome of a repository unlock attempt.
+type UnlockResult struct {
+	Unlocked bool     `json:"unlocked"`
+	Removed  []string `json:"removed"`
+	Message  string   `json:"message,omitempty"`
+}
+
 // Service provides native Git CLI operations on the active workspace root.
 type Service struct {
 	ws *workspace.Manager
+	mu sync.Mutex
 }
 
 // NewService creates a new Git service wrapping workspace Manager.
@@ -86,30 +95,144 @@ func (s *Service) root() (string, error) {
 	return clean, nil
 }
 
+func isReadCommand(arg string) bool {
+	switch arg {
+	case "status", "branch", "log", "diff", "show", "tag", "rev-parse", "config":
+		return true
+	default:
+		return false
+	}
+}
+
+func isIndexLockError(errStr string) bool {
+	return strings.Contains(errStr, "index.lock") && strings.Contains(errStr, "File exists")
+}
+
 func (s *Service) runGit(ctx context.Context, args ...string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	root, err := s.root()
 	if err != nil {
 		return "", err
 	}
 
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = root
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	runErr := cmd.Run()
-	if runErr != nil {
-		errOut := strings.TrimSpace(stderr.String())
-		if errOut != "" {
-			return "", fmt.Errorf("git %s failed: %s", args[0], errOut)
+	execute := func() (string, string, error) {
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = root
+		if len(args) > 0 && isReadCommand(args[0]) {
+			cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
 		}
-		return "", fmt.Errorf("git %s failed: %w", args[0], runErr)
+
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+
+		runErr := cmd.Run()
+		return stdout.String(), strings.TrimSpace(stderr.String()), runErr
 	}
 
-	return stdout.String(), nil
+	stdout, errOut, runErr := execute()
+	if runErr == nil {
+		return stdout, nil
+	}
+
+	// Automatic retry and recovery for index.lock conflicts
+	if isIndexLockError(errOut) {
+		// 1. Transient retry with exponential backoff (wait for any active git command to finish)
+		delays := []time.Duration{50 * time.Millisecond, 150 * time.Millisecond, 300 * time.Millisecond}
+		for _, delay := range delays {
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(delay):
+			}
+			stdout, errOut, runErr = execute()
+			if runErr == nil {
+				return stdout, nil
+			}
+			if !isIndexLockError(errOut) {
+				break
+			}
+		}
+
+		// 2. Stale lock auto-recovery (>2s old index.lock from a crashed process)
+		lockPath := filepath.Join(root, ".git", "index.lock")
+		if fi, statErr := os.Stat(lockPath); statErr == nil {
+			if time.Since(fi.ModTime()) > 2*time.Second {
+				if rErr := os.Remove(lockPath); rErr == nil {
+					stdout, errOut, runErr = execute()
+					if runErr == nil {
+						return stdout, nil
+					}
+				}
+			}
+		}
+	}
+
+	if errOut != "" {
+		return "", fmt.Errorf("git %s failed: %s", args[0], errOut)
+	}
+	return "", fmt.Errorf("git %s failed: %w", args[0], runErr)
+}
+
+// Unlock safely scans and clears any stale Git lock files (.git/*.lock, .git/refs/**/*.lock).
+func (s *Service) Unlock(ctx context.Context) (UnlockResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	root, err := s.root()
+	if err != nil {
+		return UnlockResult{Unlocked: false, Message: err.Error()}, err
+	}
+
+	gitDir := filepath.Join(root, ".git")
+	st, err := os.Stat(gitDir)
+	if err != nil || !st.IsDir() {
+		return UnlockResult{Unlocked: false, Message: "Not a git repository"}, nil
+	}
+
+	var removed []string
+	knownLocks := []string{
+		filepath.Join(gitDir, "index.lock"),
+		filepath.Join(gitDir, "HEAD.lock"),
+		filepath.Join(gitDir, "config.lock"),
+		filepath.Join(gitDir, "packed-refs.lock"),
+	}
+
+	for _, lp := range knownLocks {
+		if _, statErr := os.Stat(lp); statErr == nil {
+			if rErr := os.Remove(lp); rErr == nil {
+				removed = append(removed, filepath.Base(lp))
+			}
+		}
+	}
+
+	refsDir := filepath.Join(gitDir, "refs")
+	_ = filepath.Walk(refsDir, func(path string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() && strings.HasSuffix(info.Name(), ".lock") {
+			if rErr := os.Remove(path); rErr == nil {
+				rel, _ := filepath.Rel(gitDir, path)
+				removed = append(removed, rel)
+			}
+		}
+		return nil
+	})
+
+	if len(removed) > 0 {
+		return UnlockResult{
+			Unlocked: true,
+			Removed:  removed,
+			Message:  fmt.Sprintf("Successfully removed %d lock file(s)", len(removed)),
+		}, nil
+	}
+
+	return UnlockResult{
+		Unlocked: true,
+		Removed:  []string{},
+		Message:  "No lock files found in repository",
+	}, nil
 }
 
 // IsRepo checks if the active workspace is a git repository.
@@ -181,7 +304,10 @@ func (s *Service) GetStatus(ctx context.Context) (RepoStatus, error) {
 		}, nil
 	}
 
-	out, err := s.runGit(ctx, "status", "--porcelain=v2", "--branch", "-uall")
+	out, err := s.runGit(ctx, "status", "--porcelain=v2", "--branch", "--no-optional-locks", "-uall")
+	if err != nil && strings.Contains(err.Error(), "unknown option") {
+		out, err = s.runGit(ctx, "status", "--porcelain=v2", "--branch", "-uall")
+	}
 	if err != nil {
 		headPath := filepath.Join(root, ".git", "HEAD")
 		if headBytes, rErr := os.ReadFile(headPath); rErr == nil {

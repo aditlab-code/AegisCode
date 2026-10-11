@@ -38,6 +38,10 @@ export function SourceControlPanel() {
     openFolderPicker,
     showToast,
     settings,
+    isRepoLocked,
+    isOperatingGit,
+    unlockRepo,
+    isLoadingGit,
   } = useWorkbench()
 
   const maxVisibleChanges =
@@ -332,6 +336,17 @@ export function SourceControlPanel() {
                   <Icon name="discard" size={13} />
                   <span>Discard All Changes</span>
                 </button>
+                <button
+                  className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] text-left cursor-pointer"
+                  onClick={() => {
+                    unlockRepo()
+                    setMenuOpen(false)
+                  }}
+                  type="button"
+                >
+                  <Icon name="check" size={13} />
+                  <span>Unlock Repository</span>
+                </button>
               </div>
 
               <div className="py-1">
@@ -384,6 +399,40 @@ export function SourceControlPanel() {
           )}
         </div>
       </div>
+
+      {/* Repository Locked Warning Banner */}
+      {isRepoLocked && (
+        <div className="mx-3 my-2 p-2.5 rounded-md border border-[var(--color-error)] bg-[var(--color-surface-raised)] flex flex-col gap-1.5 shadow-xs">
+          <div className="flex items-center gap-1.5 text-[var(--color-error)] font-medium text-[11px]">
+            <Icon name="warning" size={13} />
+            <span>Repository Locked (.git/index.lock)</span>
+          </div>
+          <p className="text-[10px] text-[var(--color-ink-muted)] leading-relaxed">
+            A background process or interrupted Git operation left a lock file
+            in the repository.
+          </p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <button
+              className="px-2.5 py-1 rounded bg-[var(--color-accent)] hover:opacity-90 text-white text-[11px] font-medium transition-all cursor-pointer flex items-center gap-1"
+              onClick={unlockRepo}
+              disabled={isOperatingGit}
+              type="button"
+            >
+              <Icon name="check" size={11} />
+              <span>
+                {isOperatingGit ? "Unlocking..." : "Unlock Repository"}
+              </span>
+            </button>
+            <button
+              className="px-2 py-1 rounded hover:bg-[var(--color-surface-hover)] text-[var(--color-ink-muted)] text-[11px] transition-all cursor-pointer"
+              onClick={refreshGit}
+              type="button"
+            >
+              <span>Retry</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 1. REPOSITORIES Section (Matches VS Code Reference Screenshot) */}
       <div className="border-b border-[var(--color-line)]">

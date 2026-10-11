@@ -23,8 +23,13 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
     settings,
     setSettingsModalOpen,
     showToast,
+    isGenerating,
+    stopGenerating,
+    skills,
   } = useWorkbench()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const activeSkills = skills && skills.length > 0 ? skills : SKILL_COMMANDS
 
   const isProviderConfigured = useCallback(() => {
     if (!settings?.agent) return true
@@ -40,6 +45,7 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
   const configured = isProviderConfigured()
 
   function handleSendWithCheck() {
+    if (isGenerating) return
     if (!configured) {
       showToast(
         `Kredensial untuk ${activeProvider} belum diatur. Mengalihkan ke Settings...`,
@@ -59,7 +65,7 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
     if (!popoverType) return 0
     if (popoverType === "command") {
       const q = popoverQuery.toLowerCase()
-      return SKILL_COMMANDS.filter(
+      return activeSkills.filter(
         (s) =>
           s.command.toLowerCase().includes(q) ||
           s.name.toLowerCase().includes(q) ||
@@ -71,7 +77,7 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
       return files.filter((f) => f.label.toLowerCase().includes(q)).length
     }
     return 0
-  }, [popoverType, popoverQuery, files])
+  }, [popoverType, popoverQuery, files, activeSkills])
 
   const checkTrigger = useCallback((text: string, cursorPos: number) => {
     const textBeforeCursor = text.slice(0, cursorPos)
@@ -149,7 +155,7 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
         // Get the active item insertText
         if (popoverType === "command") {
           const q = popoverQuery.toLowerCase()
-          const matched = SKILL_COMMANDS.filter(
+          const matched = activeSkills.filter(
             (s) =>
               s.command.toLowerCase().includes(q) ||
               s.name.toLowerCase().includes(q) ||
@@ -175,14 +181,26 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
       }
       if (event.key === "Escape") {
         event.preventDefault()
-        setPopoverType(null)
+        if (popoverType) {
+          setPopoverType(null)
+        } else if (isGenerating) {
+          stopGenerating()
+        }
         return
       }
     }
 
+    if (event.key === "Escape" && isGenerating) {
+      event.preventDefault()
+      stopGenerating()
+      return
+    }
+
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault()
-      handleSendWithCheck()
+      if (!isGenerating) {
+        handleSendWithCheck()
+      }
       setPopoverType(null)
     }
   }
@@ -314,9 +332,21 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
               </span>
             )}
           </div>
-          <IconButton label="Send message" onClick={handleSendWithCheck}>
-            <Icon name="send" size={15} />
-          </IconButton>
+          {isGenerating ? (
+            <button
+              type="button"
+              className="composer-stop-btn"
+              onClick={stopGenerating}
+              title="Stop generating"
+            >
+              <span className="stop-square-icon" />
+              <span>Stop</span>
+            </button>
+          ) : (
+            <IconButton label="Send message" onClick={handleSendWithCheck}>
+              <Icon name="send" size={15} />
+            </IconButton>
+          )}
         </div>
       </div>
     </div>

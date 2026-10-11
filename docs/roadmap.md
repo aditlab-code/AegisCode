@@ -125,7 +125,7 @@
 ---
 
 ### Phase 6: Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger
-- **Status**: 🟡 Active (Sub-Phases 6.1, 6.2, 6.3, and 6.6 Completed)
+- **Status**: 🟡 Active (Sub-Phases 6.1, 6.2, 6.3, 6.4, 6.6, 6.7, and 6.8 Completed)
 
 #### Sub-Phase 6.1: Live Workspace Engine & File Operations
 - **Status**: ✅ Completed
@@ -253,27 +253,53 @@
     2. **Claude**: OAuth CLI (`claude auth`) with `claude-3.7-sonnet` and `claude-3.5-haiku`.
     3. **OpenCode**: OpenAI-compatible HTTP gateway with configurable base URL and API key.
     4. **OpenRouter**: Multi-gateway HTTP endpoint (`https://openrouter.ai/api/v1`) with API key.
+  - **Antigravity Zero-Config Auto-Discovery & Brain Bridge**:
+    - Automatic backend discovery engine probing `~/.gemini/oauth_creds.json`, active Google/Gemini account, token expiry status, and brain workspace directory (`~/.gemini/antigravity-cli/brain`).
+    - Settings Modal Antigravity card features live auto-discovery badge, 1-line concise hint, and zero-token latency verification.
   - **Dynamic Custom Model Registry**:
     - Support for user-defined arbitrary model IDs across all 4 providers via interactive Tag Chips (`+ Add` / `✕`) in Settings Modal.
-    - Seamlessly merged into `ChatProviderSelect` dropdown with `[Custom]` badges via `getMergedProviderModels()`.
-  - **Backend AI Test Probe Engine (`POST /api/v1/ai/test`)**:
+    - Seamlessly merged into provider catalogs with `[Custom]` badges via `getMergedProviderModels()`.
+  - **Upward AI Provider & Model Popover (`ChatProviderSelect.tsx` & `chat.css`)**:
+    - Replaced rigid single-provider dropdown with an upward floating popover (`bottom: calc(100% + 8px); left: 0; z-index: 100`) floating directly above the composer footer.
+    - Guaranteed zero CSS clipping by enforcing `overflow: visible` on `.composer`, `.composer-footer`, `.composer-footer-left`, and `.composer-wrapper`.
+    - Unified multi-provider menu listing all 4 providers and all their available models simultaneously, grouped by provider.
+    - Filter tabs (`[Semua]`, `[AGY]`, `[CLD]`, `[OC]`, `[OR]`) with color-coded status dots for instant single-provider filtering.
+    - Simultaneous selection: choosing any model updates both active provider and model in the current session.
+  - **Dual Provider & Model Badges in Assistant Message Header (`ChatMessageList.tsx`)**:
+    - Assistant headers display distinct colored provider tags (`[AGY]`, `[CLD]`, `[OC]`, `[OR]`) alongside the model identifier pill (`[gemini-3.8-flash]`).
+  - **Backend AI Test Probe Engine (`POST /api/v1/ai/test` & `server/internal/ai/probe.go`)**:
     - Fast, zero-token cost HTTP GET `/models` probes for OpenCode & OpenRouter.
-    - Safe `exec.LookPath` CLI path verification and `--version` probe with 5-second timeout for Antigravity & Claude.
+    - Safe `exec.LookPath` CLI path verification and `--version` probe with 5-second timeout for Claude.
+    - Specialized OAuth & brain folder inspection probe for Antigravity without invoking full LLM generation.
     - Live Test Connection buttons in Settings Modal displaying real-time spinner, latency (ms), and error tooltips.
+  - **Strict Zero-Emoji & Semantic Token Compliance**:
+    - 100% SVG UI `<Icon name="..." />` components across all AI cards, buttons, badges, and warnings; zero emojis or emoticons.
+    - All colors bound to Tailwind CSS tokens (`bg-canvas`, `bg-surface`, `bg-accent-soft`, `text-ink`, `border-line`).
   - **Chat Composer Configuration Guard**:
-    - Displays `⚠️ Setup needed` badge when the active provider lacks credentials, redirecting users directly to the Settings Modal upon send.
+    - Displays `Setup needed` warning badge when the active provider lacks credentials, redirecting users directly to the Settings Modal upon send.
   - **Verification**: 100% verified across Go backend tests (`server/internal/ai/probe_test.go`, `server/internal/store/store_test.go`, `server/internal/api/api_test.go`) and Vitest frontend regression tests (`test/frontend/core/workbenchCore.test.ts`, 45 tests passing).
 
 #### Sub-Phase 6.9: Isolated Engine & SSE Streaming (Backend Provider Go)
-- **Status**: ⚪ Planned
+- **Status**: ✅ Completed
 - **Deliverables**:
-  - **Uniform AI Request Contract (`server/internal/ai`)**:
-    - Unified `AIRequest` struct containing `provider`, `model`, `prompt`, `messages`, and `WorkspaceContext`.
-    - Modular `Provider` interface (`StreamChat(ctx, req, out)`) isolating OpenAI-compatible streaming (`openrouter`, `opencode`) from CLI OAuth token streaming (`antigravity`, `claude`).
-  - **Low-Latency SSE Chunked Stream Renderer (`/api/v1/ai/chat`)**:
-    - Chunked streaming per token/word via Server-Sent Events with zero flickering markdown rendering in `ChatMessageList.tsx`.
-    - **Client Abort & Cancellation**: Request tied to `r.Context()`; when user clicks "Stop Generating" (AbortController), Go immediately cancels upstream LLM connection, saving user tokens and network bandwidth.
-  - **On-Demand Lazy Loading for `@file` Mentions**: Fast targeted disk reading (`/api/v1/workspace/file`) strictly for files mentioned in prompt tags, without scanning entire workspace trees.
+  - **Antigravity CLI Subprocess Runner (`server/internal/ai/antigravity.go`)**:
+    - Direct invocation of `agy` with `--conversation <uuid>`, `--model <model>`, `--dangerously-skip-permissions`, and `-p <prompt>` within active workspace bounds.
+    - Seamless support for Antigravity NDJSON streams, thinking reasoning loops, tool call payloads, and text deltas.
+    - Graceful process termination on user abort via Go `context.Context` cancellation.
+  - **Low-Latency SSE Streaming Endpoint (`POST /api/v1/ai/chat`)**:
+    - Real-time token streaming (`text/event-stream`) emitting `start`, `thinking`, `tool_call`, `chunk`, `done`, and `error` events.
+    - Fully wired `AbortController` cancellation in React Chat Drawer triggering immediate `SIGINT/SIGTERM` on child process.
+  - **Dynamic Model & Skill Discovery Endpoints**:
+    - `GET /api/v1/ai/models`: In-memory 5-minute cached discovery of available Antigravity models (`agy models`).
+    - `GET /api/v1/ai/skills`: Discovers built-in Antigravity skills (`~/.gemini/antigravity-cli/builtin/skills`) and standard slash commands for autocomplete.
+    - `GET /api/v1/ai/transcript/{id}`: Full fidelity session rehydration from native JSON brain logs (`transcript.jsonl`).
+  - **Rich Agentic Baloon & UI Components (`src/components/layout/chat/`)**:
+    - **Thinking Process Accordion**: Collapsible reasoning view with pulsing in-progress indicator.
+    - **Interactive Tool Call Chips**: Real-time status badges, collapsible JSON args, and tool execution outputs.
+    - **Stop Generation Control**: Replaces Send button in `ChatComposer.tsx` with dedicated Stop button while generation is active.
+    - **Pre-injected `<context>` Envelope**: Automatically formats `@file` mention chips into clean markdown blocks preceding the prompt.
+    - **Dedicated Error Message Cards**: Clean UI cards with diagnostic info and direct Settings link on CLI or auth errors.
+  - **Verification**: 100% verified across Go backend tests (61 tests passing) and Vitest frontend tests (45 tests passing).
 
 #### Sub-Phase 6.10: Git-Driven Review Gates (Apply & Code Manipulation)
 - **Status**: ⚪ Planned

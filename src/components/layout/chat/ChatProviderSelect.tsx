@@ -14,6 +14,7 @@ export function ChatProviderSelect() {
     setSessionModel,
     settings,
     updateAgentSettings,
+    antigravityModels,
   } = useWorkbench()
 
   const [isOpen, setIsOpen] = useState(false)
@@ -125,10 +126,15 @@ export function ChatProviderSelect() {
           {/* Grouped List of All Providers & Models */}
           <div className="provider-popover-body">
             {displayedProviders.map((provider) => {
-              const models = getMergedProviderModels(
-                provider.id,
-                settings?.agent?.customModels,
-              )
+              const models =
+                provider.id === "antigravity" &&
+                antigravityModels &&
+                antigravityModels.length > 0
+                  ? antigravityModels
+                  : getMergedProviderModels(
+                      provider.id,
+                      settings?.agent?.customModels,
+                    )
               return (
                 <div key={provider.id} className="provider-section">
                   {/* Provider Section Header */}

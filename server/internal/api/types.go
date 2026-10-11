@@ -201,6 +201,13 @@ type GitOperationResponse struct {
 	Status string `json:"status"`
 }
 
+// UnlockResponse models repository unlock outcome payload.
+type UnlockResponse struct {
+	Unlocked bool     `json:"unlocked"`
+	Removed  []string `json:"removed"`
+	Message  string   `json:"message,omitempty"`
+}
+
 // AddRemoteRequest models remote registration payload.
 type AddRemoteRequest struct {
 	Name string `json:"name"`

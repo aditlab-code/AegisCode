@@ -252,3 +252,136 @@ export async function deleteBackendChatSession(id: string): Promise<boolean> {
     return false
   }
 }
+
+export interface StreamChatRequest {
+  workspaceDir?: string
+  conversationId?: string
+  model?: string
+  prompt: string
+}
+
+export interface StreamEvent {
+  type: "start" | "thinking" | "tool_call" | "chunk" | "done" | "error"
+  conversationId?: string
+  delta?: string
+  thinking?: string
+  toolCall?: any
+  message?: any
+  error?: string
+}
+
+export async function fetchAIModels(): Promise<any[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/ai/models`)
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.models || []
+  } catch {
+    return []
+  }
+}
+
+export async function fetchAISkills(): Promise<any[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/ai/skills`)
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.skills || []
+  } catch {
+    return []
+  }
+}
+
+export async function fetchAITranscript(
+  conversationId: string,
+): Promise<any[]> {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/v1/ai/transcript/${encodeURIComponent(conversationId)}`,
+    )
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.messages || []
+  } catch {
+    return []
+  }
+}
+
+export async function streamAIChat(
+  req: StreamChatRequest,
+  onEvent: (event: StreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/v1/ai/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+    signal,
+  })
+
+  if (!res.ok) {
+    let errMsg = `Server returned ${res.status} ${res.statusText}`
+    try {
+      const errJson = await res.json()
+      if (errJson.error) errMsg = errJson.error
+    } catch {}
+    onEvent({ type: "error", error: errMsg })
+    return
+  }
+
+  if (!res.body) {
+    onEvent({ type: "error", error: "Empty response body from AI server" })
+    return
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder("utf-8")
+  let buffer = ""
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      const lines = buffer.split("\n\n")
+      buffer = lines.pop() || ""
+
+      for (const block of lines) {
+        if (!block.trim()) continue
+        const eventLines = block.split("\n")
+        let currentType = "chunk"
+        let dataStr = ""
+
+        for (const line of eventLines) {
+          if (line.startsWith("event: ")) {
+            currentType = line.slice(7).trim()
+          } else if (line.startsWith("data: ")) {
+            dataStr = line.slice(6).trim()
+          }
+        }
+
+        if (dataStr) {
+          try {
+            const parsed = JSON.parse(dataStr)
+            onEvent({
+              type: currentType as any || parsed.type || "chunk",
+              ...parsed,
+            })
+          } catch {
+            onEvent({
+              type: "chunk",
+              delta: dataStr,
+            })
+          }
+        }
+      }
+    }
+  } catch (err: any) {
+    if (signal?.aborted) {
+      onEvent({ type: "error", error: "Generation stopped by user." })
+      return
+    }
+    onEvent({ type: "error", error: err?.message || "Stream read error" })
+  }
+}

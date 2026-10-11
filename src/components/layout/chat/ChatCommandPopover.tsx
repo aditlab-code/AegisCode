@@ -29,26 +29,29 @@ export function ChatCommandPopover({
   selectedIndex,
   setSelectedIndex,
 }: ChatCommandPopoverProps) {
-  const { files } = useWorkbench()
+  const { files, skills } = useWorkbench()
+  const activeSkills = skills && skills.length > 0 ? skills : SKILL_COMMANDS
 
   const items: PopoverItem[] = []
 
   if (type === "command") {
     const q = query.toLowerCase()
-    SKILL_COMMANDS.filter(
-      (s) =>
-        s.command.toLowerCase().includes(q) ||
-        s.name.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q),
-    ).forEach((s) => {
-      items.push({
-        id: s.command,
-        label: s.command,
-        detail: `${s.name} · ${s.description}`,
-        icon: "code",
-        insertText: `${s.command} `,
+    activeSkills
+      .filter(
+        (s) =>
+          s.command.toLowerCase().includes(q) ||
+          s.name.toLowerCase().includes(q) ||
+          s.description.toLowerCase().includes(q),
+      )
+      .forEach((s) => {
+        items.push({
+          id: s.command,
+          label: s.command,
+          detail: `${s.name} · ${s.description}`,
+          icon: "code",
+          insertText: `${s.command} `,
+        })
       })
-    })
   } else if (type === "mention") {
     const q = query.toLowerCase()
     files

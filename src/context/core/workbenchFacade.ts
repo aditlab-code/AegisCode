@@ -147,10 +147,18 @@ export function useWorkbenchFacade() {
   }, [])
 
   const [gitDiffVersion, setGitDiffVersion] = useState(0)
+  const fileChangeGitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  )
 
   const onFilesChangedOnDisk = useCallback((_evt: WorkspaceChangeEvent) => {
-    gitRef.current?.refreshGit()
-    setGitDiffVersion((v) => v + 1)
+    if (fileChangeGitTimerRef.current) {
+      clearTimeout(fileChangeGitTimerRef.current)
+    }
+    fileChangeGitTimerRef.current = setTimeout(() => {
+      gitRef.current?.refreshGit()
+      setGitDiffVersion((v) => v + 1)
+    }, 150)
   }, [])
 
   const workspace = useWorkspaceCore({
@@ -823,7 +831,10 @@ export function useWorkbenchFacade() {
     commitHash: git.commitHash,
     isLoadingGit: git.isLoadingGit,
     gitError: git.gitError,
+    isRepoLocked: git.isRepoLocked,
+    isOperatingGit: git.isOperatingGit,
     refreshGit: git.refreshGit,
+    unlockRepo: git.unlockRepo,
     initRepo: git.initRepo,
     checkoutBranch: git.checkoutBranch,
     createBranch: git.createBranch,
@@ -871,6 +882,10 @@ export function useWorkbenchFacade() {
     deleteSession: chat.deleteSession,
     setSessionModel: chat.setSessionModel,
     chatMessages: chat.chatMessages,
+    isGenerating: chat.isGenerating,
+    stopGenerating: chat.stopGenerating,
+    skills: chat.skills,
+    antigravityModels: chat.antigravityModels,
     sendChatMessage: (text: string, customContext?: ContextItem[]) => {
       const itemsToSend =
         customContext !== undefined ? customContext : contextItems

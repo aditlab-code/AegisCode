@@ -207,6 +207,17 @@ All operations interact directly with the local native Git CLI binary on the act
 - `GET /api/v1/git/diff?file=<path>&staged=<bool>&commit=<hash>`
   - Retrieves unified diff text, original content (from HEAD/commit), and modified content for the in-editor Side-by-Side diff viewer (`DiffEditorPane.tsx`).
   - Response: `{ "file": string, "staged": boolean, "diff": string, "original": string, "modified": string }`
+- `POST /api/v1/git/unlock`
+  - Safely scans and removes stale lock files left behind by interrupted external Git commands, AI agents, or crashed editors (`.git/index.lock`, `.git/HEAD.lock`, `.git/config.lock`, `.git/packed-refs.lock`, and any orphaned `.git/refs/**/*.lock`).
+  - Response: `{ "unlocked": boolean, "removed": ["index.lock", ...], "message": string }`
+
+#### Git Concurrency & Stale Lock Auto-Recovery Architecture
+To eliminate race conditions and the common `fatal: Unable to create '.../.git/index.lock': File exists` error when text editors, AI agents, and file watchers interact simultaneously:
+1. **Server Mutex Serialization**: Every Git execution through Go backend `git.Service` is guarded by an internal `sync.Mutex`. Concurrent requests from the frontend (e.g. background polling, multiple tab updates, or rapid staging) are queued and executed sequentially.
+2. **Read-Only Lock Isolation (`GIT_OPTIONAL_LOCKS=0`)**: Read operations (`status`, `branches`, `log`, `diff`, `timeline`, `tags`) are executed with `GIT_OPTIONAL_LOCKS=0` and `--no-optional-locks`. Git will never attempt to acquire or update index locks during background queries.
+3. **Transient Retry with Backoff**: If an index-mutating command (`stage`, `commit`, `checkout`, `restore`) encounters an active `index.lock`, it retries up to 3 times (50ms, 150ms, 300ms) before failing.
+4. **Stale Lock Auto-Recovery**: If a lock file remains after retries and its modification timestamp is older than 2 seconds (`time.Since(modTime) > 2s`), the engine identifies it as an abandoned lock from a crashed process, safely removes `.git/index.lock`, and re-executes the command automatically.
+5. **UI Resiliency & Manual Unlock**: The frontend tracks `isRepoLocked` state and renders a dedicated warning banner with an **Unlock Repository** button in the Source Control panel, allowing one-click resolution.
 
 ### D. Server-Sent Events (SSE) Streaming
 - `GET /api/v1/events/workspace`
@@ -265,9 +276,9 @@ All operations interact directly with the local native Git CLI binary on the act
 
 ### H. Flat-File Persistence & State Management (Sub-Phase 6.4)
 - `GET /api/v1/config`
-  - Retrieves global user preferences, model choices, and bypassed auth tokens from `~/.aegis/config.json`.
+  - Retrieves global user preferences, model choices, provider credentials, and custom models from `~/.aegis/config.json`.
 - `POST /api/v1/config`
-  - Body: `{ "theme": "...", "defaultModel": "...", "bypassTokens": {...}, "settings": {...} }`
+  - Body: `{ "theme": "...", "defaultProvider": "...", "defaultModel": "...", "providerKeys": {...}, "providerBaseURLs": {...}, "customModels": [...], "bypassTokens": {...}, "settings": {...} }`
   - Atomically persists user preferences to `~/.aegis/config.json`.
 - `GET /api/v1/state`
   - Retrieves application state (`recentProjects`, `lastWorkspace`, `activeSessionId`) from `~/.aegis/state.json`.
@@ -288,6 +299,47 @@ All operations interact directly with the local native Git CLI binary on the act
   - Atomically saves chat session to `~/.aegis/chats/<id>.json`.
 - `DELETE /api/v1/chats/:id`
   - Removes session file from `~/.aegis/chats/<id>.json`.
+
+### I. AI Provider Testing, Probing & Auto-Discovery (Sub-Phase 6.8)
+- `POST /api/v1/ai/test`
+  - Body: `{ "provider": "antigravity" | "claude" | "opencode" | "openrouter", "key": "string", "baseURL": "string", "model": "string" }`
+  - Executes zero-token cost connectivity verification, latency calculation, and credential probing:
+    - **Antigravity Auto-Discovery Probe (`server/internal/ai/probe.go`)**:
+      - Automatically discovers and inspects `~/.gemini/oauth_creds.json` and `~/.gemini/antigravity-cli/brain`.
+      - Extracts active Google account email, validates OAuth tokens and expiry timestamps, and confirms brain directory availability.
+      - Never runs full generative completions, ensuring zero token cost and sub-60ms response latency.
+      - Response: `{ "success": true, "latencyMs": 55, "message": "Antigravity OAuth credentials verified", "details": { "account": "...", "brainDir": "...", "tokenExpiry": "..." } }`.
+    - **Claude CLI Probe**:
+      - Resolves `claude` executable in system `$PATH` via `exec.LookPath`.
+      - Executes fast `claude --version` with a 5-second context timeout to verify CLI availability and version information.
+    - **OpenCode & OpenRouter HTTP Probe**:
+      - Issues lightweight HTTP `GET /models` request with `Authorization: Bearer <key>` header.
+      - Confirms HTTP 200 OK and measures live round-trip latency in milliseconds.
+
+### J. Live 2-Way AI Agent Execution & SSE Streaming (Sub-Phase 6.9)
+- `POST /api/v1/ai/chat`
+  - Content-Type: `application/json` (Input), `text/event-stream` (Output stream).
+  - Body: `{ "workspaceDir": "/path/to/project", "conversationId": "optional-uuid", "model": "gemini-3.8-flash-high", "prompt": "..." }`
+  - Executes out-of-process Antigravity CLI (`agy`) bound to the user's active workspace (`cmd.Dir = activeWorkspace`) with `--dangerously-skip-permissions` and `--output-format stream-json`.
+  - Streams real-time Server-Sent Events (SSE):
+    - `event: start`: Emits initial conversation UUID captured from Antigravity's `init` event.
+    - `event: thinking`: Emits real-time reasoning deltas (`thinking_delta`).
+    - `event: tool_call`: Emits tool invocation metadata (`tool_name`, `tool_args`, `status: "running"`).
+    - `event: chunk`: Emits live response text tokens (`text_delta`).
+    - `event: done`: Emits final complete message payload (`text`, `thinking`, `toolCalls`, `status`).
+    - `event: error`: Dispatches explicit error diagnostics if execution fails or is interrupted.
+  - **Fail-Safe Abort & Cancellation**: Tied directly to HTTP request context (`r.Context()`); if the client disconnects or clicks "Stop Generating" (AbortController), the backend immediately kills the child process via `cmd.Process.Kill()`, preventing orphaned processes and resource leaks.
+  - **Model Normalization Engine**: Automatic mapping of bare model names (e.g., `gemini-3.8-flash` -> `gemini-3.8-flash-high`) ensuring CLI commands never fail due to missing `--effort` arguments.
+  - **Conversation Lifecycle Safety**: Pre-checks existence of `~/.gemini/antigravity-cli/brain/<uuid>`. Sesi baru dieksekusi tanpa `--conversation` untuk membiarkan Antigravity membuat ID resmi, mencegah warning `conversation not found`.
+- `GET /api/v1/ai/models`
+  - In-memory 5-minute cached discovery of available Antigravity models (`agy models`).
+  - Response: `{ "models": [ { "id": "gemini-3.8-flash-high", "name": "Gemini 3.8 Flash (High)", "provider": "antigravity", "description": "..." }, ... ] }`.
+- `GET /api/v1/ai/skills`
+  - Discovers built-in Antigravity skills (`~/.gemini/antigravity-cli/builtin/skills`) and standard slash commands (`/plan`, `/spec`, `/review`, `/debug`, `/simplify`, `/goal`, `/schedule`, `/browser`, `/grill-me`, `/boost`).
+  - Response: `{ "skills": [ { "command": "/plan", "name": "Implementation Plan", "description": "..." }, ... ] }`.
+- `GET /api/v1/ai/transcript/:id`
+  - Rehydrates full conversational turns, thinking traces, and tool call histories directly from Antigravity's native `transcript.jsonl` in `~/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/`.
+  - Response: `{ "conversationId": "uuid", "messages": [ ... ] }`.
 
 ---
 

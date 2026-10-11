@@ -144,10 +144,33 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
     - Header action buttons (`New session`, `Toggle sessions`, `Close`) shielded with `flex-shrink: 0`.
     - Active session title and agent heading dynamically adapt with `min-width: 0`, `flex: 1`, and ellipsis truncation.
     - Master session sidebar constrained to **180px** with session card titles styled with `flex: 1`, `min-width: 0`, and native `title` tooltips.
-  - **Model & Provider selector**: Grouped dropdown supporting local runners, cloud providers, and custom endpoints.
-  - **Floating autocomplete popover**: Triggered on `/` (Skills & Slash commands) and `@` (File paths & Context tags).
-  - **Quick action suggestion pills**: Compact horizontal chips above the composer.
-  - **Multi-line textarea composer**: Resilient composer with model badge, attachment triggers, and submit button fitting cleanly at 300px minimum width.
+  - **AI Provider & Model Upward Popover (`ChatProviderSelect.tsx`)**:
+    - **Upward-Floating Position**: Positioned at `bottom: calc(100% + 8px); left: 0; z-index: 100; width: 325px;` with `0 8px 28px rgba(0,0,0,0.45)` shadow and smooth fade-in animation. Floats upwards above the composer footer.
+    - **Zero CSS Clipping Rule**: Maintained `overflow: visible` across `.composer`, `.composer-footer`, `.composer-footer-left`, and `.composer-wrapper` to prevent clipping within the footer bar.
+    - **Unified Multi-Provider Catalog**: Lists all 4 AI providers (`Antigravity`, `Claude`, `OpenCode`, `OpenRouter`) and all their standard + custom models simultaneously in one menu.
+    - **Quick Filter Tabs**: Horizontal pills (`[Semua]`, `[AGY]`, `[CLD]`, `[OC]`, `[OR]`) with color-coded dot badges for instant single-provider filtering.
+    - **Atomic Selection Handler**: Selecting any model immediately sets both provider and model on the active session (`setSessionModel`) and persists agent settings.
+  - **Dual Provider & Model Message Badges (`ChatMessageList.tsx`)**:
+    - Assistant message headers render both the provider tag (`[AGY]`, `[CLD]`, `[OC]`, `[OR]`) and the model identifier pill (`[gemini-3.8-flash-high]`), providing instant visibility of the serving engine.
+  - **Live 2-Way Agentic Streaming & Real-Time SSE Consumer (`chatCore.ts`)**:
+    - Replaced mock contextual responses with live Server-Sent Events (`POST /api/v1/ai/chat`) connecting directly to the Antigravity backend engine.
+    - Typewriter streaming text updates with pulsing cursor (`.streaming-cursor`) and shimmer loader (`.message-body-streaming-shimmer`).
+  - **Rich Agentic Baloon Architecture (`ChatMessageList.tsx`)**:
+    - **Thinking Process Accordion (`.message-thinking-block`)**: Collapsible reasoning viewer with real-time in-progress pulsing indicator (`animate-pulse text-accent`).
+    - **Interactive Tool Call Action Chips (`.tool-call-chip`)**: Real-time status indicators (spinner during execution, green checkmark on completion, red error badge on failure) with collapsible JSON arguments and tool output viewer (`.tool-call-details`).
+    - **Dedicated In-Chat Error Cards (`.chat-error-card`)**: High-visibility error diagnostics with an actionable `Open Settings` button, preventing blank bubbles or unhandled exceptions.
+    - **Empty State Guard**: Renders informative fallback (`Sedang menunggu respons...`) if generation concludes with empty text.
+  - **In-Flight Control & Stop Generation (`ChatComposer.tsx`)**:
+    - Send button dynamically transforms into a red accent **Stop Generation** button (`.composer-stop-btn`) while generation is active.
+    - `Escape` key shortcut support to abort the in-flight SSE stream and immediately kill the child process via `AbortController`.
+  - **Dynamic Skills & Command Autocomplete (`ChatCommandPopover.tsx`)**:
+    - Autocomplete popover for `/` populated dynamically via `GET /api/v1/ai/skills` discovering all local Antigravity builtin skills (`/plan`, `/spec`, `/review`, `/goal`, etc.).
+  - **Context Extractor Chips & Envelope Pre-Injection (`ChatComposer.tsx`)**:
+    - Interactive chips capturing active editor selection or full file buffer, with estimated token counts, truncation guardrails (>50k chars), and dismiss memory.
+    - Attached context files are pre-injected into a structured Markdown `<context>` block preceding the prompt, eliminating extra round-trips for file reading.
+  - **Setup Needed Guard**:
+    - Warning badge (`Icon name="warning"`) displayed when active provider lacks credentials, linking directly to Settings Modal.
+  - **Multi-line Textarea Composer**: Resilient composer with model badge, attachment triggers, and submit button fitting cleanly at 300px minimum width.
 
 ### 7. Status Bar (`status-bar/`)
 - **Path**: [`src/components/layout/status-bar/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/status-bar)
@@ -172,11 +195,17 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
 
 ### 8. Settings Overlay (`settings/`)
 - **Path**: [`src/components/layout/settings/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/settings)
-- **Primary Components**: `SettingsModal.tsx`, `settings-modal.css`
+- **Primary Components**: `SettingsModal.tsx`, `settingsRegistry.ts`, `settings-modal.css`
 - **Visual Design**:
   - Modal overlay with dimmed backdrop.
-  - Two-column VS Code-style preferences: Left category rail (Editor, Terminal, AI Agent, Theme, Network) and right settings card list.
+  - Two-column VS Code-style preferences: Left category rail (Editor, Files, Workbench, Terminal, Features, Companion, AI Agent) and right settings card list.
   - Top search input with instant regex filtering across all settings options.
+  - **AI Agent Settings & Models Management**:
+    - Unified multi-provider cards for Antigravity, Claude, OpenCode, and OpenRouter.
+    - **Antigravity Auto-Discovery Card**: Auto-detected via `~/.gemini/oauth_creds.json` and brain workspace, with 1-line concise hint and live sub-60ms connection probe.
+    - **Custom Models Tag Chips**: Interactive pills allowing adding and deleting arbitrary custom model IDs per provider (`+ Add` / `✕`).
+    - **Live Connection Test**: Real-time test probe buttons measuring round-trip latency (ms) with spinner and status tooltips.
+  - **Strict Zero-Emoji UI**: 100% SVG UI `<Icon name="..." />` components across all settings cards and modal controls.
 
 ### 9. Command Palette (`command-palette/`)
 - **Path**: [`src/components/layout/command-palette/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/command-palette)

@@ -117,6 +117,7 @@ export interface ChatSession {
   model: string
   messages: ChatMessage[]
   createdAt: number
+  conversationId?: string
 }
 
 export interface SkillCommand {
@@ -217,12 +218,27 @@ export interface EditorSelectionRange {
   selectedText: string
 }
 
+export interface ToolCallItem {
+  id: string
+  name: string
+  summary?: string
+  status: "running" | "success" | "error"
+  args?: Record<string, any>
+  output?: string
+}
+
 export interface ChatMessage {
   id: string
   role: "agent" | "user" | "system"
   text: string
   timestamp?: number
   context?: ContextItem[]
+  provider?: ChatProvider
+  model?: string
+  thinking?: string
+  toolCalls?: ToolCallItem[]
+  isStreaming?: boolean
+  error?: string
 }
 
 export interface GitUser {

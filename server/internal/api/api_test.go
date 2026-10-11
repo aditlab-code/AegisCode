@@ -464,6 +464,43 @@ func TestGitInitStageUnstage_E2E(t *testing.T) {
 	}
 }
 
+func TestGitUnlockEndpoint(t *testing.T) {
+	_, handler, tempDir := setupTestServer(t, "")
+	defer os.RemoveAll(tempDir)
+
+	// Init git repo
+	initReq := httptest.NewRequest(http.MethodPost, "/api/v1/git/init", nil)
+	rrInit := executeRequest(handler, initReq)
+	if rrInit.Code != http.StatusOK {
+		t.Fatalf("expected 200 for init, got %d", rrInit.Code)
+	}
+
+	// Create artificial locks
+	indexLock := filepath.Join(tempDir, ".git", "index.lock")
+	_ = os.WriteFile(indexLock, []byte("locked"), 0644)
+
+	unlockReq := httptest.NewRequest(http.MethodPost, "/api/v1/git/unlock", nil)
+	rrUnlock := executeRequest(handler, unlockReq)
+	if rrUnlock.Code != http.StatusOK {
+		t.Fatalf("expected 200 for unlock, got %d: %s", rrUnlock.Code, rrUnlock.Body.String())
+	}
+
+	var res UnlockResponse
+	if err := json.Unmarshal(rrUnlock.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed to unmarshal unlock response: %v", err)
+	}
+	if !res.Unlocked {
+		t.Errorf("expected Unlocked true, got false")
+	}
+	if len(res.Removed) != 1 || res.Removed[0] != "index.lock" {
+		t.Errorf("expected removed ['index.lock'], got %v", res.Removed)
+	}
+
+	if _, err := os.Stat(indexLock); !os.IsNotExist(err) {
+		t.Errorf("expected index.lock to be deleted after unlock")
+	}
+}
+
 func TestTerminalEndpoints(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "aegis-term-api-test-*")
 	if err != nil {
@@ -922,6 +959,73 @@ func TestAIProbeEndpoint(t *testing.T) {
 		t.Errorf("expected provider 'unknown-provider', got %s", res.Provider)
 	}
 }
+
+func TestAIModelsAndSkillsEndpoints(t *testing.T) {
+	server, handler, tempDir := setupTestServer(t, "")
+	defer os.RemoveAll(tempDir)
+	defer func() { _ = server.ws.Close() }()
+
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+
+	// 1. Test GET /api/v1/ai/models
+	respModels, err := http.Get(ts.URL + "/api/v1/ai/models")
+	if err != nil {
+		t.Fatalf("failed to call ai models endpoint: %v", err)
+	}
+	defer respModels.Body.Close()
+
+	if respModels.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK for models, got %d", respModels.StatusCode)
+	}
+
+	var modelsRes struct {
+		Models []map[string]any `json:"models"`
+	}
+	if err := json.NewDecoder(respModels.Body).Decode(&modelsRes); err != nil {
+		t.Fatalf("failed to decode models response: %v", err)
+	}
+	if len(modelsRes.Models) == 0 {
+		t.Errorf("expected at least 1 model in response")
+	}
+
+	// 2. Test GET /api/v1/ai/skills
+	respSkills, err := http.Get(ts.URL + "/api/v1/ai/skills")
+	if err != nil {
+		t.Fatalf("failed to call ai skills endpoint: %v", err)
+	}
+	defer respSkills.Body.Close()
+
+	if respSkills.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK for skills, got %d", respSkills.StatusCode)
+	}
+
+	var skillsRes struct {
+		Skills []map[string]any `json:"skills"`
+	}
+	if err := json.NewDecoder(respSkills.Body).Decode(&skillsRes); err != nil {
+		t.Fatalf("failed to decode skills response: %v", err)
+	}
+	if len(skillsRes.Skills) == 0 {
+		t.Errorf("expected at least 1 skill in response")
+	}
+
+	// 3. Test POST /api/v1/ai/chat with empty prompt -> 400 Bad Request
+	chatReq := map[string]string{
+		"prompt": "",
+	}
+	b, _ := json.Marshal(chatReq)
+	respChat, err := http.Post(ts.URL+"/api/v1/ai/chat", "application/json", bytes.NewReader(b))
+	if err != nil {
+		t.Fatalf("failed to call chat endpoint: %v", err)
+	}
+	defer respChat.Body.Close()
+
+	if respChat.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 Bad Request for empty prompt, got %d", respChat.StatusCode)
+	}
+}
+
 
 
 
