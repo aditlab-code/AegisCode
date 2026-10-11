@@ -1,7 +1,9 @@
 package core
 
 import (
+	"bufio"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -465,3 +467,110 @@ func TestServerBootWithEmptyWorkspaceRoot(t *testing.T) {
 		t.Fatalf("expected isRepo false on uninitialized workspace, got true")
 	}
 }
+
+func TestTerminalSessionSSEWorkflow(t *testing.T) {
+	harness := setupCoreServer(t)
+	defer harness.teardown()
+
+	// 1. Create Terminal Session
+	createPayload := map[string]any{
+		"shell": "sh",
+		"cols":  80,
+		"rows":  24,
+	}
+	body, _ := json.Marshal(createPayload)
+	resp, err := harness.HTTPClient.Post(harness.BaseURL+"/api/v1/terminal/create", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("failed to create terminal session: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200 OK from terminal create, got %d: %s", resp.StatusCode, string(raw))
+	}
+
+	var createRes map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&createRes)
+	sessionID, ok := createRes["sessionId"].(string)
+	if !ok || sessionID == "" {
+		t.Fatalf("invalid or missing sessionId: %v", createRes)
+	}
+
+	// 2. Connect to SSE stream
+	sseReq, err := http.NewRequest(http.MethodGet, harness.BaseURL+"/api/v1/events/terminal/"+sessionID, nil)
+	if err != nil {
+		t.Fatalf("failed to create SSE request: %v", err)
+	}
+	sseReq.Header.Set("Accept", "text/event-stream")
+
+	sseClient := &http.Client{}
+	sseResp, err := sseClient.Do(sseReq)
+	if err != nil {
+		t.Fatalf("failed to connect to SSE stream: %v", err)
+	}
+	defer sseResp.Body.Close()
+
+	if sseResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK from SSE endpoint, got %d", sseResp.StatusCode)
+	}
+
+	// 3. Send Input command via HTTP POST
+	inputPayload := map[string]string{
+		"data": "echo HELLO_FROM_SSE_TERMINAL\n",
+	}
+	inBody, _ := json.Marshal(inputPayload)
+	inResp, err := harness.HTTPClient.Post(harness.BaseURL+"/api/v1/terminal/"+sessionID+"/input", "application/json", bytes.NewReader(inBody))
+	if err != nil {
+		t.Fatalf("failed to send terminal input: %v", err)
+	}
+	_ = inResp.Body.Close()
+	if inResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK from terminal input, got %d", inResp.StatusCode)
+	}
+
+	// 4. Read SSE stream and verify HELLO_FROM_SSE_TERMINAL appears
+	scanner := bufio.NewScanner(sseResp.Body)
+	found := false
+	deadline := time.After(5 * time.Second)
+
+	receivedChan := make(chan string, 50)
+	go func() {
+		for scanner.Scan() {
+			line := scanner.Text()
+			receivedChan <- line
+		}
+	}()
+
+	for !found {
+		select {
+		case line := <-receivedChan:
+			if strings.Contains(line, "data: {") {
+				var msg struct {
+					Payload string `json:"payload"`
+				}
+				dataStr := strings.TrimPrefix(line, "data: ")
+				if err := json.Unmarshal([]byte(dataStr), &msg); err == nil && msg.Payload != "" {
+					decoded, _ := base64.StdEncoding.DecodeString(msg.Payload)
+					if strings.Contains(string(decoded), "HELLO_FROM_SSE_TERMINAL") {
+						found = true
+					}
+				}
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for HELLO_FROM_SSE_TERMINAL in SSE stream")
+		}
+	}
+
+	// 5. Delete session
+	delReq, _ := http.NewRequest(http.MethodDelete, harness.BaseURL+"/api/v1/terminal/"+sessionID, nil)
+	delResp, err := harness.HTTPClient.Do(delReq)
+	if err != nil {
+		t.Fatalf("failed to delete terminal: %v", err)
+	}
+	_ = delResp.Body.Close()
+	if delResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK on terminal delete, got %d", delResp.StatusCode)
+	}
+}
+

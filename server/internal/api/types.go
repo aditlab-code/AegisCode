@@ -207,3 +207,52 @@ type AddRemoteRequest struct {
 	URL  string `json:"url"`
 }
 
+// CreateTerminalRequest models the terminal creation request payload.
+type CreateTerminalRequest struct {
+	Shell string `json:"shell,omitempty"`
+	Cwd   string `json:"cwd,omitempty"`
+	Cols  uint16 `json:"cols,omitempty"`
+	Rows  uint16 `json:"rows,omitempty"`
+}
+
+// CreateTerminalResponse models the terminal creation response payload.
+type CreateTerminalResponse struct {
+	SessionId string `json:"sessionId"`
+	Shell     string `json:"shell"`
+	Cwd       string `json:"cwd"`
+	Pid       int    `json:"pid"`
+}
+
+// TerminalInputRequest models the terminal input payload.
+type TerminalInputRequest struct {
+	Data string `json:"data"`
+}
+
+// TerminalResizeRequest models terminal dimension updates.
+type TerminalResizeRequest struct {
+	Cols uint16 `json:"cols"`
+	Rows uint16 `json:"rows"`
+}
+
+// TerminalSessionInfo models active session metadata.
+type TerminalSessionInfo struct {
+	SessionId string `json:"sessionId"`
+	Shell     string `json:"shell"`
+	Cwd       string `json:"cwd"`
+	Pid       int    `json:"pid"`
+	Running   bool   `json:"running"`
+}
+
+// TerminalSessionsResponse models the list of active terminal sessions.
+type TerminalSessionsResponse struct {
+	Sessions []TerminalSessionInfo `json:"sessions"`
+}
+
+// LogEvent models a real-time log event for the output channel.
+type LogEvent struct {
+	Channel   string `json:"channel"`
+	Message   string `json:"message"`
+	Timestamp string `json:"timestamp"`
+	Level     string `json:"level,omitempty"`
+}
+

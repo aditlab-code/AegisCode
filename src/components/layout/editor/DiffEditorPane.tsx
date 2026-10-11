@@ -31,6 +31,7 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
     tabSize,
     settings,
     updateEditorSettings,
+    gitDiffVersion,
   } = useWorkbench()
 
   const inheritEditorFont =
@@ -87,7 +88,7 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
     return () => {
       isCancelled = true
     }
-  }, [file, staged, commit, fetchDiff])
+  }, [file, staged, commit, fetchDiff, gitDiffVersion])
 
   // Synchronized scrolling handlers
   function handleLeftScroll(e: UIEvent<HTMLDivElement>) {

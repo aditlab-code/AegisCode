@@ -171,9 +171,12 @@ export function EditorTabs({
           const isDiff = isGitDiffTab(tab)
           const diffInfo = isDiff ? parseGitDiffTab(tab) : null
           const tabLabel = diffInfo ? diffInfo.displayName : tab
-          const isDirty = isDiff
-            ? Boolean(fileBuffers[diffInfo?.file || ""]?.isDirty)
-            : Boolean(fileBuffers[tab]?.isDirty)
+          const buf = isDiff
+            ? fileBuffers[diffInfo?.file || ""]
+            : fileBuffers[tab]
+          const isDirty = Boolean(buf?.isDirty)
+          const hasDiskConflict = Boolean(buf?.hasDiskConflict)
+          const isDeletedOnDisk = Boolean(buf?.isDeletedOnDisk)
 
           return (
             <button
@@ -195,18 +198,44 @@ export function EditorTabs({
               }}
               onDragStart={(e) => handleDragStart(e, tab, index)}
               onDrop={(e) => handleTabDrop(e, index)}
-              title={tabLabel}
+              title={
+                isDeletedOnDisk
+                  ? `${tabLabel} (Deleted from disk)`
+                  : hasDiskConflict
+                    ? `${tabLabel} (File changed on disk while unsaved)`
+                    : tabLabel
+              }
               type="button"
             >
               <Icon
                 className={
-                  isDiff ? "text-[var(--color-accent)] shrink-0" : "shrink-0"
+                  isDiff
+                    ? "text-[var(--color-accent)] shrink-0"
+                    : isDeletedOnDisk
+                      ? "text-error shrink-0"
+                      : "shrink-0"
                 }
-                name={isDiff ? "git" : "code"}
+                name={isDiff ? "git" : isDeletedOnDisk ? "trash" : "code"}
                 size={14}
               />
-              <span className="truncate">{tabLabel}</span>
+              <span
+                className={`truncate ${
+                  isDeletedOnDisk ? "line-through opacity-70 text-error" : ""
+                }`}
+              >
+                {tabLabel}
+                {isDeletedOnDisk ? " (deleted)" : ""}
+              </span>
               <span className="tab-actions-container">
+                {hasDiskConflict && (
+                  <span
+                    aria-label="File modified on disk while unsaved"
+                    className="text-warning shrink-0 flex items-center"
+                    title="Conflict: file modified externally on disk"
+                  >
+                    <Icon name="warning" size={12} />
+                  </span>
+                )}
                 {isDirty && (
                   <span
                     aria-label="Unsaved changes"

@@ -1,6 +1,11 @@
 import { useCallback, useState } from "react"
 import type { TerminalSession } from "../../types/workbench"
 import { initialTerminalSessions } from "../../data/mockData"
+import {
+  createTerminalApi,
+  sendTerminalInputApi,
+  closeTerminalApi,
+} from "../../utils/terminalApi"
 
 export interface TerminalCreateResult {
   sessions: TerminalSession[]
@@ -137,16 +142,48 @@ export function useTerminalCore() {
     [activeTerminalSessionId],
   )
 
-  const createTerminalSession = useCallback((shellName = "zsh") => {
-    setTerminalSessions((sessions) => {
-      const res = createTerminalSessionLogic(sessions, shellName)
-      setActiveTerminalSessionId(res.newSession.id)
-      return res.sessions
-    })
-  }, [])
+  const createTerminalSession = useCallback(
+    (shellName = "zsh") => {
+      void (async () => {
+        const data = await createTerminalApi(shellName)
+        if (data) {
+          setTerminalSessions((sessions) => {
+            const nextNum = sessions.length + 1
+            const newSession: TerminalSession = {
+              id: data.sessionId,
+              name: `${nextNum}: ${shellName}`,
+              shell: shellName,
+              lines: [],
+              running: true,
+              commandHistory: [],
+              isLive: true,
+            }
+            setActiveTerminalSessionId(newSession.id)
+            return [...sessions, newSession]
+          })
+          return
+        }
+
+        // Fallback to offline logic
+        setTerminalSessions((sessions) => {
+          const res = createTerminalSessionLogic(sessions, shellName)
+          const updated = res.sessions.map((s) =>
+            s.id === res.newSession.id ? { ...s, isLive: false } : s,
+          )
+          setActiveTerminalSessionId(res.newSession.id)
+          return updated
+        })
+      })()
+    },
+    [],
+  )
 
   const closeTerminalSession = useCallback((idToClose: string) => {
     setTerminalSessions((sessions) => {
+      const target = sessions.find((s) => s.id === idToClose)
+      if (target?.isLive) {
+        void closeTerminalApi(idToClose)
+      }
       const res = closeTerminalSessionLogic(sessions, idToClose)
       setActiveTerminalSessionId((currId) =>
         currId === idToClose ? res.nextActiveId : currId,
@@ -168,11 +205,15 @@ export function useTerminalCore() {
   const sendTerminalCommand = useCallback(
     (commandText: string, sessionId?: string) => {
       const targetId = sessionId || activeTerminalSessionId
-      setTerminalSessions((sessions) =>
-        sessions.map((s) =>
+      setTerminalSessions((sessions) => {
+        const target = sessions.find((s) => s.id === targetId)
+        if (target?.isLive) {
+          void sendTerminalInputApi(targetId, commandText + "\n")
+        }
+        return sessions.map((s) =>
           s.id === targetId ? processTerminalCommandLogic(s, commandText) : s,
-        ),
-      )
+        )
+      })
     },
     [activeTerminalSessionId],
   )

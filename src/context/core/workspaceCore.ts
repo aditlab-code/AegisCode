@@ -5,6 +5,7 @@ import type {
   FileItem,
   LinterSettings,
   NotificationItem,
+  WorkspaceChangeEvent,
 } from "../../types/workbench"
 import {
   initialDiagnostics,
@@ -220,6 +221,7 @@ export interface UseWorkspaceCoreOptions {
   showToast: (msg: string) => void
   openFileInPane?: (filename: string) => void
   setCursorPosition?: (pos: CursorCoordinates) => void
+  onFilesChangedOnDisk?: (evt: WorkspaceChangeEvent) => void
 }
 
 /**
@@ -263,6 +265,7 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
     showToast,
     openFileInPane,
     setCursorPosition,
+    onFilesChangedOnDisk,
   } = options
 
   const [rootWorkspacePath, setRootWorkspacePath] = useState<string>("")
@@ -557,25 +560,35 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
     showToast("Workspace refreshed")
   }, [loadWorkspace, showToast])
 
-  // Safe file content fetcher with concurrency guard
+  // Safe file content fetcher with dirty conflict protection
   const fetchBufferSafely = useCallback((filename: string) => {
     if (!filename) return
-    const { requestId } = fileFetchGuardRef.current.nextRequest()
 
     fetchFileContent(filename)
       .then((content) => {
-        if (!fileFetchGuardRef.current.isCurrent(requestId)) {
-          return
-        }
-        setFileBuffers((curr) => ({
-          ...curr,
-          [filename]: {
-            content,
-            savedContent: content,
-            isDirty: false,
-            language: detectLanguage(filename),
-          },
-        }))
+        setFileBuffers((curr) => {
+          const existing = curr[filename]
+          if (existing?.isDirty) {
+            return {
+              ...curr,
+              [filename]: {
+                ...existing,
+                hasDiskConflict: true,
+              },
+            }
+          }
+          return {
+            ...curr,
+            [filename]: {
+              content,
+              savedContent: content,
+              isDirty: false,
+              hasDiskConflict: false,
+              isDeletedOnDisk: false,
+              language: detectLanguage(filename),
+            },
+          }
+        })
         const diags = validateSyntax(filename, content, true)
         setDiagnostics((dPrev) => [
           ...dPrev.filter((d) => !d.location.startsWith(filename)),
@@ -583,11 +596,120 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
         ])
       })
       .catch((err) => {
-        if (fileFetchGuardRef.current.isCurrent(requestId)) {
-          console.warn("Failed to fetch file content:", err)
-        }
+        console.warn(`Failed to fetch file content for ${filename}:`, err)
       })
   }, [])
+
+  const fileBuffersRef = useRef(fileBuffers)
+  fileBuffersRef.current = fileBuffers
+
+  // Real-time Workspace SSE Stream (/api/v1/events/workspace)
+  useEffect(() => {
+    if (!rootWorkspacePath || typeof window === "undefined") return
+
+    let sse: EventSource | null = null
+    let reconnectTimer: NodeJS.Timeout | null = null
+    let hasConnectedOnce = false
+
+    const connect = () => {
+      sse = new EventSource("/api/v1/events/workspace")
+
+      sse.addEventListener("connected", () => {
+        if (hasConnectedOnce) {
+          // Reconnection reconciliation: refresh tree & git status
+          void loadWorkspace()
+        }
+        hasConnectedOnce = true
+      })
+
+      sse.addEventListener("change", (e) => {
+        try {
+          const evt = JSON.parse(e.data) as WorkspaceChangeEvent
+          const { created = [], modified = [], deleted = [] } = evt
+
+          // 1. Refresh Explorer tree if files/folders were created or deleted
+          if (created.length > 0 || deleted.length > 0) {
+            fetchWorkspaceTree()
+              .then((treeData) => setFiles(treeData.flatTree))
+              .catch((err) => console.warn("Tree refresh error:", err))
+          }
+
+          // 2. Synchronize open buffers
+          const activeBuffers = fileBuffersRef.current
+          const filesToReload = [...created, ...modified]
+
+          for (const file of filesToReload) {
+            const buf = activeBuffers[file]
+            if (buf) {
+              if (!buf.isDirty) {
+                // Buffer is clean: seamless reload from disk
+                fetchBufferSafely(file)
+              } else {
+                // Buffer has unsaved edits: non-destructive conflict flag
+                setFileBuffers((prev) => {
+                  const current = prev[file]
+                  if (!current) return prev
+                  return {
+                    ...prev,
+                    [file]: {
+                      ...current,
+                      hasDiskConflict: true,
+                    },
+                  }
+                })
+                showToast(`File changed on disk: ${file}`)
+              }
+            }
+          }
+
+          if (deleted.length > 0) {
+            for (const file of deleted) {
+              const buf = activeBuffers[file]
+              if (buf) {
+                setFileBuffers((prev) => {
+                  const current = prev[file]
+                  if (!current) return prev
+                  return {
+                    ...prev,
+                    [file]: {
+                      ...current,
+                      isDeletedOnDisk: true,
+                    },
+                  }
+                })
+                showToast(`File deleted on disk: ${file}`)
+              }
+            }
+          }
+
+          // 3. Notify workbench facade for Git status and diff tabs
+          if (created.length > 0 || modified.length > 0 || deleted.length > 0) {
+            onFilesChangedOnDisk?.(evt)
+          }
+        } catch (err) {
+          console.error("Failed to parse workspace change event:", err)
+        }
+      })
+
+      sse.onerror = () => {
+        sse?.close()
+        reconnectTimer = setTimeout(connect, 3000)
+      }
+    }
+
+    connect()
+
+    return () => {
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      if (sse) sse.close()
+    }
+  }, [
+    rootWorkspacePath,
+    fetchBufferSafely,
+    loadWorkspace,
+    onFilesChangedOnDisk,
+    showToast,
+  ])
 
   const ensureFileBuffer = useCallback(
     (filename: string) => {

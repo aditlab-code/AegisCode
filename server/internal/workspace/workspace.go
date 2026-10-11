@@ -38,13 +38,23 @@ type RepoStatus struct {
 }
 
 type Manager struct {
-	mu       sync.RWMutex
-	rootPath string
+	mu            sync.RWMutex
+	rootPath      string
+	watcher       *Watcher
+	watcherCancel func()
+
+	subMu sync.RWMutex
+	subs  map[chan WorkspaceChangeEvent]struct{}
 }
 
 func NewManager(initialRoot string) (*Manager, error) {
+	m := &Manager{
+		rootPath: "",
+		subs:     make(map[chan WorkspaceChangeEvent]struct{}),
+	}
+
 	if strings.TrimSpace(initialRoot) == "" {
-		return &Manager{rootPath: ""}, nil
+		return m, nil
 	}
 
 	cleanPath := filepath.Clean(strings.TrimSpace(initialRoot))
@@ -61,7 +71,10 @@ func NewManager(initialRoot string) (*Manager, error) {
 		return nil, fmt.Errorf("root path '%s' is not a directory", absPath)
 	}
 
-	return &Manager{rootPath: absPath}, nil
+	m.rootPath = absPath
+	m.startWatcherLocked(absPath)
+
+	return m, nil
 }
 
 func (m *Manager) SetRoot(newRoot string) (string, error) {
@@ -85,7 +98,9 @@ func (m *Manager) SetRoot(newRoot string) (string, error) {
 	}
 
 	m.mu.Lock()
+	m.stopWatcherLocked()
 	m.rootPath = absPath
+	m.startWatcherLocked(absPath)
 	m.mu.Unlock()
 
 	return absPath, nil
@@ -94,8 +109,79 @@ func (m *Manager) SetRoot(newRoot string) (string, error) {
 func (m *Manager) Close() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.stopWatcherLocked()
 	m.rootPath = ""
 	return nil
+}
+
+// SubscribeEvents provides a listener channel for aggregated workspace file changes.
+func (m *Manager) SubscribeEvents() (<-chan WorkspaceChangeEvent, func()) {
+	ch := make(chan WorkspaceChangeEvent, 64)
+	m.subMu.Lock()
+	m.subs[ch] = struct{}{}
+	m.subMu.Unlock()
+
+	unsubscribe := func() {
+		m.subMu.Lock()
+		delete(m.subs, ch)
+		m.subMu.Unlock()
+	}
+
+	return ch, unsubscribe
+}
+
+func (m *Manager) broadcastEvent(evt WorkspaceChangeEvent) {
+	m.subMu.RLock()
+	defer m.subMu.RUnlock()
+
+	for ch := range m.subs {
+		select {
+		case ch <- evt:
+		default:
+		}
+	}
+}
+
+func (m *Manager) startWatcherLocked(root string) {
+	if root == "" {
+		return
+	}
+	w, err := NewWatcher(root)
+	if err != nil {
+		return
+	}
+	m.watcher = w
+
+	events, unsub := w.Subscribe()
+	stopChan := make(chan struct{})
+
+	m.watcherCancel = func() {
+		close(stopChan)
+		unsub()
+		_ = w.Stop()
+	}
+
+	go func() {
+		for {
+			select {
+			case <-stopChan:
+				return
+			case evt, ok := <-events:
+				if !ok {
+					return
+				}
+				m.broadcastEvent(evt)
+			}
+		}
+	}()
+}
+
+func (m *Manager) stopWatcherLocked() {
+	if m.watcherCancel != nil {
+		m.watcherCancel()
+		m.watcherCancel = nil
+	}
+	m.watcher = nil
 }
 
 func (m *Manager) GetRoot() (string, string) {

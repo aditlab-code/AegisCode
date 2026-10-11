@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:all": "go -C server run ./cmd/server & vite",
+    "dev:all": "node scripts/dev-all.js",
     "server": "go -C server run ./cmd/server",
     "build": "vite build",
     "build:server": "go -C server build -o ../dist-server/aegis-server ./cmd/server",
@@ -16,6 +16,8 @@
     "test": "npm run test:frontend && npm run test:backend"
   },
   "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

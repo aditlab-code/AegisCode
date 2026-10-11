@@ -148,6 +148,14 @@ export interface FileBuffer {
   savedContent?: string
   isDirty: boolean
   language: string
+  hasDiskConflict?: boolean
+  isDeletedOnDisk?: boolean
+}
+
+export interface WorkspaceChangeEvent {
+  created: string[]
+  modified: string[]
+  deleted: string[]
 }
 
 export type MinimapScale = "small" | "medium" | "large"
@@ -254,9 +262,10 @@ export interface TerminalSession {
   lines: string[]
   running: boolean
   commandHistory: string[]
+  isLive?: boolean
 }
 
-export type OutputChannel = "Linter" | "Tasks" | "Git"
+export type OutputChannel = "Linter" | "Tasks" | "Git" | "Server"
 
 export interface GitCommitNode {
   id: string

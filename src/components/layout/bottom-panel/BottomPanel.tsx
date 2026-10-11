@@ -1,4 +1,4 @@
-import { useState, type DragEvent } from "react"
+import { useState, useEffect, type DragEvent } from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { ResizeSash } from "../../ui/ResizeSash"
@@ -33,9 +33,14 @@ export function BottomPanel() {
   } = useWorkbench()
 
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
-  const [outputChannel, setOutputChannel] = useState<OutputChannel>("Linter")
+  const [newShell, setNewShell] = useState<string>("zsh")
+  const [outputChannel, setOutputChannel] = useState<OutputChannel>("Server")
   const [outputLogs, setOutputLogs] = useState<Record<OutputChannel, string[]>>(
     {
+      Server: [
+        "[10:38:00] AegisCode Go Core Server connected on http://localhost:8080",
+        "[10:38:00] PTY Process Supervisor and SSE event pipelines active",
+      ],
       Linter: [
         "[10:42:08] Starting incremental lint across 5 language profiles",
         "[10:42:08] TypeScript · ESLint adapter ready",
@@ -58,6 +63,36 @@ export function BottomPanel() {
       ],
     },
   )
+
+  useEffect(() => {
+    const sse = new EventSource("/api/v1/events/logs")
+    sse.addEventListener("log", (event) => {
+      try {
+        const data = JSON.parse(event.data) as {
+          channel?: OutputChannel
+          message?: string
+          timestamp?: string
+        }
+        if (data.channel && data.message) {
+          const ch = data.channel
+          const time = data.timestamp || new Date().toTimeString().slice(0, 8)
+          setOutputLogs((prev) => ({
+            ...prev,
+            [ch]: [...(prev[ch] || []), `[${time}] ${data.message}`],
+          }))
+        }
+      } catch {
+        // Safe fallback
+      }
+    })
+    sse.onerror = () => {
+      // Disconnect cleanly if server is down to prevent loop
+      sse.close()
+    }
+    return () => {
+      sse.close()
+    }
+  }, [])
 
   function handleCopy() {
     if (navigator.clipboard) {
@@ -165,9 +200,19 @@ export function BottomPanel() {
                   </option>
                 ))}
               </select>
+              <select
+                aria-label="Shell type"
+                className="panel-select"
+                onChange={(e) => setNewShell(e.target.value)}
+                value={newShell}
+              >
+                <option value="zsh">zsh</option>
+                <option value="bash">bash</option>
+                <option value="sh">sh</option>
+              </select>
               <IconButton
-                label="New terminal session"
-                onClick={() => createTerminalSession("zsh")}
+                label={`New ${newShell} session`}
+                onClick={() => createTerminalSession(newShell)}
               >
                 <Icon name="plus" size={14} />
               </IconButton>
@@ -189,7 +234,7 @@ export function BottomPanel() {
                 }
               >
                 <span className="status-dot" />{" "}
-                {terminalRunning ? "SSE connected" : "terminated"}
+                {terminalRunning ? "SSE active" : "terminated"}
               </span>
               <IconButton label="Copy terminal output" onClick={handleCopy}>
                 <Icon name="copy" size={14} />
@@ -215,8 +260,9 @@ export function BottomPanel() {
                 }
                 value={outputChannel}
               >
-                <option value="Linter">Linter / Syntax</option>
+                <option value="Server">Server / Runner</option>
                 <option value="Tasks">Tasks & Build</option>
+                <option value="Linter">Linter / Syntax</option>
                 <option value="Git">Git / Source Control</option>
               </select>
               <IconButton
@@ -251,7 +297,15 @@ export function BottomPanel() {
       </div>
 
       <div className="bottom-panel-content">
-        {activeBottomTab === "Terminal" && <TerminalView />}
+        <div
+          className={
+            activeBottomTab === "Terminal"
+              ? "flex flex-col flex-1 min-h-0 h-full overflow-hidden"
+              : "hidden"
+          }
+        >
+          <TerminalView />
+        </div>
         {activeBottomTab === "Problems" && <ProblemsView />}
         {activeBottomTab === "Output" && (
           <OutputView channel={outputChannel} logs={outputLogs} />

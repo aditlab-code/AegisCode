@@ -1,29 +1,63 @@
 package api
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/aditwicaksono/aegiscode/server/internal/git"
 	"github.com/aditwicaksono/aegiscode/server/internal/platform"
+	"github.com/aditwicaksono/aegiscode/server/internal/terminal"
 	"github.com/aditwicaksono/aegiscode/server/internal/workspace"
 )
 
 // Server coordinates HTTP transport over Core Server domain modules.
 type Server struct {
-	ws     *workspace.Manager
-	picker platform.FolderPicker
-	git    *git.Service
+	ws       *workspace.Manager
+	picker   platform.FolderPicker
+	git      *git.Service
+	terminal *terminal.Manager
+	logMu    sync.RWMutex
+	logSubs  map[chan LogEvent]struct{}
 }
 
 func NewServer(ws *workspace.Manager, picker platform.FolderPicker) *Server {
 	return &Server{
-		ws:     ws,
-		picker: picker,
-		git:    git.NewService(ws),
+		ws:       ws,
+		picker:   picker,
+		git:      git.NewService(ws),
+		terminal: terminal.NewManager(),
+		logSubs:  make(map[chan LogEvent]struct{}),
+	}
+}
+
+// Terminal returns the active terminal session manager.
+func (s *Server) Terminal() *terminal.Manager {
+	return s.terminal
+}
+
+// BroadcastLog dispatches an event to all active log subscribers.
+func (s *Server) BroadcastLog(channel, message, level string) {
+	evt := LogEvent{
+		Channel:   channel,
+		Message:   message,
+		Timestamp: time.Now().Format("15:04:05"),
+		Level:     level,
+	}
+
+	s.logMu.RLock()
+	defer s.logMu.RUnlock()
+	for ch := range s.logSubs {
+		select {
+		case ch <- evt:
+		default:
+		}
 	}
 }
 
@@ -91,6 +125,14 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/git/remote/add", s.handleGitAddRemote)
 	mux.HandleFunc("/api/v1/git/diff", s.handleGitDiff)
 
+	// Terminal API endpoints
+	mux.HandleFunc("/api/v1/terminal/create", s.handleTerminalCreate)
+	mux.HandleFunc("/api/v1/terminal/sessions", s.handleTerminalSessions)
+	mux.HandleFunc("/api/v1/terminal/", s.handleTerminalOperations)
+	mux.HandleFunc("/api/v1/events/terminal/", s.handleTerminalEvents)
+	mux.HandleFunc("/api/v1/events/logs", s.handleLogsEvents)
+	mux.HandleFunc("/api/v1/events/workspace", s.handleWorkspaceEvents)
+
 	return corsMiddleware(mux)
 }
 
@@ -127,6 +169,7 @@ func (s *Server) handleWorkspaceOpen(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, name := s.ws.GetRoot()
+	s.BroadcastLog("Server", fmt.Sprintf("Mounted workspace root: %s (%s)", absPath, name), "info")
 	jsonResponse(w, http.StatusOK, OpenWorkspaceResponse{
 		Status:   "ok",
 		RootPath: absPath,
@@ -145,6 +188,7 @@ func (s *Server) handleWorkspaceClose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.BroadcastLog("Server", "Unmounted active workspace", "info")
 	jsonResponse(w, http.StatusOK, CloseWorkspaceResponse{
 		Status: "closed",
 	})
@@ -772,5 +816,306 @@ func (s *Server) handleGitAddRemote(w http.ResponseWriter, r *http.Request) {
 
 	jsonResponse(w, http.StatusOK, GitOperationResponse{Status: "ok"})
 }
+
+// Terminal API Handlers
+
+func (s *Server) handleTerminalCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req CreateTerminalRequest
+	if r.Body != nil && r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+	}
+
+	cwd := req.Cwd
+	if cwd == "" {
+		rootPath, _ := s.ws.GetRoot()
+		cwd = rootPath
+	}
+
+	sessionID := fmt.Sprintf("term-%d", time.Now().UnixNano())
+	sess, err := s.terminal.CreateSession(sessionID, req.Shell, cwd, req.Cols, req.Rows)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "failed to create terminal: "+err.Error())
+		return
+	}
+
+	s.BroadcastLog("Tasks", fmt.Sprintf("Started terminal session %s (%s)", sess.ID, sess.Shell), "info")
+
+	jsonResponse(w, http.StatusOK, CreateTerminalResponse{
+		SessionId: sess.ID,
+		Shell:     sess.Shell,
+		Cwd:       sess.Cwd,
+		Pid:       sess.Pid(),
+	})
+}
+
+func (s *Server) handleTerminalSessions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	sessions := s.terminal.ListSessions()
+	resp := make([]TerminalSessionInfo, 0, len(sessions))
+	for _, sess := range sessions {
+		resp = append(resp, TerminalSessionInfo{
+			SessionId: sess.ID,
+			Shell:     sess.Shell,
+			Cwd:       sess.Cwd,
+			Pid:       sess.Pid(),
+			Running:   true,
+		})
+	}
+
+	jsonResponse(w, http.StatusOK, TerminalSessionsResponse{
+		Sessions: resp,
+	})
+}
+
+func (s *Server) handleTerminalOperations(w http.ResponseWriter, r *http.Request) {
+	rel := strings.TrimPrefix(r.URL.Path, "/api/v1/terminal/")
+	parts := strings.Split(strings.Trim(rel, "/"), "/")
+
+	if len(parts) == 1 && r.Method == http.MethodDelete {
+		sessionID := parts[0]
+		if err := s.terminal.CloseSession(sessionID); err != nil {
+			jsonError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		s.BroadcastLog("Tasks", fmt.Sprintf("Terminated terminal session %s", sessionID), "info")
+		jsonResponse(w, http.StatusOK, map[string]string{"status": "closed"})
+		return
+	}
+
+	if len(parts) == 2 {
+		sessionID := parts[0]
+		action := parts[1]
+
+		if action == "input" && r.Method == http.MethodPost {
+			var req TerminalInputRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				jsonError(w, http.StatusBadRequest, "invalid request: "+err.Error())
+				return
+			}
+			if err := s.terminal.WriteInput(sessionID, []byte(req.Data)); err != nil {
+				jsonError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			jsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
+			return
+		}
+
+		if action == "resize" && r.Method == http.MethodPost {
+			var req TerminalResizeRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				jsonError(w, http.StatusBadRequest, "invalid request: "+err.Error())
+				return
+			}
+			if err := s.terminal.Resize(sessionID, req.Cols, req.Rows); err != nil {
+				jsonError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			jsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
+			return
+		}
+	}
+
+	jsonError(w, http.StatusNotFound, "endpoint not found")
+}
+
+func (s *Server) handleTerminalEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		jsonError(w, http.StatusInternalServerError, "streaming unsupported")
+		return
+	}
+
+	sessionID := strings.TrimPrefix(r.URL.Path, "/api/v1/events/terminal/")
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		jsonError(w, http.StatusBadRequest, "session id required")
+		return
+	}
+
+	sub, unsub, err := s.terminal.Subscribe(sessionID)
+	if err != nil {
+		jsonError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	defer unsub()
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	// Initial connected event
+	fmt.Fprintf(w, "event: connected\ndata: {\"sessionId\":%q}\n\n", sessionID)
+	flusher.Flush()
+
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	notify := r.Context().Done()
+
+	for {
+		select {
+		case <-notify:
+			// Stateless policy: client disconnected, terminate PTY process tree cleanly
+			_ = s.terminal.CloseSession(sessionID)
+			return
+		case <-ticker.C:
+			fmt.Fprintf(w, ": ping\n\n")
+			flusher.Flush()
+		case chunk, ok := <-sub:
+			if !ok {
+				fmt.Fprintf(w, "event: exit\ndata: {}\n\n")
+				flusher.Flush()
+				return
+			}
+			encoded := base64.StdEncoding.EncodeToString(chunk)
+			fmt.Fprintf(w, "event: data\ndata: {\"payload\":%q}\n\n", encoded)
+			flusher.Flush()
+		}
+	}
+}
+
+func (s *Server) handleLogsEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		jsonError(w, http.StatusInternalServerError, "streaming unsupported")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	ch := make(chan LogEvent, 64)
+	s.logMu.Lock()
+	s.logSubs[ch] = struct{}{}
+	s.logMu.Unlock()
+
+	defer func() {
+		s.logMu.Lock()
+		delete(s.logSubs, ch)
+		s.logMu.Unlock()
+	}()
+
+	// Send initial greeting log using LogEvent struct
+	root, name := s.ws.GetRoot()
+	if name == "" {
+		name = "Workspace"
+	}
+	initEvt := LogEvent{
+		Channel:   "Server",
+		Message:   fmt.Sprintf("AegisCode Core Server active (workspace: %s [%s])", name, root),
+		Timestamp: time.Now().Format("15:04:05"),
+		Level:     "info",
+	}
+	initBytes, _ := json.Marshal(initEvt)
+	fmt.Fprintf(w, "event: log\ndata: %s\n\n", string(initBytes))
+	flusher.Flush()
+
+	ticker := time.NewTicker(20 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			fmt.Fprintf(w, ": ping\n\n")
+			flusher.Flush()
+		case evt, ok := <-ch:
+			if !ok {
+				return
+			}
+			data, err := json.Marshal(evt)
+			if err == nil {
+				fmt.Fprintf(w, "event: log\ndata: %s\n\n", string(data))
+				flusher.Flush()
+			}
+		}
+	}
+}
+
+func (s *Server) handleWorkspaceEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		jsonError(w, http.StatusInternalServerError, "streaming unsupported")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	ch, unsub := s.ws.SubscribeEvents()
+	defer unsub()
+
+	root, name := s.ws.GetRoot()
+	initData, _ := json.Marshal(map[string]any{
+		"status":   "connected",
+		"rootPath": root,
+		"name":     name,
+	})
+	fmt.Fprintf(w, "event: connected\ndata: %s\n\n", string(initData))
+	flusher.Flush()
+
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			fmt.Fprintf(w, ": ping\n\n")
+			flusher.Flush()
+		case evt, ok := <-ch:
+			if !ok {
+				return
+			}
+			data, err := json.Marshal(evt)
+			if err == nil {
+				fmt.Fprintf(w, "event: change\ndata: %s\n\n", string(data))
+				flusher.Flush()
+			}
+		}
+	}
+}
+
+
 
 

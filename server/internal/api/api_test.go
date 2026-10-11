@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/aditwicaksono/aegiscode/server/internal/git"
 	"github.com/aditwicaksono/aegiscode/server/internal/platform"
@@ -454,5 +455,120 @@ func TestGitInitStageUnstage_E2E(t *testing.T) {
 		t.Fatalf("expected 200 for unstage doc.txt with HEAD, got %d: %s", rrUnstageWithHead.Code, rrUnstageWithHead.Body.String())
 	}
 }
+
+func TestTerminalEndpoints(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "aegis-term-api-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	ws, _ := workspace.NewManager(tempDir)
+	picker := platform.NewNativeFolderPicker()
+	srv := NewServer(ws, picker)
+	handler := srv.Routes()
+
+	// 1. Create terminal
+	createBody, _ := json.Marshal(CreateTerminalRequest{
+		Shell: "sh",
+		Cols:  80,
+		Rows:  24,
+	})
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/terminal/create", bytes.NewReader(createBody))
+	rrCreate := executeRequest(handler, createReq)
+	if rrCreate.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rrCreate.Code, rrCreate.Body.String())
+	}
+
+	var createResp CreateTerminalResponse
+	if err := json.Unmarshal(rrCreate.Body.Bytes(), &createResp); err != nil {
+		t.Fatalf("failed to decode create response: %v", err)
+	}
+	if createResp.SessionId == "" {
+		t.Fatalf("expected non-empty SessionId")
+	}
+
+	// 2. List sessions
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/terminal/sessions", nil)
+	rrList := executeRequest(handler, listReq)
+	if rrList.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rrList.Code)
+	}
+	var listResp TerminalSessionsResponse
+	_ = json.Unmarshal(rrList.Body.Bytes(), &listResp)
+	if len(listResp.Sessions) != 1 || listResp.Sessions[0].SessionId != createResp.SessionId {
+		t.Fatalf("expected 1 session with id %s, got %v", createResp.SessionId, listResp.Sessions)
+	}
+
+	// 3. Write input
+	inputBody, _ := json.Marshal(TerminalInputRequest{Data: "echo 123\n"})
+	inputReq := httptest.NewRequest(http.MethodPost, "/api/v1/terminal/"+createResp.SessionId+"/input", bytes.NewReader(inputBody))
+	rrInput := executeRequest(handler, inputReq)
+	if rrInput.Code != http.StatusOK {
+		t.Fatalf("expected 200 for input, got %d: %s", rrInput.Code, rrInput.Body.String())
+	}
+
+	// 4. Resize
+	resizeBody, _ := json.Marshal(TerminalResizeRequest{Cols: 100, Rows: 30})
+	resizeReq := httptest.NewRequest(http.MethodPost, "/api/v1/terminal/"+createResp.SessionId+"/resize", bytes.NewReader(resizeBody))
+	rrResize := executeRequest(handler, resizeReq)
+	if rrResize.Code != http.StatusOK {
+		t.Fatalf("expected 200 for resize, got %d: %s", rrResize.Code, rrResize.Body.String())
+	}
+
+	// 5. Delete session
+	delReq := httptest.NewRequest(http.MethodDelete, "/api/v1/terminal/"+createResp.SessionId, nil)
+	rrDel := executeRequest(handler, delReq)
+	if rrDel.Code != http.StatusOK {
+		t.Fatalf("expected 200 for delete, got %d: %s", rrDel.Code, rrDel.Body.String())
+	}
+
+	// 6. Verify empty list
+	rrListAfter := executeRequest(handler, listReq)
+	var listAfter TerminalSessionsResponse
+	_ = json.Unmarshal(rrListAfter.Body.Bytes(), &listAfter)
+	if len(listAfter.Sessions) != 0 {
+		t.Fatalf("expected 0 sessions after delete, got %d", len(listAfter.Sessions))
+	}
+}
+
+func TestWorkspaceEventsSSE(t *testing.T) {
+	_, handler, tempDir := setupTestServer(t, "")
+	defer os.RemoveAll(tempDir)
+
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/api/v1/events/workspace", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("failed to connect to SSE: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
+		t.Fatalf("expected text/event-stream, got %s", ct)
+	}
+
+	// Read initial connected event
+	buf := make([]byte, 1024)
+	n, err := resp.Body.Read(buf)
+	if err != nil && err.Error() != "EOF" {
+		t.Fatalf("failed to read connected event: %v", err)
+	}
+	content := string(buf[:n])
+	if !bytes.Contains([]byte(content), []byte("event: connected")) {
+		t.Fatalf("expected initial connected event, got: %s", content)
+	}
+}
+
 
 

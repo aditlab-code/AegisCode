@@ -39,6 +39,7 @@ export function CodePane({
     diagnostics,
     setFocusedPane,
     saveFile,
+    revertFile,
     tabs,
     setSecondaryActiveTab,
     minimapEnabled,
@@ -301,6 +302,50 @@ export function CodePane({
           <IconButton label="Close split editor" onClick={onClose}>
             <Icon name="close" size={13} />
           </IconButton>
+        </div>
+      )}
+
+      {buffer?.hasDiskConflict && (
+        <div className="flex items-center justify-between px-3 py-1.5 bg-surface-raised border-b border-warning text-xs text-warning">
+          <div className="flex items-center gap-1.5">
+            <Icon name="warning" size={13} />
+            <span>
+              File modified externally on disk. Local unsaved edits are
+              preserved.
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="px-2 py-0.5 rounded bg-surface hover:bg-surface-hover text-ink text-[11px] border border-line cursor-pointer"
+              onClick={() => revertFile(filename)}
+            >
+              Revert to Disk
+            </button>
+            <button
+              type="button"
+              className="px-2 py-0.5 rounded bg-accent hover:bg-accent-soft text-canvas text-[11px] font-semibold cursor-pointer"
+              onClick={() => saveFile(filename)}
+            >
+              Overwrite Disk
+            </button>
+          </div>
+        </div>
+      )}
+
+      {buffer?.isDeletedOnDisk && (
+        <div className="flex items-center justify-between px-3 py-1.5 bg-surface-raised border-b border-error text-xs text-error">
+          <div className="flex items-center gap-1.5">
+            <Icon name="trash" size={13} />
+            <span>File has been deleted from disk.</span>
+          </div>
+          <button
+            type="button"
+            className="px-2 py-0.5 rounded bg-surface hover:bg-surface-hover text-ink text-[11px] border border-line cursor-pointer"
+            onClick={() => saveFile(filename)}
+          >
+            Re-save File
+          </button>
         </div>
       )}
 

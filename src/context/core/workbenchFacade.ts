@@ -12,6 +12,7 @@ import {
   makeGitDiffTab,
   parseGitDiffTab,
 } from "../../utils/gitDiffTab"
+import type { WorkspaceChangeEvent } from "../../types/workbench"
 
 export interface ConfirmCloseState {
   group: "group1" | "group2"
@@ -137,6 +138,13 @@ export function useWorkbenchFacade() {
     editorRef.current.setCursorPosition(pos)
   }, [])
 
+  const [gitDiffVersion, setGitDiffVersion] = useState(0)
+
+  const onFilesChangedOnDisk = useCallback((_evt: WorkspaceChangeEvent) => {
+    gitRef.current?.refreshGit()
+    setGitDiffVersion((v) => v + 1)
+  }, [])
+
   const workspace = useWorkspaceCore({
     onFileRenamed,
     onFileDeleted,
@@ -145,6 +153,7 @@ export function useWorkbenchFacade() {
     showToast,
     openFileInPane,
     setCursorPosition,
+    onFilesChangedOnDisk,
   })
   addNotificationRef.current = workspace.addNotification
 
@@ -698,6 +707,7 @@ export function useWorkbenchFacade() {
     fetchDiff: git.fetchDiff,
     fetchTimeline: git.fetchTimeline,
     openGitDiff,
+    gitDiffVersion,
 
     // Terminal
     terminalSessions: terminal.terminalSessions,
