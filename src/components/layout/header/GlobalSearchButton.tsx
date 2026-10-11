@@ -1,32 +1,105 @@
+import { useRef, useEffect } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbench } from "../../../context/WorkbenchContext"
+import { CommandPalette } from "../command-palette/CommandPalette"
 
 export function GlobalSearchButton() {
-  const { setCommandPaletteOpen, rootWorkspaceName } = useWorkbench()
+  const {
+    commandPaletteOpen,
+    setCommandPaletteOpen,
+    commandPaletteQuery,
+    setCommandPaletteQuery,
+    rootWorkspaceName,
+  } = useWorkbench()
+
+  const isMac =
+    typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!commandPaletteOpen) return
+
+    function handlePointerDown(e: PointerEvent) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        setCommandPaletteOpen(false)
+        setCommandPaletteQuery("")
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown)
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown)
+    }
+  }, [commandPaletteOpen, setCommandPaletteOpen, setCommandPaletteQuery])
+
+  function handleClose() {
+    setCommandPaletteOpen(false)
+    setCommandPaletteQuery("")
+  }
 
   return (
-    <button
-      className="command-search"
-      onClick={() => setCommandPaletteOpen(true)}
-      title={
-        rootWorkspaceName ? `Active Workspace: ${rootWorkspaceName}` : undefined
-      }
-      type="button"
-    >
-      <Icon name="search" size={14} />
-      <span className="truncate">
-        {rootWorkspaceName ? (
-          <>
-            <strong className="font-semibold text-[var(--color-ink)] mr-1">
-              {rootWorkspaceName}
-            </strong>
-            <span className="text-[var(--color-ink-muted)]">— Search...</span>
-          </>
-        ) : (
-          "Search files, commands, symbols..."
-        )}
-      </span>
-      <kbd>⌘ K</kbd>
-    </button>
+    <div className="header-search-container" ref={containerRef}>
+      {commandPaletteOpen ? (
+        <div className="command-search command-search-active">
+          <Icon name="search" size={14} />
+          <input
+            autoFocus
+            className="command-search-input"
+            onChange={(event) => setCommandPaletteQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault()
+                handleClose()
+              }
+            }}
+            placeholder="Type a command or search..."
+            value={commandPaletteQuery}
+          />
+          <kbd
+            className="cursor-pointer hover:text-ink"
+            onClick={handleClose}
+            title="Close (Esc)"
+          >
+            Esc
+          </kbd>
+        </div>
+      ) : (
+        <button
+          aria-expanded={false}
+          aria-haspopup="dialog"
+          className="command-search"
+          onClick={() => {
+            setCommandPaletteQuery("")
+            setCommandPaletteOpen(true)
+          }}
+          title={
+            rootWorkspaceName
+              ? `Active Workspace: ${rootWorkspaceName}`
+              : undefined
+          }
+          type="button"
+        >
+          <Icon name="search" size={14} />
+          <span className="truncate">
+            {rootWorkspaceName ? (
+              <>
+                <strong className="font-semibold text-ink mr-1">
+                  {rootWorkspaceName}
+                </strong>
+                <span className="text-ink-muted">— Search...</span>
+              </>
+            ) : (
+              "Search files, commands, symbols..."
+            )}
+          </span>
+          <kbd>{isMac ? "⌘ K" : "Ctrl K"}</kbd>
+        </button>
+      )}
+
+      {commandPaletteOpen && <CommandPalette />}
+    </div>
   )
 }

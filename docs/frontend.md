@@ -38,12 +38,13 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
 ### 1. Header (`header/`)
 - **Path**: [`src/components/layout/header/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/header)
 - **Primary Components**: `Header.tsx`, `WindowControls.tsx`, `AppMenu.tsx`, `GlobalSearchButton.tsx`, `HeaderActions.tsx`, `header.css`
-- **Visual Design**:
-  - macOS-style traffic light window controls (red/yellow/green) with hover icons and Aegis branding badge.
-  - Dropdown application menu: File, Edit, View, Run, Terminal, Help.
-  - Centered quick launcher button triggering the Command Palette (`⌘K` / `Ctrl+K`).
-  - Action buttons on the right: toggle primary sidebar, toggle bottom drawer, toggle AI agent chat, toggle companion pairing modal.
-- **Tokens Used**: `bg-surface`, `border-line`, `text-ink`, `text-ink-muted`.
+- **Visual Design & Grid Layout**:
+  - Balanced 3-column CSS Grid (`grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr)`) with symmetric `padding: 0 12px;` guaranteeing exact mathematical 50% midpoint centering for the search bar regardless of asymmetric left/right header controls.
+  - Left column: macOS-style traffic light window controls (red/yellow/green) with hover icons, Aegis branding badge, and dropdown application menu (File, Edit, View, Run, Terminal, Help).
+  - Center column: Unified search bar container (`.header-search-container`, constrained to 300px width). Functions as quick launcher button when idle and live search input when active (`command-search-active`), showing active workspace context, shortcut badge (`⌘K` / `Ctrl+K`), and `Esc` close button.
+  - Right column: Header action buttons aligned to end (`justify-self: end`): toggle bottom panel (`Ctrl+J`), toggle primary sidebar (`Ctrl+B`), and toggle AI chat drawer.
+  - Responsive collapse: switches to `grid-template-columns: auto 1fr auto` on mobile/narrow viewports (`<= 680px`), collapsing idle search into a 32px icon button.
+- **Tokens Used**: `bg-surface`, `border-line`, `text-ink`, `text-ink-muted`, `color-accent`.
 
 ### 2. Activity Rail (`activity-rail/`)
 - **Path**: [`src/components/layout/activity-rail/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/activity-rail)
@@ -154,10 +155,14 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
 ### 9. Command Palette (`command-palette/`)
 - **Path**: [`src/components/layout/command-palette/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/command-palette)
 - **Primary Components**: `CommandPalette.tsx`, `command-palette.css`
-- **Visual Design**:
-  - Centered modal launcher (`⌘K`).
-  - Search input with keyboard navigation (`Arrow Up/Down`, `Enter` to select, `Escape` to close).
-  - Grouped commands: File navigation, View toggles, Git commands, AI prompts, Theme switches.
+- **Visual Design & Floating Dropdown**:
+  - **Direct Anchoring**: Rendered directly beneath the navbar search container (`top: calc(100% + 4px); width: 100%`), perfectly matching the 300px search bar width.
+  - **Backdrop-Free Experience**: Completely eliminates dark blurred overlay/backdrop; workbench and code editor stay 100% bright, crisp, and visible while searching.
+  - **Single Input UX**: Eliminates duplicate search bars; the navbar search bar itself serves as the interactive input, while the floating dropdown beneath exclusively displays command results.
+  - **Results List**: Scrollable command list with uppercase section headers (`COMMANDS`), icons, bold labels, and muted detail subtitles with clean ellipsis truncation (`text-overflow: ellipsis`) for long items.
+  - **Keyboard Navigation & Shortcuts**: Supports `⌘K` / `Ctrl+K` and `⌘P` / `Ctrl+P` toggle shortcuts, `Arrow Up/Down` for cyclical selection, `Enter` to execute, and `Escape` to close and reset query.
+  - **Dismissal**: Outside-click dismissal via `pointerdown` listener on `document` and `Escape` key handling.
+- **Tokens Used**: `bg-surface-overlay`, `border-line-bright`, `shadow-popover`, `text-ink`, `text-ink-soft`, `text-ink-muted`, `bg-surface-hover`.
 
 ---
 

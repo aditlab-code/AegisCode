@@ -108,6 +108,7 @@ export function useLayoutCore() {
   const [chatOpen, setChatOpen] = useState(true)
   const [chatSessionsOpen, setChatSessionsOpen] = useState(false)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const [commandPaletteQuery, setCommandPaletteQuery] = useState("")
   const [settingsModalOpen, setSettingsModalOpen] = useState(false)
 
   const toggleSettingsModal = useCallback(() => {
@@ -369,6 +370,8 @@ export function useLayoutCore() {
     toggleChatSessions,
     commandPaletteOpen,
     setCommandPaletteOpen,
+    commandPaletteQuery,
+    setCommandPaletteQuery,
     settingsModalOpen,
     setSettingsModalOpen,
     toggleSettingsModal,

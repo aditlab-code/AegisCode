@@ -1,61 +1,44 @@
-.palette-input input {
-  min-width: 0;
-  flex: 1;
-  color: var(--color-ink);
-  background: transparent;
-  border: 0;
-  outline: 0;
-}
-
-.palette-input input::placeholder {
-  color: var(--color-ink-muted);
-}
-
-.palette-backdrop {
-  position: fixed;
-  z-index: 40;
-  inset: 0;
-  display: flex;
-  justify-content: center;
-  padding-top: 62px;
-  background: color-mix(in srgb, var(--color-canvas) 38%, transparent);
-}
-
+.command-palette-dropdown,
 .command-palette {
-  width: min(560px, calc(100vw - 48px));
-  height: max-content;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  width: 100%;
+  max-height: min(420px, calc(100vh - 65px));
+  display: flex;
+  flex-direction: column;
   background: var(--color-surface-overlay);
   border: 1px solid var(--color-line-bright);
   border-radius: 10px;
   box-shadow: var(--shadow-popover);
   backdrop-filter: blur(26px) saturate(145%);
   overflow: hidden;
+  z-index: 60;
+  animation: command-palette-slide 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.palette-input {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  height: 40px;
-  margin: 7px;
-  padding: 0 10px;
-  color: var(--color-accent);
-  background: var(--color-canvas);
-  border: 1px solid var(--color-accent);
-  border-radius: 3px;
-}
-
-.palette-input input {
-  font-size: 13px;
+@keyframes command-palette-slide {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .command-results {
-  padding: 3px 7px 8px;
+  padding: 4px 6px 8px;
+  overflow-y: auto;
+  max-height: 380px;
+  flex: 1 1 auto;
 }
 
 .command-section {
   display: block;
-  padding: 5px 7px;
+  padding: 6px 8px 4px;
   color: var(--color-ink-muted);
   font-size: 9px;
   letter-spacing: .1em;
@@ -69,8 +52,11 @@
   padding: 7px 9px;
   color: var(--color-ink-soft);
   background: transparent;
-  border-radius: 3px;
+  border: 0;
+  border-radius: 6px;
   text-align: left;
+  cursor: pointer;
+  transition: background-color 0.1s ease, color 0.1s ease;
 }
 
 .command-results button:hover,
@@ -82,15 +68,23 @@
 .command-results button > span {
   display: grid;
   gap: 2px;
+  min-width: 0;
+  flex: 1;
 }
 
 .command-results strong {
   font-size: 11px;
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .command-results small {
   color: var(--color-ink-muted);
   font-size: 9px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 

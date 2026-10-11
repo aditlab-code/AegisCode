@@ -15,6 +15,8 @@ export function CommandPalette() {
   const {
     commandPaletteOpen,
     setCommandPaletteOpen,
+    commandPaletteQuery,
+    setCommandPaletteQuery,
     setActiveActivity,
     setSidebarOpen,
     setSettingsModalOpen,
@@ -28,8 +30,6 @@ export function CommandPalette() {
     recentProjects,
     openFind,
   } = useWorkbench()
-
-  const [query, setQuery] = useState("")
 
   const allCommands = useMemo<CommandPaletteItem[]>(() => {
     const list: CommandPaletteItem[] = [
@@ -157,6 +157,20 @@ export function CommandPalette() {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
 
+  const results = useMemo(() => {
+    const q = commandPaletteQuery.toLowerCase().trim()
+    if (!q) return allCommands
+    return allCommands.filter(
+      (cmd) =>
+        cmd.label.toLowerCase().includes(q) ||
+        cmd.detail.toLowerCase().includes(q),
+    )
+  }, [allCommands, commandPaletteQuery])
+
+  useEffect(() => {
+    setSelectedIndex(0)
+  }, [commandPaletteQuery, commandPaletteOpen])
+
   useEffect(() => {
     if (!listRef.current) return
     const activeEl = listRef.current.querySelector(
@@ -167,102 +181,84 @@ export function CommandPalette() {
     }
   }, [selectedIndex])
 
-  if (!commandPaletteOpen) return null
-
-  const results = allCommands.filter(
-    (cmd) =>
-      cmd.label.toLowerCase().includes(query.toLowerCase()) ||
-      cmd.detail.toLowerCase().includes(query.toLowerCase()),
-  )
-
   function handleSelect(cmd: CommandPaletteItem) {
     cmd.action()
     setCommandPaletteOpen(false)
+    setCommandPaletteQuery("")
   }
 
   function handleClose() {
     setCommandPaletteOpen(false)
+    setCommandPaletteQuery("")
   }
 
-  function handleInputKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "ArrowDown") {
-      e.preventDefault()
-      if (results.length > 0) {
-        setSelectedIndex((prev) => (prev + 1) % results.length)
+  useEffect(() => {
+    if (!commandPaletteOpen) return
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault()
+        handleClose()
+        return
       }
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault()
-      if (results.length > 0) {
-        setSelectedIndex((prev) => (prev - 1 + results.length) % results.length)
-      }
-    } else if (e.key === "Enter") {
-      e.preventDefault()
-      const target = results[selectedIndex] || results[0]
-      if (target) {
-        handleSelect(target)
+      if (e.key === "ArrowDown") {
+        e.preventDefault()
+        if (results.length > 0) {
+          setSelectedIndex((prev) => (prev + 1) % results.length)
+        }
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault()
+        if (results.length > 0) {
+          setSelectedIndex(
+            (prev) => (prev - 1 + results.length) % results.length,
+          )
+        }
+      } else if (e.key === "Enter") {
+        e.preventDefault()
+        const target = results[selectedIndex] || results[0]
+        if (target) {
+          handleSelect(target)
+        }
       }
     }
-  }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [commandPaletteOpen, results, selectedIndex])
+
+  if (!commandPaletteOpen) return null
 
   return (
     <div
-      aria-modal="true"
-      className="command-palette-backdrop"
-      onClick={handleClose}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          handleClose()
-        }
-      }}
-      onMouseDown={handleClose}
-      role="dialog"
+      aria-label="Command palette"
+      className="command-palette-dropdown"
+      role="region"
     >
-      <div
-        aria-label="Command palette"
-        className="command-palette"
-        onMouseDown={(e) => e.stopPropagation()}
-        role="document"
-      >
-        <label className="palette-input">
-          <Icon name="chevron" size={15} />
-          <input
-            autoFocus
-            onChange={(event) => {
-              setQuery(event.target.value)
-              setSelectedIndex(0)
-            }}
-            onKeyDown={handleInputKeyDown}
-            placeholder="Type a command or search..."
-            value={query}
-          />
-          <kbd>Esc</kbd>
-        </label>
-        <div className="command-results" ref={listRef}>
-          <span className="command-section">COMMANDS</span>
-          {results.length === 0 ? (
-            <div className="px-3 py-4 text-xs text-center text-[var(--color-ink-muted)]">
-              No matching commands
-            </div>
-          ) : (
-            results.map((cmd, index) => {
-              return (
-                <button
-                  className={index === selectedIndex ? "command-active" : ""}
-                  key={cmd.id}
-                  onClick={() => handleSelect(cmd)}
-                  onMouseEnter={() => setSelectedIndex(index)}
-                  type="button"
-                >
-                  <Icon name={cmd.icon} size={15} />
-                  <span>
-                    <strong>{cmd.label}</strong>
-                    <small>{cmd.detail}</small>
-                  </span>
-                </button>
-              )
-            })
-          )}
-        </div>
+      <div className="command-results" ref={listRef}>
+        <span className="command-section">COMMANDS</span>
+        {results.length === 0 ? (
+          <div className="px-3 py-4 text-xs text-center text-ink-muted">
+            No matching commands
+          </div>
+        ) : (
+          results.map((cmd, index) => {
+            return (
+              <button
+                className={index === selectedIndex ? "command-active" : ""}
+                key={cmd.id}
+                onClick={() => handleSelect(cmd)}
+                onMouseEnter={() => setSelectedIndex(index)}
+                type="button"
+              >
+                <Icon name={cmd.icon} size={15} />
+                <span>
+                  <strong>{cmd.label}</strong>
+                  <small>{cmd.detail}</small>
+                </span>
+              </button>
+            )
+          })
+        )}
       </div>
     </div>
   )

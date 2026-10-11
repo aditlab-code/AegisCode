@@ -410,9 +410,12 @@ export function useWorkbenchFacade() {
     if (typeof window === "undefined") return
 
     function handleKeyDown(event: KeyboardEvent) {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        (event.key.toLowerCase() === "k" || event.key.toLowerCase() === "p")
+      ) {
         event.preventDefault()
-        layout.setCommandPaletteOpen(true)
+        layout.setCommandPaletteOpen((prev) => !prev)
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
         event.preventDefault()
@@ -516,6 +519,8 @@ export function useWorkbenchFacade() {
     toggleChatSessions: layout.toggleChatSessions,
     commandPaletteOpen: layout.commandPaletteOpen,
     setCommandPaletteOpen: layout.setCommandPaletteOpen,
+    commandPaletteQuery: layout.commandPaletteQuery,
+    setCommandPaletteQuery: layout.setCommandPaletteQuery,
     settingsModalOpen: layout.settingsModalOpen,
     setSettingsModalOpen: layout.setSettingsModalOpen,
     toggleSettingsModal: layout.toggleSettingsModal,

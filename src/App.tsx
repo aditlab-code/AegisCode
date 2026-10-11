@@ -8,7 +8,6 @@ import {
   BottomPanel,
   ChatDrawer,
   StatusBar,
-  CommandPalette,
   SettingsModal,
   UnsavedChangesModal,
 } from "./components/layout"
@@ -101,7 +100,6 @@ function AppShell() {
         {chatOpen && <ChatDrawer />}
       </main>
       <StatusBar />
-      <CommandPalette />
       <SettingsModal />
       <UnsavedChangesModal />
       <Toast message={toast} onDismiss={clearToast} />
