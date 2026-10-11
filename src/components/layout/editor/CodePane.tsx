@@ -41,6 +41,9 @@ export function CodePane({
     tabs,
     setSecondaryActiveTab,
     minimapEnabled,
+    minimapScale,
+    openFind,
+    focusedGroup,
   } = useWorkbench()
 
   const gutterRef = useRef<HTMLDivElement>(null)
@@ -164,6 +167,28 @@ export function CodePane({
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
       event.preventDefault()
       saveFile(filename)
+      return
+    }
+
+    // In-editor Find shortcut
+    if (
+      (event.metaKey || event.ctrlKey) &&
+      !event.shiftKey &&
+      event.key.toLowerCase() === "f"
+    ) {
+      event.preventDefault()
+      openFind(focusedGroup, false)
+      return
+    }
+
+    // In-editor Replace shortcut
+    if (
+      (event.metaKey || event.ctrlKey) &&
+      !event.shiftKey &&
+      event.key.toLowerCase() === "h"
+    ) {
+      event.preventDefault()
+      openFind(focusedGroup, true)
       return
     }
 
@@ -364,6 +389,7 @@ export function CodePane({
             clientHeight={scrollInfo.clientHeight}
             lines={lines}
             onScrollToLine={handleScrollToLine}
+            scale={minimapScale}
             scrollHeight={scrollInfo.scrollHeight}
             scrollTop={scrollInfo.scrollTop}
           />

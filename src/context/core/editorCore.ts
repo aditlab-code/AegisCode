@@ -3,6 +3,8 @@ import type {
   ActivityType,
   CursorPosition,
   EditorGroupState,
+  FindWidgetState,
+  MinimapScale,
 } from "../../types/workbench"
 
 export interface TabMoveResult {
@@ -158,6 +160,17 @@ export function loadStoredMinimapEnabled(): boolean {
   return true
 }
 
+export function loadStoredMinimapScale(): MinimapScale {
+  if (typeof window === "undefined") return "medium"
+  try {
+    const stored = window.localStorage.getItem("aegis_minimap_scale")
+    if (stored === "small" || stored === "medium" || stored === "large") {
+      return stored
+    }
+  } catch {}
+  return "medium"
+}
+
 export function useEditorCore(onFileRequested?: (filename: string) => void) {
   const [splitEditor, setSplitEditor] = useState(false)
   const [splitRatio, setSplitRatio] = useState(50)
@@ -189,6 +202,17 @@ export function useEditorCore(onFileRequested?: (filename: string) => void) {
     loadStoredMinimapEnabled,
   )
 
+  const [minimapScale, setMinimapScaleState] = useState<MinimapScale>(
+    loadStoredMinimapScale,
+  )
+
+  const setMinimapScale = useCallback((scale: MinimapScale) => {
+    setMinimapScaleState(scale)
+    try {
+      window.localStorage.setItem("aegis_minimap_scale", scale)
+    } catch {}
+  }, [])
+
   const setMinimapEnabled = useCallback(
     (value: boolean | ((prev: boolean) => boolean)) => {
       setMinimapEnabledState((prev) => {
@@ -205,6 +229,59 @@ export function useEditorCore(onFileRequested?: (filename: string) => void) {
   const toggleMinimap = useCallback(() => {
     setMinimapEnabled((v) => !v)
   }, [setMinimapEnabled])
+
+  // In-editor find & replace states
+  const [findStateGroup1, setFindStateGroup1] = useState<FindWidgetState>({
+    isOpen: false,
+    isReplaceOpen: false,
+  })
+
+  const [findStateGroup2, setFindStateGroup2] = useState<FindWidgetState>({
+    isOpen: false,
+    isReplaceOpen: false,
+  })
+
+  const openFind = useCallback(
+    (groupId?: "group1" | "group2", withReplace = false) => {
+      const target = groupId || focusedGroup
+      if (target === "group1") {
+        setFindStateGroup1({ isOpen: true, isReplaceOpen: withReplace })
+      } else {
+        setFindStateGroup2({ isOpen: true, isReplaceOpen: withReplace })
+      }
+    },
+    [focusedGroup],
+  )
+
+  const closeFind = useCallback(
+    (groupId?: "group1" | "group2") => {
+      const target = groupId || focusedGroup
+      if (target === "group1") {
+        setFindStateGroup1((prev) => ({ ...prev, isOpen: false }))
+      } else {
+        setFindStateGroup2((prev) => ({ ...prev, isOpen: false }))
+      }
+    },
+    [focusedGroup],
+  )
+
+  const toggleFind = useCallback(
+    (groupId?: "group1" | "group2", withReplace = false) => {
+      const target = groupId || focusedGroup
+      if (target === "group1") {
+        setFindStateGroup1((prev) => ({
+          isOpen: !prev.isOpen || (withReplace && !prev.isReplaceOpen),
+          isReplaceOpen: withReplace ? true : prev.isReplaceOpen,
+        }))
+      } else {
+        setFindStateGroup2((prev) => ({
+          isOpen: !prev.isOpen || (withReplace && !prev.isReplaceOpen),
+          isReplaceOpen: withReplace ? true : prev.isReplaceOpen,
+        }))
+      }
+    },
+    [focusedGroup],
+  )
 
   // Computed views
   const currentFocusedFile =
@@ -445,6 +522,15 @@ export function useEditorCore(onFileRequested?: (filename: string) => void) {
     minimapEnabled,
     setMinimapEnabled,
     toggleMinimap,
+    minimapScale,
+    setMinimapScale,
+    findStateGroup1,
+    findStateGroup2,
+    setFindStateGroup1,
+    setFindStateGroup2,
+    openFind,
+    closeFind,
+    toggleFind,
     cursorPosition,
     setCursorPosition,
     currentFocusedFile,

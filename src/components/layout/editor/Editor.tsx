@@ -17,10 +17,12 @@ export function Editor() {
     group2,
     focusedGroup,
     closeSplitEditor,
+    findStateGroup1,
+    findStateGroup2,
+    closeFind,
+    toggleFind,
   } = useWorkbench()
 
-  const [findOpenGroup1, setFindOpenGroup1] = useState(false)
-  const [findOpenGroup2, setFindOpenGroup2] = useState(false)
   const [isResizing, setIsResizing] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -71,14 +73,17 @@ export function Editor() {
       >
         <EditorTabs
           groupId="group1"
-          isFindOpen={findOpenGroup1}
-          onToggleFind={() => setFindOpenGroup1((v) => !v)}
+          isFindOpen={findStateGroup1.isOpen}
+          onToggleFind={() => toggleFind("group1")}
         />
         <EditorBreadcrumbs file={group1.activeTab} />
         <EditorFindWidget
           filename={group1.activeTab}
-          isOpen={findOpenGroup1}
-          onClose={() => setFindOpenGroup1(false)}
+          groupId="group1"
+          isOpen={findStateGroup1.isOpen}
+          isReplaceOpen={findStateGroup1.isReplaceOpen}
+          onClose={() => closeFind("group1")}
+          onToggleReplace={() => toggleFind("group1", true)}
         />
         <div className="editor-panes">
           <CodePane
@@ -105,14 +110,17 @@ export function Editor() {
           <>
             <EditorTabs
               groupId="group1"
-              isFindOpen={findOpenGroup1}
-              onToggleFind={() => setFindOpenGroup1((v) => !v)}
+              isFindOpen={findStateGroup1.isOpen}
+              onToggleFind={() => toggleFind("group1")}
             />
             <EditorBreadcrumbs file={group1.activeTab} />
             <EditorFindWidget
               filename={group1.activeTab}
-              isOpen={findOpenGroup1}
-              onClose={() => setFindOpenGroup1(false)}
+              groupId="group1"
+              isOpen={findStateGroup1.isOpen}
+              isReplaceOpen={findStateGroup1.isReplaceOpen}
+              onClose={() => closeFind("group1")}
+              onToggleReplace={() => toggleFind("group1", true)}
             />
             <div className="editor-panes">
               <CodePane
@@ -160,14 +168,17 @@ export function Editor() {
           <>
             <EditorTabs
               groupId="group2"
-              isFindOpen={findOpenGroup2}
-              onToggleFind={() => setFindOpenGroup2((v) => !v)}
+              isFindOpen={findStateGroup2.isOpen}
+              onToggleFind={() => toggleFind("group2")}
             />
             <EditorBreadcrumbs file={group2.activeTab} />
             <EditorFindWidget
               filename={group2.activeTab}
-              isOpen={findOpenGroup2}
-              onClose={() => setFindOpenGroup2(false)}
+              groupId="group2"
+              isOpen={findStateGroup2.isOpen}
+              isReplaceOpen={findStateGroup2.isReplaceOpen}
+              onClose={() => closeFind("group2")}
+              onToggleReplace={() => toggleFind("group2", true)}
             />
             <div className="editor-panes">
               <CodePane

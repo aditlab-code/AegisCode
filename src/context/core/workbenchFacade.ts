@@ -239,15 +239,44 @@ export function useWorkbenchFacade() {
         event.preventDefault()
         layout.toggleSettingsModal()
       }
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.shiftKey &&
+        event.key.toLowerCase() === "f"
+      ) {
+        event.preventDefault()
+        layout.setSidebarOpen(true)
+        editor.setActiveActivity("Search")
+        return
+      }
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === "f"
+      ) {
+        event.preventDefault()
+        editor.openFind(editor.focusedGroup, false)
+        return
+      }
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === "h"
+      ) {
+        event.preventDefault()
+        editor.openFind(editor.focusedGroup, true)
+        return
+      }
       if (event.key === "Escape") {
         layout.setCommandPaletteOpen(false)
         layout.setSettingsModalOpen(false)
+        editor.closeFind()
       }
     }
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [layout, saveFile])
+  }, [editor, layout, saveFile])
 
   return {
     // Layout
@@ -292,6 +321,15 @@ export function useWorkbenchFacade() {
     minimapEnabled: editor.minimapEnabled,
     setMinimapEnabled: editor.setMinimapEnabled,
     toggleMinimap: editor.toggleMinimap,
+    minimapScale: editor.minimapScale,
+    setMinimapScale: editor.setMinimapScale,
+    findStateGroup1: editor.findStateGroup1,
+    findStateGroup2: editor.findStateGroup2,
+    setFindStateGroup1: editor.setFindStateGroup1,
+    setFindStateGroup2: editor.setFindStateGroup2,
+    openFind: editor.openFind,
+    closeFind: editor.closeFind,
+    toggleFind: editor.toggleFind,
     splitEditor: editor.splitEditor,
     setSplitEditor: editor.setSplitEditor,
     toggleSplitEditor: editor.toggleSplitEditor,

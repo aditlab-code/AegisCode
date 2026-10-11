@@ -21,6 +21,8 @@ export function SettingsModal() {
     setLinterSettings,
     minimapEnabled,
     setMinimapEnabled,
+    minimapScale,
+    setMinimapScale,
     activeBranch,
     showToast,
     theme,
@@ -68,6 +70,20 @@ export function SettingsModal() {
         onChange: (v) => {
           setMinimapEnabled(v)
           showToast(`Minimap ${v ? "enabled" : "disabled"}`)
+        },
+      },
+      {
+        id: "editor.minimapScale",
+        category: "Common",
+        title: "Editor: Minimap Scale",
+        description:
+          "Controls the text font size and outline scaling of the minimap preview.",
+        type: "select",
+        value: minimapScale,
+        options: ["small", "medium", "large"],
+        onChange: (v) => {
+          setMinimapScale(v as "small" | "medium" | "large")
+          showToast(`Minimap scale set to ${v}`)
         },
       },
       {

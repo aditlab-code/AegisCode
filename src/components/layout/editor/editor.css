@@ -380,7 +380,7 @@
 .minimap-container {
   position: relative;
   z-index: 5;
-  width: 60px;
+  width: 88px;
   flex-shrink: 0;
   height: 100%;
   background: color-mix(in srgb, var(--color-canvas) 92%, transparent);
@@ -388,7 +388,7 @@
   overflow: hidden;
   user-select: none;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, width 0.15s ease;
 }
 
 .minimap-container:hover {
@@ -400,18 +400,20 @@
   top: 0;
   left: 0;
   right: 0;
-  padding: 6px 4px;
+  padding: 4px 6px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  pointer-events: none;
+  will-change: transform;
 }
 
 .minimap-line {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  height: 2px;
-  opacity: 0.75;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: clip;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  opacity: 0.85;
+  letter-spacing: -0.2px;
   transition: opacity 0.15s ease;
 }
 
@@ -419,28 +421,14 @@
   opacity: 1;
 }
 
-.minimap-token {
-  display: inline-block;
-  height: 2px;
-  border-radius: 1px;
-  background-color: currentColor;
-}
-
-.minimap-empty-bar {
-  display: inline-block;
-  width: 12px;
-  height: 2px;
-  border-radius: 1px;
-  background: color-mix(in srgb, var(--color-line) 50%, transparent);
-}
-
 .minimap-slider {
   position: absolute;
   left: 0;
   right: 0;
-  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
-  border-top: 1px solid color-mix(in srgb, var(--color-accent) 60%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 60%, transparent);
+  z-index: 6;
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
   pointer-events: none;
   transition: top 0.04s linear;
 }

@@ -26,6 +26,7 @@ export function CommandPalette() {
     closeRootFolder,
     rootWorkspacePath,
     recentProjects,
+    openFind,
   } = useWorkbench()
 
   const [query, setQuery] = useState("")
@@ -67,11 +68,29 @@ export function CommandPalette() {
       {
         id: "search-files",
         label: "Search: Find in Files",
-        detail: "Search and replace across files",
+        detail: "Search and replace across files (Ctrl+Shift+F)",
         icon: "search",
         action: () => {
           setActiveActivity("Search")
           setSidebarOpen(true)
+        },
+      },
+      {
+        id: "find-file",
+        label: "Editor: Find in Current File",
+        detail: "Find text within active editor (Ctrl+F)",
+        icon: "search",
+        action: () => {
+          openFind(undefined, false)
+        },
+      },
+      {
+        id: "replace-file",
+        label: "Editor: Replace in Current File",
+        detail: "Find and replace within active editor (Ctrl+H)",
+        icon: "edit",
+        action: () => {
+          openFind(undefined, true)
         },
       },
       {

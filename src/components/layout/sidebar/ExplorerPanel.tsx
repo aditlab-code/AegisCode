@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, type MouseEvent } from "react"
+import { createPortal } from "react-dom"
 import { Icon } from "../../ui/Icon"
 import { useWorkbench } from "../../../context/WorkbenchContext"
 import type { FileItem, OutlineSymbol } from "../../../types/workbench"
@@ -148,21 +149,31 @@ export function ExplorerPanel() {
       ? group2.activeTab
       : group1.activeTab
 
-  // Close context menu on outside click or scroll
+  // Close context menu on outside click, scroll, resize, or escape
   useEffect(() => {
     function handleDismiss(e: MouseEvent | Event) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setContextMenu(null)
       }
     }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setContextMenu(null)
+    }
+    function handleWindowResize() {
+      setContextMenu(null)
+    }
+
     window.addEventListener("click", handleDismiss)
     window.addEventListener("contextmenu", handleDismiss)
-    window.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") setContextMenu(null)
-    })
+    window.addEventListener("keydown", handleKeyDown)
+    window.addEventListener("scroll", handleDismiss, true)
+    window.addEventListener("resize", handleWindowResize)
     return () => {
       window.removeEventListener("click", handleDismiss)
       window.removeEventListener("contextmenu", handleDismiss)
+      window.removeEventListener("keydown", handleKeyDown)
+      window.removeEventListener("scroll", handleDismiss, true)
+      window.removeEventListener("resize", handleWindowResize)
     }
   }, [])
 
@@ -250,9 +261,13 @@ export function ExplorerPanel() {
   function handleRowContextMenu(e: MouseEvent, file: FileItem) {
     e.preventDefault()
     e.stopPropagation()
-    // Calculate position clamped to window viewport
-    const x = Math.min(e.clientX, window.innerWidth - 180)
-    const y = Math.min(e.clientY, window.innerHeight - 200)
+    // Calculate position clamped securely to window viewport
+    const menuWidth = 180
+    const menuHeight = 210
+    const winWidth = typeof window !== "undefined" ? window.innerWidth : 1280
+    const winHeight = typeof window !== "undefined" ? window.innerHeight : 800
+    const x = Math.max(8, Math.min(e.clientX, winWidth - menuWidth - 8))
+    const y = Math.max(8, Math.min(e.clientY, winHeight - menuHeight - 8))
     setContextMenu({ x, y, file })
   }
 
@@ -676,12 +691,17 @@ export function ExplorerPanel() {
             const isFolder = file.icon === "folder" || file.type === "folder"
             const isCollapsed = Boolean(collapsedFolders[file.label])
             const isDropTarget = dragTarget === fileKey
+            const isContextTarget =
+              contextMenu?.file != null &&
+              (contextMenu.file.path || contextMenu.file.label) === fileKey
 
             return (
               <div
                 className={`file-row ${isCurrent ? "file-active" : ""} ${
-                  isHidden ? "file-muted" : ""
-                } ${isDropTarget ? "file-drop-target" : ""}`}
+                  isContextTarget ? "file-context-active" : ""
+                } ${isHidden ? "file-muted" : ""} ${
+                  isDropTarget ? "file-drop-target" : ""
+                }`}
                 draggable={!isRenaming}
                 key={fileKey}
                 onClick={() => {
@@ -795,56 +815,59 @@ export function ExplorerPanel() {
       )}
 
       {/* Floating Context Menu */}
-      {contextMenu && (
-        <div
-          className="explorer-context-menu"
-          ref={menuRef}
-          style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
-        >
-          <div className="context-menu-header">{contextMenu.file.label}</div>
-          <button
-            className="context-menu-item"
-            onClick={() => handleCopyName(contextMenu.file)}
-            type="button"
+      {contextMenu &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="explorer-context-menu"
+            ref={menuRef}
+            style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
           >
-            <Icon name="code" size={12} />
-            <span>Copy Name</span>
-          </button>
-          <button
-            className="context-menu-item"
-            onClick={() => handleCopyRelativePath(contextMenu.file)}
-            type="button"
-          >
-            <Icon name="file" size={12} />
-            <span>Copy Relative Path</span>
-          </button>
-          <button
-            className="context-menu-item"
-            onClick={() => handleCopyFullPath(contextMenu.file)}
-            type="button"
-          >
-            <Icon name="folder" size={12} />
-            <span>Copy Full Path</span>
-          </button>
-          <div className="context-menu-separator" />
-          <button
-            className="context-menu-item"
-            onClick={() => triggerRename(contextMenu.file)}
-            type="button"
-          >
-            <Icon name="edit" size={12} />
-            <span>Rename</span>
-          </button>
-          <button
-            className="context-menu-item item-danger"
-            onClick={() => triggerDelete(contextMenu.file)}
-            type="button"
-          >
-            <Icon name="close" size={12} />
-            <span>Delete</span>
-          </button>
-        </div>
-      )}
+            <div className="context-menu-header">{contextMenu.file.label}</div>
+            <button
+              className="context-menu-item"
+              onClick={() => handleCopyName(contextMenu.file)}
+              type="button"
+            >
+              <Icon name="code" size={12} />
+              <span>Copy Name</span>
+            </button>
+            <button
+              className="context-menu-item"
+              onClick={() => handleCopyRelativePath(contextMenu.file)}
+              type="button"
+            >
+              <Icon name="file" size={12} />
+              <span>Copy Relative Path</span>
+            </button>
+            <button
+              className="context-menu-item"
+              onClick={() => handleCopyFullPath(contextMenu.file)}
+              type="button"
+            >
+              <Icon name="folder" size={12} />
+              <span>Copy Full Path</span>
+            </button>
+            <div className="context-menu-separator" />
+            <button
+              className="context-menu-item"
+              onClick={() => triggerRename(contextMenu.file)}
+              type="button"
+            >
+              <Icon name="edit" size={12} />
+              <span>Rename</span>
+            </button>
+            <button
+              className="context-menu-item item-danger"
+              onClick={() => triggerDelete(contextMenu.file)}
+              type="button"
+            >
+              <Icon name="close" size={12} />
+              <span>Delete</span>
+            </button>
+          </div>,
+          document.body,
+        )}
 
       {/* Interactive OUTLINE Section (Bonus) */}
       <div className="outline-section">

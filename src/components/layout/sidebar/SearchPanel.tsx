@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useCallback, useRef } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbench } from "../../../context/WorkbenchContext"
 import {
@@ -48,6 +48,42 @@ export function SearchPanel() {
   const [backendResults, setBackendResults] = useState<FileSearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
 
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    searchInputRef.current?.focus()
+  }, [])
+
+  const refreshSearch = useCallback(async () => {
+    if (!search.trim()) {
+      setBackendResults([])
+      return
+    }
+
+    try {
+      const results = await searchWorkspace(
+        search,
+        isRegex,
+        isMatchCase,
+        isWholeWord,
+      )
+      setBackendResults(
+        results.map((r) => ({
+          filename: r.filename,
+          matches: r.matches.map((m) => ({
+            filename: r.filename,
+            lineNumber: m.lineNumber,
+            column: m.column,
+            lineContent: m.lineContent,
+            matchText: m.matchText,
+          })),
+        })),
+      )
+    } catch (err) {
+      console.warn("Backend search failed, fallback:", err)
+    }
+  }, [search, isRegex, isMatchCase, isWholeWord])
+
   useEffect(() => {
     if (!search.trim()) {
       setBackendResults([])
@@ -57,33 +93,14 @@ export function SearchPanel() {
     const timer = setTimeout(async () => {
       setIsSearching(true)
       try {
-        const results = await searchWorkspace(
-          search,
-          isRegex,
-          isMatchCase,
-          isWholeWord,
-        )
-        setBackendResults(
-          results.map((r) => ({
-            filename: r.filename,
-            matches: r.matches.map((m) => ({
-              filename: r.filename,
-              lineNumber: m.lineNumber,
-              column: m.column,
-              lineContent: m.lineContent,
-              matchText: m.matchText,
-            })),
-          })),
-        )
-      } catch (err) {
-        console.warn("Backend search failed, fallback:", err)
+        await refreshSearch()
       } finally {
         setIsSearching(false)
       }
     }, 200)
 
     return () => clearTimeout(timer)
-  }, [search, isRegex, isMatchCase, isWholeWord])
+  }, [search, isRegex, isMatchCase, isWholeWord, refreshSearch])
 
   // Compute search results across workspace and fileBuffers
   const searchResults: FileSearchResult[] = useMemo(() => {
@@ -154,30 +171,44 @@ export function SearchPanel() {
   }
 
   // 1. Replace single match
-  function handleReplaceSingle(match: MatchItem) {
-    const buffer = fileBuffers[match.filename]
-    if (!buffer) return
+  async function handleReplaceSingle(match: MatchItem) {
+    try {
+      let content = ""
+      const hasBuffer = Boolean(fileBuffers[match.filename])
+      if (hasBuffer) {
+        content = fileBuffers[match.filename].content
+      } else {
+        content = await fetchFileContent(match.filename)
+      }
 
-    const lines = buffer.content.split("\n")
-    const targetLine = lines[match.lineNumber - 1]
-    if (targetLine === undefined) return
+      const lines = content.split("\n")
+      const targetLine = lines[match.lineNumber - 1]
+      if (targetLine === undefined) {
+        showToast(`Line ${match.lineNumber} not found in ${match.filename}`)
+        return
+      }
 
-    const before = targetLine.substring(0, match.column - 1)
-    const after = targetLine.substring(
-      match.column - 1 + match.matchText.length,
-    )
-    lines[match.lineNumber - 1] = before + replace + after
+      const before = targetLine.substring(0, match.column - 1)
+      const after = targetLine.substring(
+        match.column - 1 + match.matchText.length,
+      )
+      lines[match.lineNumber - 1] = before + replace + after
 
-    const newContent = lines.join("\n")
-    updateFileContent(match.filename, newContent)
-    saveWorkspaceFile(match.filename, newContent, false).catch(() => {})
-    showToast(`Replaced match in ${match.filename} [Ln ${match.lineNumber}]`)
+      const newContent = lines.join("\n")
+      if (hasBuffer) {
+        updateFileContent(match.filename, newContent)
+      }
+      await saveWorkspaceFile(match.filename, newContent, false)
+      showToast(`Replaced match in ${match.filename} [Ln ${match.lineNumber}]`)
+      await refreshSearch()
+    } catch (err: any) {
+      showToast(`Replace failed: ${err?.message || "Unknown error"}`)
+    }
   }
 
   // 2. Replace all in single file
-  function handleReplaceInFile(filename: string) {
-    const buffer = fileBuffers[filename]
-    if (!buffer || !search.trim()) return
+  async function handleReplaceInFile(filename: string) {
+    if (!search.trim()) return
 
     try {
       let pattern = search
@@ -190,12 +221,27 @@ export function SearchPanel() {
       const flags = isMatchCase ? "g" : "gi"
       const regex = new RegExp(pattern, flags)
 
-      const updated = buffer.content.replace(regex, replace)
-      updateFileContent(filename, updated)
-      saveWorkspaceFile(filename, updated, false).catch(() => {})
+      let content = ""
+      const hasBuffer = Boolean(fileBuffers[filename])
+      if (hasBuffer) {
+        content = fileBuffers[filename].content
+      } else {
+        content = await fetchFileContent(filename)
+      }
+
+      const updated = content.replace(regex, replace)
+      if (hasBuffer) {
+        updateFileContent(filename, updated)
+      }
+      await saveWorkspaceFile(filename, updated, false)
       showToast(`Replaced all matches in ${filename}`)
-    } catch {
-      showToast("Invalid replacement pattern")
+      await refreshSearch()
+    } catch (err: any) {
+      showToast(
+        `Replace in ${filename} failed: ${
+          err?.message || "Invalid replacement pattern"
+        }`,
+      )
     }
   }
 
@@ -224,25 +270,37 @@ export function SearchPanel() {
         }
       }
 
-      const refreshed = await searchWorkspace(
-        search,
-        isRegex,
-        isMatchCase,
-        isWholeWord,
-      )
-      setBackendResults(
-        refreshed.map((r) => ({
-          filename: r.filename,
-          matches: r.matches.map((m) => ({
-            filename: r.filename,
-            lineNumber: m.lineNumber,
-            column: m.column,
-            lineContent: m.lineContent,
-            matchText: m.matchText,
-          })),
-        })),
-      )
+      await refreshSearch()
     } catch (err: any) {
+      // Fallback: update matching open buffers if backend replace is unavailable
+      try {
+        let count = 0
+        let modified = 0
+        let pattern = search
+        if (!isRegex) pattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+        if (isWholeWord) pattern = `\\b${pattern}\\b`
+        const flags = isMatchCase ? "g" : "gi"
+        const regex = new RegExp(pattern, flags)
+
+        for (const [filename, buffer] of Object.entries(fileBuffers)) {
+          const matches = (buffer.content || "").match(regex)
+          if (matches && matches.length > 0) {
+            const updated = buffer.content.replace(regex, replace)
+            updateFileContent(filename, updated)
+            await saveWorkspaceFile(filename, updated, false).catch(() => {})
+            count += matches.length
+            modified++
+          }
+        }
+        if (modified > 0) {
+          showToast(
+            `Replaced ${count} occurrences across ${modified} open files`,
+          )
+          await refreshSearch()
+          return
+        }
+      } catch {}
+
       showToast(`Replace all failed: ${err?.message || "Unknown error"}`)
     }
   }
@@ -257,6 +315,7 @@ export function SearchPanel() {
             aria-label="Search files with regex"
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search (supports regex)"
+            ref={searchInputRef}
             value={search}
           />
           {search && (

@@ -3,15 +3,21 @@ import { Icon } from "../../ui/Icon"
 import { useWorkbench } from "../../../context/WorkbenchContext"
 
 export function SettingsPanel() {
-  const { linterSettings, setLinterSettings, minimapEnabled, toggleMinimap } =
-    useWorkbench()
+  const {
+    linterSettings,
+    setLinterSettings,
+    minimapEnabled,
+    toggleMinimap,
+    minimapScale,
+    setMinimapScale,
+  } = useWorkbench()
   const [settingsQuery, setSettingsQuery] = useState("")
   const [autoSave, setAutoSave] = useState(true)
 
   const query = settingsQuery.toLowerCase().trim()
 
   const showEditorGroup =
-    !query || "editor auto save minimap tab size".includes(query)
+    !query || "editor auto save minimap scale tab size".includes(query)
   const showLinterGroup =
     !query ||
     "linter diagnostics syntax warnings ontype onsave trigger".includes(query)
@@ -52,6 +58,23 @@ export function SettingsPanel() {
               onChange={toggleMinimap}
               type="checkbox"
             />
+          </label>
+          <label className="setting-row setting-select">
+            <span>
+              <strong>Minimap Scale</strong>
+              <small>Preview text size</small>
+            </span>
+            <select
+              aria-label="Minimap scale"
+              onChange={(e) =>
+                setMinimapScale(e.target.value as "small" | "medium" | "large")
+              }
+              value={minimapScale}
+            >
+              <option value="small">Small</option>
+              <option value="medium">Medium</option>
+              <option value="large">Large</option>
+            </select>
           </label>
           <label className="setting-row setting-select">
             <span>

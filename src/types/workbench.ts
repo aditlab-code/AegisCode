@@ -58,6 +58,13 @@ export interface FileBuffer {
   language: string
 }
 
+export type MinimapScale = "small" | "medium" | "large"
+
+export interface FindWidgetState {
+  isOpen: boolean
+  isReplaceOpen: boolean
+}
+
 export interface CursorPosition {
   line: number
   col: number

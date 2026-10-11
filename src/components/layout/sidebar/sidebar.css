@@ -137,7 +137,8 @@
   color: var(--color-ink);
 }
 
-.file-active {
+.file-active,
+.file-context-active {
   color: var(--color-ink);
   background: var(--color-surface-hover);
 }
@@ -179,7 +180,9 @@
 }
 
 .file-row.file-active .tree-indent-guide,
-.file-row.file-active .tree-branch-tick {
+.file-row.file-active .tree-branch-tick,
+.file-row.file-context-active .tree-indent-guide,
+.file-row.file-context-active .tree-branch-tick {
   background: var(--color-accent-soft);
 }
 
@@ -544,7 +547,7 @@
 /* Floating Context Menu */
 .explorer-context-menu {
   position: fixed;
-  z-index: 1000;
+  z-index: 9999;
   min-width: 170px;
   padding: 4px;
   background: var(--color-surface-raised);
