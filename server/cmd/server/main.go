@@ -5,21 +5,88 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/aditwicaksono/aegiscode/server/internal/api"
 	"github.com/aditwicaksono/aegiscode/server/internal/platform"
+	"github.com/aditwicaksono/aegiscode/server/internal/web"
 	"github.com/aditwicaksono/aegiscode/server/internal/workspace"
 )
 
+// Version is optionally injected via -ldflags during release binary compilation.
+var Version = "dev"
+
+func openBrowser(url string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		// Launch in dedicated standalone desktop window via Microsoft Edge App Mode
+		edgePaths := []string{
+			filepath.Join(os.Getenv("ProgramFiles(x86)"), "Microsoft/Edge/Application/msedge.exe"),
+			filepath.Join(os.Getenv("ProgramFiles"), "Microsoft/Edge/Application/msedge.exe"),
+		}
+		found := false
+		for _, ep := range edgePaths {
+			if _, err := os.Stat(ep); err == nil {
+				cmd = exec.Command(ep, "--app="+url)
+				found = true
+				break
+			}
+		}
+		if !found {
+			cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+		}
+	default:
+		cmd = exec.Command("xdg-open", url)
+	}
+	_ = cmd.Start()
+}
+
+func createListener(envPort string) (net.Listener, int, error) {
+	if envPort != "" {
+		p, err := strconv.Atoi(envPort)
+		if err != nil {
+			return nil, 0, fmt.Errorf("invalid PORT environment variable: %w", err)
+		}
+		l, err := net.Listen("tcp", fmt.Sprintf(":%d", p))
+		return l, p, err
+	}
+
+	for p := 8080; p <= 8095; p++ {
+		l, err := net.Listen("tcp", fmt.Sprintf(":%d", p))
+		if err == nil {
+			return l, p, nil
+		}
+	}
+	return nil, 0, errors.New("no available ports between 8080 and 8095")
+}
+
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	shouldOpen := false
+	for _, arg := range os.Args[1:] {
+		if arg == "--open" || arg == "-o" {
+			shouldOpen = true
+		}
+	}
+	if os.Getenv("AEGIS_OPEN") == "1" || os.Getenv("AEGIS_OPEN") == "true" {
+		shouldOpen = true
+	}
+
+	listener, activePort, err := createListener(os.Getenv("PORT"))
+	if err != nil {
+		log.Fatalf("failed to start server listener: %v", err)
 	}
 
 	initialDir := os.Getenv("WORKSPACE_ROOT")
@@ -32,16 +99,34 @@ func main() {
 	server := api.NewServer(ws, picker)
 
 	rootPath, name := ws.GetRoot()
-	fmt.Printf("AegisCode Go Core Server listening on http://localhost:%s\n", port)
+	serverURL := fmt.Sprintf("http://localhost:%d", activePort)
+	fmt.Printf("AegisCode %s Go Core Server listening on %s\n", Version, serverURL)
 	if rootPath == "" {
 		fmt.Println("Active Workspace: None (Awaiting folder)")
 	} else {
 		fmt.Printf("Active Workspace: %s (%s)\n", name, rootPath)
 	}
 
+	apiHandler := server.Routes()
+	spaHandler := web.NewSPAHandler(web.GetEmbeddedFS())
+
+	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			apiHandler.ServeHTTP(w, r)
+			return
+		}
+		spaHandler.ServeHTTP(w, r)
+	})
+
 	httpServer := &http.Server{
-		Addr:    ":" + port,
-		Handler: server.Routes(),
+		Handler: rootHandler,
+	}
+
+	if shouldOpen {
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			openBrowser(serverURL)
+		}()
 	}
 
 	stop := make(chan os.Signal, 1)
@@ -49,7 +134,7 @@ func main() {
 
 	serverErr := make(chan error, 1)
 	go func() {
-		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErr <- err
 		}
 	}()

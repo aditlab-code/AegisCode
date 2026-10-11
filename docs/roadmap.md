@@ -16,8 +16,10 @@
 | **Phase 5** | AppDrawer AEGIS AI Agent & Session Hub | ✅ Completed | Multi-session chat, slash autocomplete, provider selector |
 | **Special** | UI Dark/Light Theme & Modular Palettes | ✅ Completed | ActivityRail toggle, modular JSON palettes (Default, Atom, Tokyo Night) |
 | **Special** | Settings Registry, Core IDE Preferences & Editor Polish | ✅ Completed | Decoupled schema registry, wildcard exclude, GPU cursor blinking, wrap column |
-| **Phase 6** | Go Core Server, SQLite & Bundled DAP Debugger | 🟡 Active / Next | Cross-platform Go binary, supervisor, SQLite DB, DAP/Delve |
-| **Phase 7** | Web-Based Remote Pairing & Tablet Companion | ⚪ Upcoming | LAN pairing, web preview host, touch-optimized editor mode |
+| **Phase 6** | Go Core Server, SQLite & Bundled DAP Debugger | 🟡 Active (6.1, 6.2, 6.6 ✅) | Cross-platform Go binary & embed.FS, supervisor, SQLite DB, DAP/Delve |
+| **Phase 7** | Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`) | ⚪ Upcoming | Multi-format tab viewers (Images, CSV), vector canvas wireframing |
+| **Phase 8** | Research Workshop & Data Science Studio | ⚪ Planned | LaTeX + PDF sync, BibTeX, Python/R dataframes, Biblioshiny |
+| **Phase 9** | Web-Based Remote Pairing & Tablet Companion | ⚪ Deferred (Final) | LAN pairing, web preview host, touch-optimized editor mode |
 
 ---
 
@@ -123,7 +125,7 @@
 ---
 
 ### Phase 6: Go Core Server, SQLite Storage, & Bundled DAP Debugger
-- **Status**: 🟡 Active (Backend Foundation & Worker Superstructures)
+- **Status**: 🟡 Active (Sub-Phases 6.1, 6.2, and 6.6 Completed)
 
 #### Sub-Phase 6.1: Live Workspace Engine & File Operations
 - **Status**: ✅ Completed
@@ -168,16 +170,66 @@
 - **Deliverables**:
   - Debug Adapter Protocol (DAP) client proxy and bundled Delve runner for step-by-step Go and backend debugging through the web UI.
 
-#### Sub-Phase 6.6: Single Cross-Platform Binary & Embedded Frontend (`embed.FS`)
-- **Status**: ⚪ Planned
+#### Sub-Phase 6.6: Single Cross-Platform Binary, Embedded Frontend (`embed.FS`) & Native Desktop Window
+- **Status**: ✅ Completed
 - **Deliverables**:
-  - Single executable distribution with embedded `dist/` web assets.
-  - Target platforms: macOS (ARM64/AMD64), Linux (AMD64/ARM64), Windows (AMD64).
+  - **Embedded Frontend in Go Binary (`server/internal/web`)**:
+    - Embedded production React 19 web assets into Go binary using `//go:embed all:dist` with SPA client routing fallback.
+    - Unified HTTP routing: `/api/v1/*` routes handled by Go workspace/git/terminal APIs, all static/SPA routes served from the embedded bundle.
+    - Dynamic port auto-binding & fallback in `server/cmd/server/main.go`: binds default `8080`, and gracefully cascades across `8081..8095` if occupied.
+    - CLI options: `--port`, `--open`, `--headless`, and Windows Edge App Mode (`--app=http://...`) launch.
+  - **Native Desktop App Shell (`scripts/macos-wrapper/main.swift`)**:
+    - Ultra-lightweight native Swift/Cocoa `WKWebView` window wrapper (~88 KB binary) replacing heavyweight Electron (~200MB+ overhead).
+    - Native macOS window chrome, styled dark titlebar, Obsidian canvas backdrop (`#0d0f12`), and full window controls.
+  - **Fail-Safe Port Cleanup & Anti-Zombie Watchdog**:
+    - Robust process lifecycle supervision in Cocoa wrapper: traps `SIGTERM`, `SIGINT`, `SIGHUP`, window close delegate (`windowWillClose`), and `applicationShouldTerminateAfterLastWindowClosed` (`⌘Q`).
+    - Immediately dispatches `SIGTERM` to the child `aegiscode-server` process group, backed by a 250ms `SIGKILL` watchdog timer. Guarantees 100% clean port release with zero zombie background processes.
+  - **Cross-Platform Matrix & DMG Packaging**:
+    - Automated cross-compilation matrix script (`scripts/build-binary.js`, `npm run build:binary`) with UPX compression generating lightweight standalone binaries (~7.5 MB - 8.1 MB) across 5 targets: macOS (`darwin/arm64`, `darwin/amd64`), Linux (`linux/amd64`, `linux/arm64`), and Windows (`windows/amd64`).
+    - macOS DMG packager (`scripts/package-dmg.js`, `npm run package:dmg`) producing ready-to-mount `bin/AegisCode.dmg` installer (~3.5 MB) containing `AegisCode.app`.
+  - **UI & Brand Hygiene**:
+    - Purged legacy mock traffic lights from [`WindowControls.tsx`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/header/WindowControls.tsx) and [`header.css`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/header/header.css) in favor of native OS window controls.
+    - Purged all legacy "figma-make-app" strings; standardized official Aegis Shield SVG branding and rich OpenGraph/HTML metadata.
+  - **Verification**: 100% verified via automated frontend Vitest suite (32 tests), Go backend suite (7 suites), and live standalone DMG execution.
 
 ---
 
-### Phase 7: Web-Based Remote Pairing & Tablet Companion Display
-- **Status**: ⚪ Upcoming (Multi-Screen Remote)
+### Phase 7: Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`)
+- **Status**: ⚪ Upcoming (Next UI Frontier)
+- **Objectives & Deliverables**:
+  - **Sub-Phase 7.1: Multi-Viewer Tab Dispatcher Foundation**:
+    - Abstraction of workbench editor tabs from pure text buffers to a versatile MIME/Extension viewer dispatcher.
+    - Native `ImageViewerPane` supporting `.png`, `.jpg`, `.jpeg`, `.svg`, `.webp` with pan, zoom, and transparent checkerboard.
+    - Native `CsvViewerPane` for tabular data browsing with fast sorting and row virtualization (`.csv`, `.tsv`).
+    - Markdown preview splitter (`.md`) with live rendered preview and math notation.
+  - **Sub-Phase 7.2: Vector Canvas Wireframe Studio (`tldraw`)**:
+    - Integration of `@tldraw/tldraw` infinite vector canvas engine inside editor tab groups for `.canvas` and `.design` files.
+    - Zero-overhead state persistence: canvas state saved as structured JSON directly through Go workspace file endpoints (`/api/v1/workspace/file`) with full Git version tracking.
+    - Wireframe UI toolkit: Rectangles, Frames (Artboards for Mobile/Desktop screens), UI buttons, input boxes, typography, arrows, and sticky annotations.
+  - **Sub-Phase 7.3: Design-to-Code & Perspective Presets**:
+    - Mode Switcher in Header bar: `Code Studio` ↔ `Design Studio` with contextual Activity Rail filtering.
+    - Token color bridge linking canvas element palettes directly to AegisCode Tailwind CSS tokens (`bg-surface`, `text-ink`, `color-accent`).
+    - AEGIS AI Drawer integration: ability to read canvas JSON nodes to suggest layout refinements or draft React/Tailwind TSX component scaffolds.
+
+---
+
+### Phase 8: Research Workshop & Data Science Studio
+- **Status**: ⚪ Planned
+- **Objectives & Deliverables**:
+  - **Sub-Phase 8.1: LaTeX Compilation & Live PDF Synchronization**:
+    - Go supervisor asynchronous job runner executing `tectonic` / `pdflatex` CLI with streaming build logs to Output Panel via SSE.
+    - Native `PdfViewerPane` powered by PDF.js with SyncTeX bidirectional click-to-code navigation.
+  - **Sub-Phase 8.2: BibTeX Reference Manager**:
+    - Dedicated sidebar panel and in-editor autocomplete (`\cite{...}`) backed by `.bib` file parser.
+  - **Sub-Phase 8.3: Data Science Python / R & Interactive Analytics**:
+    - Integrated DataFrame visualizer with column filtering and statistical profiling.
+    - Python environment inspector (`venv` / `uv` / `pip` package manager).
+    - Subprocess sandboxed webview iframe for R Shiny / `biblioshiny` and PLS-SEM interactive visualizations.
+
+---
+
+### Phase 9: Web-Based Remote Pairing & Tablet Companion Display
+- **Status**: ⚪ Deferred (Final Milestone)
 - **Deliverables**:
   - **Local Network Pairing**: Go server exposes a local LAN interface with a one-time pairing token or terminal/UI QR code.
   - **Companion View Mode (`/?mode=companion`)**:

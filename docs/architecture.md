@@ -59,7 +59,7 @@ flowchart TB
 
 ### Core Architecture Pillars
 1. **Web-Based & Remote-Ready**: The frontend runs natively in modern web standards. Developers can use the desktop browser for full IDE operations and connect a tablet over the local network as a secondary companion host (live preview or dedicated focus editor).
-2. **Cross-Platform & Immutable Go Backend**: Compiled into a single zero-dependency native binary for macOS, Linux, and Windows. The backend runtime is stateless and immutable; dynamic states are isolated exclusively inside SQLite in the OS App Data directory.
+2. **Cross-Platform & Single Standalone Binary (`embed.FS`)**: Compiled into a single zero-dependency standalone native binary (~7.5 MB) for macOS, Linux, and Windows, embedding the production React 19 frontend via Go `embed.FS` (`server/internal/web`). The backend runtime is stateless and immutable; dynamic states are isolated exclusively inside SQLite in the OS App Data directory.
 3. **Bundled Backend Debugging**: Debug Adapter Protocol (DAP) and native debugger runners (such as Delve) are bundled directly into the backend supervision engine.
 4. **Resilient Isolation**: Heavy or crash-prone tasks (LSP engines, PTY terminal shells, agent reasoning) run as supervised external worker processes so crashes never terminate the core server or freeze editor UI buffers.
 
@@ -111,6 +111,7 @@ The Go Core Server adheres to a pragmatic, flat package-by-feature layout avoidi
 - `server/internal/store/`: Embedded SQLite storage client managing user profiles, session logs, and IDE preferences in `~/.aegis/data/aegis.db`.
 - `server/internal/supervisor/`: Process supervisor managing child workers (LSP, PTY, Agent) with fail-fast crash detection and auto-restart policies.
 - `server/internal/terminal/`: Native pseudoterminal (PTY) session manager handling zsh/bash allocation, resizing, and streaming.
+- `server/internal/web/`: Embedded production web assets (`embed.FS`) and Single Page Application (SPA) fallback handler serving production React assets.
 - `server/internal/workspace/`: Project workspace indexing, file system CRUD actions, safe path validation, and recursive file watchers.
 
 ---
@@ -119,7 +120,7 @@ The Go Core Server adheres to a pragmatic, flat package-by-feature layout avoidi
 
 - [`docs/architecture.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/architecture.md): This file — system blueprint and folder-level ownership guide.
 - [`docs/frontend.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/frontend.md): UI layout reference organized by component layout folder, updated when visual specifications change.
-- [`docs/roadmap.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/roadmap.md): Milestone progression tracking Phases 1 through 7.
+- [`docs/roadmap.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/roadmap.md): Milestone progression tracking Phases 1 through 9.
 - [`docs/feature-backend.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/feature-backend.md): Backend technical blueprint, core features, and critical REST/SSE/WS endpoints.
 - [`docs/report.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/report.md): Feature assessment guidelines, scorecard metrics, and pre-implementation gate checklist.
 - [`docs/installation.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/installation.md): Installation prerequisites, build instructions, and developer setup.

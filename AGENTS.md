@@ -44,6 +44,8 @@ AegisCode enforces the use of **RTK (Rust Token Killer)** (`~/.local/bin/rtk`) t
 1. **DO NOT Catch Errors Silently**: If an error occurs, break the function immediately and report the error explicitly. Never use empty catch/error blocks.
 2. **DO NOT Write Spaghetti Error Handling**: Maintain exactly one clear, linear validation and error path per function.
 3. **DO NOT Add Redundant Constants / Abstractions**: Check state mutability; avoid excessive wrapper classes, DDD boilerplate, or deep hexagonal layers. Keep packages flat in `server/internal/*`.
+4. **Preserve `embed.FS` Fallback Stubs**: Always keep [`server/internal/web/dist/index.html`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/server/internal/web/dist/index.html) tracked in git so clean checkouts can compile Go code and pass backend tests without requiring a prior frontend build.
+5. **Fail-Safe Process & Port Teardown**: Ensure all test runners, dev servers, and desktop wrappers clean up child process groups on exit (`SIGTERM` + `SIGKILL` watchdog). Never leave orphaned background processes locking TCP ports (`8080`, `8081`, `5173`).
 
 ---
 
@@ -63,7 +65,7 @@ For detailed technical specifications, architecture decisions, and design refere
 
 - **Folder Hierarchy & Responsibilities**: [`docs/architecture.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/architecture.md)
 - **Active UI Design & Layout Modules**: [`docs/frontend.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/frontend.md)
-- **Milestones & Phasing (Phase 1–7)**: [`docs/roadmap.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/roadmap.md)
+- **Milestones & Phasing (Phase 1–9)**: [`docs/roadmap.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/roadmap.md)
 - **Backend Endpoints, DAP & Pairing**: [`docs/feature-backend.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/feature-backend.md)
 - **Feature Assessment & RFC Scorecard**: [`docs/report.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/report.md)
 - **Installation, Build & Tablet Setup**: [`docs/installation.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/installation.md)

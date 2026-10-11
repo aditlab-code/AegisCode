@@ -79,9 +79,10 @@ Estimated bundle size delta and memory footprint impact.
 This section documents the formal architectural assessment for every completed and active milestone against the [Feature Assessment Scorecard](#1-feature-assessment-scorecard).
 
 ### Global Repository Health Summary (Current Milestone)
-- **Production Bundle**: **112.59 kB CSS** (18.46 kB gzip) │ **456.55 kB JS** (127.45 kB gzip) via Vite build (~210ms).
+- **Production Bundle**: **118.06 kB CSS** (19.46 kB gzip) │ **799.30 kB JS** (243.60 kB gzip) via Vite build (~220ms).
 - **CSS Token Adherence**: **100% Compliant**. Zero arbitrary hex colors or unapproved CSS variable escapes across all modules.
-- **Verification Gates**: **32 Vitest frontend tests** + **Go backend tests** passing with 0 errors; **71 files** verified and formatted via `oxfmt` (~20ms).
+- **Standalone Binaries & Packaging**: **~7.5 MB** UPX-compressed standalone binary, **~3.5 MB** DMG installer, **~88 KB** native Swift Cocoa `WKWebView` wrapper (zero Electron overhead).
+- **Verification Gates**: **32 Vitest frontend tests** + **7 Go backend test suites** passing with 0 errors; code cleanly verified and formatted via `oxfmt`.
 
 ---
 
@@ -99,8 +100,12 @@ This section documents the formal architectural assessment for every completed a
 | **Sub-Phase 6.1: Workspace Engine** | 25/25 | 25/25 | 25/25 | 15/15 | 10/10 | **100%** | ✅ Passed |
 | **Sub-Phase 6.2: Native Git & Diff** | 25/25 | 25/25 | 25/25 | 15/15 | 10/10 | **100%** | ✅ Passed |
 | **Sub-Phase 6.3: Process Supervisor/PTY** | — | — | — | — | — | **Active** | 🟡 Next |
-| **Sub-Phase 6.4–6.6: SQLite & Single Binary** | — | — | — | — | — | **Planned** | ⚪ Roadmap |
-| **Phase 7: Remote Pairing & Tablet** | — | — | — | — | — | **Upcoming** | ⚪ Roadmap |
+| **Sub-Phase 6.4: Stateless/SQLite** | — | — | — | — | — | **Planned** | ⚪ Roadmap |
+| **Sub-Phase 6.5: Bundled DAP Debugger** | — | — | — | — | — | **Planned** | ⚪ Roadmap |
+| **Sub-Phase 6.6: Single Standalone Binary & Desktop App** | 25/25 | 25/25 | 25/25 | 15/15 | 10/10 | **100%** | ✅ Passed |
+| **Phase 7: Multi-Viewer & Wireframe Studio (tldraw)** | — | — | — | — | — | **Upcoming** | ⚪ Roadmap |
+| **Phase 8: Research Workshop & Data Science** | — | — | — | — | — | **Planned** | ⚪ Roadmap |
+| **Phase 9: Remote Pairing & Tablet Companion** | — | — | — | — | — | **Deferred** | ⚪ Roadmap |
 
 ---
 
@@ -162,13 +167,27 @@ This section documents the formal architectural assessment for every completed a
 - **Anti-Over-Engineering**: Eliminated over-engineered popup modal overlays in favor of integrated editor tabs.
 - **Verification**: End-to-end Git status, staging, unstaging, commit creation, and diff rendering verified across frontend and backend.
 
-#### Sub-Phase 6.3–6.6: Superstructures, Process Supervisor, SQLite & DAP (Active / Planned)
+#### Sub-Phase 6.3–6.5: Superstructures, Process Supervisor, SQLite & DAP (Active / Planned)
 - **Sub-Phase 6.3 (Active / Next)**: Process Supervisor and native cross-platform PTY terminal streaming (`/api/v1/terminal/*`) over WebSocket/SSE.
 - **Sub-Phase 6.4 (Planned)**: Stateless runtime config with SQLite user state persistence in `~/.aegis/data/aegis.db`.
 - **Sub-Phase 6.5 (Planned)**: Bundled Delve DAP debugger proxy for step-by-step Go code execution in the web UI.
-- **Sub-Phase 6.6 (Planned)**: Single cross-platform executable bundling web assets via `embed.FS`.
 
-#### Phase 7: Web-Based Remote Pairing & Tablet Companion (Upcoming)
+#### Sub-Phase 6.6: Single Standalone Binary, Embedded Frontend (`embed.FS`) & Native Desktop Window
+- **Scope**: Single-binary deployment bundling React 19 production assets via Go `embed.FS` (`server/internal/web/`), dynamic port auto-binding (8080..8095), native Cocoa `WKWebView` desktop wrapper (`scripts/macos-wrapper/main.swift`, ~88 KB), fail-safe port cleanup watchdog, cross-platform UPX build matrix (`scripts/build-binary.js`), and DMG packager (`scripts/package-dmg.js`).
+- **Lightweight & Performance**: Native 88 KB Swift binary completely eliminates the ~200MB+ RAM and disk bloat of Electron. Go binary compressed from ~15MB to ~7.5MB via UPX. Standalone macOS installer (`AegisCode.dmg`) weighs only ~3.5MB.
+- **Anti-Over-Engineering**: Zero CGO, zero heavyweight desktop runtime frameworks (Electron/Tauri). Direct Cocoa `NSWindow` + `WKWebView` integration on macOS and Edge App Mode on Windows (`--app=`).
+- **Backend Constraints & Process Safety**: Single linear validation paths in [`handler.go`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/server/internal/web/handler.go) with explicit error reporting. Cocoa wrapper enforces strict child process group cleanup via `SIGTERM` followed by a 250ms `SIGKILL` watchdog timer on window close or `Cmd+Q`, ensuring zero zombie background processes or locked TCP ports.
+- **UI & Brand Hygiene**: Removed mock window traffic lights from [`WindowControls.tsx`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/header/WindowControls.tsx) in favor of native OS window controls. Purged legacy Figma references and standardized Aegis Shield SVG branding.
+- **Verification**: Verified with 32 Vitest frontend unit tests, 7 Go backend test suites, and end-to-end smoke testing of DMG mount and execution.
+
+#### Phase 7: Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`) (Upcoming)
+- **Scope**: Workbench editor tab abstraction supporting non-text MIME viewers (`ImageViewerPane`, `CsvViewerPane`, live Markdown splitter) and `@tldraw/tldraw` infinite vector canvas for `.canvas` and `.design` wireframes.
+- **Lightweight Fit**: Canvas state serialized as lightweight JSON saved directly through Go workspace file endpoints (`/api/v1/workspace/file`) with full Git version tracking.
+
+#### Phase 8: Research Workshop & Data Science Studio (Planned)
+- **Scope**: Asynchronous LaTeX compiler CLI supervisor (`tectonic`/`pdflatex`), live SyncTeX PDF.js viewer, BibTeX reference manager, and Python/R DataFrame visualizers.
+
+#### Phase 9: Web-Based Remote Pairing & Tablet Companion Display (Deferred / Final Milestone)
 - **Scope**: Local network pairing (mDNS / pairing PIN), Web Preview host tab, and touch-optimized distraction-free Focus Editor tab (`/?mode=companion`).
 - **Multi-Screen Fit**: Verified architecture accommodates tablet split-screen workflows without desktop state degradation.
 

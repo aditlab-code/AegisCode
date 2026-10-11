@@ -1,5 +1,6 @@
 {
-  "name": "figma-make-app",
+  "name": "aegiscode",
+  "description": "Lightweight, high-performance web-based IDE with local cross-platform Go core server, PTY terminal, and modular creative studios.",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -9,6 +10,9 @@
     "server": "go -C server run ./cmd/server",
     "build": "vite build",
     "build:server": "go -C server build -o ../dist-server/aegis-server ./cmd/server",
+    "build:binary": "node scripts/build-binary.js",
+    "build:binary:all": "node scripts/build-binary.js --all",
+    "package:dmg": "node scripts/package-dmg.js",
     "preview": "vite preview",
     "format": "oxfmt",
     "test:frontend": "vitest run",
