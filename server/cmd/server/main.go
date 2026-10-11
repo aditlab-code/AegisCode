@@ -19,6 +19,7 @@ import (
 
 	"github.com/aditwicaksono/aegiscode/server/internal/api"
 	"github.com/aditwicaksono/aegiscode/server/internal/platform"
+	"github.com/aditwicaksono/aegiscode/server/internal/store"
 	"github.com/aditwicaksono/aegiscode/server/internal/web"
 	"github.com/aditwicaksono/aegiscode/server/internal/workspace"
 )
@@ -95,10 +96,18 @@ func main() {
 		log.Fatalf("failed to initialize workspace manager: %v", err)
 	}
 
+	st, err := store.New("")
+	if err != nil {
+		log.Fatalf("failed to initialize store: %v", err)
+	}
+
 	picker := platform.NewNativeFolderPicker()
-	server := api.NewServer(ws, picker)
+	server := api.NewServer(ws, picker, st)
 
 	rootPath, name := ws.GetRoot()
+	if rootPath != "" {
+		_ = st.AddRecentProject(rootPath)
+	}
 	serverURL := fmt.Sprintf("http://localhost:%d", activePort)
 	fmt.Printf("AegisCode %s Go Core Server listening on %s\n", Version, serverURL)
 	if rootPath == "" {

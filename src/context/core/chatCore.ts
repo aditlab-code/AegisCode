@@ -5,6 +5,12 @@ import type {
   ChatSession,
 } from "../../types/workbench"
 import { CHAT_MODELS } from "../../data/chatConstants"
+import {
+  deleteBackendChatSession,
+  fetchBackendChatSession,
+  fetchBackendChatSummaries,
+  saveBackendChatSession,
+} from "../../utils/storeApi"
 
 export const DEFAULT_PROVIDER: ChatProvider = "antigravity"
 export const DEFAULT_MODEL = "gemini-2.5-flash"
@@ -209,6 +215,28 @@ export function useChatCore() {
     loadStoredActiveId(sessions),
   )
 
+  // Hydrate chat sessions from backend flat-file storage (~/.aegis/chats/*.json)
+  useEffect(() => {
+    fetchBackendChatSummaries()
+      .then(async (summaries) => {
+        if (Array.isArray(summaries) && summaries.length > 0) {
+          const loadedSessions: ChatSession[] = []
+          for (const s of summaries.slice(0, 15)) {
+            const full = await fetchBackendChatSession(s.id)
+            if (full) loadedSessions.push(full)
+          }
+          if (loadedSessions.length > 0) {
+            setSessions((prev) => {
+              const loadedIds = new Set(loadedSessions.map((l) => l.id))
+              const localOnly = prev.filter((p) => !loadedIds.has(p.id))
+              return [...loadedSessions, ...localOnly]
+            })
+          }
+        }
+      })
+      .catch(() => {})
+  }, [])
+
   useEffect(() => {
     try {
       window.localStorage.setItem(
@@ -232,11 +260,19 @@ export function useChatCore() {
   const activeModel = activeSession.model
   const chatMessages = activeSession.messages
 
+  // Sync active session changes to backend disk storage
+  useEffect(() => {
+    if (activeSession) {
+      saveBackendChatSession(activeSession).catch(() => {})
+    }
+  }, [activeSession])
+
   const createSession = useCallback(
     (provider?: ChatProvider, model?: string) => {
       const res = createSessionLogic(sessions, provider, model)
       setSessions(res.sessions)
       setActiveSessionId(res.newSession.id)
+      saveBackendChatSession(res.newSession).catch(() => {})
       return res.newSession.id
     },
     [sessions],
@@ -253,6 +289,7 @@ export function useChatCore() {
         setActiveSessionId(res.nextActiveId)
         return res.sessions
       })
+      deleteBackendChatSession(id).catch(() => {})
     },
     [activeSessionId],
   )

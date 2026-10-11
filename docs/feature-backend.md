@@ -25,7 +25,7 @@ flowchart LR
         DAPRunner["Bundled DAP / Delve Engine"]
         Supervisor["Process Supervisor"]
         Workspace["Workspace Engine"]
-        Store["SQLite Store (~/.aegis/data/aegis.db)"]
+        Store["Flat-File Store (~/.aegis/)"]
     end
 
     subgraph Workers["Supervised Subprocesses"]
@@ -47,7 +47,7 @@ flowchart LR
 
 ### Core Characteristics
 1. **Lightweight Footprint**: Memory usage <30MB at baseline, sub-30ms startup latency.
-2. **Immutable Runtime**: The server executable is read-only. Runtime configuration is parsed into immutable Go structs. Dynamic user preferences, session history, and indices live strictly in SQLite (`~/.aegis/data/aegis.db`).
+2. **Immutable Runtime & Zero-DB Flat-File Isolation**: The server executable is read-only. Runtime configuration is parsed into immutable Go structs. Dynamic user preferences, session history, and recent workspaces live strictly in atomic JSON flat-files (`~/.aegis/config.json`, `~/.aegis/state.json`, `~/.aegis/chats/`).
 3. **Cross-Platform**: Compiles natively for macOS (`darwin/arm64`, `darwin/amd64`), Linux (`linux/amd64`, `linux/arm64`), and Windows (`windows/amd64`).
 
 ---
@@ -262,6 +262,32 @@ All operations interact directly with the local native Git CLI binary on the act
   - Returns the 64 KB in-memory ring buffer log history (combined stdout/stderr).
 - `POST /api/v1/workers/:id/stop` / `DELETE /api/v1/workers/:id`
   - Terminates the worker process group gracefully.
+
+### H. Flat-File Persistence & State Management (Sub-Phase 6.4)
+- `GET /api/v1/config`
+  - Retrieves global user preferences, model choices, and bypassed auth tokens from `~/.aegis/config.json`.
+- `POST /api/v1/config`
+  - Body: `{ "theme": "...", "defaultModel": "...", "bypassTokens": {...}, "settings": {...} }`
+  - Atomically persists user preferences to `~/.aegis/config.json`.
+- `GET /api/v1/state`
+  - Retrieves application state (`recentProjects`, `lastWorkspace`, `activeSessionId`) from `~/.aegis/state.json`.
+- `POST /api/v1/state`
+  - Body: `{ "recentProjects": [...], "lastWorkspace": "...", "activeSessionId": "..." }`
+  - Atomically updates app state in `~/.aegis/state.json`.
+- `POST /api/v1/state/recent`
+  - Body: `{ "path": "/path/to/project" }`
+  - Adds workspace path to the recent list (deduplicating and moving to head).
+- `DELETE /api/v1/state/recent`
+  - Query parameters: `?path=<path>` to remove a specific project, or `?all=true` to clear the list.
+- `GET /api/v1/chats`
+  - Returns metadata summaries for all conversation files in `~/.aegis/chats/` without loading full message arrays.
+- `GET /api/v1/chats/:id`
+  - Retrieves full multi-turn chat session with messages from `~/.aegis/chats/<id>.json`.
+- `POST /api/v1/chats/:id`
+  - Body: `ChatSession` JSON payload.
+  - Atomically saves chat session to `~/.aegis/chats/<id>.json`.
+- `DELETE /api/v1/chats/:id`
+  - Removes session file from `~/.aegis/chats/<id>.json`.
 
 ---
 

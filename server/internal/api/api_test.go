@@ -14,6 +14,7 @@ import (
 
 	"github.com/aditwicaksono/aegiscode/server/internal/git"
 	"github.com/aditwicaksono/aegiscode/server/internal/platform"
+	"github.com/aditwicaksono/aegiscode/server/internal/store"
 	"github.com/aditwicaksono/aegiscode/server/internal/workspace"
 )
 
@@ -38,7 +39,13 @@ func setupTestServer(t *testing.T, initialDir string) (*Server, http.Handler, st
 		Cancelled: false,
 	}
 
-	srv := NewServer(ws, picker)
+	storeDir := t.TempDir()
+	st, err := store.New(storeDir)
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+
+	srv := NewServer(ws, picker, st)
 	return srv, srv.Routes(), tempDir
 }
 
@@ -703,6 +710,180 @@ func TestWorkersApiEndpoints(t *testing.T) {
 		t.Fatalf("expected connected event in SSE stream, got %s", string(buf[:n]))
 	}
 }
+
+func TestStorageEndpoints(t *testing.T) {
+	srv, handler, tempDir := setupTestServer(t, "")
+	defer os.RemoveAll(tempDir)
+
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+
+	// 1. GET /api/v1/config
+	resp, err := http.Get(ts.URL + "/api/v1/config")
+	if err != nil {
+		t.Fatalf("failed to get config: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var cfg store.Config
+	_ = json.NewDecoder(resp.Body).Decode(&cfg)
+	resp.Body.Close()
+
+	// 2. POST /api/v1/config
+	cfg.Theme = "tokyo-night"
+	cfg.DefaultModel = "gemini-2.5-flash"
+	cfg.BypassTokens = map[string]string{"antigravity": "token-xyz"}
+	cfgBody, _ := json.Marshal(cfg)
+	resp, err = http.Post(ts.URL+"/api/v1/config", "application/json", bytes.NewReader(cfgBody))
+	if err != nil {
+		t.Fatalf("failed to post config: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 on config post, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Verify updated config via GET
+	resp, _ = http.Get(ts.URL + "/api/v1/config")
+	var updatedCfg store.Config
+	_ = json.NewDecoder(resp.Body).Decode(&updatedCfg)
+	resp.Body.Close()
+	if updatedCfg.Theme != "tokyo-night" {
+		t.Errorf("expected theme tokyo-night, got %s", updatedCfg.Theme)
+	}
+
+	// 3. GET /api/v1/state
+	resp, err = http.Get(ts.URL + "/api/v1/state")
+	if err != nil {
+		t.Fatalf("failed to get state: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// 4. POST /api/v1/state/recent
+	recentReq := map[string]string{"path": filepath.Join(tempDir, "workspaceA")}
+	b, _ := json.Marshal(recentReq)
+	resp, err = http.Post(ts.URL+"/api/v1/state/recent", "application/json", bytes.NewReader(b))
+	if err != nil {
+		t.Fatalf("failed to post recent project: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 on post recent, got %d", resp.StatusCode)
+	}
+	var st store.AppState
+	_ = json.NewDecoder(resp.Body).Decode(&st)
+	resp.Body.Close()
+	if len(st.RecentProjects) != 1 {
+		t.Errorf("expected 1 recent project, got %d", len(st.RecentProjects))
+	}
+
+	// 5. DELETE /api/v1/state/recent?all=true
+	delReq, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/v1/state/recent?all=true", nil)
+	resp, err = http.DefaultClient.Do(delReq)
+	if err != nil {
+		t.Fatalf("failed to clear recent projects: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 on clear recent, got %d", resp.StatusCode)
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&st)
+	resp.Body.Close()
+	if len(st.RecentProjects) != 0 {
+		t.Errorf("expected 0 recent projects after clear, got %d", len(st.RecentProjects))
+	}
+
+	// 6. GET /api/v1/chats (empty list initially)
+	resp, err = http.Get(ts.URL + "/api/v1/chats")
+	if err != nil {
+		t.Fatalf("failed to list chats: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var chatsList map[string][]store.ChatSummary
+	_ = json.NewDecoder(resp.Body).Decode(&chatsList)
+	resp.Body.Close()
+	if len(chatsList["chats"]) != 0 {
+		t.Errorf("expected 0 chats, got %d", len(chatsList["chats"]))
+	}
+
+	// 7. POST /api/v1/chats/session-101
+	newSession := store.ChatSession{
+		ID:       "session-101",
+		Title:    "Architecture Review",
+		Provider: "antigravity",
+		Model:    "gemini-2.5-flash",
+		Messages: []store.ChatMessage{
+			{ID: "m1", Role: "user", Text: "Hello AI"},
+		},
+	}
+	sessBytes, _ := json.Marshal(newSession)
+	resp, err = http.Post(ts.URL+"/api/v1/chats/session-101", "application/json", bytes.NewReader(sessBytes))
+	if err != nil {
+		t.Fatalf("failed to post chat session: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 on chat post, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// 8. GET /api/v1/chats/session-101
+	resp, err = http.Get(ts.URL + "/api/v1/chats/session-101")
+	if err != nil {
+		t.Fatalf("failed to get chat session: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var retrieved store.ChatSession
+	_ = json.NewDecoder(resp.Body).Decode(&retrieved)
+	resp.Body.Close()
+	if retrieved.Title != "Architecture Review" || len(retrieved.Messages) != 1 {
+		t.Errorf("retrieved session mismatch: %+v", retrieved)
+	}
+
+	// 9. DELETE /api/v1/chats/session-101
+	delChatReq, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/v1/chats/session-101", nil)
+	resp, err = http.DefaultClient.Do(delChatReq)
+	if err != nil {
+		t.Fatalf("failed to delete chat session: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 on delete chat, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Verify 404 after deletion
+	resp, _ = http.Get(ts.URL + "/api/v1/chats/session-101")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404 after chat deletion, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// 10. Test automatic AddRecentProject via /api/v1/workspace/open
+	openReq := map[string]string{"path": tempDir}
+	openBytes, _ := json.Marshal(openReq)
+	resp, err = http.Post(ts.URL+"/api/v1/workspace/open", "application/json", bytes.NewReader(openBytes))
+	if err != nil {
+		t.Fatalf("failed to open workspace: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	storedState, err := srv.Store().GetState()
+	if err != nil {
+		t.Fatalf("failed to read state from store: %v", err)
+	}
+	if len(storedState.RecentProjects) == 0 || storedState.RecentProjects[0] != tempDir {
+		t.Errorf("expected recent projects to contain %s, got %v", tempDir, storedState.RecentProjects)
+	}
+}
+
 
 
 

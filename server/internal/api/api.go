@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/aditwicaksono/aegiscode/server/internal/git"
 	"github.com/aditwicaksono/aegiscode/server/internal/platform"
+	"github.com/aditwicaksono/aegiscode/server/internal/store"
 	"github.com/aditwicaksono/aegiscode/server/internal/supervisor"
 	"github.com/aditwicaksono/aegiscode/server/internal/terminal"
 	"github.com/aditwicaksono/aegiscode/server/internal/workspace"
@@ -26,18 +28,31 @@ type Server struct {
 	git        *git.Service
 	terminal   *terminal.Manager
 	supervisor *supervisor.Manager
+	store      *store.Store
 	logMu      sync.RWMutex
 	logSubs    map[chan LogEvent]struct{}
 	workerMu   sync.RWMutex
 	workerSubs map[chan supervisor.CrashEvent]struct{}
 }
 
-func NewServer(ws *workspace.Manager, picker platform.FolderPicker) *Server {
+func NewServer(ws *workspace.Manager, picker platform.FolderPicker, customStore ...*store.Store) *Server {
+	var st *store.Store
+	if len(customStore) > 0 && customStore[0] != nil {
+		st = customStore[0]
+	} else {
+		var err error
+		st, err = store.New("")
+		if err != nil {
+			st, _ = store.New(filepath.Join(os.TempDir(), "aegiscode-store"))
+		}
+	}
+
 	s := &Server{
 		ws:         ws,
 		picker:     picker,
 		git:        git.NewService(ws),
 		terminal:   terminal.NewManager(),
+		store:      st,
 		logSubs:    make(map[chan LogEvent]struct{}),
 		workerSubs: make(map[chan supervisor.CrashEvent]struct{}),
 	}
@@ -46,6 +61,11 @@ func NewServer(ws *workspace.Manager, picker platform.FolderPicker) *Server {
 		s.BroadcastWorkerCrash(evt)
 	})
 	return s
+}
+
+// Store returns the active flat-file persistence store.
+func (s *Server) Store() *store.Store {
+	return s.store
 }
 
 // Supervisor returns the active process supervisor manager.
@@ -167,6 +187,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/workers", s.handleWorkersList)
 	mux.HandleFunc("/api/v1/workers/", s.handleWorkerOperations)
 
+	// Flat-File Storage & App State API endpoints (Sub-Phase 6.4)
+	mux.HandleFunc("/api/v1/config", s.handleConfig)
+	mux.HandleFunc("/api/v1/state", s.handleState)
+	mux.HandleFunc("/api/v1/state/recent", s.handleStateRecent)
+	mux.HandleFunc("/api/v1/chats", s.handleChatsList)
+	mux.HandleFunc("/api/v1/chats/", s.handleChatOperations)
+
 	return corsMiddleware(mux)
 }
 
@@ -204,6 +231,9 @@ func (s *Server) handleWorkspaceOpen(w http.ResponseWriter, r *http.Request) {
 
 	_, name := s.ws.GetRoot()
 	s.BroadcastLog("Server", fmt.Sprintf("Mounted workspace root: %s (%s)", absPath, name), "info")
+	if s.store != nil {
+		_ = s.store.AddRecentProject(absPath)
+	}
 	jsonResponse(w, http.StatusOK, OpenWorkspaceResponse{
 		Status:   "ok",
 		RootPath: absPath,
@@ -1323,3 +1353,210 @@ func (s *Server) handleWorkerEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+
+// --- Flat-File Storage & App State Handlers (Sub-Phase 6.4) ---
+
+func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		jsonError(w, http.StatusServiceUnavailable, "store unavailable")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		cfg, err := s.store.GetConfig()
+		if err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to read config: "+err.Error())
+			return
+		}
+		jsonResponse(w, http.StatusOK, cfg)
+
+	case http.MethodPost:
+		var cfg store.Config
+		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+			jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		if err := s.store.SaveConfig(&cfg); err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to save config: "+err.Error())
+			return
+		}
+		jsonResponse(w, http.StatusOK, map[string]any{
+			"status": "ok",
+			"config": cfg,
+		})
+
+	default:
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		jsonError(w, http.StatusServiceUnavailable, "store unavailable")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		st, err := s.store.GetState()
+		if err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to read state: "+err.Error())
+			return
+		}
+		jsonResponse(w, http.StatusOK, st)
+
+	case http.MethodPost:
+		var st store.AppState
+		if err := json.NewDecoder(r.Body).Decode(&st); err != nil {
+			jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		if err := s.store.SaveState(&st); err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to save state: "+err.Error())
+			return
+		}
+		jsonResponse(w, http.StatusOK, map[string]any{
+			"status": "ok",
+			"state":  st,
+		})
+
+	default:
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+type AddRecentProjectRequest struct {
+	Path string `json:"path"`
+}
+
+func (s *Server) handleStateRecent(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		jsonError(w, http.StatusServiceUnavailable, "store unavailable")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPost:
+		var req AddRecentProjectRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		if strings.TrimSpace(req.Path) == "" {
+			jsonError(w, http.StatusBadRequest, "path cannot be empty")
+			return
+		}
+		if err := s.store.AddRecentProject(req.Path); err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to add recent project: "+err.Error())
+			return
+		}
+		st, _ := s.store.GetState()
+		jsonResponse(w, http.StatusOK, st)
+
+	case http.MethodDelete:
+		if r.URL.Query().Get("all") == "true" {
+			if err := s.store.ClearRecentProjects(); err != nil {
+				jsonError(w, http.StatusInternalServerError, "failed to clear recent projects: "+err.Error())
+				return
+			}
+		} else {
+			targetPath := r.URL.Query().Get("path")
+			if strings.TrimSpace(targetPath) == "" {
+				jsonError(w, http.StatusBadRequest, "path query parameter is required")
+				return
+			}
+			if err := s.store.RemoveRecentProject(targetPath); err != nil {
+				jsonError(w, http.StatusInternalServerError, "failed to remove recent project: "+err.Error())
+				return
+			}
+		}
+		st, _ := s.store.GetState()
+		jsonResponse(w, http.StatusOK, st)
+
+	default:
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (s *Server) handleChatsList(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		jsonError(w, http.StatusServiceUnavailable, "store unavailable")
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	chats, err := s.store.ListChats()
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "failed to list chats: "+err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"chats": chats,
+	})
+}
+
+func (s *Server) handleChatOperations(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		jsonError(w, http.StatusServiceUnavailable, "store unavailable")
+		return
+	}
+
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/chats/")
+	id = strings.TrimSpace(id)
+	if id == "" {
+		jsonError(w, http.StatusBadRequest, "chat session id is required")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		sess, err := s.store.GetChat(id)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				jsonError(w, http.StatusNotFound, "chat session not found")
+				return
+			}
+			jsonError(w, http.StatusInternalServerError, "failed to get chat: "+err.Error())
+			return
+		}
+		jsonResponse(w, http.StatusOK, sess)
+
+	case http.MethodPost:
+		var sess store.ChatSession
+		if err := json.NewDecoder(r.Body).Decode(&sess); err != nil {
+			jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		if sess.ID == "" {
+			sess.ID = id
+		}
+		if err := s.store.SaveChat(&sess); err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to save chat: "+err.Error())
+			return
+		}
+		jsonResponse(w, http.StatusOK, map[string]any{
+			"status":  "ok",
+			"session": sess,
+		})
+
+	case http.MethodDelete:
+		if err := s.store.DeleteChat(id); err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to delete chat: "+err.Error())
+			return
+		}
+		jsonResponse(w, http.StatusOK, map[string]any{
+			"status": "ok",
+			"id":     id,
+		})
+
+	default:
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+

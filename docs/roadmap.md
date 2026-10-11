@@ -16,7 +16,7 @@
 | **Phase 5** | AppDrawer AEGIS AI Agent & Session Hub | ✅ Completed | Multi-session chat, slash autocomplete, provider selector |
 | **Special** | UI Dark/Light Theme & Modular Palettes | ✅ Completed | ActivityRail toggle, modular JSON palettes (Default, Atom, Tokyo Night) |
 | **Special** | Settings Registry, Core IDE Preferences & Editor Polish | ✅ Completed | Decoupled schema registry, wildcard exclude, GPU cursor blinking, wrap column |
-| **Phase 6** | Go Core Server, SQLite & Bundled DAP Debugger | 🟡 Active (6.1, 6.2, 6.3, 6.6 ✅) | Cross-platform Go binary & embed.FS, supervisor, SQLite DB, DAP/Delve |
+| **Phase 6** | Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger | 🟡 Active (6.1, 6.2, 6.3, 6.6 ✅) | Cross-platform Go binary & embed.FS, supervisor, JSON store, AI agent bridge, DAP/Delve |
 | **Phase 7** | Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`) | ⚪ Upcoming | Multi-format tab viewers (Images, CSV), vector canvas wireframing |
 | **Phase 8** | Research Workshop & Data Science Studio | ⚪ Planned | LaTeX + PDF sync, BibTeX, Python/R dataframes, Biblioshiny |
 | **Phase 9** | Web-Based Remote Pairing & Tablet Companion | ⚪ Deferred (Final) | LAN pairing, web preview host, touch-optimized editor mode |
@@ -124,7 +124,7 @@
 
 ---
 
-### Phase 6: Go Core Server, SQLite Storage, & Bundled DAP Debugger
+### Phase 6: Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger
 - **Status**: 🟡 Active (Sub-Phases 6.1, 6.2, 6.3, and 6.6 Completed)
 
 #### Sub-Phase 6.1: Live Workspace Engine & File Operations
@@ -170,25 +170,35 @@
     - Diagnostic observability endpoints: `GET /api/v1/workers`, `POST /api/v1/workers`, `GET /api/v1/workers/:id`, `GET /api/v1/workers/:id/logs`, and `POST /api/v1/workers/:id/stop`.
     - Integrated with Go server graceful teardown in `server/cmd/server/main.go` and Tasks log channel (`s.BroadcastLog`).
 
-#### Sub-Phase 6.4: Stateless/Immutable Runtime & SQLite Data Isolation
-- **Status**: ⚪ Planned (Prepared)
+#### Sub-Phase 6.4: Stateless/Immutable Runtime & Flat-File Data Isolation
+- **Status**: ✅ Completed
 - **Deliverables**:
-  - **OS App-Level Storage Isolation (`~/.aegis/data/aegis.db`)**:
-    - All system state, user preferences, API keys, and AI chat histories persisted strictly in the OS user profile (`~/.aegis/data/aegis.db` on macOS/Linux, `%APPDATA%/AegisCode` on Windows).
-    - **Zero Repo Pollution**: Active project repositories remain 100% clean and free of `.db` files, preventing Git status clutter, merge conflicts, and accidental leakage of private chat logs or API tokens to public version control.
-  - **Multi-Workspace & Multi-Provider Data Partitioning**:
-    - **Workspace Namespacing**: Dynamic workspace identification by normalized root path hash (`workspace_id`), isolating sessions and settings per project so switching or opening multiple workspaces never conflates histories.
-    - **Provider Isolation**: Explicit relational partitioning for AI chat providers (`anthropic`, `openai`, `gemini`, `ollama`), separating configurations, model parameters, and raw JSON metadata (`provider_metadata`) to prevent schema collisions across heterogeneous LLM backends.
-  - **Embedded SQLite Engine (`server/internal/store`)**:
-    - Flat, lightweight Go SQLite client using a single connection pool with WAL (Write-Ahead Logging) mode to guarantee concurrency safety and eliminate database lock errors.
-    - Core relational schema: `workspaces`, `chat_sessions`, `chat_messages`, `provider_keys`, and `user_preferences`.
+  - **Zero-DB Stateless Architecture & OS-Level Flat-File Storage (`~/.aegis/`)**:
+    - Full elimination of heavy SQLite / CGO dependencies in favor of lightweight, pure-Go standard library JSON flat-files (`os`, `encoding/json`). Preserves 100% pure-Go cross-compilation matrix (`CGO_ENABLED=0`) across macOS (arm64/amd64), Linux (amd64/arm64), and Windows (amd64) with zero external database dependencies.
+    - User-level isolation in OS home directory (`~/.aegis/` on macOS/Linux, `%APPDATA%/AegisCode/` on Windows):
+      - `~/.aegis/config.json`: Persistent user preferences, theme overrides, model configurations, and bypassed auth/API tokens.
+      - `~/.aegis/state.json`: Recent workspace paths, window state, and active session pointers.
+      - `~/.aegis/chats/<session_id>.json`: Isolated multi-session AI chat conversation histories with full messages, provider metadata, and timestamps.
+    - **Zero Repo Pollution**: Active project repositories remain 100% clean and free of database / lock files, preventing Git status clutter and accidental secret leakage.
+  - **Atomic File Writes & Crash Resistance**:
+    - Thread-safe atomic file writing pattern (temporary file write + OS kernel atomic rename) guaranteeing zero file corruption during unexpected power outages or app termination.
+  - **REST Persistence Endpoints (`/api/v1/chats/*`, `/api/v1/config`, `/api/v1/state`)**:
+    - Lightweight endpoints:
+      - `GET/POST /api/v1/config`: Read/write global configuration and token bypass metadata.
+      - `GET/POST /api/v1/state`: Read/write application state and active session pointer.
+      - `POST/DELETE /api/v1/state/recent`: Add, remove, or clear recent project paths.
+      - `GET /api/v1/chats`: List all chat session summaries.
+      - `GET/POST /api/v1/chats/:id`: Retrieve or save full chat session history.
+      - `DELETE /api/v1/chats/:id`: Delete a chat session file.
+    - Seamlessly bridges frontend Local-First caching with backend disk persistence, ensuring persistent multi-device session sync for future Tablet Companion (Phase 9).
   - **Non-Destructive Legacy Migration ([ADR 0002](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0002-app-data-directory-and-legacy-migration.md), [ADR 0007](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0007-non-destructive-shadow-migration.md))**:
-    - Startup adapter detects legacy v1 artifacts (`data/settings.json`, `.aegis/auth.json`, legacy `aegis.db`) and executes a non-destructive read-only shadow migration into `~/.aegis/data/aegis.db`.
-  - **Immutable Runtime Configuration**:
-    - Read-only runtime configuration parsed into immutable Go structs at boot time; zero mutating global server state.
+    - Startup adapter detects legacy v1 artifacts (`data/settings.json`, `.aegis/auth.json`, legacy databases) and executes a non-destructive read-only shadow migration into `~/.aegis/config.json`.
+  - **Immutable Boot Configuration**:
+    - Environment variables (`WORKSPACE_ROOT`, `PORT`, `AEGIS_OPEN`) parsed into read-only Go structs at boot time; zero mutating global server state.
+  - **Verification**: 100% unit and integration test coverage (`TestStoreInitialization`, `TestConfigPersistence`, `TestAppStateAndRecentProjects`, `TestChatSessionsCRUD`, `TestSanitizeIDTraversalGuard`, `TestLegacyMigration`, and `TestStorageEndpoints`).
 
 #### Sub-Phase 6.5: Bundled DAP Debugger (Delve `dlv`) Engine
-- **Status**: ⚪ Planned
+- **Status**: 🟡 Next
 - **Deliverables**:
   - Debug Adapter Protocol (DAP) client proxy and bundled Delve runner for step-by-step Go and backend debugging through the web UI.
 
@@ -213,6 +223,51 @@
     - Purged legacy mock traffic lights from [`WindowControls.tsx`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/header/WindowControls.tsx) and [`header.css`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/header/header.css) in favor of native OS window controls.
     - Purged all legacy "figma-make-app" strings; standardized official Aegis Shield SVG branding and rich OpenGraph/HTML metadata.
   - **Verification**: 100% verified via automated frontend Vitest suite (32 tests), Go backend suite (7 suites), and live standalone DMG execution.
+
+#### Sub-Phase 6.7: UI State & Context Extractor (Frontend PWA Focus)
+- **Status**: ⚪ Planned
+- **Deliverables**:
+  - **Context Extractor Core**: Passive real-time context capture engine (`ContextManager` in React Context) collecting:
+    - `activeFilePath`: Relative path of the currently focused editor tab.
+    - `selectedText`: Instant cursor text selection.
+    - `entireBuffer`: Full editor buffer content with character threshold guardrail (>50,000 chars falls back to active selection with warning badge).
+  - **Token Exclude Filter**: Seamless integration with `matchesExcludePattern` from IDE settings (`files.exclude`) to ensure giant files, binary artifacts, or build output (`node_modules/`, `dist/`, `*.log`) are stripped client-side prior to network dispatch.
+  - **Context Chip Badge in AppComposer**: Visual pills in composer displaying active file and selection tags (`@file.go`, `Selection (Ln 12-45)`) with one-click dismiss.
+
+#### Sub-Phase 6.8: Go API Bridge & Token Lifecycle (Auth Context)
+- **Status**: ⚪ Planned
+- **Deliverables**:
+  - **Global Config Read (`~/.aegis/config.json`)**: Thread-safe configuration reader accessing persisted provider API keys, model preferences, and CLI bypass tokens.
+  - **OAuth CMD Bypass & Manual Login Handling**:
+    - Support for 4 unified AI providers:
+      1. **Antigravity**: OAuth CMD / CLI bypass token (manual user login via CLI).
+      2. **OpenCode**: OpenAI-compatible API gateway (configurable base URL & API key).
+      3. **OpenRouter**: Multi-model gateway (`https://openrouter.ai/api/v1`) via API key.
+      4. **Claude**: OAuth CMD / CLI bypass token (manual user login via CLI).
+    - If credentials expire (401 response from upstream), Go triggers background refresh command or dispatches auth notification.
+  - **Real-Time Auth Status Stream via SSE**: Dispatches `auth:refreshing` and `auth:ready` signals to PWA over `/api/v1/events/workspace` to keep UI updated without modal popups.
+
+#### Sub-Phase 6.9: Isolated Engine & SSE Streaming (Backend Provider Go)
+- **Status**: ⚪ Planned
+- **Deliverables**:
+  - **Uniform AI Request Contract (`server/internal/ai`)**:
+    - Unified `AIRequest` struct containing `provider`, `model`, `prompt`, `messages`, and `WorkspaceContext`.
+    - Modular `Provider` interface (`StreamChat(ctx, req, out)`) isolating OpenAI-compatible streaming (`openrouter`, `opencode`) from CLI OAuth token streaming (`antigravity`, `claude`).
+  - **Low-Latency SSE Chunked Stream Renderer (`/api/v1/ai/chat`)**:
+    - Chunked streaming per token/word via Server-Sent Events with zero flickering markdown rendering in `ChatMessageList.tsx`.
+    - **Client Abort & Cancellation**: Request tied to `r.Context()`; when user clicks "Stop Generating" (AbortController), Go immediately cancels upstream LLM connection, saving user tokens and network bandwidth.
+  - **On-Demand Lazy Loading for `@file` Mentions**: Fast targeted disk reading (`/api/v1/workspace/file`) strictly for files mentioned in prompt tags, without scanning entire workspace trees.
+
+#### Sub-Phase 6.10: Git-Driven Review Gates (Apply & Code Manipulation)
+- **Status**: ⚪ Planned
+- **Deliverables**:
+  - **Path Boundary Verification**: Strict path validation enforcing that all AI code generation targets reside within the active `rootPath` before disk writes (preventing directory traversal attacks).
+  - **Git-Backed Side-by-Side Review**:
+    - User clicks "Apply to Editor" on markdown code blocks (`ChatMessageList.tsx`), writing changes via `/api/v1/workspace/file`.
+    - Leverage Phase 6.2 real Git CLI: modifications immediately surface in [`DiffEditorPane.tsx`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/editor/DiffEditorPane.tsx) side-by-side view with synchronized scrolling.
+    - Zero redundant temporary buffer system: users accept via native Git Stage/Commit or reject via native Discard Changes.
+  - **Interactive Markdown Code Block Toolbar**:
+    - Action headers for all markdown code fences: `[Copy]`, `[Apply to Editor]`, and `[Insert at Cursor]`.
 
 ---
 

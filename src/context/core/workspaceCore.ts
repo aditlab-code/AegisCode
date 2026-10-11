@@ -27,6 +27,12 @@ import {
   renameWorkspaceFile,
   saveWorkspaceFile,
 } from "../../utils/workspaceApi"
+import {
+  addBackendRecentProject,
+  clearBackendRecentProjects,
+  fetchBackendState,
+  removeBackendRecentProject,
+} from "../../utils/storeApi"
 
 // Pure state transition functions
 export function addFileToTreeLogic(
@@ -295,6 +301,32 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
   const workspaceGuardRef = useRef(new AsyncSequenceGuard())
   const fileFetchGuardRef = useRef(new AsyncSequenceGuard())
 
+  // Hydrate recent projects from backend flat-file state (~/.aegis/state.json)
+  useEffect(() => {
+    fetchBackendState()
+      .then((backendState) => {
+        if (
+          backendState &&
+          Array.isArray(backendState.recentProjects) &&
+          backendState.recentProjects.length > 0
+        ) {
+          setRecentProjects((prev) => {
+            const merged = Array.from(
+              new Set([...backendState.recentProjects, ...prev]),
+            ).slice(0, 8)
+            try {
+              window.localStorage.setItem(
+                "aegis_recent_projects_v1",
+                JSON.stringify(merged),
+              )
+            } catch {}
+            return merged
+          })
+        }
+      })
+      .catch(() => {})
+  }, [])
+
   const addRecentProject = useCallback((rawPath: string) => {
     const clean = normalizeWorkspacePath(rawPath)
     if (!clean) return
@@ -308,6 +340,7 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
       } catch {}
       return next
     })
+    addBackendRecentProject(clean).catch(() => {})
   }, [])
 
   const removeRecentProject = useCallback((path: string) => {
@@ -321,6 +354,7 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
       } catch {}
       return next
     })
+    removeBackendRecentProject(path).catch(() => {})
   }, [])
 
   const clearRecentProjects = useCallback(() => {
@@ -328,6 +362,7 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
     try {
       window.localStorage.removeItem("aegis_recent_projects_v1")
     } catch {}
+    clearBackendRecentProjects().catch(() => {})
   }, [])
 
   const addNotification = useCallback(

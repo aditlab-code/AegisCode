@@ -12,6 +12,7 @@ import type {
   ThemePaletteId,
 } from "../../types/workbench"
 import { applyThemeToDom } from "../../themes/themeRegistry"
+import { fetchBackendConfig, saveBackendConfig } from "../../utils/storeApi"
 
 const SETTINGS_STORAGE_KEY = "aegis_user_settings"
 
@@ -254,12 +255,30 @@ export function applyTypographyVariables(settings: AppSettings): void {
 export function useSettingsCore() {
   const [settings, setSettings] = useState<AppSettings>(loadStoredSettings)
 
+  // Hydrate settings from backend flat-file config (~/.aegis/config.json)
+  useEffect(() => {
+    fetchBackendConfig()
+      .then((cfg) => {
+        if (cfg?.settings && typeof cfg.settings === "object") {
+          setSettings((prev) => ({
+            ...prev,
+            ...cfg.settings,
+          }))
+        }
+      })
+      .catch(() => {})
+  }, [])
+
   // Apply theme & typography CSS properties whenever relevant settings change
   useEffect(() => {
     const { palette, mode } = settings.workbench.appearance
     applyThemeToDom(palette, mode)
     applyTypographyVariables(settings)
     saveStoredSettings(settings)
+    saveBackendConfig({
+      theme: mode,
+      settings: settings as any,
+    }).catch(() => {})
   }, [settings])
 
   const updateEditorSettings = useCallback(
