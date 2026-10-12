@@ -151,7 +151,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
                           type="checkbox"
                           checked={checked}
                           readOnly
-                          className="mr-1.5 accent-[var(--color-accent)]"
+                          className="mr-1.5 accent-(--color-accent)"
                         />
                         <span>
                           {renderInlineMarkdown(
@@ -499,7 +499,7 @@ function renderInlineMarkdown(
       )
     } else if (raw.startsWith("**") && raw.endsWith("**") && raw.length >= 4) {
       nodes.push(
-        <strong key={key} className="font-semibold text-[var(--color-ink)]">
+        <strong key={key} className="font-semibold text-ink">
           {raw.slice(2, -2)}
         </strong>,
       )
@@ -511,7 +511,7 @@ function renderInlineMarkdown(
       )
     } else if (raw.startsWith("~~") && raw.endsWith("~~") && raw.length >= 4) {
       nodes.push(
-        <del key={key} className="line-through text-[var(--color-ink-muted)]">
+        <del key={key} className="line-through text-ink-muted">
           {raw.slice(2, -2)}
         </del>,
       )
