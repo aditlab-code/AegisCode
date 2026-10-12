@@ -24,6 +24,18 @@ interface CodePaneProps {
   onClose?: () => void
 }
 
+function isSameFile(a?: string, b?: string): boolean {
+  if (!a || !b) return false
+  if (a === b) return true
+  const normA = a.replace(/\\/g, "/").replace(/^\.\//, "")
+  const normB = b.replace(/\\/g, "/").replace(/^\.\//, "")
+  return (
+    normA === normB ||
+    normA.endsWith("/" + normB) ||
+    normB.endsWith("/" + normA)
+  )
+}
+
 export function CodePane({
   paneId,
   filename,
@@ -122,6 +134,19 @@ export function CodePane({
       window.removeEventListener("resize", updateDimensions)
     }
   }, [filename, content])
+
+  useEffect(() => {
+    if (
+      isSameFile(activeDebugLine?.file, filename) &&
+      activeDebugLine?.line &&
+      textareaRef.current
+    ) {
+      const lineIndex = activeDebugLine.line - 1
+      const lineHeight = editorLineHeight || 20
+      const targetScroll = Math.max(0, lineIndex * lineHeight - 100)
+      textareaRef.current.scrollTop = targetScroll
+    }
+  }, [activeDebugLine, filename, editorLineHeight])
 
   function getLineDiagnostic(lineNum: number) {
     return fileDiagnostics.find((d) => {
@@ -406,8 +431,8 @@ export function CodePane({
               const fileBreakpoints = breakpoints?.[filename] || []
               const hasBreakpoint = fileBreakpoints.includes(lineNum)
               const isStoppedHere =
-                activeDebugLine?.file === filename &&
-                activeDebugLine.line === lineNum
+                isSameFile(activeDebugLine?.file, filename) &&
+                activeDebugLine?.line === lineNum
 
               return (
                 <div
@@ -479,8 +504,8 @@ export function CodePane({
                 const lineNum = index + 1
                 const isCurrent = isFocused && cursorPosition.line === lineNum
                 const isStoppedHere =
-                  activeDebugLine?.file === filename &&
-                  activeDebugLine.line === lineNum
+                  isSameFile(activeDebugLine?.file, filename) &&
+                  activeDebugLine?.line === lineNum
                 const diag = getLineDiagnostic(lineNum)
 
                 return (

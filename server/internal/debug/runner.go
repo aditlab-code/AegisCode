@@ -1,6 +1,8 @@
 package debug
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -80,14 +83,9 @@ func StartDelve(ctx context.Context, cwd string) (*Runner, error) {
 		return nil, err
 	}
 
-	port, err := AllocateFreePort()
-	if err != nil {
-		return nil, err
-	}
-
 	args := []string{
 		"dap",
-		"--listen=127.0.0.1:" + strconv.Itoa(port),
+		"--listen=127.0.0.1:0",
 		"--check-go-version=false",
 	}
 
@@ -98,13 +96,20 @@ func StartDelve(ctx context.Context, cwd string) (*Runner, error) {
 
 	setProcessGroup(cmd)
 
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create delve stdout pipe: %w", err)
+	}
+
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
+
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("failed to start delve: %w", err)
 	}
 
 	runner := &Runner{
 		Path:     dlvPath,
-		Port:     port,
 		Cmd:      cmd,
 		Cwd:      cwd,
 		doneChan: make(chan struct{}),
@@ -115,31 +120,64 @@ func StartDelve(ctx context.Context, cwd string) (*Runner, error) {
 		close(runner.doneChan)
 	}()
 
-	// Wait up to 5 seconds for DAP TCP listener to become available
-	dialDeadline := time.Now().Add(5 * time.Second)
-	ready := false
-	for time.Now().Before(dialDeadline) {
-		select {
-		case <-runner.doneChan:
-			return nil, fmt.Errorf("delve exited unexpectedly during startup")
-		default:
-		}
-
-		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 100*time.Millisecond)
-		if err == nil {
-			_ = conn.Close()
-			ready = true
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
+	type portResult struct {
+		port int
+		err  error
 	}
+	portCh := make(chan portResult, 1)
 
-	if !ready {
+	go func() {
+		scanner := bufio.NewScanner(stdoutPipe)
+		found := false
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !found {
+				if idx := strings.Index(line, "listening at:"); idx != -1 {
+					addrPart := strings.TrimSpace(line[idx+len("listening at:"):])
+					_, portStr, splitErr := net.SplitHostPort(addrPart)
+					if splitErr == nil {
+						if p, pErr := strconv.Atoi(portStr); pErr == nil && p > 0 {
+							found = true
+							portCh <- portResult{port: p}
+						}
+					}
+				}
+			}
+		}
+		if !found {
+			portCh <- portResult{err: errors.New("delve exited without reporting listening address")}
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
 		_ = runner.Close()
-		return nil, fmt.Errorf("timed out waiting for delve dap to start on port %d", port)
+		return nil, ctx.Err()
+	case <-runner.doneChan:
+		errMsg := strings.TrimSpace(stderrBuf.String())
+		if errMsg != "" {
+			return nil, fmt.Errorf("delve exited unexpectedly during startup: %s", errMsg)
+		}
+		return nil, fmt.Errorf("delve exited unexpectedly during startup")
+	case res := <-portCh:
+		if res.err != nil {
+			_ = runner.Close()
+			errMsg := strings.TrimSpace(stderrBuf.String())
+			if errMsg != "" {
+				return nil, fmt.Errorf("delve startup failed: %s", errMsg)
+			}
+			return nil, res.err
+		}
+		runner.Port = res.port
+		return runner, nil
+	case <-time.After(5 * time.Second):
+		_ = runner.Close()
+		errMsg := strings.TrimSpace(stderrBuf.String())
+		if errMsg != "" {
+			return nil, fmt.Errorf("timed out waiting for delve dap to start: %s", errMsg)
+		}
+		return nil, errors.New("timed out waiting for delve dap to start")
 	}
-
-	return runner, nil
 }
 
 // Close gracefully terminates the Delve runner process group.

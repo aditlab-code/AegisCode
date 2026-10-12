@@ -38,6 +38,8 @@ ehthumbs.db
 # Go Compiled Artifacts
 server/server
 *.test
+__debug_bin*
+**/__debug_bin*
 
 # Agent & Platform States
 /.plugins/

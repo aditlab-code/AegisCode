@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -96,46 +97,7 @@ func (m *Manager) Start(ctx context.Context, req StartDebugRequest) error {
 		return fmt.Errorf("failed to connect to delve DAP: %w", err)
 	}
 
-	// 3. Initialize DAP
-	initCtx, initCancel := context.WithTimeout(ctx, 5*time.Second)
-	_, err = client.Initialize(initCtx)
-	initCancel()
-	if err != nil {
-		_ = client.Close()
-		_ = runner.Close()
-		return fmt.Errorf("DAP initialize failed: %w", err)
-	}
-
-	// 4. Launch target
-	launchCtx, launchCancel := context.WithTimeout(ctx, 15*time.Second)
-	_, err = client.Launch(launchCtx, req.Program, req.Args, req.Env, req.Cwd, req.Mode)
-	launchCancel()
-	if err != nil {
-		_ = client.Close()
-		_ = runner.Close()
-		return fmt.Errorf("DAP launch failed: %w", err)
-	}
-
-	// 5. Send existing registered breakpoints
-	m.mu.RLock()
-	bpsToSet := make(map[string][]int, len(m.breakpoints))
-	for f, lines := range m.breakpoints {
-		bpsToSet[f] = append([]int(nil), lines...)
-	}
-	m.mu.RUnlock()
-
-	for f, lines := range bpsToSet {
-		bpCtx, bpCancel := context.WithTimeout(ctx, 3*time.Second)
-		_, _ = client.SetBreakpoints(bpCtx, f, lines)
-		bpCancel()
-	}
-
-	// 6. Configuration Done
-	cfgCtx, cfgCancel := context.WithTimeout(ctx, 3*time.Second)
-	_ = client.ConfigurationDone(cfgCtx)
-	cfgCancel()
-
-	// 7. Subscribe to DAP events
+	// 3. Subscribe to DAP events early to capture compiler/runtime outputs during Launch
 	evtCh, unsub := client.SubscribeEvents()
 
 	m.mu.Lock()
@@ -149,12 +111,53 @@ func (m *Manager) Start(ctx context.Context, req StartDebugRequest) error {
 	}
 	m.mu.Unlock()
 
+	go m.eventLoop(evtCh)
+
+	// 4. Initialize DAP
+	initCtx, initCancel := context.WithTimeout(ctx, 5*time.Second)
+	_, err = client.Initialize(initCtx)
+	initCancel()
+	if err != nil {
+		_ = m.Terminate()
+		return fmt.Errorf("DAP initialize failed: %w", err)
+	}
+
+	// 5. Launch target
+	launchCtx, launchCancel := context.WithTimeout(ctx, 15*time.Second)
+	_, err = client.Launch(launchCtx, req.Program, req.Args, req.Env, req.Cwd, req.Mode)
+	launchCancel()
+	if err != nil {
+		_ = m.Terminate()
+		return fmt.Errorf("DAP launch failed: %w", err)
+	}
+
+	// 6. Send existing registered breakpoints
+	m.mu.RLock()
+	bpsToSet := make(map[string][]int, len(m.breakpoints))
+	for f, lines := range m.breakpoints {
+		bpsToSet[f] = append([]int(nil), lines...)
+	}
+	m.mu.RUnlock()
+
+	for f, lines := range bpsToSet {
+		targetFile := f
+		if !filepath.IsAbs(targetFile) && req.Cwd != "" {
+			targetFile = filepath.Join(req.Cwd, targetFile)
+		}
+		bpCtx, bpCancel := context.WithTimeout(ctx, 3*time.Second)
+		_, _ = client.SetBreakpoints(bpCtx, targetFile, lines)
+		bpCancel()
+	}
+
+	// 7. Configuration Done
+	cfgCtx, cfgCancel := context.WithTimeout(ctx, 3*time.Second)
+	_ = client.ConfigurationDone(cfgCtx)
+	cfgCancel()
+
 	m.broadcast(StreamDebugEvent{
 		Type:   "debug:started",
 		Status: "running",
 	})
-
-	go m.eventLoop(evtCh)
 
 	return nil
 }
@@ -263,10 +266,16 @@ func (m *Manager) SetBreakpoints(ctx context.Context, file string, lines []int) 
 	m.breakpoints[file] = lines
 	client := m.client
 	isActive := m.state.Active
+	runner := m.runner
 	m.mu.Unlock()
 
+	targetFile := file
+	if !filepath.IsAbs(targetFile) && runner != nil && runner.Cwd != "" {
+		targetFile = filepath.Join(runner.Cwd, targetFile)
+	}
+
 	if isActive && client != nil {
-		return client.SetBreakpoints(ctx, file, lines)
+		return client.SetBreakpoints(ctx, targetFile, lines)
 	}
 
 	result := make([]Breakpoint, len(lines))

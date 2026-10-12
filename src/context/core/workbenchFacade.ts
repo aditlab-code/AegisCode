@@ -535,7 +535,7 @@ export function useWorkbenchFacade() {
       try {
         const res = await startDebugSession(target)
         if (res.status === "error") {
-          if (res.code === "delve_not_found") {
+          if (res.code === "delve_not_found" || res.code === "dlv_not_found") {
             showToast(
               "Delve (dlv) not found. Run 'go install github.com/go-delve/delve/cmd/dlv@latest'",
             )
@@ -626,21 +626,31 @@ export function useWorkbenchFacade() {
         if (event.state) {
           setDebugState(event.state)
           if (event.state.currentFile && event.state.currentLine) {
+            const clean = normalizeWorkspacePath(
+              event.state.currentFile,
+              workspaceRef.current?.rootWorkspacePath,
+            )
+            const targetFile = clean || event.state.currentFile
             editorRef.current.setActiveDebugLine({
-              file: event.state.currentFile,
+              file: targetFile,
               line: event.state.currentLine,
             })
-            editorRef.current.openFileInPane(event.state.currentFile)
+            editorRef.current.openFileInPane(targetFile)
           } else if (event.state.status === "running") {
             editorRef.current.setActiveDebugLine(null)
           }
         } else if (event.type === "debug:stopped") {
           if (event.currentFile && event.currentLine) {
+            const clean = normalizeWorkspacePath(
+              event.currentFile,
+              workspaceRef.current?.rootWorkspacePath,
+            )
+            const targetFile = clean || event.currentFile
             editorRef.current.setActiveDebugLine({
-              file: event.currentFile,
+              file: targetFile,
               line: event.currentLine,
             })
-            editorRef.current.openFileInPane(event.currentFile)
+            editorRef.current.openFileInPane(targetFile)
           }
         } else if (event.type === "debug:continued") {
           editorRef.current.setActiveDebugLine(null)

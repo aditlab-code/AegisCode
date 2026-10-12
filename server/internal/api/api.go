@@ -1897,7 +1897,7 @@ func (s *Server) handleDebugStart(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, debug.ErrDelveNotFound) {
 			jsonResponse(w, http.StatusNotFound, map[string]any{
 				"status":  "error",
-				"code":    "dlv_not_found",
+				"code":    "delve_not_found",
 				"message": err.Error(),
 			})
 			return
@@ -1925,7 +1925,13 @@ func (s *Server) handleDebugBreakpoints(w http.ResponseWriter, r *http.Request) 
 		jsonError(w, http.StatusBadRequest, "file parameter is required")
 		return
 	}
-	bps, err := s.debug.SetBreakpoints(r.Context(), req.File, req.Lines)
+	file := req.File
+	if !filepath.IsAbs(file) && s.ws != nil {
+		if root, _ := s.ws.GetRoot(); root != "" {
+			file = filepath.Join(root, file)
+		}
+	}
+	bps, err := s.debug.SetBreakpoints(r.Context(), file, req.Lines)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "failed to set breakpoints: "+err.Error())
 		return

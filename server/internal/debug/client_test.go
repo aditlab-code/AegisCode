@@ -198,3 +198,67 @@ func TestDAPClientEventStreaming(t *testing.T) {
 		t.Fatalf("timed out waiting for event")
 	}
 }
+
+func TestDAPClientConnectionDropResilience(t *testing.T) {
+	// Mock server that abruptly closes connection as soon as a request starts
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer l.Close()
+
+	go func() {
+		conn, err := l.Accept()
+		if err == nil {
+			_ = conn.Close()
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	client, err := DialDAP(ctx, l.Addr().String())
+	if err != nil {
+		t.Fatalf("DialDAP failed: %v", err)
+	}
+	defer client.Close()
+
+	// Ensure calling SendRequest after drop returns an error cleanly without panicking
+	_, err = client.Initialize(ctx)
+	if err == nil {
+		t.Fatalf("expected error from abruptly closed DAP server, got nil")
+	}
+}
+
+func TestDAPClientErrorFormat(t *testing.T) {
+	addr, teardown := mockDAPServer(t, func(req Request, w io.Writer) {
+		resp := Response{
+			Seq:        500,
+			Type:       "response",
+			RequestSeq: req.Seq,
+			Success:    false,
+			Message:    "Failed to launch",
+			Body:       json.RawMessage(`{"error": {"id": 3000, "format": "Build error: package not found"}}`),
+		}
+		_ = sendDAPFrame(w, resp)
+	})
+	defer teardown()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	client, err := DialDAP(ctx, addr)
+	if err != nil {
+		t.Fatalf("DialDAP failed: %v", err)
+	}
+	defer client.Close()
+
+	_, err = client.Launch(ctx, "./nonexistent", nil, nil, "", "debug")
+	if err == nil {
+		t.Fatalf("expected error from failed launch")
+	}
+	if !strings.Contains(err.Error(), "Build error: package not found") {
+		t.Fatalf("expected error message to contain detailed format, got: %v", err)
+	}
+}
+

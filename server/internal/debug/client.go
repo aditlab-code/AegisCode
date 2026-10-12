@@ -109,6 +109,7 @@ func (c *DAPClient) SendRequest(ctx context.Context, command string, args any) (
 	c.writeMu.Unlock()
 
 	if writeErr != nil {
+		_ = c.Close()
 		return nil, fmt.Errorf("failed to write DAP frame: %w", writeErr)
 	}
 
@@ -117,9 +118,22 @@ func (c *DAPClient) SendRequest(ctx context.Context, command string, args any) (
 		return nil, ctx.Err()
 	case <-c.doneChan:
 		return nil, errors.New("DAP connection terminated while waiting for response")
-	case resp := <-respCh:
+	case resp, ok := <-respCh:
+		if !ok || resp == nil {
+			return nil, errors.New("DAP connection terminated while waiting for response")
+		}
 		if !resp.Success {
 			msg := resp.Message
+			if len(resp.Body) > 0 {
+				var errBody struct {
+					Error struct {
+						Format string `json:"format"`
+					} `json:"error"`
+				}
+				if json.Unmarshal(resp.Body, &errBody) == nil && errBody.Error.Format != "" {
+					msg = errBody.Error.Format
+				}
+			}
 			if msg == "" {
 				msg = fmt.Sprintf("DAP command '%s' failed", command)
 			}
@@ -140,6 +154,7 @@ func (c *DAPClient) readLoop() {
 		c.pending = make(map[int]chan *Response)
 		c.mu.Unlock()
 		close(c.doneChan)
+		_ = c.conn.Close()
 	}()
 
 	for {

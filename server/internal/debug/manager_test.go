@@ -2,6 +2,7 @@ package debug
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -56,5 +57,78 @@ func TestDebugManagerSubscribe(t *testing.T) {
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatalf("timed out waiting for broadcast event")
+	}
+}
+
+func TestDebugManagerStartFailureHandling(t *testing.T) {
+	_, err := FindDelve()
+	if err != nil {
+		t.Skip("skipping TestDebugManagerStartFailureHandling because dlv is not installed")
+	}
+
+	mgr := NewManager()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Starting with a non-existent package path should fail at launch, cleanly terminate, and leave manager idle
+	err = mgr.Start(ctx, StartDebugRequest{
+		Program: "./nonexistent_package_that_does_not_exist",
+	})
+	if err == nil {
+		_ = mgr.Terminate()
+		t.Fatalf("expected Start to fail for nonexistent program")
+	}
+
+	if mgr.IsActive() {
+		t.Fatalf("manager should not be active after failed start")
+	}
+
+	st := mgr.GetState()
+	if st.Active || st.Status != "idle" {
+		t.Fatalf("expected state to reset to idle, got: %+v", st)
+	}
+}
+
+func TestDebugManagerRealLifecycle(t *testing.T) {
+	_, err := FindDelve()
+	if err != nil {
+		t.Skip("skipping TestDebugManagerRealLifecycle because dlv is not installed")
+	}
+
+	mgr := NewManager()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	serverRoot, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatalf("failed to determine serverRoot: %v", err)
+	}
+	programPath := filepath.Join(serverRoot, "cmd", "server")
+
+	// Launch cmd/server
+	err = mgr.Start(ctx, StartDebugRequest{
+		Program: programPath,
+		Cwd:     serverRoot,
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	if !mgr.IsActive() {
+		t.Fatalf("expected manager to be active after start")
+	}
+
+	st := mgr.GetState()
+	if !st.Active {
+		t.Fatalf("expected active state, got: %+v", st)
+	}
+
+	// Cleanly terminate
+	if err := mgr.Terminate(); err != nil {
+		t.Fatalf("Terminate failed: %v", err)
+	}
+
+	if mgr.IsActive() {
+		t.Fatalf("expected manager to be inactive after terminate")
 	}
 }
