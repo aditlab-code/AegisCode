@@ -86,7 +86,9 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
       args.Url ||
       args.url ||
       ""
-    ).toString().trim()
+    )
+      .toString()
+      .trim()
     const filePath = rawPath ? cleanFilePath(rawPath) : ""
     const hasValidPath = Boolean(filePath && filePath !== name)
     const baseName = hasValidPath
@@ -103,7 +105,10 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
     const secondary =
       hasValidPath && lineInfo
         ? args.toolSummary || args.toolAction || ""
-        : lineInfo || args.toolSummary || args.toolAction || (hasValidPath ? "" : tc.summary || "")
+        : lineInfo ||
+          args.toolSummary ||
+          args.toolAction ||
+          (hasValidPath ? "" : tc.summary || "")
 
     const displayTarget = hasValidPath
       ? lineInfo
@@ -137,7 +142,9 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
       args.path ||
       args.target ||
       ""
-    ).toString().trim()
+    )
+      .toString()
+      .trim()
     const filePath = rawPath ? cleanFilePath(rawPath) : ""
     const hasValidPath = Boolean(filePath && filePath !== name)
     const baseName = hasValidPath
