@@ -1,5 +1,5 @@
 import { Icon } from "../../ui/Icon"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 
 interface EditorEmptyStateProps {
   groupId?: "group1" | "group2"
@@ -14,7 +14,15 @@ export function EditorEmptyState({
     toggleSidebar,
     toggleSettingsModal,
     showToast,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      createFile: s.createFile,
+      setCommandPaletteOpen: s.setCommandPaletteOpen,
+      toggleSidebar: s.toggleSidebar,
+      toggleSettingsModal: s.toggleSettingsModal,
+      showToast: s.showToast,
+    })),
+  )
 
   function handleNewFile() {
     createFile("Untitled-1.ts")

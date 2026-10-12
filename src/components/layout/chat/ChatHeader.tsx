@@ -1,6 +1,6 @@
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 
 export function ChatHeader() {
   const {
@@ -9,7 +9,15 @@ export function ChatHeader() {
     createSession,
     chatSessionsOpen,
     toggleChatSessions,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      setChatOpen: s.setChatOpen,
+      activeSession: s.activeSession,
+      createSession: s.createSession,
+      chatSessionsOpen: s.chatSessionsOpen,
+      toggleChatSessions: s.toggleChatSessions,
+    })),
+  )
 
   return (
     <div className="chat-header">

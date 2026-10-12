@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from "react"
 import { Icon } from "../../ui/Icon"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import { buildSettingsSchema, type SettingItem } from "./settingsRegistry"
 import {
   CHAT_PROVIDERS,
@@ -33,7 +33,25 @@ export function SettingsModal() {
     setThemePalette,
     setThemeMode,
     showToast,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      settingsModalOpen: s.settingsModalOpen,
+      setSettingsModalOpen: s.setSettingsModalOpen,
+      settingsModalCategory: s.settingsModalCategory,
+      setSettingsModalCategory: s.setSettingsModalCategory,
+      settings: s.settings,
+      updateEditorSettings: s.updateEditorSettings,
+      updateWorkbenchSettings: s.updateWorkbenchSettings,
+      updateFilesSettings: s.updateFilesSettings,
+      updateFeaturesSettings: s.updateFeaturesSettings,
+      updateCompanionSettings: s.updateCompanionSettings,
+      updateAgentSettings: s.updateAgentSettings,
+      resetSettings: s.resetSettings,
+      setThemePalette: s.setThemePalette,
+      setThemeMode: s.setThemeMode,
+      showToast: s.showToast,
+    })),
+  )
 
   const [activeCategory, setActiveCategory] = useState<string>(
     settingsModalCategory || "Editor",

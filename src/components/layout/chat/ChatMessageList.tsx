@@ -285,6 +285,7 @@ const ChatMessageCard = memo(function ChatMessageCard({
 export function ChatMessageList() {
   const {
     chatMessages,
+    isGenerating,
     activeProvider,
     activeModel,
     showToast,
@@ -297,6 +298,7 @@ export function ChatMessageList() {
   } = useWorkbenchStore(
     useShallow((s) => ({
       chatMessages: s.chatMessages,
+      isGenerating: s.isGenerating,
       activeProvider: s.activeProvider,
       activeModel: s.activeModel,
       showToast: s.showToast,

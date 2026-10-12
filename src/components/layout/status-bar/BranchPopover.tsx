@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Icon } from "../../ui/Icon"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 
 interface BranchPopoverProps {
   onClose: () => void
@@ -16,7 +16,18 @@ export function BranchPopover({ onClose }: BranchPopoverProps) {
     stagedChanges,
     ahead,
     behind,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      activeBranch: s.activeBranch,
+      checkoutBranch: s.checkoutBranch,
+      createBranch: s.createBranch,
+      gitBranches: s.gitBranches,
+      gitChanges: s.gitChanges,
+      stagedChanges: s.stagedChanges,
+      ahead: s.ahead,
+      behind: s.behind,
+    })),
+  )
 
   const [filter, setFilter] = useState("")
   const [creating, setCreating] = useState(false)

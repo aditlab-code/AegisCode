@@ -214,7 +214,9 @@ export function loadStoredRecentProjects(): string[] {
           .filter(Boolean)
       }
     }
-  } catch {}
+  } catch (err) {
+    console.warn("Failed to read recent projects from localStorage:", err)
+  }
   return []
 }
 
@@ -289,9 +291,15 @@ export async function loadWorkspaceInternal(
           ? window.localStorage?.getItem("aegis_root_workspace")
           : null
       if (savedPath && savedPath.trim()) {
-        info = await openWorkspace(normalizeWorkspacePath(savedPath)).catch(
-          () => fetchWorkspaceInfo(),
-        )
+        try {
+          info = await openWorkspace(normalizeWorkspacePath(savedPath))
+        } catch (err) {
+          console.warn(
+            "Failed to open saved workspace, falling back to workspace info:",
+            err,
+          )
+          info = await fetchWorkspaceInfo()
+        }
       } else {
         info = await fetchWorkspaceInfo()
       }
@@ -310,14 +318,18 @@ export async function loadWorkspaceInternal(
       })
       try {
         window.localStorage?.removeItem("aegis_root_workspace")
-      } catch {}
+      } catch (err) {
+        console.warn("Failed to remove root workspace from localStorage:", err)
+      }
       return
     }
 
     const normalizedRoot = normalizeWorkspacePath(info.rootPath)
     try {
       window.localStorage?.setItem("aegis_root_workspace", normalizedRoot)
-    } catch {}
+    } catch (err) {
+      console.warn("Failed to save root workspace to localStorage:", err)
+    }
 
     const treeData = await fetchWorkspaceTree()
     if (!workspaceGuard.isCurrent(requestId)) {
@@ -368,9 +380,15 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
         "aegis_recent_projects_v1",
         JSON.stringify(next),
       )
-    } catch {}
+    } catch (err) {
+      console.warn("Failed to save recent projects to localStorage:", err)
+    }
     set({ recentProjects: next })
-    addBackendRecentProject(clean).catch(() => {})
+    try {
+      await addBackendRecentProject(clean)
+    } catch (err) {
+      console.warn("Failed to persist recent project to backend:", err)
+    }
   },
 
   removeRecentProject: async (path: string) => {
@@ -381,17 +399,29 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
         "aegis_recent_projects_v1",
         JSON.stringify(next),
       )
-    } catch {}
+    } catch (err) {
+      console.warn("Failed to save recent projects to localStorage:", err)
+    }
     set({ recentProjects: next })
-    removeBackendRecentProject(path).catch(() => {})
+    try {
+      await removeBackendRecentProject(path)
+    } catch (err) {
+      console.warn("Failed to remove recent project from backend:", err)
+    }
   },
 
   clearRecentProjects: async () => {
     try {
       window.localStorage?.removeItem("aegis_recent_projects_v1")
-    } catch {}
+    } catch (err) {
+      console.warn("Failed to clear recent projects in localStorage:", err)
+    }
     set({ recentProjects: [] })
-    clearBackendRecentProjects().catch(() => {})
+    try {
+      await clearBackendRecentProjects()
+    } catch (err) {
+      console.warn("Failed to clear recent projects on backend:", err)
+    }
   },
 
   openFolderPicker: async () => {
@@ -428,7 +458,9 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
       await closeWorkspace()
       try {
         window.localStorage?.removeItem("aegis_root_workspace")
-      } catch {}
+      } catch (err) {
+        console.warn("Failed to remove root workspace from localStorage:", err)
+      }
       set({
         rootWorkspacePath: "",
         rootWorkspaceName: "",
@@ -941,7 +973,9 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
       if (buf) {
         try {
           await saveWorkspaceFile(filename, buf.content, false)
-        } catch {}
+        } catch (err) {
+          console.warn(`Failed to auto-save dirty buffer for ${filename}:`, err)
+        }
       }
     }
   },

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { Minimap } from "./Minimap"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import {
   parseConflictRegions,
   resolveConflict,
@@ -31,6 +31,8 @@ function isSameFile(a?: string, b?: string): boolean {
   )
 }
 
+const EMPTY_BREAKPOINTS: number[] = []
+
 export function CodePane({
   paneId,
   filename,
@@ -39,10 +41,9 @@ export function CodePane({
   onClose,
 }: CodePaneProps) {
   const {
-    fileBuffers,
+    buffer,
     updateFileContent,
     setCursorPosition,
-    cursorPosition,
     setSelection,
     diagnostics,
     setFocusedPane,
@@ -56,11 +57,34 @@ export function CodePane({
     focusedGroup,
     tabSize,
     settings,
-    breakpoints,
+    fileBreakpoints,
     toggleBreakpoint,
     activeDebugLine,
     openFileInPane,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      buffer: s.fileBuffers[filename],
+      updateFileContent: s.updateFileContent,
+      setCursorPosition: s.setCursorPosition,
+      setSelection: s.setSelection,
+      diagnostics: s.diagnostics,
+      setFocusedPane: s.setFocusedPane,
+      saveFile: s.saveFile,
+      revertFile: s.revertFile,
+      tabs: s.tabs,
+      setSecondaryActiveTab: s.setSecondaryActiveTab,
+      minimapEnabled: s.minimapEnabled,
+      minimapScale: s.minimapScale,
+      openFind: s.openFind,
+      focusedGroup: s.focusedGroup,
+      tabSize: s.tabSize,
+      settings: s.settings,
+      fileBreakpoints: s.breakpoints[filename] ?? EMPTY_BREAKPOINTS,
+      toggleBreakpoint: s.toggleBreakpoint,
+      activeDebugLine: s.activeDebugLine,
+      openFileInPane: s.openFileInPane,
+    })),
+  )
 
   const editorFontSize = settings?.editor?.fontSize ?? 13.5
   const editorLineHeight = settings?.editor?.lineHeight ?? 22
@@ -74,7 +98,6 @@ export function CodePane({
   const renderWhitespace = settings?.editor?.renderWhitespace ?? "selection"
 
   const paneRef = useRef<HTMLDivElement>(null)
-  const buffer = fileBuffers[filename]
   const content = buffer?.content ?? ""
   const isDirty = buffer?.isDirty ?? false
   const lines = useMemo(() => content.split("\n"), [content])
@@ -346,7 +369,7 @@ export function CodePane({
             tabSize={currentTabSize}
             fontSize={editorFontSize}
             lineHeight={editorLineHeight}
-            breakpoints={breakpoints?.[filename] || []}
+            breakpoints={fileBreakpoints}
             activeDebugLine={activeDebugLine}
             diagnostics={diagnostics.filter((d) =>
               d.location.startsWith(filename),

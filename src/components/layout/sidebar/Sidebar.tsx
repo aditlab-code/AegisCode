@@ -2,7 +2,7 @@ import { useRef } from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { ResizeSash } from "../../ui/ResizeSash"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import {
   DEFAULT_SIDEBAR_WIDTH,
   MIN_SIDEBAR_WIDTH,
@@ -22,7 +22,17 @@ export function Sidebar() {
     setSidebarOpen,
     chatOpen,
     chatDrawerWidth,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      activeActivity: s.activeActivity,
+      sidebarWidth: s.sidebarWidth,
+      setSidebarWidth: s.setSidebarWidth,
+      resetSidebarWidth: s.resetSidebarWidth,
+      setSidebarOpen: s.setSidebarOpen,
+      chatOpen: s.chatOpen,
+      chatDrawerWidth: s.chatDrawerWidth,
+    })),
+  )
 
   const dragWidthRef = useRef<number>(sidebarWidth)
 

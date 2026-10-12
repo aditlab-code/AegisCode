@@ -129,14 +129,14 @@ function AppShell() {
           }
         >
           <Editor />
-          {panelOpen && <BottomPanel />}
+          <BottomPanel />
         </div>
         {chatOpen && <ChatDrawer />}
       </main>
       <StatusBar />
       <SettingsModal />
       <UnsavedChangesModal />
-      {toast && <Toast message={toast} onClose={clearToast} />}
+      {toast && <Toast message={toast} onDismiss={clearToast} />}
     </div>
   )
 }

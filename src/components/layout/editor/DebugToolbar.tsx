@@ -1,4 +1,4 @@
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 
@@ -9,7 +9,15 @@ export function DebugToolbar() {
     stepDebugging,
     terminateDebugging,
     startDebugging,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      debugState: s.debugState,
+      isDebugging: s.isDebugging,
+      stepDebugging: s.stepDebugging,
+      terminateDebugging: s.terminateDebugging,
+      startDebugging: s.startDebugging,
+    })),
+  )
 
   if (!isDebugging) {
     return null

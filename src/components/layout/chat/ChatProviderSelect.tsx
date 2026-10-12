@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import {
   CHAT_PROVIDERS,
   getMergedProviderModels,
@@ -15,7 +15,16 @@ export function ChatProviderSelect() {
     settings,
     updateAgentSettings,
     antigravityModels,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      activeProvider: s.activeProvider,
+      activeModel: s.activeModel,
+      setSessionModel: s.setSessionModel,
+      settings: s.settings,
+      updateAgentSettings: s.updateAgentSettings,
+      antigravityModels: s.antigravityModels,
+    })),
+  )
 
   const [isOpen, setIsOpen] = useState(false)
   const [activeFilter, setActiveFilter] = useState<"all" | ChatProvider>("all")

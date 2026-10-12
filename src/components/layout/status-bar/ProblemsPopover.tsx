@@ -1,12 +1,19 @@
 import { Icon } from "../../ui/Icon"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 
 interface ProblemsPopoverProps {
   onClose?: () => void
 }
 
 export function ProblemsPopover({ onClose }: ProblemsPopoverProps) {
-  const { diagnostics, activeLanguage, navigateToDiagnostic } = useWorkbench()
+  const { diagnostics, activeLanguage, navigateToDiagnostic } =
+    useWorkbenchStore(
+      useShallow((s) => ({
+        diagnostics: s.diagnostics,
+        activeLanguage: s.activeLanguage,
+        navigateToDiagnostic: s.navigateToDiagnostic,
+      })),
+    )
   const errorCount = diagnostics.filter((d) => d.type === "error").length
   const warningCount = diagnostics.filter((d) => d.type === "warning").length
 

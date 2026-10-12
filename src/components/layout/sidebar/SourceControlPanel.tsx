@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { Icon } from "../../ui/Icon"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 
 export function SourceControlPanel() {
   const {
@@ -42,7 +42,48 @@ export function SourceControlPanel() {
     isOperatingGit,
     unlockRepo,
     isLoadingGit,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      isGitRepo: s.isGitRepo,
+      activeBranch: s.activeBranch,
+      activeRepo: s.activeRepo,
+      gitChanges: s.gitChanges,
+      stagedChanges: s.stagedChanges,
+      gitCommits: s.gitCommits,
+      gitBranches: s.gitBranches,
+      gitTags: s.gitTags,
+      gitProfile: s.gitProfile,
+      ahead: s.ahead,
+      behind: s.behind,
+      initRepo: s.initRepo,
+      checkoutBranch: s.checkoutBranch,
+      createBranch: s.createBranch,
+      stageChange: s.stageChange,
+      unstageChange: s.unstageChange,
+      stageAllChanges: s.stageAllChanges,
+      unstageAllChanges: s.unstageAllChanges,
+      discardChange: s.discardChange,
+      discardAllChanges: s.discardAllChanges,
+      commitChanges: s.commitChanges,
+      gitPull: s.gitPull,
+      gitPush: s.gitPush,
+      gitSync: s.gitSync,
+      createTag: s.createTag,
+      pushTags: s.pushTags,
+      addRemote: s.addRemote,
+      refreshGit: s.refreshGit,
+      openGitDiff: s.openGitDiff,
+      rootWorkspacePath: s.rootWorkspacePath,
+      rootWorkspaceName: s.rootWorkspaceName,
+      openFolderPicker: s.openFolderPicker,
+      showToast: s.showToast,
+      settings: s.settings,
+      isRepoLocked: s.isRepoLocked,
+      isOperatingGit: s.isOperatingGit,
+      unlockRepo: s.unlockRepo,
+      isLoadingGit: s.isLoadingGit,
+    })),
+  )
 
   const maxVisibleChanges =
     settings?.features?.sourceControl?.maxVisibleChanges ?? 50

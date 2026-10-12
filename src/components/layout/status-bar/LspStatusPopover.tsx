@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { Icon } from "../../ui/Icon"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import {
   fetchLspStatus,
   type LanguageServerStatusInfo,
@@ -12,7 +12,14 @@ interface LspStatusPopoverProps {
 
 export function LspStatusPopover({ onClose }: LspStatusPopoverProps) {
   const { activeLanguage, setSettingsModalOpen, openSettingsModal, showToast } =
-    useWorkbench()
+    useWorkbenchStore(
+      useShallow((s) => ({
+        activeLanguage: s.activeLanguage,
+        setSettingsModalOpen: s.setSettingsModalOpen,
+        openSettingsModal: s.openSettingsModal,
+        showToast: s.showToast,
+      })),
+    )
   const [servers, setServers] = useState<LanguageServerStatusInfo[]>([])
   const [loading, setLoading] = useState(true)
 

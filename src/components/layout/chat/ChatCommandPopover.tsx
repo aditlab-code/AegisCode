@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import { SKILL_COMMANDS } from "../../../data/chatConstants"
 import { Icon } from "../../ui/Icon"
 
@@ -31,7 +31,12 @@ export function ChatCommandPopover({
   selectedIndex,
   setSelectedIndex,
 }: ChatCommandPopoverProps) {
-  const { files, skills } = useWorkbench()
+  const { files, skills } = useWorkbenchStore(
+    useShallow((s) => ({
+      files: s.files,
+      skills: s.skills,
+    })),
+  )
   const activeSkills = skills && skills.length > 0 ? skills : SKILL_COMMANDS
 
   const items: PopoverItem[] = []

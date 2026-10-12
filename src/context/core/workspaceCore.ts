@@ -345,7 +345,9 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
           })
         }
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.warn("Failed to fetch backend recent projects:", err)
+      })
   }, [])
 
   const addRecentProject = useCallback((rawPath: string) => {
@@ -358,10 +360,14 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
           "aegis_recent_projects_v1",
           JSON.stringify(next),
         )
-      } catch {}
+      } catch (err) {
+        console.warn("Failed to set recent projects in localStorage:", err)
+      }
       return next
     })
-    addBackendRecentProject(clean).catch(() => {})
+    addBackendRecentProject(clean).catch((err) => {
+      console.warn("Failed to sync recent project to backend:", err)
+    })
   }, [])
 
   const removeRecentProject = useCallback((path: string) => {
@@ -372,18 +378,26 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
           "aegis_recent_projects_v1",
           JSON.stringify(next),
         )
-      } catch {}
+      } catch (err) {
+        console.warn("Failed to set recent projects in localStorage:", err)
+      }
       return next
     })
-    removeBackendRecentProject(path).catch(() => {})
+    removeBackendRecentProject(path).catch((err) => {
+      console.warn("Failed to remove recent project on backend:", err)
+    })
   }, [])
 
   const clearRecentProjects = useCallback(() => {
     setRecentProjects([])
     try {
       window.localStorage.removeItem("aegis_recent_projects_v1")
-    } catch {}
-    clearBackendRecentProjects().catch(() => {})
+    } catch (err) {
+      console.warn("Failed to clear recent projects in localStorage:", err)
+    }
+    clearBackendRecentProjects().catch((err) => {
+      console.warn("Failed to clear recent projects on backend:", err)
+    })
   }, [])
 
   const addNotification = useCallback(

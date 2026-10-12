@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import type { MenuGroup } from "../../../types/workbench"
 
 const menus: MenuGroup[] = [
@@ -47,7 +47,14 @@ const menus: MenuGroup[] = [
 
 export function AppMenu() {
   const { runAction, recentProjects, openRootFolder, clearRecentProjects } =
-    useWorkbench()
+    useWorkbenchStore(
+      useShallow((s) => ({
+        runAction: s.runAction,
+        recentProjects: s.recentProjects,
+        openRootFolder: s.openRootFolder,
+        clearRecentProjects: s.clearRecentProjects,
+      })),
+    )
   const [activeMenu, setActiveMenu] = useState<string | null>(null)
   const navRef = useRef<HTMLElement>(null)
   const triggerRefs = useRef<Record<string, HTMLButtonElement | null>>({})

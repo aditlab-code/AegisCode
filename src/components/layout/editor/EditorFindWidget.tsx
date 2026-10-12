@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, type KeyboardEvent } from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import { saveWorkspaceFile } from "../../../utils/workspaceApi"
 
 interface EditorFindWidgetProps {
@@ -36,7 +36,18 @@ export function EditorFindWidget({
     updateFileContent,
     setCursorPosition,
     showToast,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      activeTab: s.activeTab,
+      secondaryActiveTab: s.secondaryActiveTab,
+      focusedPane: s.focusedPane,
+      splitEditor: s.splitEditor,
+      fileBuffers: s.fileBuffers,
+      updateFileContent: s.updateFileContent,
+      setCursorPosition: s.setCursorPosition,
+      showToast: s.showToast,
+    })),
+  )
 
   const [query, setQuery] = useState("")
   const [replaceText, setReplaceText] = useState("")
@@ -176,7 +187,9 @@ export function EditorFindWidget({
     const newContent = before + replaceText + after
 
     updateFileContent(currentFile, newContent)
-    saveWorkspaceFile(currentFile, newContent, false).catch(() => {})
+    saveWorkspaceFile(currentFile, newContent, false).catch((err) => {
+      console.warn("Failed to auto-save file after replace:", err)
+    })
     showToast(`Replaced match at Ln ${current.line}, Col ${current.col}`)
 
     // If there were matches remaining, jump to next
@@ -201,7 +214,9 @@ export function EditorFindWidget({
 
       const newContent = content.replace(regex, replaceText)
       updateFileContent(currentFile, newContent)
-      saveWorkspaceFile(currentFile, newContent, false).catch(() => {})
+      saveWorkspaceFile(currentFile, newContent, false).catch((err) => {
+        console.warn("Failed to auto-save file after replace all:", err)
+      })
       showToast(`Replaced ${matches.length} matches in ${currentFile}`)
     } catch {
       showToast("Invalid regex pattern")

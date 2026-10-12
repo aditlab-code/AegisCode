@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react"
 import { Icon } from "../../ui/Icon"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import type { DiagnosticItem } from "../../../types/workbench"
 
 export interface HoverPosition {
@@ -25,7 +25,15 @@ export function DiagnosticHoverCard({
     sendChatMessage,
     setChatOpen,
     showToast,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      setActiveBottomTab: s.setActiveBottomTab,
+      setPanelOpen: s.setPanelOpen,
+      sendChatMessage: s.sendChatMessage,
+      setChatOpen: s.setChatOpen,
+      showToast: s.showToast,
+    })),
+  )
 
   const cardRef = useRef<HTMLDivElement>(null)
 

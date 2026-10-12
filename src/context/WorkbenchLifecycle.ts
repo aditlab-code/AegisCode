@@ -1,17 +1,28 @@
 import { useEffect, useRef } from "react"
 import { useWorkbenchStore } from "../store"
 import { connectDebugSSE } from "../utils/debugApi"
-import { normalizeWorkspacePath } from "../utils/workspaceApi"
+import {
+  fetchWorkspaceTree,
+  normalizeWorkspacePath,
+} from "../utils/workspaceApi"
 import { isLspLanguage, validateSyntax } from "../utils/linter"
+import type { WorkspaceChangeEvent } from "../types/workbench"
 
 export function useWorkbenchLifecycle() {
   const store = useWorkbenchStore
 
   // 1. Server connection health check
   useEffect(() => {
-    store.getState().checkServerConnection()
+    store
+      .getState()
+      .checkServerConnection()
+      .catch((err) => console.warn("Initial server check error:", err))
+
     const timer = setInterval(() => {
-      store.getState().checkServerConnection()
+      store
+        .getState()
+        .checkServerConnection()
+        .catch((err) => console.warn("Periodic server check error:", err))
     }, 20000)
     return () => clearInterval(timer)
   }, [store])
@@ -68,14 +79,132 @@ export function useWorkbenchLifecycle() {
           })
         }
       },
-      () => {},
+      (err) => {
+        console.warn("DAP Debug SSE connection error:", err)
+      },
     )
     return () => {
       disconnect()
     }
   }, [store])
 
-  // 3. Desktop responsive viewport observer
+  // 3. Real-time Workspace Disk Watcher SSE (/api/v1/events/workspace)
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    let sse: EventSource | null = null
+    let reconnectTimer: NodeJS.Timeout | null = null
+    let hasConnectedOnce = false
+
+    const connect = () => {
+      const rootPath = store.getState().rootWorkspacePath
+      if (!rootPath) return
+
+      sse = new EventSource("/api/v1/events/workspace")
+
+      sse.addEventListener("connected", () => {
+        if (hasConnectedOnce) {
+          void store.getState().refreshWorkspace()
+        }
+        hasConnectedOnce = true
+      })
+
+      sse.addEventListener("change", (e) => {
+        try {
+          const evt = JSON.parse(e.data) as WorkspaceChangeEvent
+          const { created = [], modified = [], deleted = [] } = evt
+
+          // 1. Refresh explorer tree if files were created or deleted
+          if (created.length > 0 || deleted.length > 0) {
+            fetchWorkspaceTree()
+              .then((treeData) => store.getState().setFiles(treeData.flatTree))
+              .catch((err) => console.warn("Tree refresh error:", err))
+          }
+
+          // 2. Synchronize open buffers
+          const activeBuffers = store.getState().fileBuffers
+          const filesToReload = [...created, ...modified]
+
+          for (const file of filesToReload) {
+            const buf = activeBuffers[file]
+            if (buf) {
+              if (!buf.isDirty) {
+                void store.getState().fetchBufferSafely(file)
+              } else {
+                store.getState().setFileBuffers((prev) => {
+                  const current = prev[file]
+                  if (!current) return prev
+                  return {
+                    ...prev,
+                    [file]: {
+                      ...current,
+                      hasDiskConflict: true,
+                    },
+                  }
+                })
+                store.getState().showToast(`File changed on disk: ${file}`)
+              }
+            }
+          }
+
+          if (deleted.length > 0) {
+            for (const file of deleted) {
+              const buf = activeBuffers[file]
+              if (buf) {
+                store.getState().setFileBuffers((prev) => {
+                  const current = prev[file]
+                  if (!current) return prev
+                  return {
+                    ...prev,
+                    [file]: {
+                      ...current,
+                      isDeletedOnDisk: true,
+                    },
+                  }
+                })
+                store.getState().showToast(`File deleted on disk: ${file}`)
+              }
+            }
+          }
+
+          // 3. Trigger git refresh
+          if (created.length > 0 || modified.length > 0 || deleted.length > 0) {
+            void store.getState().refreshGit()
+          }
+        } catch (err) {
+          console.error("Failed to parse workspace change event:", err)
+        }
+      })
+
+      sse.onerror = (err) => {
+        console.warn("Workspace SSE stream interrupted, reconnecting:", err)
+        sse?.close()
+        reconnectTimer = setTimeout(connect, 3000)
+      }
+    }
+
+    // Connect immediately if root path is already present
+    connect()
+
+    // Also watch for root workspace path mutations
+    const unsubscribe = store.subscribe((state, prevState) => {
+      if (
+        state.rootWorkspacePath &&
+        state.rootWorkspacePath !== prevState.rootWorkspacePath
+      ) {
+        if (sse) sse.close()
+        connect()
+      }
+    })
+
+    return () => {
+      unsubscribe()
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      if (sse) sse.close()
+    }
+  }, [store])
+
+  // 4. Desktop responsive viewport observer
   useEffect(() => {
     if (typeof window === "undefined") return
 
@@ -109,7 +238,7 @@ export function useWorkbenchLifecycle() {
     return () => window.removeEventListener("resize", handleResize)
   }, [store])
 
-  // 4. Auto-save: afterDelay
+  // 5. Auto-save: afterDelay
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
   useEffect(() => {
     return store.subscribe((state) => {
@@ -137,7 +266,7 @@ export function useWorkbenchLifecycle() {
     })
   }, [store])
 
-  // 5. Auto-save: onFocusChange
+  // 6. Auto-save: onFocusChange
   useEffect(() => {
     if (typeof window === "undefined") return
 
@@ -158,7 +287,7 @@ export function useWorkbenchLifecycle() {
     return () => window.removeEventListener("blur", handleWindowBlur)
   }, [store])
 
-  // 6. Reactive Auto-Linting on focused file change
+  // 7. Reactive Auto-Linting on focused file change
   useEffect(() => {
     let lintTimer: NodeJS.Timeout | null = null
     return store.subscribe((state, prevState) => {
@@ -194,7 +323,7 @@ export function useWorkbenchLifecycle() {
     })
   }, [store])
 
-  // 7. Global Keyboard Shortcuts
+  // 8. Global Keyboard Shortcuts
   useEffect(() => {
     if (typeof window === "undefined") return
 

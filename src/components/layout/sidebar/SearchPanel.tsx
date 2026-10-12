@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import {
   searchWorkspace,
   replaceAllWorkspace,
@@ -32,7 +32,17 @@ export function SearchPanel() {
     focusedGroup,
     setCursorPosition,
     showToast,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      fileBuffers: s.fileBuffers,
+      updateFileContent: s.updateFileContent,
+      syncBufferWithDisk: s.syncBufferWithDisk,
+      openFileInGroup: s.openFileInGroup,
+      focusedGroup: s.focusedGroup,
+      setCursorPosition: s.setCursorPosition,
+      showToast: s.showToast,
+    })),
+  )
 
   const [search, setSearch] = useState("")
   const [replace, setReplace] = useState("")

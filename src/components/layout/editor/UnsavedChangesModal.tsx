@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react"
 import { Icon } from "../../ui/Icon"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 
 export function UnsavedChangesModal() {
   const {
@@ -8,7 +8,14 @@ export function UnsavedChangesModal() {
     resolveConfirmCloseFile,
     confirmRevertFile,
     resolveConfirmRevert,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      confirmCloseFile: s.confirmCloseFile,
+      resolveConfirmCloseFile: s.resolveConfirmCloseFile,
+      confirmRevertFile: s.confirmRevertFile,
+      resolveConfirmRevert: s.resolveConfirmRevert,
+    })),
+  )
   const primaryBtnRef = useRef<HTMLButtonElement>(null)
 
   const isOpen = Boolean(confirmCloseFile || confirmRevertFile)

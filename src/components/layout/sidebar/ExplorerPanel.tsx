@@ -8,7 +8,7 @@ import {
 } from "react"
 import { createPortal } from "react-dom"
 import { Icon } from "../../ui/Icon"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import type {
   FileItem,
   GitCommitNode,
@@ -183,7 +183,40 @@ export function ExplorerPanel() {
     gitChanges,
     stagedChanges,
     settings,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      files: s.files,
+      createFile: s.createFile,
+      renameFile: s.renameFile,
+      deleteFile: s.deleteFile,
+      moveFile: s.moveFile,
+      rootWorkspaceName: s.rootWorkspaceName,
+      rootWorkspacePath: s.rootWorkspacePath,
+      openRootFolder: s.openRootFolder,
+      refreshWorkspace: s.refreshWorkspace,
+      isWorkspaceLoading: s.isWorkspaceLoading,
+      group1: s.group1,
+      group2: s.group2,
+      focusedGroup: s.focusedGroup,
+      splitEditor: s.splitEditor,
+      openFileInGroup: s.openFileInGroup,
+      setActiveTabInGroup: s.setActiveTabInGroup,
+      closeTabInGroup: s.closeTabInGroup,
+      fileBuffers: s.fileBuffers,
+      setCursorPosition: s.setCursorPosition,
+      showToast: s.showToast,
+      recentProjects: s.recentProjects,
+      removeRecentProject: s.removeRecentProject,
+      clearRecentProjects: s.clearRecentProjects,
+      fetchTimeline: s.fetchTimeline,
+      isGitRepo: s.isGitRepo,
+      gitCommits: s.gitCommits,
+      openGitDiff: s.openGitDiff,
+      gitChanges: s.gitChanges,
+      stagedChanges: s.stagedChanges,
+      settings: s.settings,
+    })),
+  )
 
   const { gitStatusMap, dirtyFoldersSet } = useMemo(
     () => buildExplorerGitDecorations(stagedChanges, gitChanges, fileBuffers),

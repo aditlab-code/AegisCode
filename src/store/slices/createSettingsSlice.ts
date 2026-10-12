@@ -287,7 +287,9 @@ function applySettingsSideEffects(settings: AppSettings): void {
     bypassCommands: settings.agent.bypassCommands,
     customModels: settings.agent.customModels,
     settings: settings as any,
-  }).catch(() => {})
+  }).catch((err) => {
+    console.warn("Failed to persist config to backend:", err)
+  })
 }
 
 export async function hydrateBackendSettings(
@@ -347,7 +349,9 @@ export const createSettingsSlice: SliceCreator<SettingsSlice> = (set, get) => {
       initialSettings.workbench.appearance.mode,
     )
     applyTypographyVariables(initialSettings)
-    hydrateBackendSettings(set).catch(() => {})
+    hydrateBackendSettings(set).catch((err) => {
+      console.warn("Failed to hydrate backend settings:", err)
+    })
   }
 
   return {

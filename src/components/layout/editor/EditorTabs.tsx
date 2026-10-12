@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type DragEvent } from "react"
 import { createPortal } from "react-dom"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import { isGitDiffTab, parseGitDiffTab } from "../../../utils/gitDiffTab"
 
 interface ContextMenuData {
@@ -41,7 +41,28 @@ export function EditorTabs({
     showToast,
     startDebugging,
     runFileInTerminal,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      group1: s.group1,
+      group2: s.group2,
+      focusedGroup: s.focusedGroup,
+      setFocusedGroup: s.setFocusedGroup,
+      setActiveTabInGroup: s.setActiveTabInGroup,
+      closeTabInGroup: s.closeTabInGroup,
+      moveTabBetweenGroups: s.moveTabBetweenGroups,
+      reorderTabsInGroup: s.reorderTabsInGroup,
+      splitEditor: s.splitEditor,
+      toggleSplitEditor: s.toggleSplitEditor,
+      closeSplitEditor: s.closeSplitEditor,
+      fileBuffers: s.fileBuffers,
+      saveFile: s.saveFile,
+      revertFile: s.revertFile,
+      requestRevertFile: s.requestRevertFile,
+      showToast: s.showToast,
+      startDebugging: s.startDebugging,
+      runFileInTerminal: s.runFileInTerminal,
+    })),
+  )
 
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [isDropTarget, setIsDropTarget] = useState(false)

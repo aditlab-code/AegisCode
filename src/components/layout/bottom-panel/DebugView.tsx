@@ -1,4 +1,4 @@
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import { Icon } from "../../ui/Icon"
 
 export function DebugView() {
@@ -8,7 +8,15 @@ export function DebugView() {
     startDebugging,
     openFileInGroup,
     activeTab,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      debugState: s.debugState,
+      isDebugging: s.isDebugging,
+      startDebugging: s.startDebugging,
+      openFileInGroup: s.openFileInGroup,
+      activeTab: s.activeTab,
+    })),
+  )
 
   if (!isDebugging || debugState.status === "idle") {
     const isDebuggableActive =

@@ -1,9 +1,16 @@
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import { Icon } from "../../ui/Icon"
 
 export function ChatSessionSidebar() {
   const { sessions, activeSessionId, switchSession, deleteSession } =
-    useWorkbench()
+    useWorkbenchStore(
+      useShallow((s) => ({
+        sessions: s.sessions,
+        activeSessionId: s.activeSessionId,
+        switchSession: s.switchSession,
+        deleteSession: s.deleteSession,
+      })),
+    )
 
   return (
     <div className="chat-sessions-sidebar">

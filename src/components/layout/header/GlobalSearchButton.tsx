@@ -1,6 +1,6 @@
 import { useRef, useEffect } from "react"
 import { Icon } from "../../ui/Icon"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import { CommandPalette } from "../command-palette/CommandPalette"
 
 export function GlobalSearchButton() {
@@ -10,7 +10,15 @@ export function GlobalSearchButton() {
     commandPaletteQuery,
     setCommandPaletteQuery,
     rootWorkspaceName,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      commandPaletteOpen: s.commandPaletteOpen,
+      setCommandPaletteOpen: s.setCommandPaletteOpen,
+      commandPaletteQuery: s.commandPaletteQuery,
+      setCommandPaletteQuery: s.setCommandPaletteQuery,
+      rootWorkspaceName: s.rootWorkspaceName,
+    })),
+  )
 
   const isMac =
     typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent)

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react"
 import { Icon } from "../../ui/Icon"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import type { IconName } from "../../../types/workbench"
 
 interface CommandPaletteItem {
@@ -31,7 +31,28 @@ export function CommandPalette() {
     openFind,
     runFileInTerminal,
     startDebugging,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      commandPaletteOpen: s.commandPaletteOpen,
+      setCommandPaletteOpen: s.setCommandPaletteOpen,
+      commandPaletteQuery: s.commandPaletteQuery,
+      setCommandPaletteQuery: s.setCommandPaletteQuery,
+      setActiveActivity: s.setActiveActivity,
+      setSidebarOpen: s.setSidebarOpen,
+      setSettingsModalOpen: s.setSettingsModalOpen,
+      theme: s.theme,
+      toggleTheme: s.toggleTheme,
+      showToast: s.showToast,
+      openFolderPicker: s.openFolderPicker,
+      openRootFolder: s.openRootFolder,
+      closeRootFolder: s.closeRootFolder,
+      rootWorkspacePath: s.rootWorkspacePath,
+      recentProjects: s.recentProjects,
+      openFind: s.openFind,
+      runFileInTerminal: s.runFileInTerminal,
+      startDebugging: s.startDebugging,
+    })),
+  )
 
   const allCommands = useMemo<CommandPaletteItem[]>(() => {
     const list: CommandPaletteItem[] = [

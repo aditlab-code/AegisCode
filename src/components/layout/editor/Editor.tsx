@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import { EditorTabs } from "./EditorTabs"
 import { EditorBreadcrumbs } from "./EditorBreadcrumbs"
 import { CodePane } from "./CodePane"
@@ -24,7 +24,21 @@ export function Editor() {
     findStateGroup2,
     closeFind,
     toggleFind,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      splitEditor: s.splitEditor,
+      splitRatio: s.splitRatio,
+      setSplitRatio: s.setSplitRatio,
+      group1: s.group1,
+      group2: s.group2,
+      focusedGroup: s.focusedGroup,
+      closeSplitEditor: s.closeSplitEditor,
+      findStateGroup1: s.findStateGroup1,
+      findStateGroup2: s.findStateGroup2,
+      closeFind: s.closeFind,
+      toggleFind: s.toggleFind,
+    })),
+  )
 
   const [isResizing, setIsResizing] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)

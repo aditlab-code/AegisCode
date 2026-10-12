@@ -1,6 +1,6 @@
 import { useRef, useState } from "react"
 import { ResizeSash } from "../../ui/ResizeSash"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import {
   DEFAULT_CHAT_WIDTH,
   MIN_CHAT_WIDTH,
@@ -25,7 +25,18 @@ export function ChatDrawer() {
     setChatOpen,
     sidebarOpen,
     sidebarWidth,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      sendChatMessage: s.sendChatMessage,
+      chatSessionsOpen: s.chatSessionsOpen,
+      chatDrawerWidth: s.chatDrawerWidth,
+      setChatDrawerWidth: s.setChatDrawerWidth,
+      resetChatDrawerWidth: s.resetChatDrawerWidth,
+      setChatOpen: s.setChatOpen,
+      sidebarOpen: s.sidebarOpen,
+      sidebarWidth: s.sidebarWidth,
+    })),
+  )
   const [inputMessage, setInputMessage] = useState("")
   const dragWidthRef = useRef<number>(chatDrawerWidth)
 

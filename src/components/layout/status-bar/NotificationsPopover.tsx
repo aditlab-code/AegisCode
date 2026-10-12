@@ -1,5 +1,5 @@
 import { Icon } from "../../ui/Icon"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 
 interface NotificationsPopoverProps {
   onClose?: () => void
@@ -12,7 +12,15 @@ export function NotificationsPopover({ onClose }: NotificationsPopoverProps) {
     markNotificationRead,
     clearAllNotifications,
     removeNotification,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      notifications: s.notifications,
+      markAllNotificationsRead: s.markAllNotificationsRead,
+      markNotificationRead: s.markNotificationRead,
+      clearAllNotifications: s.clearAllNotifications,
+      removeNotification: s.removeNotification,
+    })),
+  )
 
   return (
     <div className="status-popover notification-popover">

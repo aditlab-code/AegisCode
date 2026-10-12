@@ -1,6 +1,6 @@
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 
 export function HeaderActions() {
   const {
@@ -10,7 +10,16 @@ export function HeaderActions() {
     toggleSidebar,
     chatOpen,
     toggleChat,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      panelOpen: s.panelOpen,
+      togglePanel: s.togglePanel,
+      sidebarOpen: s.sidebarOpen,
+      toggleSidebar: s.toggleSidebar,
+      chatOpen: s.chatOpen,
+      toggleChat: s.toggleChat,
+    })),
+  )
 
   return (
     <div className="header-actions">

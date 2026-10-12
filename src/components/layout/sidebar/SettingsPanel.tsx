@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Icon } from "../../ui/Icon"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 
 export function SettingsPanel() {
   const {
@@ -13,7 +13,19 @@ export function SettingsPanel() {
     tabSize,
     setTabSize,
     showToast,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      linterSettings: s.linterSettings,
+      setLinterSettings: s.setLinterSettings,
+      minimapEnabled: s.minimapEnabled,
+      toggleMinimap: s.toggleMinimap,
+      minimapScale: s.minimapScale,
+      setMinimapScale: s.setMinimapScale,
+      tabSize: s.tabSize,
+      setTabSize: s.setTabSize,
+      showToast: s.showToast,
+    })),
+  )
   const [settingsQuery, setSettingsQuery] = useState("")
   const [autoSave, setAutoSave] = useState(true)
 

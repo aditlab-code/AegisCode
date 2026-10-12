@@ -1,6 +1,6 @@
 import { memo, useMemo, useState, type ReactNode } from "react"
 import { Icon } from "../../ui/Icon"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import { tokenizeLine } from "../../../utils/syntax"
 import { isGitDiffTab } from "../../../utils/gitDiffTab"
 
@@ -55,7 +55,14 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   isStreaming = false,
 }: MarkdownRendererProps) {
   const { openFileInPane, activeTab, applyCodeWithReview, showToast } =
-    useWorkbench()
+    useWorkbenchStore(
+      useShallow((s) => ({
+        openFileInPane: s.openFileInPane,
+        activeTab: s.activeTab,
+        applyCodeWithReview: s.applyCodeWithReview,
+        showToast: s.showToast,
+      })),
+    )
 
   // During streaming: skip the expensive O(N) parser entirely.
   // Parse only once after the stream is done (isStreaming === false).

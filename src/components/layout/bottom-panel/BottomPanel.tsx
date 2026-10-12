@@ -2,7 +2,7 @@ import { useState, useEffect, type DragEvent } from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { ResizeSash } from "../../ui/ResizeSash"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import type { BottomTab, OutputChannel } from "../../../types/workbench"
 import { TerminalView } from "./TerminalView"
 import { ProblemsView } from "./ProblemsView"
@@ -35,7 +35,34 @@ export function BottomPanel() {
     setBottomPanelHeight,
     resetBottomPanelHeight,
     showToast,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      diagnostics: s.diagnostics,
+      terminalLines: s.terminalLines,
+      terminalRunning: s.terminalRunning,
+      setTerminalRunning: s.setTerminalRunning,
+      terminalSessions: s.terminalSessions,
+      activeTerminalSession: s.activeTerminalSession,
+      activeTerminalSessionId: s.activeTerminalSessionId,
+      setActiveTerminalSessionId: s.setActiveTerminalSessionId,
+      createTerminalSession: s.createTerminalSession,
+      restartTerminalSession: s.restartTerminalSession,
+      terminateTerminalSession: s.terminateTerminalSession,
+      closeTerminalSession: s.closeTerminalSession,
+      clearTerminal: s.clearTerminal,
+      activeBottomTab: s.activeBottomTab,
+      setActiveBottomTab: s.setActiveBottomTab,
+      bottomTabOrder: s.bottomTabOrder,
+      reorderBottomTabs: s.reorderBottomTabs,
+      panelMaximized: s.panelMaximized,
+      togglePanelMaximized: s.togglePanelMaximized,
+      panelOpen: s.panelOpen,
+      setPanelOpen: s.setPanelOpen,
+      setBottomPanelHeight: s.setBottomPanelHeight,
+      resetBottomPanelHeight: s.resetBottomPanelHeight,
+      showToast: s.showToast,
+    })),
+  )
 
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [newShell, setNewShell] = useState<string>("zsh")

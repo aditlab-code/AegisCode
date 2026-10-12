@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Icon } from "../../ui/Icon"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 
 export interface DiagnosticLocation {
   filename: string
@@ -48,7 +48,16 @@ export function ProblemsView() {
     sendChatMessage,
     setChatOpen,
     showToast,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      diagnostics: s.diagnostics,
+      navigateToDiagnostic: s.navigateToDiagnostic,
+      panelMaximized: s.panelMaximized,
+      sendChatMessage: s.sendChatMessage,
+      setChatOpen: s.setChatOpen,
+      showToast: s.showToast,
+    })),
+  )
   const [filter, setFilter] = useState<"all" | "error" | "warning">("all")
 
   const errorCount = diagnostics.filter((d) => d.type === "error").length

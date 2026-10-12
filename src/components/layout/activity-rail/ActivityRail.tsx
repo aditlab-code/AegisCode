@@ -1,6 +1,6 @@
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import type { ActivityType } from "../../../types/workbench"
 
 const activities: [name: "explorer" | "search" | "git", label: ActivityType][] =
@@ -21,7 +21,19 @@ export function ActivityRail() {
     theme,
     toggleTheme,
     showToast,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      activeActivity: s.activeActivity,
+      setActiveActivity: s.setActiveActivity,
+      sidebarOpen: s.sidebarOpen,
+      setSidebarOpen: s.setSidebarOpen,
+      settingsModalOpen: s.settingsModalOpen,
+      toggleSettingsModal: s.toggleSettingsModal,
+      theme: s.theme,
+      toggleTheme: s.toggleTheme,
+      showToast: s.showToast,
+    })),
+  )
 
   function handleSelect(label: ActivityType) {
     if (activeActivity === label && sidebarOpen) {

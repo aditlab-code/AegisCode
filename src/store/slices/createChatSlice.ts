@@ -76,7 +76,9 @@ function debouncedSaveBackendSession(session: ChatSession) {
   pendingSaveSession = session
   if (chatSaveTimer) clearTimeout(chatSaveTimer)
   chatSaveTimer = setTimeout(() => {
-    saveBackendChatSession(session).catch(() => {})
+    saveBackendChatSession(session).catch((err) =>
+      console.warn("Failed to debounced-save chat session:", err),
+    )
     pendingSaveSession = null
   }, 3000)
 }
@@ -95,7 +97,9 @@ function persistSessions(sessions: ChatSession[], activeSessionId?: string) {
         )
       }
     }
-  } catch {}
+  } catch (err) {
+    console.warn("Failed to persist chat sessions to localStorage:", err)
+  }
 }
 
 function getActiveChatState(sessions: ChatSession[], activeSessionId: string) {
@@ -221,7 +225,9 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
           set({ antigravityModels: models })
         }
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.warn("Failed to hydrate AI models:", err)
+      })
 
     fetchAISkills()
       .then((skills) => {
@@ -229,7 +235,9 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
           set({ skills })
         }
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.warn("Failed to hydrate AI skills:", err)
+      })
 
     fetchBackendChatSummaries()
       .then(async (summaries) => {
@@ -251,13 +259,17 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
           }
         }
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.warn("Failed to hydrate backend chat summaries:", err)
+      })
 
     const handleUnload = () => {
       if (pendingSaveSession) {
         saveBackendChatSession(pendingSaveSession, {
           keepalive: true,
-        }).catch(() => {})
+        }).catch((err) => {
+          console.warn("Failed to save chat session on page unload:", err)
+        })
         pendingSaveSession = null
       }
     }
@@ -298,7 +310,9 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
       set({
         ...getActiveChatState(res.sessions, res.newSession.id),
       })
-      saveBackendChatSession(res.newSession).catch(() => {})
+      saveBackendChatSession(res.newSession).catch((err) => {
+        console.warn("Failed to persist new chat session to backend:", err)
+      })
       return res.newSession
     },
 
@@ -319,7 +333,9 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
       set({
         ...getActiveChatState(res.sessions, res.nextActiveId),
       })
-      deleteBackendChatSession(id).catch(() => {})
+      deleteBackendChatSession(id).catch((err) => {
+        console.warn("Failed to delete chat session from backend:", err)
+      })
     },
 
     setSessionModel: (providerOrModel: string, optionalModel?: string) => {

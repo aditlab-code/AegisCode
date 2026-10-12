@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react"
 import { Icon } from "../../ui/Icon"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import { parseGitDiffTab } from "../../../utils/gitDiffTab"
 import type { GitDiffResult } from "../../../types/workbench"
 import { CMEditor, type CMEditorHandle } from "./CMEditor"
@@ -26,7 +26,24 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
     settings,
     updateEditorSettings,
     gitDiffVersion,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      fetchDiff: s.fetchDiff,
+      fileBuffers: s.fileBuffers,
+      updateFileContent: s.updateFileContent,
+      saveFile: s.saveFile,
+      openFileInPane: s.openFileInPane,
+      closeTabInGroup: s.closeTabInGroup,
+      stageChange: s.stageChange,
+      unstageChange: s.unstageChange,
+      discardChange: s.discardChange,
+      showToast: s.showToast,
+      tabSize: s.tabSize,
+      settings: s.settings,
+      updateEditorSettings: s.updateEditorSettings,
+      gitDiffVersion: s.gitDiffVersion,
+    })),
+  )
 
   const inheritEditorFont =
     settings?.editor?.diffEditor?.inheritEditorFont ?? true

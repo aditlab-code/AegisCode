@@ -63,18 +63,22 @@ function getDynamicTerminalTheme(
 
 export function TerminalView() {
   const {
-    activeTerminalSession,
+    sessionId,
+    isLive,
+    shell,
     setTerminalRunning,
     createTerminalSession,
-    settings,
+    terminalSettings,
     theme,
     themePalette,
   } = useWorkbenchStore(
     useShallow((s) => ({
-      activeTerminalSession: s.activeTerminalSession,
+      sessionId: s.activeTerminalSession?.id,
+      isLive: s.activeTerminalSession?.isLive ?? false,
+      shell: s.activeTerminalSession?.shell || "zsh",
       setTerminalRunning: s.setTerminalRunning,
       createTerminalSession: s.createTerminalSession,
-      settings: s.settings,
+      terminalSettings: s.settings?.features?.terminal,
       theme: s.theme,
       themePalette: s.themePalette,
     })),
@@ -85,19 +89,16 @@ export function TerminalView() {
   const fitAddonRef = useRef<FitAddon | null>(null)
   const inputBufferRef = useRef<string>("")
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const sessionId = activeTerminalSession?.id
-  const isLive = activeTerminalSession?.isLive ?? false
   const hasAttemptedLiveUpgradeRef = useRef(false)
 
   // Auto-upgrade mock initial session to real backend PTY session (only once)
   useEffect(() => {
     if (hasAttemptedLiveUpgradeRef.current) return
     hasAttemptedLiveUpgradeRef.current = true
-    if (activeTerminalSession && !activeTerminalSession.isLive) {
-      createTerminalSession(activeTerminalSession.shell || "zsh")
+    if (sessionId && !isLive) {
+      createTerminalSession(shell)
     }
-  }, [activeTerminalSession, createTerminalSession])
+  }, [sessionId, isLive, shell, createTerminalSession])
 
   // Synchronize terminal theme dynamically on theme or palette changes
   useEffect(() => {
@@ -106,21 +107,27 @@ export function TerminalView() {
     termRef.current.options.theme = updatedTheme
   }, [theme, themePalette])
 
+  const cursorBlinking = terminalSettings?.cursorBlinking ?? true
+  const cursorStyle =
+    terminalSettings?.cursorStyle === "line"
+      ? "bar"
+      : terminalSettings?.cursorStyle || "block"
+  const fontSize = terminalSettings?.fontSize || 12
+  const fontFamily =
+    terminalSettings?.fontFamily ||
+    "'JetBrains Mono', 'Fira Code', 'SFMono-Regular', Consolas, monospace"
+  const lineHeight = terminalSettings?.lineHeight || 1.35
+
   useEffect(() => {
     if (!containerRef.current || !sessionId) return
 
     // 1. Instantiate Xterm with dynamically resolved Tailwind Token palette
     const term = new Terminal({
-      cursorBlink: settings?.features?.terminal?.cursorBlinking ?? true,
-      cursorStyle:
-        settings?.features?.terminal?.cursorStyle === "line"
-          ? "bar"
-          : settings?.features?.terminal?.cursorStyle || "block",
-      fontSize: settings?.features?.terminal?.fontSize || 12,
-      fontFamily:
-        settings?.features?.terminal?.fontFamily ||
-        "'JetBrains Mono', 'Fira Code', 'SFMono-Regular', Consolas, monospace",
-      lineHeight: settings?.features?.terminal?.lineHeight || 1.35,
+      cursorBlink: cursorBlinking,
+      cursorStyle,
+      fontSize,
+      fontFamily,
+      lineHeight,
       theme: getDynamicTerminalTheme(themePalette, theme),
     })
 
@@ -269,9 +276,17 @@ export function TerminalView() {
       if (flushTimerRef.current) {
         clearTimeout(flushTimerRef.current)
       }
-      term.dispose()
     }
-  }, [sessionId, isLive, settings, setTerminalRunning])
+  }, [
+    sessionId,
+    isLive,
+    cursorBlinking,
+    cursorStyle,
+    fontSize,
+    fontFamily,
+    lineHeight,
+    setTerminalRunning,
+  ])
 
   return (
     <div className="terminal-session">
