@@ -43,3 +43,12 @@ server/server
 /.plugins/
 /.opencode-skills/
 .claude-replay.*
+
+# Internal Agent Instructions & Local Specs
+/AGENTS.md
+/CLAUDE.md
+/.scratch/
+
+# Internal Developer Documentation
+/docs/
+
