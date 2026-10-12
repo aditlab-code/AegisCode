@@ -2,6 +2,7 @@ package api
 
 import (
 	"github.com/aditwicaksono/aegiscode/server/internal/git"
+	"github.com/aditwicaksono/aegiscode/server/internal/lsp"
 	"github.com/aditwicaksono/aegiscode/server/internal/workspace"
 )
 
@@ -57,15 +58,19 @@ type TreeResponse struct {
 
 // FileResponse models the file read response.
 type FileResponse struct {
-	Path    string `json:"path"`
-	Content string `json:"content"`
+	Path     string `json:"path"`
+	Content  string `json:"content"`
+	IsLarge  bool   `json:"isLarge,omitempty"`
+	IsBinary bool   `json:"isBinary,omitempty"`
+	Size     int64  `json:"size,omitempty"`
 }
 
 // WriteFileRequest models the write file/folder request payload.
 type WriteFileRequest struct {
-	Path     string `json:"path"`
-	Content  string `json:"content"`
-	IsFolder bool   `json:"isFolder"`
+	Path      string `json:"path"`
+	Content   string `json:"content"`
+	IsFolder  bool   `json:"isFolder"`
+	Exclusive bool   `json:"exclusive,omitempty"`
 }
 
 // FileOperationResponse models file CRUD operation status.
@@ -262,4 +267,61 @@ type LogEvent struct {
 	Timestamp string `json:"timestamp"`
 	Level     string `json:"level,omitempty"`
 }
+
+// HandshakeRequest models the client authentication request.
+type HandshakeRequest struct {
+	ClientType   string `json:"clientType"`
+	PairingToken string `json:"pairingToken"`
+}
+
+// HandshakeResponse models the token grant response.
+type HandshakeResponse struct {
+	SessionToken string `json:"sessionToken"`
+	ExpiresIn    int64  `json:"expiresIn"`
+	ExpiresAt    int64  `json:"expiresAt"`
+}
+
+// PairingInfoResponse models status and URL metadata for tablet companion pairing.
+type PairingInfoResponse struct {
+	LanIP        string `json:"lanIP"`
+	Port         int    `json:"port"`
+	PairingToken string `json:"pairingToken"`
+	PairingURL   string `json:"pairingURL"`
+	ExpiresIn    int64  `json:"expiresIn"`
+	ExpiresAt    int64  `json:"expiresAt"`
+}
+
+// LSP API Request/Response Models (Core 2)
+
+type LSPOpenRequest struct {
+	Path     string `json:"path"`
+	Content  string `json:"content"`
+	Language string `json:"language"`
+}
+
+type LSPChangeRequest struct {
+	Path     string `json:"path"`
+	Content  string `json:"content"`
+	Language string `json:"language"`
+}
+
+type LSPPositionRequest struct {
+	Path      string `json:"path"`
+	Line      int    `json:"line"`
+	Character int    `json:"character"`
+	Language  string `json:"language"`
+}
+
+type LSPCompletionResponse struct {
+	Items []lsp.CompletionItem `json:"items"`
+}
+
+type LSPHoverResponse struct {
+	Hover *lsp.Hover `json:"hover"`
+}
+
+type LSPDefinitionResponse struct {
+	Locations []lsp.Location `json:"locations"`
+}
+
 

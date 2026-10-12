@@ -111,6 +111,9 @@ func main() {
 
 	picker := platform.NewNativeFolderPicker()
 	server := api.NewServer(ws, picker, st)
+	if server.Pairing() != nil {
+		server.Pairing().SetPort(activePort)
+	}
 
 	rootPath, name := ws.GetRoot()
 	if rootPath != "" {
@@ -121,6 +124,10 @@ func main() {
 	if activePort != 8080 && os.Getenv("PORT") == "" {
 		fmt.Printf("⚠️  WARNING: Default port 8080 was occupied. Server bound to %s instead.\n", serverURL)
 		fmt.Println("   To free port 8080, run: npm run stop")
+	}
+	if server.Pairing() != nil {
+		pInfo := server.Pairing().GetInfo()
+		fmt.Printf("Companion Pairing: %s (Token: %s, TTL: 24h)\n", pInfo.PairingURL, pInfo.PairingToken)
 	}
 	if rootPath == "" {
 		fmt.Println("Active Workspace: None (Awaiting folder)")

@@ -239,7 +239,7 @@ export function EditorTabs({
               <Icon
                 className={
                   isDiff
-                    ? "text-[var(--color-accent)] shrink-0"
+                    ? "text-(--color-accent) shrink-0"
                     : isDeletedOnDisk
                       ? "text-error shrink-0"
                       : "shrink-0"
@@ -342,7 +342,7 @@ export function EditorTabs({
             label="Run or Debug options"
             onClick={() => setRunMenuOpen((prev) => !prev)}
             active={runMenuOpen}
-            className="!px-0.5"
+            className="px-0.5!"
           >
             <Icon name="chevron-down" size={10} />
           </IconButton>

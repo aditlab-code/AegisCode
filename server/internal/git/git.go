@@ -250,7 +250,7 @@ func (s *Service) IsRepo(ctx context.Context) (bool, error) {
 		}
 		return false, err
 	}
-	return st.IsDir() || !st.IsDir(), nil
+	return st.IsDir() || st.Mode().IsRegular(), nil
 }
 
 // Init initializes a new git repository in the active workspace.
@@ -780,11 +780,19 @@ func (s *Service) Discard(ctx context.Context, files []string, all bool) error {
 		if cleanPath == "" {
 			continue
 		}
-		fullPath := filepath.Join(root, cleanPath)
+
+		fullPath, err := s.ws.ResolvePath(cleanPath)
+		if err != nil {
+			// Path traversal attempt or invalid path outside workspace root
+			continue
+		}
+
 		// Check if file is untracked
 		if _, err := s.runGit(ctx, "restore", "--", cleanPath); err != nil {
-			// Might be untracked, remove directly
-			_ = os.RemoveAll(fullPath)
+			// Might be untracked, remove directly only if within root and not root itself
+			if fullPath != root {
+				_ = os.RemoveAll(fullPath)
+			}
 		}
 	}
 	return nil
@@ -924,9 +932,9 @@ func (s *Service) GetDiff(ctx context.Context, relPath string, staged bool, comm
 		return nil, errors.New("file path cannot be empty")
 	}
 
-	root, err := s.root()
+	fullPath, err := s.ws.ResolvePath(relPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid file path: %w", err)
 	}
 
 	var diffText string
@@ -941,12 +949,12 @@ func (s *Service) GetDiff(ctx context.Context, relPath string, staged bool, comm
 	} else if staged {
 		diffText, _ = s.runGit(ctx, "diff", "--cached", "--", relPath)
 		origContent, _ = s.runGit(ctx, "show", fmt.Sprintf("HEAD:%s", relPath))
-		modBytes, _ := os.ReadFile(filepath.Join(root, relPath))
+		modBytes, _ := os.ReadFile(fullPath)
 		modContent = string(modBytes)
 	} else {
 		diffText, _ = s.runGit(ctx, "diff", "--", relPath)
 		origContent, _ = s.runGit(ctx, "show", fmt.Sprintf("HEAD:%s", relPath))
-		modBytes, _ := os.ReadFile(filepath.Join(root, relPath))
+		modBytes, _ := os.ReadFile(fullPath)
 		modContent = string(modBytes)
 
 		// Untracked file handling

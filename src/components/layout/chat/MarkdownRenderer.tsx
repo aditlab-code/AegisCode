@@ -305,7 +305,7 @@ function CodeBlockView({
           <span className="markdown-code-lang">{lang || "CODE"}</span>
           {targetPath && (
             <span
-              className="text-[10px] text-ink-muted font-mono truncate max-w-[200px]"
+              className="text-[10px] text-ink-muted font-mono truncate max-w-50"
               title={targetPath}
             >
               {targetPath}
@@ -566,17 +566,27 @@ function renderInlineMarkdown(
     } else if (raw.startsWith("[") && raw.includes("](") && raw.endsWith(")")) {
       const linkMatch = raw.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
       if (linkMatch) {
-        nodes.push(
-          <a
-            key={key}
-            href={linkMatch[2]}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="markdown-link"
-          >
-            {linkMatch[1]}
-          </a>,
-        )
+        const href = linkMatch[2].trim()
+        const isSafeProtocol = /^(https?:|mailto:|file:|\/|#)/i.test(href)
+        if (isSafeProtocol) {
+          nodes.push(
+            <a
+              key={key}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="markdown-link"
+            >
+              {linkMatch[1]}
+            </a>,
+          )
+        } else {
+          nodes.push(
+            <span key={key} className="text-ink-muted underline">
+              {linkMatch[1]}
+            </span>,
+          )
+        }
       } else {
         nodes.push(raw)
       }

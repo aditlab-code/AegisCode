@@ -81,11 +81,8 @@ export function terminatePorts(ports = TARGET_PORTS, verbose = true) {
   }
 
   if (killedPids.size > 0 && !isWin) {
-    // Brief grace period before SIGKILL watchdog
-    const start = Date.now()
-    while (Date.now() - start < 150) {
-      // micro-wait
-    }
+    // Brief non-blocking grace period before SIGKILL watchdog (0% CPU)
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150)
 
     for (const pid of killedPids) {
       try {

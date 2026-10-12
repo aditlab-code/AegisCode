@@ -3,6 +3,7 @@ package workspace
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -193,6 +194,11 @@ func (m *Manager) GetRoot() (string, string) {
 	return m.rootPath, filepath.Base(m.rootPath)
 }
 
+// ResolvePath resolves and validates a workspace-relative or absolute path within the workspace root.
+func (m *Manager) ResolvePath(relPath string) (string, error) {
+	return m.resolvePath(relPath)
+}
+
 func (m *Manager) resolvePath(relPath string) (string, error) {
 	m.mu.RLock()
 	root := m.rootPath
@@ -210,10 +216,22 @@ func (m *Manager) resolvePath(relPath string) (string, error) {
 
 	cleaned := filepath.Clean(trimmed)
 
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		realRoot = root
+	}
+
 	if filepath.IsAbs(cleaned) {
 		// Clean absolute path residing inside root
 		relToRoot, err := filepath.Rel(root, cleaned)
 		if err == nil && relToRoot != ".." && !strings.HasPrefix(relToRoot, ".."+string(filepath.Separator)) {
+			// Check symlink escape
+			if realCleaned, err := filepath.EvalSymlinks(cleaned); err == nil {
+				relToReal, err := filepath.Rel(realRoot, realCleaned)
+				if err != nil || relToReal == ".." || strings.HasPrefix(relToReal, ".."+string(filepath.Separator)) {
+					return "", fmt.Errorf("path '%s' escapes root directory via symlink", relPath)
+				}
+			}
 			return cleaned, nil
 		}
 
@@ -235,6 +253,34 @@ func (m *Manager) resolvePath(relPath string) (string, error) {
 	if err != nil || relToRoot == ".." || strings.HasPrefix(relToRoot, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("path '%s' escapes root directory '%s'", relPath, root)
 	}
+
+	// Evaluate physical symlinks
+	if _, err := os.Stat(target); err == nil {
+		realTarget, err := filepath.EvalSymlinks(target)
+		if err == nil {
+			relToReal, err := filepath.Rel(realRoot, realTarget)
+			if err != nil || relToReal == ".." || strings.HasPrefix(relToReal, ".."+string(filepath.Separator)) {
+				return "", fmt.Errorf("path '%s' escapes root directory via symlink", relPath)
+			}
+		}
+	} else {
+		// Check existing parent directory chain for symlink escapes
+		parent := filepath.Dir(target)
+		for parent != "" && parent != root && parent != filepath.Dir(parent) {
+			if _, err := os.Stat(parent); err == nil {
+				realParent, err := filepath.EvalSymlinks(parent)
+				if err == nil {
+					relParent, err := filepath.Rel(realRoot, realParent)
+					if err != nil || relParent == ".." || strings.HasPrefix(relParent, ".."+string(filepath.Separator)) {
+						return "", fmt.Errorf("path '%s' escapes root directory via symlink", relPath)
+					}
+				}
+				break
+			}
+			parent = filepath.Dir(parent)
+		}
+	}
+
 	return target, nil
 }
 
@@ -308,25 +354,93 @@ func (m *Manager) buildSubTree(dirPath string, currentDepth int, maxDepth int, s
 	return nodes, nil
 }
 
-func (m *Manager) GetFile(relPath string) (string, error) {
+// MaxEditableFileSize defines the threshold beyond which files are served in read-only preview mode (5MB).
+const MaxEditableFileSize = 5 * 1024 * 1024
+
+// PreviewSampleSize defines the bytes read for large file preview (64KB).
+const PreviewSampleSize = 64 * 1024
+
+// FilePayload holds the file content and detection flags.
+type FilePayload struct {
+	Content  string `json:"content"`
+	IsLarge  bool   `json:"isLarge"`
+	IsBinary bool   `json:"isBinary"`
+	Size     int64  `json:"size"`
+}
+
+func isBinaryContent(sample []byte) bool {
+	if len(sample) == 0 {
+		return false
+	}
+	checkLen := len(sample)
+	if checkLen > 512 {
+		checkLen = 512
+	}
+	for i := 0; i < checkLen; i++ {
+		if sample[i] == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// GetFileWithGuard inspects file size and binary markers before reading.
+// For files exceeding MaxEditableFileSize, it returns the first PreviewSampleSize bytes with IsLarge=true.
+func (m *Manager) GetFileWithGuard(relPath string) (*FilePayload, error) {
 	fullPath, err := m.resolvePath(relPath)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	stat, err := os.Stat(fullPath)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if stat.IsDir() {
-		return "", fmt.Errorf("path '%s' is a directory, not a file", relPath)
+		return nil, fmt.Errorf("path '%s' is a directory, not a file", relPath)
+	}
+
+	size := stat.Size()
+	if size > MaxEditableFileSize {
+		f, err := os.Open(fullPath)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+
+		buf := make([]byte, PreviewSampleSize)
+		n, err := f.Read(buf)
+		if err != nil && err != io.EOF {
+			return nil, err
+		}
+		sample := buf[:n]
+		return &FilePayload{
+			Content:  string(sample),
+			IsLarge:  true,
+			IsBinary: isBinaryContent(sample),
+			Size:     size,
+		}, nil
 	}
 
 	bytes, err := os.ReadFile(fullPath)
 	if err != nil {
+		return nil, err
+	}
+
+	return &FilePayload{
+		Content:  string(bytes),
+		IsLarge:  false,
+		IsBinary: isBinaryContent(bytes),
+		Size:     size,
+	}, nil
+}
+
+func (m *Manager) GetFile(relPath string) (string, error) {
+	payload, err := m.GetFileWithGuard(relPath)
+	if err != nil {
 		return "", err
 	}
-	return string(bytes), nil
+	return payload.Content, nil
 }
 
 func (m *Manager) CreateFolder(relPath string) (string, error) {
@@ -360,6 +474,32 @@ func (m *Manager) WriteFile(relPath string, content string) error {
 	return os.WriteFile(fullPath, []byte(content), 0644)
 }
 
+// WriteFileExclusive writes file content only if the target file does not already exist.
+func (m *Manager) WriteFileExclusive(relPath string, content string) error {
+	fullPath, err := m.resolvePath(relPath)
+	if err != nil {
+		return err
+	}
+
+	if _, err := os.Stat(fullPath); err == nil {
+		return fmt.Errorf("file already exists: %s", relPath)
+	}
+
+	parentDir := filepath.Dir(fullPath)
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		return err
+	}
+
+	f, err := os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = f.WriteString(content)
+	return err
+}
+
 func (m *Manager) DeleteFile(relPath string) error {
 	fullPath, err := m.resolvePath(relPath)
 	if err != nil {
@@ -386,6 +526,10 @@ func (m *Manager) Rename(oldRelPath string, newRelPath string) error {
 	newFullPath, err := m.resolvePath(newRelPath)
 	if err != nil {
 		return err
+	}
+
+	if _, err := os.Stat(newFullPath); err == nil {
+		return fmt.Errorf("destination file already exists: %s", newRelPath)
 	}
 
 	newParent := filepath.Dir(newFullPath)

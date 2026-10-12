@@ -18,6 +18,7 @@ import {
   closeWorkspace,
   deleteWorkspaceFile,
   fetchFileContent,
+  fetchFileDetailed,
   fetchGitStatus,
   fetchWorkspaceInfo,
   fetchWorkspaceTree,
@@ -28,6 +29,7 @@ import {
   saveWorkspaceFile,
   normalizeWorkspacePath,
 } from "../../utils/workspaceApi"
+import { subscribeLspDiagnostics } from "../../utils/lspApi"
 import {
   addBackendRecentProject,
   clearBackendRecentProjects,
@@ -45,7 +47,7 @@ export function addFileToTreeLogic(
   const name = parts[parts.length - 1] || path
   const id = path
 
-  if (files.some((f) => f.path === path || f.name === name)) {
+  if (files.some((f) => f.path === path)) {
     return files
   }
 
@@ -117,6 +119,23 @@ export function updateBufferContentLogic(
   }
 }
 
+export function syncBufferWithDiskLogic(
+  buffers: Record<string, FileBuffer>,
+  filename: string,
+  content: string,
+): Record<string, FileBuffer> {
+  const existing = buffers[filename]
+  return {
+    ...buffers,
+    [filename]: {
+      content,
+      savedContent: content,
+      isDirty: false,
+      language: existing?.language || detectLanguage(filename),
+    },
+  }
+}
+
 export interface FileHygieneOptions {
   trimTrailingWhitespace?: boolean
   insertFinalNewline?: boolean
@@ -181,10 +200,7 @@ export function revertBufferContentLogic(
   }
 }
 
-export function normalizeWorkspacePath(path: string): string {
-  if (!path) return ""
-  return path.trim().replace(/[/\\]+$/, "")
-}
+export { normalizeWorkspacePath }
 
 export function loadStoredRecentProjects(): string[] {
   if (typeof window === "undefined") return []
@@ -602,8 +618,9 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
       const clean = normalizeWorkspacePath(filename, rootWorkspacePath)
       if (!clean) return
 
-      fetchFileContent(clean)
-        .then((content) => {
+      fetchFileDetailed(clean)
+        .then((detail) => {
+          const content = detail.content
           setFileBuffers((curr) => {
             const existing = curr[clean]
             if (existing?.isDirty) {
@@ -624,6 +641,9 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
                 hasDiskConflict: false,
                 isDeletedOnDisk: false,
                 language: detectLanguage(clean),
+                isLargeFile: detail.isLarge,
+                isBinary: detail.isBinary,
+                fileSize: detail.size,
               },
             }
           })
@@ -751,6 +771,35 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
     showToast,
   ])
 
+  // Real-time Compiler LSP Diagnostics Stream (/api/v1/events/lsp)
+  useEffect(() => {
+    const unsub = subscribeLspDiagnostics((evt: any) => {
+      if (!evt || !evt.uri || !Array.isArray(evt.diagnostics)) return
+      let relPath = evt.uri
+      if (relPath.startsWith("file://")) {
+        relPath = relPath.slice(7)
+      }
+      relPath = normalizeWorkspacePath(relPath, rootWorkspacePath)
+
+      const lspDiags: DiagnosticItem[] = evt.diagnostics.map(
+        (d: any, idx: number) => ({
+          id: `lsp-${relPath}-${d.range?.start?.line ?? 0}-${idx}`,
+          title: d.message || "Compiler issue",
+          location: `${relPath}:${(d.range?.start?.line ?? 0) + 1}`,
+          type: d.severity === 1 ? "error" as const : "warning" as const,
+          source: d.source || "lsp",
+        }),
+      )
+
+      setDiagnostics((prev) => [
+        ...prev.filter((item) => !item.location.startsWith(relPath)),
+        ...lspDiags,
+      ])
+    })
+
+    return unsub
+  }, [rootWorkspacePath])
+
   const ensureFileBuffer = useCallback(
     (filename: string) => {
       const clean = normalizeWorkspacePath(filename, rootWorkspacePath)
@@ -800,6 +849,10 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
       if (!filenameToSave) return
 
       const buf = fileBuffers[filenameToSave]
+      if (buf?.isLargeFile || buf?.isBinary) {
+        showToast("Cannot overwrite file: opened in read-only preview mode.")
+        return
+      }
       let contentToSave = buf?.content ?? ""
       if (buf && options) {
         contentToSave = sanitizeContentOnSave(contentToSave, options)
@@ -889,6 +942,13 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
     [loadWorkspace, onFileRenamed, showToast],
   )
 
+  const syncBufferWithDisk = useCallback(
+    (filename: string, content: string) => {
+      setFileBuffers((prev) => syncBufferWithDiskLogic(prev, filename, content))
+    },
+    [],
+  )
+
   const createFile = useCallback(
     async (name: string, isFolder = false, parentFolder?: string) => {
       const cleanName = name.trim()
@@ -900,6 +960,7 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
           newPath,
           isFolder ? "" : `// ${cleanName}\n`,
           isFolder,
+          true,
         )
         await loadWorkspace()
         setFiles((prev) => addFileToTreeLogic(prev, newPath, isFolder))
@@ -917,8 +978,9 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
       const clean = newName.trim()
       if (!clean || clean === oldPath) return
 
-      const parentDir = oldPath.includes("/")
-        ? oldPath.substring(0, oldPath.lastIndexOf("/"))
+      const normalizedOld = oldPath.replace(/\\/g, "/")
+      const parentDir = normalizedOld.includes("/")
+        ? normalizedOld.substring(0, normalizedOld.lastIndexOf("/"))
         : ""
       const newPath = parentDir ? `${parentDir}/${clean}` : clean
 
@@ -1002,6 +1064,7 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
     fileBuffers,
     setFileBuffers,
     updateFileContent,
+    syncBufferWithDisk,
     saveFile,
     revertBufferContent,
     ensureFileBuffer,

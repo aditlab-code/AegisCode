@@ -26,6 +26,7 @@ export function SearchPanel() {
   const {
     fileBuffers,
     updateFileContent,
+    syncBufferWithDisk,
     openFileInGroup,
     focusedGroup,
     setCursorPosition,
@@ -223,7 +224,7 @@ export function SearchPanel() {
         if (fileBuffers[path]) {
           const freshContent = await fetchFileContent(path).catch(() => "")
           if (freshContent) {
-            updateFileContent(path, freshContent)
+            syncBufferWithDisk(path, freshContent)
           }
         }
       }

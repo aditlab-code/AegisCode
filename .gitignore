@@ -50,8 +50,12 @@ __debug_bin*
 #/AGENTS.md
 #/CLAUDE.md
 #/.scratch/
+.mise.toml
 
 # Internal Developer Documentation
-# /docs/
+# docs/internal
+# docs/adr
+# docs/agents
+# docs/report
 
 .DS_Store

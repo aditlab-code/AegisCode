@@ -229,10 +229,11 @@ export function normalizeWorkspacePath(
   path: string,
   rootWorkspacePath?: string,
 ): string {
-  let clean = cleanFilePath(path)
-  if (!clean) return ""
+  if (!path) return ""
+  const trimmed = path.trim()
 
   if (rootWorkspacePath) {
+    const clean = cleanFilePath(trimmed)
     const rootClean = cleanFilePath(rootWorkspacePath).replace(/^\/+|\/+$/g, "")
     const pathClean = clean.replace(/^\/+/, "")
     if (pathClean.startsWith(rootClean + "/")) {
@@ -240,10 +241,10 @@ export function normalizeWorkspacePath(
     } else if (pathClean === rootClean) {
       return ""
     }
+    return clean.replace(/^\/+/, "")
   }
 
-  // Remove leading slashes
-  return clean.replace(/^\/+/, "")
+  return trimmed.replace(/[/\\]+$/, "")
 }
 
 export function validateWorkspaceRelativePath(path: string): void {
@@ -265,7 +266,16 @@ export function validateWorkspaceRelativePath(path: string): void {
   }
 }
 
-export async function fetchFileContent(path: string): Promise<string> {
+export interface FileDetailResponse {
+  content: string
+  isLarge?: boolean
+  isBinary?: boolean
+  size?: number
+}
+
+export async function fetchFileDetailed(
+  path: string,
+): Promise<FileDetailResponse> {
   const cleanPath = cleanFilePath(path)
   validateWorkspaceRelativePath(cleanPath)
   const res = await fetch(
@@ -276,20 +286,31 @@ export async function fetchFileContent(path: string): Promise<string> {
     throw new Error(err.error || `Failed to fetch file: ${res.statusText}`)
   }
   const data = await res.json()
-  return data.content ?? ""
+  return {
+    content: data.content ?? "",
+    isLarge: data.isLarge,
+    isBinary: data.isBinary,
+    size: data.size,
+  }
+}
+
+export async function fetchFileContent(path: string): Promise<string> {
+  const detail = await fetchFileDetailed(path)
+  return detail.content
 }
 
 export async function saveWorkspaceFile(
   path: string,
   content: string,
   isFolder = false,
+  exclusive = false,
 ): Promise<void> {
   const cleanPath = cleanFilePath(path)
   validateWorkspaceRelativePath(cleanPath)
   const res = await fetch(`${API_BASE}/api/v1/workspace/file`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path: cleanPath, content, isFolder }),
+    body: JSON.stringify({ path: cleanPath, content, isFolder, exclusive }),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))

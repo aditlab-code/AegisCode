@@ -76,7 +76,10 @@ export function TerminalView() {
     // 1. Instantiate Xterm with dynamically resolved Tailwind Token palette
     const term = new Terminal({
       cursorBlink: settings?.features?.terminal?.cursorBlinking ?? true,
-      cursorStyle: settings?.features?.terminal?.cursorStyle || "block",
+      cursorStyle:
+        settings?.features?.terminal?.cursorStyle === "line"
+          ? "bar"
+          : settings?.features?.terminal?.cursorStyle || "block",
       fontSize: settings?.features?.terminal?.fontSize || 12,
       fontFamily:
         settings?.features?.terminal?.fontFamily ||
@@ -124,14 +127,18 @@ export function TerminalView() {
     // Initial resize sync after layout stabilizes
     setTimeout(syncSize, 100)
 
-    // 3. Keystroke capture with micro-batching
+    // 3. Keystroke capture with micro-batching and serialized in-flight queue
+    let sendPromiseChain: Promise<boolean> = Promise.resolve(true)
+
     const flushInput = () => {
       const pending = inputBufferRef.current
       inputBufferRef.current = ""
       flushTimerRef.current = null
       if (!pending || !isLive || !isConnected) return
 
-      void sendTerminalInputApi(sessionId, pending)
+      sendPromiseChain = sendPromiseChain.then(() =>
+        sendTerminalInputApi(sessionId, pending),
+      )
     }
 
     const onDataDisposable = term.onData((data) => {

@@ -2,6 +2,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useMemo,
   type UIEvent,
   type ChangeEvent,
   type KeyboardEvent,
@@ -45,7 +46,9 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
         fontSize: "var(--editor-font-size, 11px)",
         lineHeight: "var(--editor-line-height, 20px)",
       }
-    : undefined
+    : {
+        lineHeight: "20px",
+      }
 
   const diffInfo = parseGitDiffTab(tab)
   const file = diffInfo?.file || ""
@@ -127,6 +130,11 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
   const additions = (diffData?.diff.match(/^\+[^+]/gm) || []).length
   const deletions = (diffData?.diff.match(/^-[^-]/gm) || []).length
 
+  const unifiedLines = useMemo(() => {
+    if (!diffData?.diff) return []
+    return diffData.diff.split("\n")
+  }, [diffData?.diff])
+
   function handleContentChange(e: ChangeEvent<HTMLTextAreaElement>) {
     if (!isWorkingCopyEditable) return
     updateFileContent(file, e.target.value)
@@ -163,12 +171,8 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
 
   if (isLoading) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center h-full bg-[var(--color-canvas)] text-[var(--color-ink-muted)] text-xs gap-2">
-        <Icon
-          className="animate-spin text-[var(--color-accent)]"
-          name="refresh"
-          size={18}
-        />
+      <div className="flex-1 flex flex-col items-center justify-center h-full bg-canvas text-ink-muted text-xs gap-2">
+        <Icon className="animate-spin text-accent" name="refresh" size={18} />
         <span>Loading comparison...</span>
       </div>
     )
@@ -176,7 +180,7 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
 
   if (loadError) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center h-full bg-[var(--color-canvas)] text-[var(--color-error)] text-xs p-4 text-center">
+      <div className="flex-1 flex flex-col items-center justify-center h-full bg-canvas text-error text-xs p-4 text-center">
         <Icon className="mb-2" name="error" size={20} />
         <span className="font-semibold mb-1">Failed to load diff</span>
         <span className="text-[11px] text-ink-muted max-w-md">{loadError}</span>
@@ -304,10 +308,67 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
         </div>
       </div>
 
-      {/* Side-by-Side Comparison Area */}
-      <div className="flex-1 flex min-h-0 overflow-hidden divide-x divide-line">
-        {/* Left Pane: Original / HEAD */}
-        {renderSideBySide && (
+      {/* Comparison Area: Unified or Side-by-Side */}
+      {!renderSideBySide ? (
+        <div className="flex-1 flex flex-col min-w-0 bg-canvas overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-1 bg-surface-raised border-b border-line text-[10px] text-ink-muted font-semibold">
+            <span>UNIFIED DIFF ({file})</span>
+            <span className="uppercase text-[9px] opacity-75">READ-ONLY</span>
+          </div>
+
+          <div className="flex-1 overflow-auto font-mono text-xs leading-5 select-text p-2">
+            <div className="space-y-0 min-w-max">
+              {unifiedLines.length === 0 ? (
+                <div className="text-[11px] text-ink-muted italic p-2">
+                  No differences found or unified diff empty.
+                </div>
+              ) : (
+                unifiedLines.map((line: string, idx: number) => {
+                  const lineNum = idx + 1
+                  const isAddition =
+                    line.startsWith("+") && !line.startsWith("+++")
+                  const isDeletion =
+                    line.startsWith("-") && !line.startsWith("---")
+                  const isHunkHeader = line.startsWith("@@")
+                  const rowClass = isAddition
+                    ? "bg-emerald-500/15 text-emerald-400"
+                    : isDeletion
+                      ? "bg-rose-500/15 text-rose-400"
+                      : isHunkHeader
+                        ? "bg-sky-500/15 text-sky-400 font-semibold"
+                        : "text-ink-soft hover:bg-surface-hover/40"
+
+                  return (
+                    <div
+                      className={`flex items-start rounded-xs ${rowClass}`}
+                      key={`unified-${lineNum}`}
+                    >
+                      <span
+                        className="w-10 shrink-0 text-right pr-3 select-none text-[11px] text-ink-muted opacity-60"
+                        style={{ lineHeight: fontStyle?.lineHeight ?? "20px" }}
+                      >
+                        {lineNum}
+                      </span>
+                      <pre
+                        className={`flex-1 m-0 font-mono text-[11px] ${
+                          wordWrap === "on" || wordWrap === "wordWrapColumn"
+                            ? "whitespace-pre-wrap wrap-break-word"
+                            : "whitespace-pre"
+                        }`}
+                        style={fontStyle}
+                      >
+                        {line || " "}
+                      </pre>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 flex min-h-0 overflow-hidden divide-x divide-line">
+          {/* Left Pane: Original / HEAD */}
           <div className="flex-1 flex flex-col min-w-0 bg-canvas">
             <div className="flex items-center justify-between px-3 py-1 bg-surface-raised border-b border-line text-[10px] text-ink-muted font-semibold">
               <span>
@@ -331,14 +392,14 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
                     >
                       <span
                         className="w-10 shrink-0 text-right pr-3 select-none text-[11px] text-ink-muted opacity-60"
-                        style={{ lineHeight: fontStyle.lineHeight }}
+                        style={{ lineHeight: fontStyle?.lineHeight ?? "20px" }}
                       >
                         {lineNum}
                       </span>
                       <pre
                         className={`flex-1 m-0 font-mono text-[11px] text-ink-soft ${
                           wordWrap === "on" || wordWrap === "wordWrapColumn"
-                            ? "whitespace-pre-wrap break-words"
+                            ? "whitespace-pre-wrap wrap-break-word"
                             : "whitespace-pre"
                         }`}
                         style={fontStyle}
@@ -351,95 +412,97 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
               </div>
             </div>
           </div>
-        )}
 
-        {/* Right Pane: Modified / Working Copy */}
-        <div className="flex-1 flex flex-col min-w-0 bg-canvas">
-          <div className="flex items-center justify-between px-3 py-1 bg-surface-raised border-b border-line text-[10px] text-ink-muted font-semibold">
-            <span>MODIFIED ({staged ? "INDEX" : "WORKING TREE"})</span>
-            <span className="uppercase text-[9px] opacity-75">
-              {isWorkingCopyEditable ? "EDITABLE (⌘S TO SAVE)" : "READ-ONLY"}
-            </span>
-          </div>
+          {/* Right Pane: Modified / Working Copy */}
+          <div className="flex-1 flex flex-col min-w-0 bg-canvas">
+            <div className="flex items-center justify-between px-3 py-1 bg-surface-raised border-b border-line text-[10px] text-ink-muted font-semibold">
+              <span>MODIFIED ({staged ? "INDEX" : "WORKING TREE"})</span>
+              <span className="uppercase text-[9px] opacity-75">
+                {isWorkingCopyEditable ? "EDITABLE (⌘S TO SAVE)" : "READ-ONLY"}
+              </span>
+            </div>
 
-          <div
-            className="flex-1 overflow-auto font-mono text-xs leading-5 relative"
-            onScroll={handleRightScroll}
-            ref={rightScrollRef}
-          >
-            {isWorkingCopyEditable ? (
-              <div className="relative min-h-full min-w-max p-2 flex">
-                {/* Gutter */}
-                <div
-                  className="w-10 shrink-0 text-right pr-3 select-none text-[11px] text-ink-muted opacity-60 space-y-0"
-                  style={{ lineHeight: fontStyle.lineHeight }}
-                >
-                  {modifiedLines.map((_, idx) => (
-                    <div
-                      key={`mod-num-${idx + 1}`}
-                      style={{ lineHeight: fontStyle.lineHeight }}
-                    >
-                      {idx + 1}
-                    </div>
-                  ))}
+            <div
+              className="flex-1 overflow-auto font-mono text-xs leading-5 relative"
+              onScroll={handleRightScroll}
+              ref={rightScrollRef}
+            >
+              {isWorkingCopyEditable ? (
+                <div className="relative min-h-full min-w-max p-2 flex">
+                  {/* Gutter */}
+                  <div
+                    className="w-10 shrink-0 text-right pr-3 select-none text-[11px] text-ink-muted opacity-60 space-y-0"
+                    style={{ lineHeight: fontStyle?.lineHeight ?? "20px" }}
+                  >
+                    {modifiedLines.map((_, idx) => (
+                      <div
+                        key={`mod-num-${idx + 1}`}
+                        style={{ lineHeight: fontStyle?.lineHeight ?? "20px" }}
+                      >
+                        {idx + 1}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Live Editable Textarea */}
+                  <textarea
+                    autoCapitalize="off"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    className={`flex-1 m-0 p-0 font-mono text-[11px] text-ink bg-transparent resize-none outline-none leading-5 overflow-hidden ${
+                      wordWrap === "on" || wordWrap === "wordWrapColumn"
+                        ? "whitespace-pre-wrap wrap-break-word"
+                        : "whitespace-pre"
+                    }`}
+                    onChange={handleContentChange}
+                    onKeyDown={handleKeyDown}
+                    rows={Math.max(modifiedLines.length, 1)}
+                    spellCheck={false}
+                    style={fontStyle}
+                    value={modifiedContent}
+                    wrap={
+                      wordWrap === "on" || wordWrap === "wordWrapColumn"
+                        ? "soft"
+                        : "off"
+                    }
+                  />
                 </div>
-
-                {/* Live Editable Textarea */}
-                <textarea
-                  autoCapitalize="off"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  className={`flex-1 m-0 p-0 font-mono text-[11px] text-ink bg-transparent resize-none outline-none leading-5 overflow-hidden ${
-                    wordWrap === "on" || wordWrap === "wordWrapColumn"
-                      ? "whitespace-pre-wrap break-words"
-                      : "whitespace-pre"
-                  }`}
-                  onChange={handleContentChange}
-                  onKeyDown={handleKeyDown}
-                  rows={Math.max(modifiedLines.length, 1)}
-                  spellCheck={false}
-                  style={fontStyle}
-                  value={modifiedContent}
-                  wrap={
-                    wordWrap === "on" || wordWrap === "wordWrapColumn"
-                      ? "soft"
-                      : "off"
-                  }
-                />
-              </div>
-            ) : (
-              <div className="p-2 space-y-0 min-w-max select-text">
-                {modifiedLines.map((line, idx) => {
-                  const lineNum = idx + 1
-                  return (
-                    <div
-                      className="flex items-start hover:bg-surface-hover/40 rounded-xs group"
-                      key={`mod-${lineNum}`}
-                    >
-                      <span
-                        className="w-10 shrink-0 text-right pr-3 select-none text-[11px] text-ink-muted opacity-60"
-                        style={{ lineHeight: fontStyle.lineHeight }}
+              ) : (
+                <div className="p-2 space-y-0 min-w-max select-text">
+                  {modifiedLines.map((line, idx) => {
+                    const lineNum = idx + 1
+                    return (
+                      <div
+                        className="flex items-start hover:bg-surface-hover/40 rounded-xs group"
+                        key={`mod-${lineNum}`}
                       >
-                        {lineNum}
-                      </span>
-                      <pre
-                        className={`flex-1 m-0 font-mono text-[11px] text-ink ${
-                          wordWrap === "on" || wordWrap === "wordWrapColumn"
-                            ? "whitespace-pre-wrap break-words"
-                            : "whitespace-pre"
-                        }`}
-                        style={fontStyle}
-                      >
-                        {line || " "}
-                      </pre>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+                        <span
+                          className="w-10 shrink-0 text-right pr-3 select-none text-[11px] text-ink-muted opacity-60"
+                          style={{
+                            lineHeight: fontStyle?.lineHeight ?? "20px",
+                          }}
+                        >
+                          {lineNum}
+                        </span>
+                        <pre
+                          className={`flex-1 m-0 font-mono text-[11px] text-ink ${
+                            wordWrap === "on" || wordWrap === "wordWrapColumn"
+                              ? "whitespace-pre-wrap wrap-break-word"
+                              : "whitespace-pre"
+                          }`}
+                          style={fontStyle}
+                        >
+                          {line || " "}
+                        </pre>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

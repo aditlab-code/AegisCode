@@ -3,6 +3,7 @@ package workspace
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -306,3 +307,79 @@ func TestQuotedAndAbsolutePathsInRoot(t *testing.T) {
 		t.Fatalf("unexpected content from quoted absolute path: %s", contentQuotedAbs)
 	}
 }
+
+func TestGetFileWithGuard(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "aegis_guard_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	mgr, err := NewManager(tempDir)
+	if err != nil {
+		t.Fatalf("failed to create manager: %v", err)
+	}
+
+	// 1. Normal small text file
+	normalFile := filepath.Join(tempDir, "normal.txt")
+	if err := os.WriteFile(normalFile, []byte("hello world"), 0644); err != nil {
+		t.Fatalf("failed to write normal file: %v", err)
+	}
+	p1, err := mgr.GetFileWithGuard("normal.txt")
+	if err != nil {
+		t.Fatalf("GetFileWithGuard normal failed: %v", err)
+	}
+	if p1.IsLarge || p1.IsBinary || p1.Content != "hello world" || p1.Size != int64(len("hello world")) {
+		t.Fatalf("unexpected payload for normal file: %+v", p1)
+	}
+
+	// 2. Binary file (containing null byte)
+	binFile := filepath.Join(tempDir, "sample.bin")
+	binData := []byte("ELF\x00\x01\x02\x03somebinarydata")
+	if err := os.WriteFile(binFile, binData, 0644); err != nil {
+		t.Fatalf("failed to write binary file: %v", err)
+	}
+	p2, err := mgr.GetFileWithGuard("sample.bin")
+	if err != nil {
+		t.Fatalf("GetFileWithGuard binary failed: %v", err)
+	}
+	if !p2.IsBinary || p2.IsLarge {
+		t.Fatalf("expected binary file to be marked IsBinary=true: %+v", p2)
+	}
+
+	// 3. Large file (> 5 MB)
+	largeFile := filepath.Join(tempDir, "large.log")
+	largeSize := int64(MaxEditableFileSize + 1024)
+	f, err := os.Create(largeFile)
+	if err != nil {
+		t.Fatalf("failed to create large file: %v", err)
+	}
+	if err := f.Truncate(largeSize); err != nil {
+		f.Close()
+		t.Fatalf("failed to truncate large file: %v", err)
+	}
+	// Write some header text at the beginning
+	if _, err := f.WriteAt([]byte("START_OF_LARGE_LOG"), 0); err != nil {
+		f.Close()
+		t.Fatalf("failed to write header: %v", err)
+	}
+	f.Close()
+
+	p3, err := mgr.GetFileWithGuard("large.log")
+	if err != nil {
+		t.Fatalf("GetFileWithGuard large failed: %v", err)
+	}
+	if !p3.IsLarge {
+		t.Fatalf("expected large file to have IsLarge=true: %+v", p3)
+	}
+	if p3.Size != largeSize {
+		t.Fatalf("expected size %d, got %d", largeSize, p3.Size)
+	}
+	if len(p3.Content) != PreviewSampleSize {
+		t.Fatalf("expected content length %d, got %d", PreviewSampleSize, len(p3.Content))
+	}
+	if !strings.HasPrefix(p3.Content, "START_OF_LARGE_LOG") {
+		t.Fatalf("expected prefix START_OF_LARGE_LOG, got: %s", p3.Content[:20])
+	}
+}
+

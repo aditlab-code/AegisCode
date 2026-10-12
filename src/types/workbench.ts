@@ -157,6 +157,9 @@ export interface FileBuffer {
   language: string
   hasDiskConflict?: boolean
   isDeletedOnDisk?: boolean
+  isLargeFile?: boolean
+  isBinary?: boolean
+  fileSize?: number
 }
 
 export interface WorkspaceChangeEvent {

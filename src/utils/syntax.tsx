@@ -128,6 +128,37 @@ function renderCommentWithTodo(
   return parts.length > 0 ? parts : [commentText]
 }
 
+function findInlineCommentIndex(line: string): number {
+  let inString: '"' | "'" | "`" | null = null
+  let isEscaped = false
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i]
+
+    if (inString) {
+      if (isEscaped) {
+        isEscaped = false
+      } else if (char === "\\") {
+        isEscaped = true
+      } else if (char === inString) {
+        inString = null
+      }
+      continue
+    }
+
+    if (char === '"' || char === "'" || char === "`") {
+      inString = char
+      continue
+    }
+
+    if (char === "/" && line[i + 1] === "/") {
+      return i
+    }
+  }
+
+  return -1
+}
+
 export function tokenizeLine(
   line: string,
   todoOptions?: TodoOptions,
@@ -147,8 +178,8 @@ export function tokenizeLine(
     ]
   }
 
-  // Trailing line comment check
-  const commentIdx = line.indexOf("//")
+  // Trailing line comment check (ignoring // inside strings/URLs)
+  const commentIdx = findInlineCommentIndex(line)
   if (commentIdx !== -1) {
     const codePart = line.slice(0, commentIdx)
     const commentPart = line.slice(commentIdx)

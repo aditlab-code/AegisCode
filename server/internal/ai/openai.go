@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -245,6 +246,8 @@ func (e *OpenAIEngine) StreamChat(ctx context.Context, req StreamChatRequest, se
 
 	// 5. Stream response chunks via SSE
 	scanner := bufio.NewScanner(resp.Body)
+	buf := make([]byte, 1024*1024)
+	scanner.Buffer(buf, 10*1024*1024)
 	var accumulatedText strings.Builder
 	var accumulatedThinking strings.Builder
 	aggregator := NewOpenAIAggregator()
@@ -336,6 +339,15 @@ func (e *OpenAIEngine) StreamChat(ctx context.Context, req StreamChatRequest, se
 		})
 	})
 	emittedTools = append(emittedTools, finalTools...)
+
+	if err := scanner.Err(); err != nil && !errors.Is(err, context.Canceled) {
+		_ = sendEvent("error", StreamEvent{
+			Type:           "error",
+			ConversationID: convID,
+			Error:          fmt.Sprintf("%s stream error: %v", provider, err),
+		})
+		return err
+	}
 
 	if ctx.Err() != nil {
 		_ = sendEvent("error", StreamEvent{

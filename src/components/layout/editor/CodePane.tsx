@@ -1,20 +1,15 @@
-import {
-  useRef,
-  useState,
-  useEffect,
-  useMemo,
-  type ChangeEvent,
-  type KeyboardEvent,
-  type MouseEvent,
-  type UIEvent,
-} from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { Minimap } from "./Minimap"
-import { DiagnosticHoverCard } from "./DiagnosticHoverCard"
 import { useWorkbench } from "../../../context/WorkbenchContext"
-import { tokenizeLine } from "../../../utils/syntax"
-import type { DiagnosticItem } from "../../../types/workbench"
+import {
+  parseConflictRegions,
+  resolveConflict,
+  type ConflictRegion,
+  type ConflictResolutionChoice,
+} from "../../../utils/gitConflict"
+import { CMEditor } from "./CMEditor"
 
 interface CodePaneProps {
   paneId: "primary" | "secondary"
@@ -77,38 +72,22 @@ export function CodePane({
   const cursorBlinking = settings?.editor?.cursorBlinking ?? "smooth"
   const renderWhitespace = settings?.editor?.renderWhitespace ?? "selection"
 
-  const commentsSettings = settings?.features?.comments
-  const todoOptions = useMemo(() => {
-    if (!commentsSettings) return undefined
-    return {
-      enabled: commentsSettings.enableTodoHighlight,
-      keywords: commentsSettings.todoKeywords
-        ? commentsSettings.todoKeywords
-            .split(",")
-            .map((k) => k.trim())
-            .filter(Boolean)
-        : undefined,
-    }
-  }, [commentsSettings?.enableTodoHighlight, commentsSettings?.todoKeywords])
-
-  const gutterRef = useRef<HTMLDivElement>(null)
-  const syntaxRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-
   const buffer = fileBuffers[filename]
   const content = buffer?.content ?? ""
   const isDirty = buffer?.isDirty ?? false
   const lines = content.split("\n")
 
-  const fileDiagnostics = diagnostics.filter((d) =>
-    d.location.startsWith(filename),
-  )
+  const conflictRegions = useMemo(() => {
+    return parseConflictRegions(content)
+  }, [content])
 
-  const [hoverDiag, setHoverDiag] = useState<{
-    diag: DiagnosticItem
-    x: number
-    y: number
-  } | null>(null)
+  const handleResolveConflict = (
+    region: ConflictRegion,
+    choice: ConflictResolutionChoice,
+  ) => {
+    const newContent = resolveConflict(content, region, choice)
+    updateFileContent(filename, newContent)
+  }
 
   const [scrollInfo, setScrollInfo] = useState({
     scrollTop: 0,
@@ -117,211 +96,26 @@ export function CodePane({
   })
 
   useEffect(() => {
-    function updateDimensions() {
-      if (textareaRef.current) {
-        setScrollInfo({
-          scrollTop: textareaRef.current.scrollTop,
-          scrollHeight: textareaRef.current.scrollHeight || 1,
-          clientHeight: textareaRef.current.clientHeight || 1,
-        })
-      }
+    const scroller = document.querySelector(".cm-scroller")
+    if (!scroller) return
+    const onScroll = () => {
+      setScrollInfo({
+        scrollTop: scroller.scrollTop,
+        scrollHeight: scroller.scrollHeight || 1,
+        clientHeight: scroller.clientHeight || 1,
+      })
     }
-    updateDimensions()
-    const timer = setTimeout(updateDimensions, 60)
-    window.addEventListener("resize", updateDimensions)
+    scroller.addEventListener("scroll", onScroll)
+    onScroll()
     return () => {
-      clearTimeout(timer)
-      window.removeEventListener("resize", updateDimensions)
+      scroller.removeEventListener("scroll", onScroll)
     }
   }, [filename, content])
 
-  useEffect(() => {
-    if (
-      isSameFile(activeDebugLine?.file, filename) &&
-      activeDebugLine?.line &&
-      textareaRef.current
-    ) {
-      const lineIndex = activeDebugLine.line - 1
-      const lineHeight = editorLineHeight || 20
-      const targetScroll = Math.max(0, lineIndex * lineHeight - 100)
-      textareaRef.current.scrollTop = targetScroll
-    }
-  }, [activeDebugLine, filename, editorLineHeight])
-
-  function getLineDiagnostic(lineNum: number) {
-    return fileDiagnostics.find((d) => {
-      const match = d.location.match(/\[(\d+),/)
-      return match && parseInt(match[1], 10) === lineNum
-    })
-  }
-
-  function handleTextareaMouseMove(e: MouseEvent<HTMLTextAreaElement>) {
-    if (!textareaRef.current) return
-    const rect = textareaRef.current.getBoundingClientRect()
-    const relativeY = e.clientY - rect.top + textareaRef.current.scrollTop - 9
-    const lineNum = Math.floor(relativeY / editorLineHeight) + 1
-
-    if (lineNum >= 1 && lineNum <= lines.length) {
-      const diag = getLineDiagnostic(lineNum)
-      if (diag) {
-        setHoverDiag({
-          diag,
-          x: e.clientX,
-          y: e.clientY + 14,
-        })
-        return
-      }
-    }
-    setHoverDiag(null)
-  }
-
-  function syncScroll(event: UIEvent<HTMLTextAreaElement>) {
-    const target = event.currentTarget
-    if (syntaxRef.current) {
-      syntaxRef.current.scrollTop = target.scrollTop
-      syntaxRef.current.scrollLeft = target.scrollLeft
-    }
-    if (gutterRef.current) {
-      gutterRef.current.scrollTop = target.scrollTop
-    }
-    setScrollInfo({
-      scrollTop: target.scrollTop,
-      scrollHeight: target.scrollHeight,
-      clientHeight: target.clientHeight,
-    })
-  }
-
   function handleScrollToLine(lineIndex: number) {
-    if (!textareaRef.current) return
-    const targetScroll = Math.max(0, lineIndex * editorLineHeight - 60)
-    textareaRef.current.scrollTop = targetScroll
-    if (syntaxRef.current) syntaxRef.current.scrollTop = targetScroll
-    if (gutterRef.current) gutterRef.current.scrollTop = targetScroll
-    setScrollInfo({
-      scrollTop: targetScroll,
-      scrollHeight: textareaRef.current.scrollHeight,
-      clientHeight: textareaRef.current.clientHeight,
-    })
-  }
-
-  const selectionTimerRef = useRef<NodeJS.Timeout | null>(null)
-
-  function updateCursor() {
-    if (!textareaRef.current) return
-    const el = textareaRef.current
-    const pos = el.selectionStart
-    const textUpToCursor = el.value.slice(0, pos)
-    const currentLines = textUpToCursor.split("\n")
-    const line = currentLines.length
-    const col = currentLines[currentLines.length - 1].length + 1
-    setCursorPosition({ line, col })
-
-    if (setSelection) {
-      if (selectionTimerRef.current) {
-        clearTimeout(selectionTimerRef.current)
-      }
-      selectionTimerRef.current = setTimeout(() => {
-        if (!textareaRef.current) return
-        const s = textareaRef.current.selectionStart
-        const e = textareaRef.current.selectionEnd
-        if (s === e) {
-          setSelection({ startLine: line, endLine: line, selectedText: "" })
-          return
-        }
-        const selected = textareaRef.current.value.slice(s, e)
-        const textBefore = textareaRef.current.value.slice(0, s)
-        const startLine = textBefore.split("\n").length
-        const endLine = startLine + selected.split("\n").length - 1
-        setSelection({
-          startLine,
-          endLine,
-          selectedText: selected,
-        })
-      }, 150)
-    }
-  }
-
-  function handleChange(event: ChangeEvent<HTMLTextAreaElement>) {
-    updateFileContent(filename, event.target.value)
-    updateCursor()
-  }
-
-  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    // Save shortcut
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
-      event.preventDefault()
-      saveFile(filename)
-      return
-    }
-
-    // In-editor Find shortcut
-    if (
-      (event.metaKey || event.ctrlKey) &&
-      !event.shiftKey &&
-      event.key.toLowerCase() === "f"
-    ) {
-      event.preventDefault()
-      openFind(focusedGroup, false)
-      return
-    }
-
-    // In-editor Replace shortcut
-    if (
-      (event.metaKey || event.ctrlKey) &&
-      !event.shiftKey &&
-      event.key.toLowerCase() === "h"
-    ) {
-      event.preventDefault()
-      openFind(focusedGroup, true)
-      return
-    }
-
-    // Tab key: Insert spaces or tab matching editor settings
-    if (event.key === "Tab") {
-      event.preventDefault()
-      const textarea = textareaRef.current
-      if (!textarea) return
-
-      const insertStr = insertSpaces ? " ".repeat(currentTabSize) : "\t"
-      const start = textarea.selectionStart
-      const end = textarea.selectionEnd
-      const newContent =
-        content.slice(0, start) + insertStr + content.slice(end)
-
-      updateFileContent(filename, newContent)
-      requestAnimationFrame(() => {
-        textarea.selectionStart = textarea.selectionEnd =
-          start + insertStr.length
-        updateCursor()
-      })
-      return
-    }
-
-    // Enter key: Maintain indentation
-    if (event.key === "Enter") {
-      const textarea = textareaRef.current
-      if (!textarea) return
-
-      const start = textarea.selectionStart
-      const currentLineText = content.slice(0, start).split("\n").pop() || ""
-      const indentMatch = currentLineText.match(/^(\s+)/)
-      const indent = indentMatch ? indentMatch[1] : ""
-
-      if (indent.length > 0) {
-        event.preventDefault()
-        const end = textarea.selectionEnd
-        const insertion = "\n" + indent
-        const newContent =
-          content.slice(0, start) + insertion + content.slice(end)
-
-        updateFileContent(filename, newContent)
-        requestAnimationFrame(() => {
-          textarea.selectionStart = textarea.selectionEnd =
-            start + insertion.length
-          updateCursor()
-        })
-      }
-    }
+    const scroller = document.querySelector(".cm-scroller")
+    if (!scroller) return
+    scroller.scrollTop = Math.max(0, lineIndex * editorLineHeight - 60)
   }
 
   return (
@@ -405,6 +199,97 @@ export function CodePane({
         </div>
       )}
 
+      {buffer?.isLargeFile && (
+        <div className="flex items-center justify-between px-3 py-1.5 bg-surface-raised border-b border-warning text-xs text-warning">
+          <div className="flex items-center gap-1.5">
+            <Icon name="warning" size={13} />
+            <span>
+              Large file ({((buffer.fileSize ?? 0) / (1024 * 1024)).toFixed(1)}{" "}
+              MB). Showing first 64KB sample in read-only mode to preserve
+              system memory.
+            </span>
+          </div>
+          <span className="text-[11px] px-1.5 py-0.5 rounded bg-surface border border-line text-ink-muted">
+            Read-Only
+          </span>
+        </div>
+      )}
+
+      {buffer?.isBinary && !buffer?.isLargeFile && (
+        <div className="flex items-center justify-between px-3 py-1.5 bg-surface-raised border-b border-warning text-xs text-warning">
+          <div className="flex items-center gap-1.5">
+            <Icon name="warning" size={13} />
+            <span>
+              Binary file detected. Displaying preview in read-only mode to
+              prevent data corruption.
+            </span>
+          </div>
+          <span className="text-[11px] px-1.5 py-0.5 rounded bg-surface border border-line text-ink-muted">
+            Read-Only
+          </span>
+        </div>
+      )}
+
+      {conflictRegions.length > 0 && (
+        <div className="flex flex-col gap-1.5 px-3 py-2 bg-surface-raised border-b border-warning/40 text-xs">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Icon name="git" size={14} className="text-warning" />
+              <span className="font-semibold text-ink">
+                Merge Conflicts Detected ({conflictRegions.length}{" "}
+                {conflictRegions.length === 1 ? "region" : "regions"})
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-col gap-1 max-h-36 overflow-y-auto">
+            {conflictRegions.map((region, idx) => (
+              <div
+                key={region.id}
+                className="flex items-center justify-between py-1 px-2 rounded bg-surface border border-line text-[11px]"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-ink-muted">
+                    #{idx + 1} (L{region.startLine}–L{region.endLine}):
+                  </span>
+                  <span className="text-sky-400 font-mono">
+                    {region.currentBranch}
+                  </span>
+                  <span className="text-ink-muted">vs</span>
+                  <span className="text-emerald-400 font-mono">
+                    {region.incomingBranch}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleResolveConflict(region, "current")}
+                    className="text-sky-400 hover:underline cursor-pointer font-medium"
+                  >
+                    Accept Current
+                  </button>
+                  <span className="text-ink-muted">|</span>
+                  <button
+                    type="button"
+                    onClick={() => handleResolveConflict(region, "incoming")}
+                    className="text-emerald-400 hover:underline cursor-pointer font-medium"
+                  >
+                    Accept Incoming
+                  </button>
+                  <span className="text-ink-muted">|</span>
+                  <button
+                    type="button"
+                    onClick={() => handleResolveConflict(region, "both")}
+                    className="text-purple-400 hover:underline cursor-pointer font-medium"
+                  >
+                    Accept Both
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div
         aria-label={`${filename} code editor`}
         className={`code-editor ${
@@ -423,146 +308,24 @@ export function CodePane({
         }
       >
         <div className="code-editor-layout">
-          {/* Gutter with line numbers and diagnostic dots */}
-          <div className="gutter-column" ref={gutterRef}>
-            {lines.map((_, index) => {
-              const lineNum = index + 1
-              const diag = getLineDiagnostic(lineNum)
-              const fileBreakpoints = breakpoints?.[filename] || []
-              const hasBreakpoint = fileBreakpoints.includes(lineNum)
-              const isStoppedHere =
-                isSameFile(activeDebugLine?.file, filename) &&
-                activeDebugLine?.line === lineNum
-
-              return (
-                <div
-                  className={`line-number ${
-                    isFocused && cursorPosition.line === lineNum
-                      ? "current-line-num"
-                      : ""
-                  }`}
-                  key={index}
-                  onClick={() => toggleBreakpoint(filename, lineNum)}
-                  title={`Line ${lineNum} (Click to toggle breakpoint)`}
-                >
-                  {isStoppedHere ? (
-                    <span
-                      className="debug-arrow-glyph"
-                      title="Paused at breakpoint"
-                    />
-                  ) : hasBreakpoint ? (
-                    <span
-                      className="breakpoint-dot"
-                      title={`Breakpoint on line ${lineNum}`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        toggleBreakpoint(filename, lineNum)
-                      }}
-                    />
-                  ) : (
-                    <span className="breakpoint-ghost" />
-                  )}
-
-                  {diag && (
-                    <span
-                      className={`diagnostic-dot ${
-                        diag.type === "error"
-                          ? "diagnostic-error"
-                          : "diagnostic-warning"
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        const rect = e.currentTarget.getBoundingClientRect()
-                        setHoverDiag({
-                          diag,
-                          x: rect.right + 10,
-                          y: rect.top - 6,
-                        })
-                      }}
-                      onMouseEnter={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect()
-                        setHoverDiag({
-                          diag,
-                          x: rect.right + 10,
-                          y: rect.top - 6,
-                        })
-                      }}
-                      title={diag.title}
-                    />
-                  )}
-                  {lineNum}
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Interactive buffer view */}
-          <div className="editor-buffer-container">
-            {/* Syntax layer rendered behind */}
-            <div className="syntax-layer" ref={syntaxRef}>
-              {lines.map((lineText, index) => {
-                const lineNum = index + 1
-                const isCurrent = isFocused && cursorPosition.line === lineNum
-                const isStoppedHere =
-                  isSameFile(activeDebugLine?.file, filename) &&
-                  activeDebugLine?.line === lineNum
-                const diag = getLineDiagnostic(lineNum)
-
-                return (
-                  <div
-                    className={`code-line-layer ${
-                      isStoppedHere
-                        ? "debug-stopped-line"
-                        : isCurrent
-                          ? "current-line"
-                          : ""
-                    }`}
-                    key={index}
-                  >
-                    <code
-                      className={
-                        diag
-                          ? diag.type === "error"
-                            ? "error-underline"
-                            : "warning-underline"
-                          : ""
-                      }
-                    >
-                      {tokenizeLine(lineText, todoOptions)}
-                    </code>
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* Transparent interactive textarea overlay */}
-            <textarea
-              aria-label={`Code content for ${filename}`}
-              autoCapitalize="off"
-              autoComplete="off"
-              autoCorrect="off"
-              className="code-textarea"
-              onChange={handleChange}
-              onClick={updateCursor}
-              onFocus={() => {
-                setFocusedPane(paneId)
-                updateCursor()
-              }}
-              onKeyDown={handleKeyDown}
-              onKeyUp={updateCursor}
-              onMouseUp={updateCursor}
-              onMouseMove={handleTextareaMouseMove}
-              onScroll={syncScroll}
-              ref={textareaRef}
-              spellCheck={false}
-              value={content}
-              wrap={
-                wordWrap === "on" || wordWrap === "wordWrapColumn"
-                  ? "soft"
-                  : "off"
-              }
-            />
-          </div>
+          <CMEditor
+            filename={filename}
+            content={content}
+            isReadOnly={Boolean(buffer?.isLargeFile || buffer?.isBinary)}
+            wordWrap={wordWrap}
+            tabSize={currentTabSize}
+            fontSize={editorFontSize}
+            lineHeight={editorLineHeight}
+            breakpoints={breakpoints?.[filename] || []}
+            activeDebugLine={activeDebugLine}
+            onChange={(newVal) => updateFileContent(filename, newVal)}
+            onCursorChange={(line, col) =>
+              setCursorPosition({ line, column: col })
+            }
+            onToggleBreakpoint={(line) => toggleBreakpoint(filename, line)}
+            onSave={() => saveFile(filename)}
+            onFind={() => openFind(focusedGroup, false)}
+          />
         </div>
 
         {minimapEnabled && (
@@ -578,14 +341,6 @@ export function CodePane({
           />
         )}
       </div>
-
-      {hoverDiag && (
-        <DiagnosticHoverCard
-          diagnostic={hoverDiag.diag}
-          onClose={() => setHoverDiag(null)}
-          position={{ x: hoverDiag.x, y: hoverDiag.y }}
-        />
-      )}
     </div>
   )
 }

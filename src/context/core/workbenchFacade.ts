@@ -1203,6 +1203,7 @@ export function useWorkbenchFacade() {
     // Buffer & Linter & Cursor & Selection
     fileBuffers: workspace.fileBuffers,
     updateFileContent: workspace.updateFileContent,
+    syncBufferWithDisk: workspace.syncBufferWithDisk,
     saveFile,
     applyCodeWithReview,
     cursorPosition: editor.cursorPosition,

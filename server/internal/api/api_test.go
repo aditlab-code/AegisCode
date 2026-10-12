@@ -1304,6 +1304,64 @@ func TestDebugStartPythonValidation(t *testing.T) {
 	}
 }
 
+func TestLSPEndpoints(t *testing.T) {
+	server, handler, tempDir := setupTestServer(t, "")
+	defer os.RemoveAll(tempDir)
+	defer func() { _ = server.ws.Close() }()
+
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+
+	// 1. LSP Open
+	openBody := `{"path":"main.go","content":"package main\nfunc main(){}","language":"go"}`
+	resp, err := http.Post(ts.URL+"/api/v1/lsp/open", "application/json", strings.NewReader(openBody))
+	if err != nil {
+		t.Fatalf("failed to post lsp/open: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	// 2. LSP Completion
+	compBody := `{"path":"main.go","line":1,"character":5,"language":"go"}`
+	resp2, err := http.Post(ts.URL+"/api/v1/lsp/completion", "application/json", strings.NewReader(compBody))
+	if err != nil {
+		t.Fatalf("failed to post lsp/completion: %v", err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp2.StatusCode)
+	}
+	var compRes LSPCompletionResponse
+	if err := json.NewDecoder(resp2.Body).Decode(&compRes); err != nil {
+		t.Fatalf("failed to decode completion response: %v", err)
+	}
+
+	// 3. LSP Hover
+	hoverBody := `{"path":"main.go","line":1,"character":5,"language":"go"}`
+	resp3, err := http.Post(ts.URL+"/api/v1/lsp/hover", "application/json", strings.NewReader(hoverBody))
+	if err != nil {
+		t.Fatalf("failed to post lsp/hover: %v", err)
+	}
+	defer resp3.Body.Close()
+	if resp3.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp3.StatusCode)
+	}
+
+	// 4. LSP Definition
+	defBody := `{"path":"main.go","line":1,"character":5,"language":"go"}`
+	resp4, err := http.Post(ts.URL+"/api/v1/lsp/definition", "application/json", strings.NewReader(defBody))
+	if err != nil {
+		t.Fatalf("failed to post lsp/definition: %v", err)
+	}
+	defer resp4.Body.Close()
+	if resp4.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp4.StatusCode)
+	}
+}
+
+
 
 
 

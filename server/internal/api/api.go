@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -17,6 +19,7 @@ import (
 	"github.com/aditwicaksono/aegiscode/server/internal/ai"
 	"github.com/aditwicaksono/aegiscode/server/internal/debug"
 	"github.com/aditwicaksono/aegiscode/server/internal/git"
+	"github.com/aditwicaksono/aegiscode/server/internal/lsp"
 	"github.com/aditwicaksono/aegiscode/server/internal/platform"
 	"github.com/aditwicaksono/aegiscode/server/internal/store"
 	"github.com/aditwicaksono/aegiscode/server/internal/supervisor"
@@ -33,6 +36,8 @@ type Server struct {
 	supervisor *supervisor.Manager
 	store      *store.Store
 	debug      *debug.Manager
+	lsp        *lsp.Manager
+	pairing    *PairingManager
 	logMu      sync.RWMutex
 	logSubs    map[chan LogEvent]struct{}
 	workerMu     sync.RWMutex
@@ -52,6 +57,11 @@ func NewServer(ws *workspace.Manager, picker platform.FolderPicker, customStore 
 		}
 	}
 
+	var rootPath string
+	if ws != nil {
+		rootPath, _ = ws.GetRoot()
+	}
+
 	s := &Server{
 		ws:         ws,
 		picker:     picker,
@@ -59,6 +69,8 @@ func NewServer(ws *workspace.Manager, picker platform.FolderPicker, customStore 
 		terminal:   terminal.NewManager(),
 		store:      st,
 		debug:      debug.NewManager(),
+		lsp:        lsp.NewManager(rootPath),
+		pairing:    NewPairingManager(8080),
 		logSubs:    make(map[chan LogEvent]struct{}),
 		workerSubs: make(map[chan supervisor.CrashEvent]struct{}),
 	}
@@ -67,6 +79,11 @@ func NewServer(ws *workspace.Manager, picker platform.FolderPicker, customStore 
 		s.BroadcastWorkerCrash(evt)
 	})
 	return s
+}
+
+// Pairing returns the companion pairing and session manager.
+func (s *Server) Pairing() *PairingManager {
+	return s.pairing
 }
 
 // Debug returns the active debugger manager.
@@ -136,15 +153,92 @@ func jsonError(w http.ResponseWriter, status int, message string) {
 	jsonResponse(w, status, ErrorResponse{Error: message})
 }
 
-func corsMiddleware(next http.Handler) http.Handler {
+func (s *Server) isOriginAllowed(origin string, r *http.Request) bool {
+	if origin == "" || origin == "null" {
+		return true
+	}
+
+	// 1. Loopback origins
+	if strings.HasPrefix(origin, "http://localhost:") || strings.HasPrefix(origin, "https://localhost:") ||
+		strings.HasPrefix(origin, "http://127.0.0.1:") || strings.HasPrefix(origin, "https://127.0.0.1:") ||
+		strings.HasPrefix(origin, "http://[::1]:") || strings.HasPrefix(origin, "https://[::1]:") ||
+		origin == "http://localhost" || origin == "https://localhost" ||
+		origin == "http://127.0.0.1" || origin == "https://127.0.0.1" {
+		return true
+	}
+
+	// 2. Custom allowed origins via environment variable
+	if custom := os.Getenv("AEGIS_ALLOWED_ORIGINS"); custom != "" {
+		for _, o := range strings.Split(custom, ",") {
+			if strings.EqualFold(strings.TrimSpace(o), origin) {
+				return true
+			}
+		}
+	}
+
+	// 3. Match server host or detected LAN IP
+	host := r.Host
+	if host != "" {
+		if origin == "http://"+host || origin == "https://"+host {
+			return true
+		}
+	}
+
+	if s.pairing != nil {
+		lanIP := s.pairing.DetectLANIP()
+		if lanIP != "" {
+			if strings.HasPrefix(origin, "http://"+lanIP+":") || strings.HasPrefix(origin, "https://"+lanIP+":") ||
+				origin == "http://"+lanIP || origin == "https://"+lanIP {
+				return true
+			}
+		}
+	}
+
+	// 4. Check if origin is private LAN subnet (RFC 1918)
+	u, err := url.Parse(origin)
+	if err == nil {
+		hostOnly := u.Hostname()
+		ip := net.ParseIP(hostOnly)
+		if ip != nil && (strings.HasPrefix(ip.String(), "192.168.") || strings.HasPrefix(ip.String(), "10.") || isClassBPrivate(ip)) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (s *Server) isPublicEndpoint(path string) bool {
+	return path == "/api/v1/auth/handshake" || path == "/api/v1/pairing/info"
+}
+
+func (s *Server) corsAndAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		origin := r.Header.Get("Origin")
+		allowed := s.isOriginAllowed(origin, r)
+
+		if allowed {
+			if origin != "" {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+			} else {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			}
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Session-Token, X-Pairing-Token")
+			w.Header().Set("Vary", "Origin")
+		}
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
 			return
+		}
+
+		// Non-loopback requests must present a valid, unexpired session or pairing token (except public discovery)
+		if !IsLoopbackRemote(r) && !s.isPublicEndpoint(r.URL.Path) {
+			token := ExtractToken(r)
+			if s.pairing == nil || !s.pairing.ValidateToken(token) {
+				jsonError(w, http.StatusUnauthorized, "unauthorized: valid session or pairing token required")
+				return
+			}
 		}
 
 		next.ServeHTTP(w, r)
@@ -154,6 +248,10 @@ func corsMiddleware(next http.Handler) http.Handler {
 // Routes constructs the HTTP handler mux mapping all 13 workspace and vcs endpoints.
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
+
+	// Authentication & Companion Pairing endpoints
+	mux.HandleFunc("/api/v1/auth/handshake", s.handleAuthHandshake)
+	mux.HandleFunc("/api/v1/pairing/info", s.handlePairingInfo)
 
 	// Workspace API endpoints
 	mux.HandleFunc("/api/v1/workspace/info", s.handleWorkspaceInfo)
@@ -227,10 +325,48 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/debug/terminate", s.handleDebugTerminate)
 	mux.HandleFunc("/api/v1/events/debug", s.handleDebugEvents)
 
+	// Language Server Protocol (LSP) Endpoints (Core 2)
+	mux.HandleFunc("/api/v1/lsp/open", s.handleLSPOpen)
+	mux.HandleFunc("/api/v1/lsp/change", s.handleLSPChange)
+	mux.HandleFunc("/api/v1/lsp/completion", s.handleLSPCompletion)
+	mux.HandleFunc("/api/v1/lsp/hover", s.handleLSPHover)
+	mux.HandleFunc("/api/v1/lsp/definition", s.handleLSPDefinition)
+	mux.HandleFunc("/api/v1/events/lsp", s.handleLSPEvents)
+
 	// System Management
 	mux.HandleFunc("/api/v1/system/shutdown", s.handleSystemShutdown)
 
-	return corsMiddleware(mux)
+	return s.corsAndAuthMiddleware(mux)
+}
+
+func (s *Server) handleAuthHandshake(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req HandshakeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	resp, err := s.pairing.Handshake(req.PairingToken, req.ClientType)
+	if err != nil {
+		jsonError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, resp)
+}
+
+func (s *Server) handlePairingInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, s.pairing.GetInfo())
 }
 
 func (s *Server) handleWorkspaceInfo(w http.ResponseWriter, r *http.Request) {
@@ -416,7 +552,7 @@ func (s *Server) handleWorkspaceFile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		content, err := s.ws.GetFile(path)
+		payload, err := s.ws.GetFileWithGuard(path)
 		if err != nil {
 			if strings.Contains(err.Error(), "escapes root directory") || strings.Contains(err.Error(), "empty path") {
 				jsonError(w, http.StatusBadRequest, err.Error())
@@ -427,8 +563,11 @@ func (s *Server) handleWorkspaceFile(w http.ResponseWriter, r *http.Request) {
 		}
 
 		jsonResponse(w, http.StatusOK, FileResponse{
-			Path:    path,
-			Content: content,
+			Path:     path,
+			Content:  payload.Content,
+			IsLarge:  payload.IsLarge,
+			IsBinary: payload.IsBinary,
+			Size:     payload.Size,
 		})
 
 	case http.MethodPost:
@@ -441,12 +580,16 @@ func (s *Server) handleWorkspaceFile(w http.ResponseWriter, r *http.Request) {
 		var opErr error
 		if req.IsFolder {
 			_, opErr = s.ws.CreateFolder(req.Path)
+		} else if req.Exclusive {
+			opErr = s.ws.WriteFileExclusive(req.Path, req.Content)
 		} else {
 			opErr = s.ws.WriteFile(req.Path, req.Content)
 		}
 
 		if opErr != nil {
-			if strings.Contains(opErr.Error(), "escapes root directory") || strings.Contains(opErr.Error(), "empty path") {
+			if strings.Contains(opErr.Error(), "already exists") {
+				jsonError(w, http.StatusConflict, opErr.Error())
+			} else if strings.Contains(opErr.Error(), "escapes root directory") || strings.Contains(opErr.Error(), "empty path") {
 				jsonError(w, http.StatusBadRequest, opErr.Error())
 			} else {
 				jsonError(w, http.StatusInternalServerError, opErr.Error())
@@ -2216,6 +2359,146 @@ func (s *Server) handleSystemShutdown(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 }
+
+// LSP Handlers (Core 2)
+
+func (s *Server) handleLSPOpen(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req LSPOpenRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	if s.lsp != nil {
+		_ = s.lsp.DidOpen(req.Path, req.Content, req.Language)
+	}
+	jsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleLSPChange(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req LSPChangeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	if s.lsp != nil {
+		_ = s.lsp.DidChange(req.Path, req.Content, req.Language)
+	}
+	jsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleLSPCompletion(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req LSPPositionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	if s.lsp == nil {
+		jsonResponse(w, http.StatusOK, LSPCompletionResponse{Items: []lsp.CompletionItem{}})
+		return
+	}
+	items, err := s.lsp.Completion(req.Path, req.Line, req.Character, req.Language)
+	if err != nil {
+		jsonResponse(w, http.StatusOK, LSPCompletionResponse{Items: []lsp.CompletionItem{}})
+		return
+	}
+	jsonResponse(w, http.StatusOK, LSPCompletionResponse{Items: items})
+}
+
+func (s *Server) handleLSPHover(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req LSPPositionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	if s.lsp == nil {
+		jsonResponse(w, http.StatusOK, LSPHoverResponse{})
+		return
+	}
+	hover, err := s.lsp.Hover(req.Path, req.Line, req.Character, req.Language)
+	if err != nil {
+		jsonResponse(w, http.StatusOK, LSPHoverResponse{})
+		return
+	}
+	jsonResponse(w, http.StatusOK, LSPHoverResponse{Hover: hover})
+}
+
+func (s *Server) handleLSPDefinition(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req LSPPositionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	if s.lsp == nil {
+		jsonResponse(w, http.StatusOK, LSPDefinitionResponse{Locations: []lsp.Location{}})
+		return
+	}
+	locs, err := s.lsp.Definition(req.Path, req.Line, req.Character, req.Language)
+	if err != nil {
+		jsonResponse(w, http.StatusOK, LSPDefinitionResponse{Locations: []lsp.Location{}})
+		return
+	}
+	jsonResponse(w, http.StatusOK, LSPDefinitionResponse{Locations: locs})
+}
+
+func (s *Server) handleLSPEvents(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	if s.lsp == nil {
+		return
+	}
+
+	ch, unsubscribe := s.lsp.SubscribeDiagnostics()
+	defer unsubscribe()
+
+	fmt.Fprintf(w, ": connected\n\n")
+	flusher.Flush()
+
+	notify := r.Context().Done()
+	for {
+		select {
+		case <-notify:
+			return
+		case diag, ok := <-ch:
+			if !ok {
+				return
+			}
+			data, err := json.Marshal(diag)
+			if err == nil {
+				fmt.Fprintf(w, "data: %s\n\n", string(data))
+				flusher.Flush()
+			}
+		}
+	}
+}
+
 
 
 
