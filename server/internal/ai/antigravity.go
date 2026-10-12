@@ -175,16 +175,16 @@ func fallbackModels() []ModelItem {
 // ListSkills returns all available Antigravity slash commands and skills.
 func ListSkills(ctx context.Context, workspaceDir string) ([]SkillItem, error) {
 	skills := []SkillItem{
-		{Command: "/plan", Name: "Implementation Plan", Description: "Breakdown task implementasi bertahap"},
-		{Command: "/spec", Name: "Specification", Description: "Buat spesifikasi kebutuhan & arsitektur fitur"},
-		{Command: "/review", Name: "Code Review", Description: "Audit kualitas, clean code, & keamanan kode"},
-		{Command: "/debug", Name: "Debugging", Description: "Analisis akar masalah & perbaikan bug"},
-		{Command: "/simplify", Name: "Simplification", Description: "Refaktorisasi & penyederhanaan struktur kode"},
-		{Command: "/goal", Name: "Autonomous Goal", Description: "Eksekusi task jangka panjang hingga tuntas"},
-		{Command: "/schedule", Name: "Scheduler", Description: "Jalankan instruksi berbasis timer atau cron"},
-		{Command: "/browser", Name: "Web Browser", Description: "Pencarian web & interaksi situs"},
-		{Command: "/grill-me", Name: "Interactive Interview", Description: "Selaraskan rencana desain secara interaktif"},
-		{Command: "/boost", Name: "Deep Boost", Description: "Perencanaan strategis & verifikasi ketat"},
+		{Command: "/plan", Name: "Implementation Plan", Description: "Phased implementation task breakdown"},
+		{Command: "/spec", Name: "Specification", Description: "Create requirements specification & feature architecture"},
+		{Command: "/review", Name: "Code Review", Description: "Audit code quality, clean code standards, & security"},
+		{Command: "/debug", Name: "Debugging", Description: "Root cause analysis & bug fixing"},
+		{Command: "/simplify", Name: "Simplification", Description: "Refactoring & code structure simplification"},
+		{Command: "/goal", Name: "Autonomous Goal", Description: "Autonomous long-running task execution until completion"},
+		{Command: "/schedule", Name: "Scheduler", Description: "Run timer-based or cron-scheduled instructions"},
+		{Command: "/browser", Name: "Web Browser", Description: "Web browsing & live web interactions"},
+		{Command: "/grill-me", Name: "Interactive Interview", Description: "Interactive design interview and plan alignment"},
+		{Command: "/boost", Name: "Deep Boost", Description: "Strategic planning & rigorous multi-perspective verification"},
 	}
 
 	home, _ := os.UserHomeDir()

@@ -46,19 +46,19 @@ func GenerateSummary(name, targetFile string, args map[string]any) string {
 	switch name {
 	case "view_file", "Read", "read_file":
 		if targetFile != "" {
-			return "Membaca " + targetFile
+			return "Reading " + targetFile
 		}
-		return "Membaca berkas"
+		return "Reading file"
 	case "write_to_file", "Write", "replace_file_content", "create_file", "edit_file":
 		if targetFile != "" {
-			return "Menulis " + targetFile
+			return "Writing " + targetFile
 		}
-		return "Mengubah berkas"
+		return "Modifying file"
 	case "delete_file":
 		if targetFile != "" {
-			return "Menghapus " + targetFile
+			return "Deleting " + targetFile
 		}
-		return "Menghapus berkas"
+		return "Deleting file"
 	case "run_command", "bash", "execute", "execute_command":
 		cmd := ""
 		if c, ok := args["CommandLine"].(string); ok && strings.TrimSpace(c) != "" {
@@ -69,19 +69,19 @@ func GenerateSummary(name, targetFile string, args map[string]any) string {
 			cmd = c
 		}
 		if cmd != "" {
-			return "Menjalankan: " + SanitizeString(cmd)
+			return "Running: " + SanitizeString(cmd)
 		}
-		return "Menjalankan perintah terminal"
+		return "Running terminal command"
 	case "search_web":
 		if q, ok := args["query"].(string); ok && strings.TrimSpace(q) != "" {
-			return "Mencari web: " + SanitizeString(q)
+			return "Web search: " + SanitizeString(q)
 		}
-		return "Pencarian web"
+		return "Web search"
 	case "search_code", "grep", "code_search":
 		if q, ok := args["query"].(string); ok && strings.TrimSpace(q) != "" {
-			return "Mencari kode: " + SanitizeString(q)
+			return "Code search: " + SanitizeString(q)
 		}
-		return "Pencarian kode"
+		return "Code search"
 	default:
 		return name
 	}
@@ -93,7 +93,7 @@ func CapOutput(output string, maxLen int) string {
 		maxLen = 2500
 	}
 	if len(output) > maxLen {
-		return output[:maxLen] + "\n... (output dipotong)"
+		return output[:maxLen] + "\n... (output truncated)"
 	}
 	return output
 }

@@ -630,7 +630,7 @@ export function useChatCore() {
                   isStreaming: false,
                   error:
                     event.error ||
-                    "Terjadi kesalahan saat memproses permintaan",
+                    "An error occurred while processing the request",
                 }),
               ),
             )
@@ -650,7 +650,7 @@ export function useChatCore() {
               (m) => ({
                 ...m,
                 isStreaming: false,
-                error: "Generasi dihentikan oleh pengguna.",
+                error: "Generation stopped by user.",
               }),
             ),
           )
@@ -663,7 +663,7 @@ export function useChatCore() {
               (m) => ({
                 ...m,
                 isStreaming: false,
-                error: err?.message || "Koneksi ke AI terputus.",
+                error: err?.message || "Connection to AI disconnected.",
               }),
             ),
           )

@@ -202,7 +202,7 @@ const ChatMessageCard = memo(function ChatMessageCard({
         !item.thinking &&
         (!item.toolCalls || item.toolCalls.length === 0) ? (
         <div className="agent-body text-ink-muted text-xs italic">
-          Sedang menunggu respons...
+          Waiting for response...
         </div>
       ) : null}
 

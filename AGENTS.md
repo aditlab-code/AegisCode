@@ -64,14 +64,15 @@ rtk npm run format   # Code formatting check with oxfmt
 
 For detailed technical specifications, architecture decisions, and design references, consult the dedicated documentation in [`docs/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs):
 
-- **Folder Hierarchy & Responsibilities**: [`docs/architecture.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/architecture.md)
-- **Active UI Design & Layout Modules**: [`docs/frontend.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/frontend.md)
-- **Milestones & Phasing (Phase 1–9)**: [`docs/roadmap.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/roadmap.md)
-- **Backend Endpoints, DAP & Pairing**: [`docs/feature-backend.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/feature-backend.md)
-- **Feature Assessment & RFC Scorecard**: [`docs/report.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/report.md)
-- **Installation, Build & Tablet Setup**: [`docs/installation.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/installation.md)
+- **Internal Docs Index**: [`docs/README.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/README.md)
+- **Folder Hierarchy & Responsibilities**: [`docs/internal/architecture.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/internal/architecture.md)
+- **Active UI Design & Layout Modules**: [`docs/internal/frontend.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/internal/frontend.md)
+- **Milestones & Phasing (Phase 1–9)**: [`docs/internal/roadmap.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/internal/roadmap.md)
+- **Backend Endpoints, DAP & Pairing**: [`docs/internal/feature-backend.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/internal/feature-backend.md)
+- **Feature Assessment & RFC Scorecard**: [`docs/internal/report.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/internal/report.md)
+- **Internal Installation & Setup**: [`docs/internal/installation.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/internal/installation.md)
 - **Architecture Decision Records**: [`docs/adr/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr)
-- **Skills & Engineering Workflow**: [`docs/skills.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/skills.md)
+- **Skills & Engineering Workflow**: [`docs/internal/skills.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/internal/skills.md)
 
 ---
 

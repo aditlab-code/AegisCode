@@ -9,6 +9,11 @@ const __dirname = path.dirname(__filename)
 const rootDir = path.resolve(__dirname, "..")
 const binDir = path.resolve(rootDir, "bin")
 
+const pkgJson = JSON.parse(
+  fs.readFileSync(path.resolve(rootDir, "package.json"), "utf8"),
+)
+const appVersion = pkgJson.version || "1.0.0-beta.1"
+
 if (process.platform !== "darwin") {
   console.log("DMG packaging is only supported natively on macOS.")
   process.exit(0)
@@ -84,7 +89,7 @@ const infoPlist = `<?xml version="1.0" encoding="UTF-8"?>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>${appVersion}</string>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
     <key>NSHighResolutionCapable</key>

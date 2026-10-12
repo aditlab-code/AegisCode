@@ -77,6 +77,14 @@ func createListener(envPort string) (net.Listener, int, error) {
 func main() {
 	shouldOpen := false
 	for _, arg := range os.Args[1:] {
+		if arg == "--version" || arg == "-v" {
+			fmt.Printf("AegisCode %s\n", Version)
+			return
+		}
+		if arg == "--help" || arg == "-h" {
+			fmt.Printf("AegisCode %s\nUsage: aegiscode [options]\n\nOptions:\n  -o, --open       Open default browser on startup\n  -v, --version    Print version and exit\n  -h, --help       Print help and exit\n", Version)
+			return
+		}
 		if arg == "--open" || arg == "-o" {
 			shouldOpen = true
 		}

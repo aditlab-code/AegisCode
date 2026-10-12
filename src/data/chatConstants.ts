@@ -163,26 +163,26 @@ export const SKILL_COMMANDS: SkillCommand[] = [
   {
     command: "/spec",
     name: "Specification",
-    description: "Buat spesifikasi kebutuhan & arsitektur fitur",
+    description: "Create requirements specification & feature architecture",
   },
   {
     command: "/plan",
     name: "Implementation Plan",
-    description: "Breakdown task implementasi bertahap",
+    description: "Phased implementation task breakdown",
   },
   {
     command: "/review",
     name: "Code Review",
-    description: "Audit kualitas, clean code, & keamanan kode",
+    description: "Audit code quality, clean code standards, & security",
   },
   {
     command: "/debug",
     name: "Debugging",
-    description: "Analisis akar masalah & perbaikan bug",
+    description: "Root cause analysis & bug fixing",
   },
   {
     command: "/simplify",
     name: "Simplification",
-    description: "Refaktorisasi & penyederhanaan struktur kode",
+    description: "Refactoring & code structure simplification",
   },
 ]

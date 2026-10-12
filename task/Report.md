@@ -1,48 +1,26 @@
-Berikut adalah tabel komparasi lengkap struktur *tool call* lintas provider dan implementasi penanganan (*aggregator & normalizer*) idiomatik di Go.
+# Cross-Provider Tool Call Comparison & Idiomatic Normalizer Architecture
+
+The following provides a comprehensive comparison table of tool call structures across AI providers and their idiomatic aggregator and normalizer implementation in Go.
 
 ---
 
-### 1. Tabel Komparasi Format Tool Call Lintas Provider
+### 1. Cross-Provider Tool Call Comparison Table
 
-| Aspek / Karakteristik | Antigravity CLI (`agy`)
-
- | Claude (Anthropic API / CLI)
-
- | OpenCode / OpenRouter (OpenAI Spec)
-
- | Target Standar AegisCode (`SSE`)
-
- |
+| Aspect / Characteristic | Antigravity CLI (`agy`) | Claude (Anthropic API / CLI) | OpenCode / OpenRouter (OpenAI Spec) | AegisCode Target Standard (`SSE`) |
 | --- | --- | --- | --- | --- |
-| **Mekanisme Stream** | NDJSON baris per baris via `stdout` proses CLI
-
- | HTTP SSE (`event:` + `data: JSON`)
-
- | HTTP SSE (`data: JSON`) dengan potongan delta
-
- | `event: tool_call` via Go HTTP SSE
-
- |
-| **Identitas Unik (ID)** | Berbasis langkah: `step_index` integer (misal: `1`, `2`)
-
- | String unik acak: `id: "toolu_01AbC..."` | String acak: `id: "call_abc..."` per objek di array `tool_calls` | Diseragamkan ke `tc-<id>` atau `tc-<stepIdx>`<br> |
-| **Transmisi Argumen** | Objek JSON langsung tersedia di `tool_info.parameters` / `tool_args`<br> | Pecahan string parsial di `content_block_delta` (`input_json_delta`) | Pecahan string parsial bertahap di `choices[0].delta.tool_calls[i].function.arguments` | Objek map terurai (`map[string]any`) yang valid dan bersih |
-| **Pelacakan Status** | Eksplisit: `step_update.state` (`ACTIVE` $\rightarrow$ `DONE`)
-
- | Berbasis event blok: `content_block_start` $\rightarrow$ `content_block_stop` | Implisit: terdeteksi saat `finish_reason: "tool_calls"` | `status: "running"` $\rightarrow$ `status: "success"`<br> |
-| **Output / Return** | Langsung menyatu di `step_update.tool_info.output`<br> | Giliran pesan terpisah (`role: "user"`, `type: "tool_result"`) | Giliran pesan terpisah (`role: "tool"`, `tool_call_id: "..."`) | Teks output (dibatasi maks 2.500 karakter di UI)
-
- |
-| **Variasi Kunci Path** | `AbsolutePath`, `filePath`, `path`<br> | `path`, `file_path` | `path`, `filename`, `file_path` | Dinormalisasi ke `targetFile` tunggal
-
- |
-| **Variasi Perintah Shell** | `command`, `cmd` | `command` | `cmd`, `command` | Dinormalisasi ke `command` tunggal |
+| **Streaming Mechanism** | NDJSON line-by-line via CLI process `stdout` | HTTP SSE (`event:` + `data: JSON`) | HTTP SSE (`data: JSON`) with delta fragments | `event: tool_call` via Go HTTP SSE |
+| **Unique Identity (ID)** | Step-based: integer `step_index` (e.g., `1`, `2`) | Random unique string: `id: "toolu_01AbC..."` | Random string: `id: "call_abc..."` per object in `tool_calls` array | Unified into `tc-<id>` or `tc-<stepIdx>` |
+| **Argument Transmission** | Direct JSON object in `tool_info.parameters` / `tool_args` | Partial string chunks in `content_block_delta` (`input_json_delta`) | Incremental partial string chunks in `choices[0].delta.tool_calls[i].function.arguments` | Clean, validated, and fully parsed map (`map[string]any`) |
+| **Status Tracking** | Explicit: `step_update.state` (`ACTIVE` $\rightarrow$ `DONE`) | Block event driven: `content_block_start` $\rightarrow$ `content_block_stop` | Implicit: detected when `finish_reason: "tool_calls"` | `status: "running"` $\rightarrow$ `status: "success"` |
+| **Output / Return** | Directly bundled in `step_update.tool_info.output` | Distinct message turn (`role: "user"`, `type: "tool_result"`) | Distinct message turn (`role: "tool"`, `tool_call_id: "..."`) | Text output (capped at max 2,500 characters in UI preview) |
+| **Path Key Variants** | `AbsolutePath`, `filePath`, `path` | `path`, `file_path` | `path`, `filename`, `file_path` | Normalized to single canonical `targetFile` |
+| **Shell Command Variants** | `command`, `cmd` | `command` | `cmd`, `command` | Normalized to single canonical `command` |
 
 ---
 
-### 2. Definisi Kontrak & Tipe Data di Go
+### 2. Contract & Data Type Definitions in Go
 
-Simpan kontrak terpadu ini di paket internal AI (misal: `server/internal/ai/types.go`):
+Retain this unified contract in the internal AI package (`server/internal/ai/types.go`):
 
 ```go
 package ai
@@ -52,7 +30,7 @@ import (
 	"time"
 )
 
-// ToolCallEvent mewakili payload tunggal yang dipancarkan ke frontend via SSE
+// ToolCallEvent represents a single payload broadcast to the frontend via SSE
 type ToolCallEvent struct {
 	ID         string         `json:"id"`
 	Name       string         `json:"name"`
@@ -64,7 +42,7 @@ type ToolCallEvent struct {
 	Timestamp  int64          `json:"timestamp"`
 }
 
-// InFlightToolState menyimpan akumulasi argumen streaming sebelum menjadi JSON valid
+// InFlightToolState buffers streaming argument fragments until valid JSON is assembled
 type InFlightToolState struct {
 	Index       int
 	ID          string
@@ -74,32 +52,31 @@ type InFlightToolState struct {
 	Status      string
 	Output      string
 }
-
 ```
 
 ---
 
-### 3. Modul Helper: Normalisasi Kunci & Anti-Ghost Tab
+### 3. Normalization Helper: Key Sanitization & Anti-Ghost Tab Guard
 
-Untuk mencegah bug *ghost tab* (tab kosong yang terbuka karena path tidak valid atau path bernilai sama dengan nama tool):
+To prevent ghost tab anomalies (empty tabs opened due to invalid file paths or paths matching tool names):
 
 ```go
 package ai
 
 import "strings"
 
-// SanitizeString membersihkan spasi dan petik ganda/tunggal/backtick liar
+// SanitizeString strips whitespace and surrounding quotes/backticks
 func SanitizeString(s string) string {
 	return strings.Trim(s, "\"'` \t\r\n")
 }
 
-// ExtractTargetFile mendeteksi path berkas dari berbagai variasi kunci parameter
+// ExtractTargetFile resolves target file paths across diverse parameter key conventions
 func ExtractTargetFile(toolName string, args map[string]any) string {
 	candidateKeys := []string{"AbsolutePath", "filePath", "path", "targetFile", "TargetFile", "filename"}
 	for _, k := range candidateKeys {
 		if raw, ok := args[k].(string); ok {
 			clean := SanitizeString(raw)
-			// Guard: Path tidak boleh kosong dan tidak boleh sama dengan nama tool itu sendiri
+			// Guard: Path must not be empty and must not match the tool name itself
 			if clean != "" && clean != toolName {
 				return clean
 			}
@@ -108,7 +85,7 @@ func ExtractTargetFile(toolName string, args map[string]any) string {
 	return ""
 }
 
-// GenerateSummary membuat deskripsi ringkas aksi tool untuk antarmuka pengguna
+// GenerateSummary constructs concise human-readable summaries for user interface display
 func GenerateSummary(name, targetFile string, args map[string]any) string {
 	if rawSummary, ok := args["toolSummary"].(string); ok && rawSummary != "" {
 		return SanitizeString(rawSummary)
@@ -120,33 +97,32 @@ func GenerateSummary(name, targetFile string, args map[string]any) string {
 	switch name {
 	case "view_file", "Read", "read_file":
 		if targetFile != "" {
-			return "Membaca " + targetFile
+			return "Reading " + targetFile
 		}
-		return "Membaca berkas"
+		return "Reading file"
 	case "write_to_file", "Write", "replace_file_content", "create_file":
 		if targetFile != "" {
-			return "Menulis " + targetFile
+			return "Writing " + targetFile
 		}
-		return "Mengubah berkas"
+		return "Modifying file"
 	case "run_command", "bash", "execute":
 		if cmd, ok := args["command"].(string); ok {
-			return "Menjalankan: " + SanitizeString(cmd)
+			return "Running: " + SanitizeString(cmd)
 		}
-		return "Menjalankan perintah terminal"
+		return "Running terminal command"
 	default:
 		return name
 	}
 }
-
 ```
 
 ---
 
-### 4. Penanganan Khusus Tiap Provider di Go
+### 4. Provider-Specific Handlers in Go
 
-#### A. Penanganan Antigravity CLI (`agy` NDJSON)
+#### A. Antigravity CLI Handler (`agy` NDJSON)
 
-Antigravity mengirim data per baris. Ekstraksi langsung mengambil `step_update.tool_info`:
+Antigravity streams events line by line. Extraction targets `step_update.tool_info`:
 
 ```go
 package ai
@@ -182,13 +158,11 @@ func HandleAntigravityLine(rawJSON []byte, emit func(ToolCallEvent)) error {
 		return nil
 	}
 
-	// Gunakan tool_info.parameters, fallback ke tool_args
 	args := su.ToolInfo.Parameters
 	if len(args) == 0 && len(su.ToolArgs) > 0 {
 		args = su.ToolArgs
 	}
 
-	// Bersihkan nilai string di dalam argumen
 	for k, v := range args {
 		if s, ok := v.(string); ok {
 			args[k] = SanitizeString(s)
@@ -203,10 +177,9 @@ func HandleAntigravityLine(rawJSON []byte, emit func(ToolCallEvent)) error {
 	toolID := fmt.Sprintf("tc-%d", su.StepIndex)
 	targetFile := ExtractTargetFile(su.ToolInfo.Name, args)
 
-	// Batasi output preview agar tidak membebani antarmuka
 	outputPreview := su.ToolInfo.Output
 	if len(outputPreview) > 2500 {
-		outputPreview = outputPreview[:2500] + "\n... (output dipotong)"
+		outputPreview = outputPreview[:2500] + "\n... (output truncated)"
 	}
 
 	event := ToolCallEvent{
@@ -223,14 +196,13 @@ func HandleAntigravityLine(rawJSON []byte, emit func(ToolCallEvent)) error {
 	emit(event)
 	return nil
 }
-
 ```
 
 ---
 
-#### B. Penanganan OpenCode / OpenRouter (OpenAI-Compatible Delta Aggregator)
+#### B. OpenCode / OpenRouter (OpenAI-Compatible Delta Aggregator)
 
-OpenAI mengirim argumen terpotong-potong per chunk token. Akumulasi string dilakukan di memori hingga utuh sebelum diparsing:
+OpenAI streams fragmented argument tokens per chunk. String accumulation is buffered in-memory until completion:
 
 ```go
 package ai
@@ -259,7 +231,6 @@ func NewOpenAIAggregator() *OpenAIAggregator {
 	return &OpenAIAggregator{tools: make(map[int]*InFlightToolState)}
 }
 
-// IngestChunk mengakumulasikan pecahan teks argumen yang masuk
 func (a *OpenAIAggregator) IngestChunk(chunks []OpenAIToolChunk, emit func(ToolCallEvent)) {
 	for _, chunk := range chunks {
 		tool, exists := a.tools[chunk.Index]
@@ -276,11 +247,10 @@ func (a *OpenAIAggregator) IngestChunk(chunks []OpenAIToolChunk, emit func(ToolC
 			}
 			a.tools[chunk.Index] = tool
 
-			// Pancarkan sinyal awal saat tool mulai dipanggil
 			emit(ToolCallEvent{
 				ID:        tool.ID,
 				Name:      tool.Name,
-				Summary:   "Menyiapkan " + tool.Name,
+				Summary:   "Preparing " + tool.Name,
 				Status:    "running",
 				Args:      map[string]any{},
 				Timestamp: time.Now().Unix(),
@@ -296,14 +266,12 @@ func (a *OpenAIAggregator) IngestChunk(chunks []OpenAIToolChunk, emit func(ToolC
 	}
 }
 
-// Finalize dipanggil saat stream mencapai `finish_reason: "tool_calls"` atau selesai
 func (a *OpenAIAggregator) Finalize(emit func(ToolCallEvent)) {
 	for _, tool := range a.tools {
 		var parsedArgs map[string]any
 		rawJSON := tool.ArgsBuilder.String()
 
 		if err := json.Unmarshal([]byte(rawJSON), &parsedArgs); err != nil {
-			// Jika format JSON gagal dibongkar, masukkan sebagai argumen teks mentah
 			parsedArgs = map[string]any{"raw": rawJSON}
 		}
 
@@ -320,14 +288,13 @@ func (a *OpenAIAggregator) Finalize(emit func(ToolCallEvent)) {
 		})
 	}
 }
-
 ```
 
 ---
 
-#### C. Penanganan Claude (Anthropic Content Blocks)
+#### C. Claude Handler (Anthropic Content Blocks)
 
-Claude menggunakan pembuka blok, delta JSON, dan penutup blok:
+Claude streams explicit block open, JSON delta fragments, and block stop signals:
 
 ```go
 package ai
@@ -363,7 +330,7 @@ func (c *ClaudeBlockHandler) HandleEvent(eventType string, data []byte, emit fun
 			emit(ToolCallEvent{
 				ID:        p.ContentBlock.ID,
 				Name:      p.ContentBlock.Name,
-				Summary:   "Mempersiapkan " + p.ContentBlock.Name,
+				Summary:   "Preparing " + p.ContentBlock.Name,
 				Status:    "running",
 				Args:      map[string]any{},
 				Timestamp: time.Now().Unix(),
@@ -407,18 +374,16 @@ func (c *ClaudeBlockHandler) HandleEvent(eventType string, data []byte, emit fun
 	}
 	return nil
 }
-
 ```
 
 ---
 
-### Ringkasan Alur Kerja Terpadu
+### Unified End-to-End Pipeline
 
 ```
 [Antigravity NDJSON]       -> HandleAntigravityLine()    \
 [OpenAI/OpenRouter Delta]  -> OpenAIAggregator            +-> [Sanitizer & Anti-Ghost Guard] -> emit(ToolCallEvent) -> Frontend SSE
 [Claude Content Block]     -> ClaudeBlockHandler         /
-
 ```
 
-Melalui pemisahan ini, setiap provider memiliki penangan isolasi tersendiri di backend Go, sementara frontend React hanya mendengarkan satu struktur data yang sudah bersih, konsisten, dan bebas dari anomali teks parsial.
+Through this abstraction, each provider is handled by an isolated adapter in the Go backend, while the React frontend consumes a unified, clean, and normalized data structure free from partial text anomalies.

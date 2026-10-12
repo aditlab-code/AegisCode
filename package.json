@@ -2,7 +2,7 @@
   "name": "aegiscode",
   "description": "Lightweight, high-performance web-based IDE with local cross-platform Go core server, PTY terminal, and modular creative studios.",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.0-beta.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
