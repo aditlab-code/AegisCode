@@ -22,6 +22,7 @@ export const DEFAULT_BOTTOM_TAB_ORDER: BottomTab[] = [
   "Terminal",
   "Problems",
   "Output",
+  "Debug",
 ]
 
 // Pure transition functions
@@ -57,11 +58,13 @@ export function loadStoredBottomTabOrder(): BottomTab[] {
       const parsed = JSON.parse(raw) as BottomTab[]
       if (
         Array.isArray(parsed) &&
-        parsed.length === 3 &&
         parsed.includes("Terminal") &&
         parsed.includes("Problems") &&
         parsed.includes("Output")
       ) {
+        if (!parsed.includes("Debug")) {
+          parsed.push("Debug")
+        }
         return parsed
       }
     }

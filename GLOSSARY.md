@@ -62,3 +62,17 @@ _Avoid_: Network TCP socket, loopback port
 Auto-generated TypeScript interface declarations compiled directly from backend Go structs to guarantee end-to-end type safety without manual duplication.
 _Avoid_: Manual type sync, untyped JSON payload
 
+### Debugging & DAP
+
+**DAP Proxy**:
+The lightweight communication bridge inside the Core Server that translates AegisCode REST and SSE debug requests into Debug Adapter Protocol (DAP) JSON-RPC transactions and streams state updates to the UI Shell.
+_Avoid_: Debugger daemon, heavy IDE backend, custom debug protocol
+
+**Delve Runner**:
+The supervised worker process running `dlv dap` that compiles, attaches to, or launches the user's Go binary under test in an isolated process group.
+_Avoid_: Embedded compiler, debugger container, background daemon
+
+**Breakpoint Registry**:
+The synchronized in-memory table of source file lines, conditions, and verification states maintained across the UI Shell and DAP Proxy.
+_Avoid_: Hardcoded breakpoint list, IDE hook
+

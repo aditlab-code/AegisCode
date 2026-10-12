@@ -8,6 +8,7 @@ import { CodePane } from "./CodePane"
 import { DiffEditorPane } from "./DiffEditorPane"
 import { EditorFindWidget } from "./EditorFindWidget"
 import { EditorEmptyState } from "./EditorEmptyState"
+import { DebugToolbar } from "./DebugToolbar"
 import { isGitDiffTab } from "../../../utils/gitDiffTab"
 
 export function Editor() {
@@ -63,6 +64,7 @@ export function Editor() {
     if (!hasTabsGroup1) {
       return (
         <section className="editor relative editor-empty" data-active-file="">
+          <DebugToolbar />
           <EditorEmptyState groupId="group1" />
         </section>
       )
@@ -73,6 +75,7 @@ export function Editor() {
         className="editor relative"
         data-active-file={group1.activeTab || ""}
       >
+        <DebugToolbar />
         <EditorTabs
           groupId="group1"
           isFindOpen={findStateGroup1.isOpen}
@@ -104,6 +107,7 @@ export function Editor() {
 
   return (
     <section className="editor-split-container relative" ref={containerRef}>
+      <DebugToolbar />
       {isResizing && <div className="split-resize-overlay" />}
 
       {/* Group 1 Window */}

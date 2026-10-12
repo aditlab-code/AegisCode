@@ -162,6 +162,10 @@ func main() {
 		_ = server.Terminal().CloseSession(sess.ID)
 	}
 
+	if server.Debug() != nil {
+		_ = server.Debug().Terminate()
+	}
+
 	if err := server.Supervisor().StopAll(ctx); err != nil {
 		log.Printf("Supervisor StopAll error: %v", err)
 	}

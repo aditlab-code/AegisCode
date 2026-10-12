@@ -74,14 +74,12 @@ func setupCoreServer(t *testing.T) *CoreServerHarness {
 	serverDir := filepath.Join(rootDir, "server")
 	binPath := filepath.Join(rootDir, "dist-server", "aegis-server")
 
-	// Ensure binary exists
-	if _, err := os.Stat(binPath); os.IsNotExist(err) {
-		buildCmd := exec.Command("go", "build", "-o", binPath, "./cmd/server")
-		buildCmd.Dir = serverDir
-		if out, err := buildCmd.CombinedOutput(); err != nil {
-			_ = os.RemoveAll(tempDir)
-			t.Fatalf("failed to build server binary: %v, out: %s", err, string(out))
-		}
+	// Build binary to ensure current codebase is executed
+	buildCmd := exec.Command("go", "build", "-o", binPath, "./cmd/server")
+	buildCmd.Dir = serverDir
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		_ = os.RemoveAll(tempDir)
+		t.Fatalf("failed to build server binary: %v, out: %s", err, string(out))
 	}
 
 	// Start compiled server process directly
@@ -596,5 +594,76 @@ func TestTerminalSessionSSEWorkflow(t *testing.T) {
 		t.Fatalf("failed to delete recreated terminal: %v", err)
 	}
 	_ = delResp2.Body.Close()
+}
+
+func TestCoreServerDebugLifecycle(t *testing.T) {
+	harness := setupCoreServer(t)
+	defer harness.teardown()
+
+	// 1. Initial debug state should be idle
+	resp, err := harness.HTTPClient.Get(harness.BaseURL + "/api/v1/debug/state")
+	if err != nil {
+		t.Fatalf("failed to get debug state: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK from GET /api/v1/debug/state, got %d", resp.StatusCode)
+	}
+
+	var state map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&state); err != nil {
+		t.Fatalf("failed to parse debug state json: %v", err)
+	}
+	if state["status"] != "idle" {
+		t.Fatalf("expected initial status 'idle', got %v", state["status"])
+	}
+
+	// 2. Set breakpoints
+	bpBody := []byte(`{"file":"main.go","lines":[10,25]}`)
+	bpResp, err := harness.HTTPClient.Post(harness.BaseURL+"/api/v1/debug/breakpoints", "application/json", bytes.NewReader(bpBody))
+	if err != nil {
+		t.Fatalf("failed to set breakpoints: %v", err)
+	}
+	defer bpResp.Body.Close()
+	if bpResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK from POST /api/v1/debug/breakpoints, got %d", bpResp.StatusCode)
+	}
+
+	var bpResult map[string]any
+	if err := json.NewDecoder(bpResp.Body).Decode(&bpResult); err != nil {
+		t.Fatalf("failed to parse breakpoint result json: %v", err)
+	}
+	bps, ok := bpResult["breakpoints"].([]any)
+	if !ok || len(bps) != 2 {
+		t.Fatalf("expected 2 breakpoints returned, got: %v", bpResult)
+	}
+
+	// 3. Connect to Debug SSE endpoint
+	sseReq, err := http.NewRequest(http.MethodGet, harness.BaseURL+"/api/v1/events/debug", nil)
+	if err != nil {
+		t.Fatalf("failed to create SSE request: %v", err)
+	}
+	sseResp, err := harness.HTTPClient.Do(sseReq)
+	if err != nil {
+		t.Fatalf("failed to connect to debug SSE stream: %v", err)
+	}
+	defer sseResp.Body.Close()
+	if sseResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK from debug SSE endpoint, got %d", sseResp.StatusCode)
+	}
+	contentType := sseResp.Header.Get("Content-Type")
+	if !strings.Contains(contentType, "text/event-stream") {
+		t.Fatalf("expected Content-Type text/event-stream, got %s", contentType)
+	}
+
+	// 4. Terminate debug session cleanly
+	termResp, err := harness.HTTPClient.Post(harness.BaseURL+"/api/v1/debug/terminate", "application/json", nil)
+	if err != nil {
+		t.Fatalf("failed to terminate debug session: %v", err)
+	}
+	defer termResp.Body.Close()
+	if termResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK from debug terminate, got %d", termResp.StatusCode)
+	}
 }
 

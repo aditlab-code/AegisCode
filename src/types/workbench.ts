@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 
-export type IconName = "aegis" | "arrow-down" | "arrow-up" | "bell" | "branch" | "check" | "chevron" | "chevron-down" | "chevron-up" | "close" | "code" | "copy" | "error" | "explorer" | "file" | "folder" | "git" | "history" | "layout" | "maximize" | "moon" | "more" | "panel" | "play" | "plus" | "refresh" | "search" | "send" | "settings" | "split" | "sun" | "symbol" | "terminal" | "trash" | "warning" | "edit" | "add" | "replace-all" | "cloud" | "sparkle" | "tag" | "discard" | "collapse-all" | "brain"
+export type IconName = "aegis" | "arrow-down" | "arrow-up" | "bell" | "branch" | "check" | "chevron" | "chevron-down" | "chevron-up" | "close" | "code" | "copy" | "error" | "explorer" | "file" | "folder" | "git" | "history" | "layout" | "maximize" | "moon" | "more" | "panel" | "play" | "plus" | "refresh" | "search" | "send" | "settings" | "split" | "sun" | "symbol" | "terminal" | "trash" | "warning" | "edit" | "add" | "replace-all" | "cloud" | "sparkle" | "tag" | "discard" | "collapse-all" | "brain" | "debug" | "pause" | "step-over" | "step-into" | "step-out" | "stop"
 
 export type ThemeMode = "dark" | "light"
 export type ThemePaletteId = "default" | "atom" | "tokyo-night"
@@ -333,7 +333,7 @@ export interface MenuGroup {
   items: [string, string, string][]
 }
 
-export type BottomTab = "Terminal" | "Problems" | "Output"
+export type BottomTab = "Terminal" | "Problems" | "Output" | "Debug"
 
 export interface TerminalSession {
   id: string
@@ -380,6 +380,58 @@ export interface PanelDimensions {
   sidebarWidth: number
   chatDrawerWidth: number
   bottomPanelHeight: number
+}
+
+// --- DAP Debugger Domain Types (Sub-Phase 6.5) ---
+
+export interface StackFrame {
+  id: number
+  name: string
+  file: string
+  line: number
+  column: number
+}
+
+export interface VariableItem {
+  name: string
+  value: string
+  type: string
+  variablesReference?: number
+}
+
+export interface ThreadItem {
+  id: number
+  name: string
+}
+
+export interface Breakpoint {
+  id?: number
+  file: string
+  line: number
+  verified: boolean
+  message?: string
+}
+
+export interface DebugState {
+  active: boolean
+  status: "idle" | "running" | "stopped" | "terminated"
+  currentFile?: string
+  currentLine?: number
+  stopReason?: string
+  stackFrames?: StackFrame[]
+  variables?: VariableItem[]
+  threads?: ThreadItem[]
+}
+
+export interface StreamDebugEvent {
+  type: "debug:started" | "debug:stopped" | "debug:continued" | "debug:output" | "debug:terminated"
+  status?: string
+  currentFile?: string
+  currentLine?: number
+  reason?: string
+  output?: string
+  category?: "stdout" | "stderr" | "console"
+  state?: DebugState
 }
 
 export type { WorkbenchContextType } from "../context/core/workbenchFacade"

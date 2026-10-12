@@ -323,6 +323,52 @@
   background: var(--color-red);
 }
 
+.breakpoint-dot {
+  position: absolute;
+  top: 6.5px;
+  left: 6px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--color-error);
+  z-index: 2;
+  box-shadow: 0 0 4px var(--color-error);
+}
+
+.breakpoint-ghost {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-error);
+  opacity: 0;
+  transition: opacity 0.1s ease;
+  pointer-events: none;
+}
+
+.line-number:hover .breakpoint-ghost {
+  opacity: 0.4;
+}
+
+.debug-arrow-glyph {
+  position: absolute;
+  top: 6px;
+  left: 5px;
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 8px solid var(--color-accent);
+  z-index: 3;
+}
+
+.debug-stopped-line {
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent) !important;
+  border-left: 3px solid var(--color-accent) !important;
+}
+
 .editor-buffer-container {
   position: relative;
   flex: 1;

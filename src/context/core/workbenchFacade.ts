@@ -22,9 +22,17 @@ import {
   normalizeWorkspacePath,
   fetchFileContent,
 } from "../../utils/workspaceApi"
+import {
+  startDebugSession,
+  setBreakpoints,
+  stepDebug,
+  terminateDebugSession,
+  connectDebugSSE,
+} from "../../utils/debugApi"
 import type {
   ChatProvider,
   ContextItem,
+  DebugState,
   WorkspaceChangeEvent,
 } from "../../types/workbench"
 
@@ -511,6 +519,143 @@ export function useWorkbenchFacade() {
     setManualMentions([])
   }, [])
 
+  // --- DAP Debugger Engine (Sub-Phase 6.5) ---
+  const [debugState, setDebugState] = useState<DebugState>({
+    active: false,
+    status: "idle",
+  })
+  const isDebugging =
+    debugState.active ||
+    debugState.status === "running" ||
+    debugState.status === "stopped"
+
+  const startDebugging = useCallback(
+    async (program?: string) => {
+      const target = program || workspace.rootWorkspacePath || "."
+      try {
+        const res = await startDebugSession(target)
+        if (res.status === "error") {
+          if (res.code === "delve_not_found") {
+            showToast(
+              "Delve (dlv) not found. Run 'go install github.com/go-delve/delve/cmd/dlv@latest'",
+            )
+          } else {
+            showToast(`Failed to start debugger: ${res.error}`)
+          }
+          return false
+        }
+        layout.setPanelOpen(true)
+        layout.setActiveBottomTab("Debug")
+        const newState: DebugState = res.state || {
+          active: true,
+          status: "running",
+        }
+        setDebugState(newState)
+        for (const [file, lines] of Object.entries(editor.breakpoints)) {
+          if (lines.length > 0) {
+            await setBreakpoints(file, lines).catch(() => {})
+          }
+        }
+        showToast("Debug session started")
+        return true
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        showToast(`Debug start error: ${msg}`)
+        return false
+      }
+    },
+    [editor.breakpoints, layout, showToast, workspace.rootWorkspacePath],
+  )
+
+  const stepDebugging = useCallback(
+    async (
+      action: "continue" | "stepOver" | "stepIn" | "stepOut" | "pause",
+    ) => {
+      try {
+        await stepDebug(action)
+        if (action !== "pause") {
+          setDebugState((prev) => ({ ...prev, status: "running" }))
+          editor.setActiveDebugLine(null)
+        }
+        return true
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        showToast(`Step debug failed: ${msg}`)
+        return false
+      }
+    },
+    [editor, showToast],
+  )
+
+  const terminateDebugging = useCallback(async () => {
+    try {
+      await terminateDebugSession()
+      setDebugState({ active: false, status: "terminated" })
+      editor.setActiveDebugLine(null)
+      showToast("Debug session terminated")
+      return true
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      showToast(`Terminate failed: ${msg}`)
+      return false
+    }
+  }, [editor, showToast])
+
+  const toggleBreakpoint = useCallback(
+    async (file: string, line: number) => {
+      editor.toggleBreakpoint(file, line)
+      if (debugState.active) {
+        const current = editor.breakpoints[file] || []
+        const updated = current.includes(line)
+          ? current.filter((l) => l !== line)
+          : [...current, line].sort((a, b) => a - b)
+        try {
+          await setBreakpoints(file, updated)
+        } catch (err: unknown) {
+          console.error("Failed to sync breakpoint:", err)
+        }
+      }
+    },
+    [debugState.active, editor],
+  )
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const disconnect = connectDebugSSE(
+      (event) => {
+        if (event.state) {
+          setDebugState(event.state)
+          if (event.state.currentFile && event.state.currentLine) {
+            editorRef.current.setActiveDebugLine({
+              file: event.state.currentFile,
+              line: event.state.currentLine,
+            })
+            editorRef.current.openFileInPane(event.state.currentFile)
+          } else if (event.state.status === "running") {
+            editorRef.current.setActiveDebugLine(null)
+          }
+        } else if (event.type === "debug:stopped") {
+          if (event.currentFile && event.currentLine) {
+            editorRef.current.setActiveDebugLine({
+              file: event.currentFile,
+              line: event.currentLine,
+            })
+            editorRef.current.openFileInPane(event.currentFile)
+          }
+        } else if (event.type === "debug:continued") {
+          editorRef.current.setActiveDebugLine(null)
+        } else if (event.type === "debug:terminated") {
+          editorRef.current.setActiveDebugLine(null)
+          setDebugState({ active: false, status: "terminated" })
+        }
+      },
+      () => {},
+    )
+    return () => {
+      disconnect()
+    }
+  }, [])
+
   const createFileAndOpen = useCallback(
     async (name: string, isFolder = false, parentFolder?: string) => {
       const newPath = await workspace.createFile(name, isFolder, parentFolder)
@@ -627,11 +772,13 @@ export function useWorkbenchFacade() {
         layout.togglePanel()
       } else if (action === "save") {
         saveFile()
+      } else if (action === "debug") {
+        startDebugging()
       } else {
         showToast(actionMessages[action] ?? "Command completed")
       }
     },
-    [editor.activeTab, layout, saveFile, showToast, workspace],
+    [editor.activeTab, layout, saveFile, showToast, startDebugging, workspace],
   )
 
   // Global keyboard shortcuts
@@ -639,6 +786,52 @@ export function useWorkbenchFacade() {
     if (typeof window === "undefined") return
 
     function handleKeyDown(event: KeyboardEvent) {
+      // DAP Debugger shortcuts
+      if (event.key === "F5") {
+        event.preventDefault()
+        if (event.shiftKey) {
+          if (isDebugging) {
+            terminateDebugging()
+          }
+        } else {
+          if (
+            !isDebugging ||
+            debugState.status === "idle" ||
+            debugState.status === "terminated"
+          ) {
+            startDebugging()
+          } else if (debugState.status === "stopped") {
+            stepDebugging("continue")
+          }
+        }
+        return
+      }
+      if (event.key === "F10") {
+        if (isDebugging && debugState.status === "stopped") {
+          event.preventDefault()
+          stepDebugging("stepOver")
+          return
+        }
+      }
+      if (event.key === "F11") {
+        if (isDebugging && debugState.status === "stopped") {
+          event.preventDefault()
+          if (event.shiftKey) {
+            stepDebugging("stepOut")
+          } else {
+            stepDebugging("stepIn")
+          }
+          return
+        }
+      }
+      if (event.key === "F9") {
+        if (editor.activeTab && editor.cursorPosition.line > 0) {
+          event.preventDefault()
+          toggleBreakpoint(editor.activeTab, editor.cursorPosition.line)
+          return
+        }
+      }
+
       if (
         (event.metaKey || event.ctrlKey) &&
         (event.key.toLowerCase() === "k" || event.key.toLowerCase() === "p")
@@ -720,9 +913,15 @@ export function useWorkbenchFacade() {
     closeTabInGroup,
     confirmCloseFile,
     confirmRevertFile,
+    debugState.status,
     editor,
+    isDebugging,
     layout,
     saveFile,
+    startDebugging,
+    stepDebugging,
+    terminateDebugging,
+    toggleBreakpoint,
   ])
 
   const createSessionWithSettings = useCallback(
@@ -983,6 +1182,18 @@ export function useWorkbenchFacade() {
     setTerminalRunning: terminal.setTerminalRunning,
     sendTerminalCommand: terminal.sendTerminalCommand,
     clearTerminal: terminal.clearTerminal,
+
+    // DAP Debugger (Sub-Phase 6.5)
+    debugState,
+    isDebugging,
+    startDebugging,
+    stepDebugging,
+    terminateDebugging,
+    breakpoints: editor.breakpoints,
+    toggleBreakpoint,
+    clearBreakpoints: editor.clearBreakpoints,
+    activeDebugLine: editor.activeDebugLine,
+    setActiveDebugLine: editor.setActiveDebugLine,
 
     // Chat & Context Extractor
     sessions: chat.sessions,

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/aditwicaksono/aegiscode/server/internal/ai"
+	"github.com/aditwicaksono/aegiscode/server/internal/debug"
 	"github.com/aditwicaksono/aegiscode/server/internal/git"
 	"github.com/aditwicaksono/aegiscode/server/internal/platform"
 	"github.com/aditwicaksono/aegiscode/server/internal/store"
@@ -30,6 +31,7 @@ type Server struct {
 	terminal   *terminal.Manager
 	supervisor *supervisor.Manager
 	store      *store.Store
+	debug      *debug.Manager
 	logMu      sync.RWMutex
 	logSubs    map[chan LogEvent]struct{}
 	workerMu   sync.RWMutex
@@ -54,6 +56,7 @@ func NewServer(ws *workspace.Manager, picker platform.FolderPicker, customStore 
 		git:        git.NewService(ws),
 		terminal:   terminal.NewManager(),
 		store:      st,
+		debug:      debug.NewManager(),
 		logSubs:    make(map[chan LogEvent]struct{}),
 		workerSubs: make(map[chan supervisor.CrashEvent]struct{}),
 	}
@@ -62,6 +65,11 @@ func NewServer(ws *workspace.Manager, picker platform.FolderPicker, customStore 
 		s.BroadcastWorkerCrash(evt)
 	})
 	return s
+}
+
+// Debug returns the active debugger manager.
+func (s *Server) Debug() *debug.Manager {
+	return s.debug
 }
 
 // Store returns the active flat-file persistence store.
@@ -203,6 +211,14 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/ai/skills", s.handleAISkills)
 	mux.HandleFunc("/api/v1/ai/transcript/", s.handleAITranscript)
 	mux.HandleFunc("/api/v1/ai/chat", s.handleAIChatStream)
+
+	// Bundled DAP Debugger (Delve) Endpoints (Sub-Phase 6.5)
+	mux.HandleFunc("/api/v1/debug/start", s.handleDebugStart)
+	mux.HandleFunc("/api/v1/debug/breakpoints", s.handleDebugBreakpoints)
+	mux.HandleFunc("/api/v1/debug/step", s.handleDebugStep)
+	mux.HandleFunc("/api/v1/debug/state", s.handleDebugState)
+	mux.HandleFunc("/api/v1/debug/terminate", s.handleDebugTerminate)
+	mux.HandleFunc("/api/v1/events/debug", s.handleDebugEvents)
 
 	return corsMiddleware(mux)
 }
@@ -1844,5 +1860,166 @@ func (s *Server) handleAIChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
+
+// --- Bundled DAP Debugger Handlers (Sub-Phase 6.5) ---
+
+func (s *Server) handleDebugStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req debug.StartDebugRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if req.Cwd == "" && s.ws != nil {
+		req.Cwd, _ = s.ws.GetRoot()
+	}
+	if req.Program == "" {
+		if req.Cwd != "" {
+			req.Program = req.Cwd
+		} else {
+			req.Program = "."
+		}
+	}
+	if err := s.debug.Start(r.Context(), req); err != nil {
+		if errors.Is(err, debug.ErrDelveNotFound) {
+			jsonResponse(w, http.StatusNotFound, map[string]any{
+				"status":  "error",
+				"code":    "dlv_not_found",
+				"message": err.Error(),
+			})
+			return
+		}
+		jsonError(w, http.StatusInternalServerError, "failed to start debug session: "+err.Error())
+		return
+	}
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"status": "ok",
+		"state":  s.debug.GetState(),
+	})
+}
+
+func (s *Server) handleDebugBreakpoints(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req debug.SetBreakpointsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if req.File == "" {
+		jsonError(w, http.StatusBadRequest, "file parameter is required")
+		return
+	}
+	bps, err := s.debug.SetBreakpoints(r.Context(), req.File, req.Lines)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "failed to set breakpoints: "+err.Error())
+		return
+	}
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"status":      "ok",
+		"file":        req.File,
+		"breakpoints": bps,
+	})
+}
+
+func (s *Server) handleDebugStep(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req debug.StepRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if req.Action == "" {
+		jsonError(w, http.StatusBadRequest, "action parameter is required")
+		return
+	}
+	if err := s.debug.Step(r.Context(), req.Action); err != nil {
+		jsonError(w, http.StatusInternalServerError, "failed to execute debug step: "+err.Error())
+		return
+	}
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"status": "ok",
+		"action": req.Action,
+	})
+}
+
+func (s *Server) handleDebugState(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	jsonResponse(w, http.StatusOK, s.debug.GetState())
+}
+
+func (s *Server) handleDebugTerminate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if err := s.debug.Terminate(); err != nil {
+		jsonError(w, http.StatusInternalServerError, "failed to terminate debug session: "+err.Error())
+		return
+	}
+	jsonResponse(w, http.StatusOK, map[string]string{
+		"status": "ok",
+	})
+}
+
+func (s *Server) handleDebugEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		jsonError(w, http.StatusInternalServerError, "streaming unsupported by server")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	ch, unsub := s.debug.Subscribe()
+	defer unsub()
+
+	// Initial connected event
+	fmt.Fprintf(w, "event: connected\ndata: {\"status\":\"connected\"}\n\n")
+	flusher.Flush()
+
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			fmt.Fprintf(w, ": ping\n\n")
+			flusher.Flush()
+		case evt, ok := <-ch:
+			if !ok {
+				return
+			}
+			data, err := json.Marshal(evt)
+			if err == nil {
+				fmt.Fprintf(w, "event: %s\ndata: %s\n\n", evt.Type, string(data))
+				flusher.Flush()
+			}
+		}
+	}
+}
+
 
 

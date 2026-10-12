@@ -125,7 +125,7 @@
 ---
 
 ### Phase 6: Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger
-- **Status**: 🟡 Active (Sub-Phases 6.1, 6.2, 6.3, 6.4, 6.6, 6.7, 6.8, 6.9, and 6.10 Completed; Sub-Phases 6.5 DAP & 6.11 Append-Only Ledger Pending)
+- **Status**: 🟡 Active (Sub-Phases 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9, and 6.10 Completed; Sub-Phase 6.11 Append-Only Ledger Pending)
 
 #### Sub-Phase 6.1: Live Workspace Engine & File Operations
 - **Status**: ✅ Completed
@@ -198,9 +198,24 @@
   - **Verification**: 100% unit and integration test coverage (`TestStoreInitialization`, `TestConfigPersistence`, `TestAppStateAndRecentProjects`, `TestChatSessionsCRUD`, `TestSanitizeIDTraversalGuard`, `TestLegacyMigration`, and `TestStorageEndpoints`).
 
 #### Sub-Phase 6.5: Bundled DAP Debugger (Delve `dlv`) Engine
-- **Status**: 🟡 Next
+- **Status**: ✅ Completed
 - **Deliverables**:
-  - Debug Adapter Protocol (DAP) client proxy and bundled Delve runner for step-by-step Go and backend debugging through the web UI.
+  - **Supervised Delve Runner & Host Toolchain Discovery (`server/internal/debug`)**:
+    - Dynamic host Delve resolution via `exec.LookPath("dlv")`, `$GOPATH/bin/dlv`, and `$HOME/go/bin/dlv` with explicit `delve_not_found` error payload and 1-click install guidance.
+    - Out-of-process execution running `dlv dap --listen=127.0.0.1:<port>` with POSIX process group leadership (`Setsid`/`Setpgid`) and ephemeral TCP port allocation (`AllocateFreePort`).
+    - Anti-orphan process group lifecycle teardown with `SIGTERM` followed by a 250ms `SIGKILL` watchdog to `-pid`, guaranteeing zero zombie Delve processes or lingering TCP ports.
+  - **DAP Client Proxy & JSON-RPC Bridge**:
+    - Pure Go DAP client (`Client`) implementing standard `Content-Length` framing reader/writer and sequence-correlated JSON-RPC requests/events.
+    - Full protocol coverage: `initialize`, `launch`, `setBreakpoints`, `configurationDone`, `continue`, `next` (step over), `stepIn`, `stepOut`, `pause`, `threads`, `stackTrace`, `scopes`, `variables`, and `disconnect`.
+    - Thread-safe `Manager` orchestrating session lifecycle, breakpoint synchronization, and state hydration (`stackFrames`, `variables`, `stopReason`).
+  - **REST Control Endpoints & Real-Time SSE Stream**:
+    - HTTP endpoints: `POST /api/v1/debug/start`, `POST /api/v1/debug/breakpoints`, `POST /api/v1/debug/step`, `GET /api/v1/debug/state`, `POST /api/v1/debug/terminate`.
+    - Real-time SSE downlink stream (`/api/v1/events/debug`) broadcasting `debug:started`, `debug:stopped`, `debug:continued`, `debug:output`, and `debug:terminated`.
+  - **In-Editor UI & Execution Controls**:
+    - Gutter breakpoint dots and hover ghost indicators in `CodePane.tsx` with click toggling.
+    - Stopped execution line highlight with left arrow glyph and accent background.
+    - Floating `DebugToolbar.tsx` with continue (`F5`), step over (`F10`), step into (`F11`), step out (`Shift+F11`), restart, and stop (`Shift+F5`).
+    - Dedicated `DebugView.tsx` in `BottomPanel.tsx` displaying interactive Variables tree and Call Stack list with frame navigation.
 
 #### Sub-Phase 6.6: Single Cross-Platform Binary, Embedded Frontend (`embed.FS`) & Native Desktop Window
 - **Status**: ✅ Completed

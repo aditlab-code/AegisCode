@@ -49,6 +49,9 @@ export function CodePane({
     focusedGroup,
     tabSize,
     settings,
+    breakpoints,
+    toggleBreakpoint,
+    activeDebugLine,
   } = useWorkbench()
 
   const editorFontSize = settings?.editor?.fontSize ?? 13.5
@@ -400,6 +403,12 @@ export function CodePane({
             {lines.map((_, index) => {
               const lineNum = index + 1
               const diag = getLineDiagnostic(lineNum)
+              const fileBreakpoints = breakpoints?.[filename] || []
+              const hasBreakpoint = fileBreakpoints.includes(lineNum)
+              const isStoppedHere =
+                activeDebugLine?.file === filename &&
+                activeDebugLine.line === lineNum
+
               return (
                 <div
                   className={`line-number ${
@@ -408,7 +417,27 @@ export function CodePane({
                       : ""
                   }`}
                   key={index}
+                  onClick={() => toggleBreakpoint(filename, lineNum)}
+                  title={`Line ${lineNum} (Click to toggle breakpoint)`}
                 >
+                  {isStoppedHere ? (
+                    <span
+                      className="debug-arrow-glyph"
+                      title="Paused at breakpoint"
+                    />
+                  ) : hasBreakpoint ? (
+                    <span
+                      className="breakpoint-dot"
+                      title={`Breakpoint on line ${lineNum}`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleBreakpoint(filename, lineNum)
+                      }}
+                    />
+                  ) : (
+                    <span className="breakpoint-ghost" />
+                  )}
+
                   {diag && (
                     <span
                       className={`diagnostic-dot ${
@@ -449,12 +478,19 @@ export function CodePane({
               {lines.map((lineText, index) => {
                 const lineNum = index + 1
                 const isCurrent = isFocused && cursorPosition.line === lineNum
+                const isStoppedHere =
+                  activeDebugLine?.file === filename &&
+                  activeDebugLine.line === lineNum
                 const diag = getLineDiagnostic(lineNum)
 
                 return (
                   <div
                     className={`code-line-layer ${
-                      isCurrent ? "current-line" : ""
+                      isStoppedHere
+                        ? "debug-stopped-line"
+                        : isCurrent
+                          ? "current-line"
+                          : ""
                     }`}
                     key={index}
                   >

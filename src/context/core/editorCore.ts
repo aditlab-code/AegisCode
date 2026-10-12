@@ -249,6 +249,38 @@ export function useEditorCore(onFileRequested?: (filename: string) => void) {
 
   const [encoding, setEncoding] = useState<string>("UTF-8")
 
+  // Breakpoints & debug execution pointer state
+  const [breakpoints, setBreakpointsMap] = useState<Record<string, number[]>>(
+    {},
+  )
+  const [activeDebugLine, setActiveDebugLine] = useState<{
+    file: string
+    line: number
+  } | null>(null)
+
+  const toggleBreakpoint = useCallback((file: string, line: number) => {
+    if (!file || line <= 0) return
+    setBreakpointsMap((prev) => {
+      const existing = prev[file] || []
+      const next = existing.includes(line)
+        ? existing.filter((l) => l !== line)
+        : [...existing, line].sort((a, b) => a - b)
+      return {
+        ...prev,
+        [file]: next,
+      }
+    })
+  }, [])
+
+  const clearBreakpoints = useCallback((file?: string) => {
+    setBreakpointsMap((prev) => {
+      if (!file) return {}
+      const next = { ...prev }
+      delete next[file]
+      return next
+    })
+  }, [])
+
   const setTabSize = useCallback((size: number) => {
     setTabSizeState(size)
     try {
@@ -580,5 +612,11 @@ export function useEditorCore(onFileRequested?: (filename: string) => void) {
     toggleTabSize,
     encoding,
     setEncoding,
+    breakpoints,
+    setBreakpointsMap,
+    toggleBreakpoint,
+    clearBreakpoints,
+    activeDebugLine,
+    setActiveDebugLine,
   }
 }

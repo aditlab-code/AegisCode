@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aditwicaksono/aegiscode/server/internal/debug"
 	"github.com/aditwicaksono/aegiscode/server/internal/git"
 	"github.com/aditwicaksono/aegiscode/server/internal/platform"
 	"github.com/aditwicaksono/aegiscode/server/internal/store"
@@ -1095,6 +1097,93 @@ func TestAIModelsAndSkillsEndpoints(t *testing.T) {
 		t.Errorf("expected 400 Bad Request for empty prompt, got %d", respChat.StatusCode)
 	}
 }
+
+func TestDebugApiEndpoints(t *testing.T) {
+	_, handler, tempDir := setupTestServer(t, "")
+	defer os.RemoveAll(tempDir)
+
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+
+	// 1. GET /api/v1/debug/state
+	respState, err := http.Get(ts.URL + "/api/v1/debug/state")
+	if err != nil {
+		t.Fatalf("failed to get debug state: %v", err)
+	}
+	defer respState.Body.Close()
+	if respState.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK for debug state, got %d", respState.StatusCode)
+	}
+	var state debug.DebugState
+	if err := json.NewDecoder(respState.Body).Decode(&state); err != nil {
+		t.Fatalf("failed to decode debug state: %v", err)
+	}
+	if state.Active || state.Status != "idle" {
+		t.Fatalf("expected inactive idle state, got %+v", state)
+	}
+
+	// 2. POST /api/v1/debug/breakpoints
+	bpReq := debug.SetBreakpointsRequest{
+		File:  "main.go",
+		Lines: []int{42, 50},
+	}
+	bpBytes, _ := json.Marshal(bpReq)
+	respBp, err := http.Post(ts.URL+"/api/v1/debug/breakpoints", "application/json", bytes.NewReader(bpBytes))
+	if err != nil {
+		t.Fatalf("failed to post breakpoints: %v", err)
+	}
+	defer respBp.Body.Close()
+	if respBp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK for breakpoints, got %d", respBp.StatusCode)
+	}
+
+	// 3. POST /api/v1/debug/step without active session -> 500 error
+	stepReq := debug.StepRequest{Action: "continue"}
+	stepBytes, _ := json.Marshal(stepReq)
+	respStep, err := http.Post(ts.URL+"/api/v1/debug/step", "application/json", bytes.NewReader(stepBytes))
+	if err != nil {
+		t.Fatalf("failed to post step: %v", err)
+	}
+	defer respStep.Body.Close()
+	if respStep.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected 500 InternalServerError for step without session, got %d", respStep.StatusCode)
+	}
+
+	// 4. POST /api/v1/debug/terminate when idle -> 200 OK
+	respTerm, err := http.Post(ts.URL+"/api/v1/debug/terminate", "application/json", nil)
+	if err != nil {
+		t.Fatalf("failed to post terminate: %v", err)
+	}
+	defer respTerm.Body.Close()
+	if respTerm.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK for terminate, got %d", respTerm.StatusCode)
+	}
+
+	// 5. GET /api/v1/events/debug SSE connection
+	reqSSE, err := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/events/debug", nil)
+	if err != nil {
+		t.Fatalf("failed to create SSE request: %v", err)
+	}
+	respSSE, err := http.DefaultClient.Do(reqSSE)
+	if err != nil {
+		t.Fatalf("failed to connect to debug events SSE: %v", err)
+	}
+	defer respSSE.Body.Close()
+
+	if respSSE.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK for SSE, got %d", respSSE.StatusCode)
+	}
+
+	reader := bufio.NewReader(respSSE.Body)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("failed to read initial SSE line: %v", err)
+	}
+	if !strings.Contains(line, "event: connected") {
+		t.Fatalf("expected event: connected, got %s", line)
+	}
+}
+
 
 
 

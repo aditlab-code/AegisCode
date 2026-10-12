@@ -7,6 +7,7 @@ import type { BottomTab, OutputChannel } from "../../../types/workbench"
 import { TerminalView } from "./TerminalView"
 import { ProblemsView } from "./ProblemsView"
 import { OutputView } from "./OutputView"
+import { DebugView } from "./DebugView"
 
 export function BottomPanel() {
   const {
@@ -318,6 +319,7 @@ export function BottomPanel() {
         {activeBottomTab === "Output" && (
           <OutputView channel={outputChannel} logs={outputLogs} />
         )}
+        {activeBottomTab === "Debug" && <DebugView />}
       </div>
     </section>
   )
