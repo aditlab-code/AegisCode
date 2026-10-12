@@ -2,20 +2,34 @@ import { useWorkbench } from "../../../context/WorkbenchContext"
 import { Icon } from "../../ui/Icon"
 
 export function DebugView() {
-  const { debugState, isDebugging, startDebugging, openFileInGroup } =
-    useWorkbench()
+  const {
+    debugState,
+    isDebugging,
+    startDebugging,
+    openFileInGroup,
+    activeTab,
+  } = useWorkbench()
 
   if (!isDebugging || debugState.status === "idle") {
+    const isGoActive = activeTab?.endsWith(".go")
+    const targetLabel = isGoActive
+      ? activeTab
+      : "Auto-detect (Go package / main.go)"
+
     return (
       <div className="flex flex-col items-center justify-center h-full text-center px-4 py-8 text-ink-muted">
         <Icon name="debug" size={32} className="mb-3 text-ink-muted/50" />
         <p className="text-sm font-medium text-ink mb-1">
           No active debug session
         </p>
-        <p className="text-xs text-ink-muted mb-4 max-w-sm">
+        <p className="text-xs text-ink-muted mb-3 max-w-sm">
           Set breakpoints by clicking the line number gutter, then start
           step-by-step Go debugging.
         </p>
+        <div className="flex items-center gap-1.5 px-2.5 py-1 mb-4 rounded bg-surface border border-line text-[11px] font-mono text-ink">
+          <span className="text-ink-muted">Target:</span>
+          <span className="text-accent truncate max-w-xs">{targetLabel}</span>
+        </div>
         <button
           type="button"
           onClick={() => startDebugging()}

@@ -54,3 +54,4 @@ __debug_bin*
 # Internal Developer Documentation
 /docs/
 
+.DS_Store

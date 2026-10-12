@@ -96,6 +96,8 @@ export function TerminalView() {
     fitAddonRef.current = fitAddon
 
     // 2. Synchronize dimensions
+    let isConnected = false
+
     const syncSize = () => {
       try {
         if (
@@ -106,7 +108,7 @@ export function TerminalView() {
           return
         }
         fitAddon.fit()
-        if (term.cols && term.rows && isLive) {
+        if (term.cols && term.rows && isLive && isConnected) {
           void resizeTerminalApi(sessionId, term.cols, term.rows)
         }
       } catch {
@@ -127,7 +129,7 @@ export function TerminalView() {
       const pending = inputBufferRef.current
       inputBufferRef.current = ""
       flushTimerRef.current = null
-      if (!pending || !isLive) return
+      if (!pending || !isLive || !isConnected) return
 
       void sendTerminalInputApi(sessionId, pending)
     }
@@ -145,6 +147,7 @@ export function TerminalView() {
       sse = new EventSource(`/api/v1/events/terminal/${sessionId}`)
 
       sse.addEventListener("connected", () => {
+        isConnected = true
         setTerminalRunning(true)
         syncSize()
       })
@@ -166,12 +169,14 @@ export function TerminalView() {
       })
 
       sse.addEventListener("exit", () => {
+        isConnected = false
         setTerminalRunning(false)
         term.write("\r\n\x1b[90m[Process finished]\x1b[0m\r\n")
       })
 
       sse.onerror = () => {
         // SSE closed or severed; disconnect to avoid infinite retry loops if Go server is offline
+        isConnected = false
         sse?.close()
         setTerminalRunning(false)
       }

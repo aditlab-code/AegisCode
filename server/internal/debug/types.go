@@ -41,11 +41,12 @@ type Event struct {
 
 // StartDebugRequest holds parameters for launching a debug session.
 type StartDebugRequest struct {
-	Program string            `json:"program"`          // e.g. "./cmd/server" or workspace root
-	Args    []string          `json:"args,omitempty"`    // CLI args for program
-	Env     map[string]string `json:"env,omitempty"`     // Custom environment variables
-	Mode    string            `json:"mode,omitempty"`    // "debug" | "test" | "exec" (default: "debug")
-	Cwd     string            `json:"cwd,omitempty"`     // Working directory
+	Program     string              `json:"program"`               // e.g. "./cmd/server" or workspace root
+	Args        []string            `json:"args,omitempty"`        // CLI args for program
+	Env         map[string]string   `json:"env,omitempty"`         // Custom environment variables
+	Mode        string              `json:"mode,omitempty"`        // "debug" | "test" | "exec" (default: "debug")
+	Cwd         string              `json:"cwd,omitempty"`         // Working directory
+	Breakpoints map[string][]int    `json:"breakpoints,omitempty"` // Initial file breakpoints
 }
 
 // Breakpoint represents a source file breakpoint.

@@ -130,6 +130,33 @@ describe("DAP Debugger (Delve) Frontend Workflow", () => {
       )
     })
 
+    it("calls startDebugSession with initial breakpoints included in payload", async () => {
+      const mockState: DebugState = { active: true, status: "running" }
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ status: "started", state: mockState }),
+      })
+
+      const res = await startDebugSession(
+        "server/cmd/server",
+        undefined,
+        undefined,
+        undefined,
+        { "main.go": [15, 25] },
+      )
+      expect(res.status).toBe("started")
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "/api/v1/debug/start",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            program: "server/cmd/server",
+            breakpoints: { "main.go": [15, 25] },
+          }),
+        }),
+      )
+    })
+
     it("returns error code and message on start failure", async () => {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: false,
@@ -143,6 +170,22 @@ describe("DAP Debugger (Delve) Frontend Workflow", () => {
       expect(res.status).toBe("error")
       expect(res.code).toBe("delve_not_found")
       expect(res.error).toBe("Delve not installed")
+    })
+
+    it("handles launch_failed error gracefully without throwing", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: async () => ({
+          error: "No Go files found in target directory",
+          code: "no_go_files",
+        }),
+      })
+
+      const res = await startDebugSession()
+      expect(res.status).toBe("error")
+      expect(res.code).toBe("no_go_files")
+      expect(res.error).toBe("No Go files found in target directory")
     })
 
     it("sets breakpoints via POST /api/v1/debug/breakpoints", async () => {

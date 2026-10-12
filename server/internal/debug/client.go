@@ -152,6 +152,10 @@ func (c *DAPClient) readLoop() {
 			close(ch)
 		}
 		c.pending = make(map[int]chan *Response)
+		for ch := range c.subscribers {
+			delete(c.subscribers, ch)
+			close(ch)
+		}
 		c.mu.Unlock()
 		close(c.doneChan)
 		_ = c.conn.Close()

@@ -53,6 +53,17 @@ func FindDelve() (string, error) {
 		}
 	}
 
+	// 4. Check standard macOS Homebrew / Unix binary locations
+	commonPaths := []string{
+		"/opt/homebrew/bin/dlv",
+		"/usr/local/bin/dlv",
+	}
+	for _, p := range commonPaths {
+		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+			return p, nil
+		}
+	}
+
 	return "", ErrDelveNotFound
 }
 
@@ -73,6 +84,7 @@ type Runner struct {
 	Port     int
 	Cmd      *exec.Cmd
 	Cwd      string
+	cancel   context.CancelFunc
 	doneChan chan struct{}
 }
 
@@ -83,13 +95,15 @@ func StartDelve(ctx context.Context, cwd string) (*Runner, error) {
 		return nil, err
 	}
 
+	sessionCtx, sessionCancel := context.WithCancel(context.Background())
+
 	args := []string{
 		"dap",
 		"--listen=127.0.0.1:0",
 		"--check-go-version=false",
 	}
 
-	cmd := exec.CommandContext(ctx, dlvPath, args...)
+	cmd := exec.CommandContext(sessionCtx, dlvPath, args...)
 	if cwd != "" {
 		cmd.Dir = cwd
 	}
@@ -98,6 +112,7 @@ func StartDelve(ctx context.Context, cwd string) (*Runner, error) {
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
+		sessionCancel()
 		return nil, fmt.Errorf("failed to create delve stdout pipe: %w", err)
 	}
 
@@ -105,6 +120,7 @@ func StartDelve(ctx context.Context, cwd string) (*Runner, error) {
 	cmd.Stderr = &stderrBuf
 
 	if err := cmd.Start(); err != nil {
+		sessionCancel()
 		return nil, fmt.Errorf("failed to start delve: %w", err)
 	}
 
@@ -112,6 +128,7 @@ func StartDelve(ctx context.Context, cwd string) (*Runner, error) {
 		Path:     dlvPath,
 		Cmd:      cmd,
 		Cwd:      cwd,
+		cancel:   sessionCancel,
 		doneChan: make(chan struct{}),
 	}
 
@@ -182,6 +199,10 @@ func StartDelve(ctx context.Context, cwd string) (*Runner, error) {
 
 // Close gracefully terminates the Delve runner process group.
 func (r *Runner) Close() error {
+	if r.cancel != nil {
+		r.cancel()
+	}
+
 	if r.Cmd == nil || r.Cmd.Process == nil {
 		return nil
 	}

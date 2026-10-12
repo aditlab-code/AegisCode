@@ -531,9 +531,23 @@ export function useWorkbenchFacade() {
 
   const startDebugging = useCallback(
     async (program?: string) => {
-      const target = program || workspace.rootWorkspacePath || "."
+      let target = program
+      if (!target) {
+        if (editor.activeTab?.endsWith(".go")) {
+          target = editor.activeTab
+        } else {
+          target = workspace.rootWorkspacePath || "."
+        }
+      }
+
       try {
-        const res = await startDebugSession(target)
+        const res = await startDebugSession(
+          target,
+          undefined,
+          undefined,
+          workspace.rootWorkspacePath || undefined,
+          editor.breakpoints,
+        )
         if (res.status === "error") {
           if (res.code === "delve_not_found" || res.code === "dlv_not_found") {
             showToast(
@@ -551,11 +565,6 @@ export function useWorkbenchFacade() {
           status: "running",
         }
         setDebugState(newState)
-        for (const [file, lines] of Object.entries(editor.breakpoints)) {
-          if (lines.length > 0) {
-            await setBreakpoints(file, lines).catch(() => {})
-          }
-        }
         showToast("Debug session started")
         return true
       } catch (err: unknown) {
@@ -564,7 +573,13 @@ export function useWorkbenchFacade() {
         return false
       }
     },
-    [editor.breakpoints, layout, showToast, workspace.rootWorkspacePath],
+    [
+      editor.activeTab,
+      editor.breakpoints,
+      layout,
+      showToast,
+      workspace.rootWorkspacePath,
+    ],
   )
 
   const stepDebugging = useCallback(

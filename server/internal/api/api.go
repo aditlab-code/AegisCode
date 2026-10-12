@@ -1052,6 +1052,10 @@ func (s *Server) handleTerminalOperations(w http.ResponseWriter, r *http.Request
 				return
 			}
 			if err := s.terminal.WriteInput(sessionID, []byte(req.Data)); err != nil {
+				if errors.Is(err, terminal.ErrSessionNotFound) || errors.Is(err, terminal.ErrSessionClosed) {
+					jsonError(w, http.StatusNotFound, err.Error())
+					return
+				}
 				jsonError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
@@ -1066,6 +1070,10 @@ func (s *Server) handleTerminalOperations(w http.ResponseWriter, r *http.Request
 				return
 			}
 			if err := s.terminal.Resize(sessionID, req.Cols, req.Rows); err != nil {
+				if errors.Is(err, terminal.ErrSessionNotFound) || errors.Is(err, terminal.ErrSessionClosed) {
+					jsonError(w, http.StatusNotFound, err.Error())
+					return
+				}
 				jsonError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
@@ -1122,8 +1130,8 @@ func (s *Server) handleTerminalEvents(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-notify:
-			// Stateless policy: client disconnected, terminate PTY process tree cleanly
-			_ = s.terminal.CloseSession(sessionID)
+			// Client disconnected from SSE stream: unsub deferred cleanup runs,
+			// PTY session remains alive for client re-subscription or tab navigation.
 			return
 		case <-ticker.C:
 			fmt.Fprintf(w, ": ping\n\n")
@@ -1871,7 +1879,88 @@ func (s *Server) handleAIChatStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// --- Bundled DAP Debugger Handlers (Sub-Phase 6.5) ---
+// resolveGoProgram locates an executable Go package or main entrypoint if the specified target lacks Go files.
+func resolveGoProgram(program, cwd string) string {
+	target := strings.TrimSpace(program)
+	if target == "" || target == "." {
+		if cwd != "" {
+			target = cwd
+		} else {
+			target = "."
+		}
+	}
+
+	// 1. Direct .go file
+	if strings.HasSuffix(target, ".go") {
+		if fi, err := os.Stat(target); err == nil && !fi.IsDir() {
+			return target
+		}
+		if cwd != "" && !filepath.IsAbs(target) {
+			absTarget := filepath.Join(cwd, target)
+			if fi, err := os.Stat(absTarget); err == nil && !fi.IsDir() {
+				return absTarget
+			}
+		}
+		return target
+	}
+
+	// 2. Directory check
+	checkDir := target
+	if !filepath.IsAbs(checkDir) && cwd != "" {
+		checkDir = filepath.Join(cwd, checkDir)
+	}
+
+	if fi, err := os.Stat(checkDir); err == nil && fi.IsDir() {
+		// Does this directory directly contain any .go files?
+		if entries, err := os.ReadDir(checkDir); err == nil {
+			for _, e := range entries {
+				if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") {
+					return checkDir
+				}
+			}
+		}
+
+		// Look for common main entrypoints under checkDir
+		candidates := []string{
+			filepath.Join(checkDir, "main.go"),
+			filepath.Join(checkDir, "cmd", "server", "main.go"),
+			filepath.Join(checkDir, "server", "cmd", "server", "main.go"),
+		}
+		for _, c := range candidates {
+			if fi, err := os.Stat(c); err == nil && !fi.IsDir() {
+				return filepath.Dir(c)
+			}
+		}
+
+		// Check subdirectories in cmd/
+		cmdDir := filepath.Join(checkDir, "cmd")
+		if cmdEntries, err := os.ReadDir(cmdDir); err == nil {
+			for _, entry := range cmdEntries {
+				if entry.IsDir() {
+					mainFile := filepath.Join(cmdDir, entry.Name(), "main.go")
+					if fi, err := os.Stat(mainFile); err == nil && !fi.IsDir() {
+						return filepath.Dir(mainFile)
+					}
+				}
+			}
+		}
+
+		// Check subdirectories in server/cmd/
+		serverCmdDir := filepath.Join(checkDir, "server", "cmd")
+		if cmdEntries, err := os.ReadDir(serverCmdDir); err == nil {
+			for _, entry := range cmdEntries {
+				if entry.IsDir() {
+					mainFile := filepath.Join(serverCmdDir, entry.Name(), "main.go")
+					if fi, err := os.Stat(mainFile); err == nil && !fi.IsDir() {
+						return filepath.Dir(mainFile)
+					}
+				}
+			}
+		}
+	}
+
+	return target
+}
 
 func (s *Server) handleDebugStart(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -1886,13 +1975,34 @@ func (s *Server) handleDebugStart(w http.ResponseWriter, r *http.Request) {
 	if req.Cwd == "" && s.ws != nil {
 		req.Cwd, _ = s.ws.GetRoot()
 	}
-	if req.Program == "" {
-		if req.Cwd != "" {
-			req.Program = req.Cwd
-		} else {
-			req.Program = "."
+
+	req.Program = resolveGoProgram(req.Program, req.Cwd)
+
+	// Validate whether target or its folder contains Go files
+	checkTarget := req.Program
+	if !filepath.IsAbs(checkTarget) && req.Cwd != "" {
+		checkTarget = filepath.Join(req.Cwd, checkTarget)
+	}
+
+	if fi, err := os.Stat(checkTarget); err == nil && fi.IsDir() {
+		entries, _ := os.ReadDir(checkTarget)
+		hasGo := false
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") {
+				hasGo = true
+				break
+			}
+		}
+		if !hasGo {
+			jsonResponse(w, http.StatusBadRequest, map[string]any{
+				"status":  "error",
+				"code":    "no_go_files",
+				"message": "No Go files found in target directory. Please open a .go file or specify an entrypoint package.",
+			})
+			return
 		}
 	}
+
 	if err := s.debug.Start(r.Context(), req); err != nil {
 		if errors.Is(err, debug.ErrDelveNotFound) {
 			jsonResponse(w, http.StatusNotFound, map[string]any{
@@ -1902,7 +2012,11 @@ func (s *Server) handleDebugStart(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		jsonError(w, http.StatusInternalServerError, "failed to start debug session: "+err.Error())
+		jsonResponse(w, http.StatusBadRequest, map[string]any{
+			"status":  "error",
+			"code":    "launch_failed",
+			"message": "failed to start debug session: " + err.Error(),
+		})
 		return
 	}
 	jsonResponse(w, http.StatusOK, map[string]any{

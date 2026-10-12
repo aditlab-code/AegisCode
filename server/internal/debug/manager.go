@@ -76,12 +76,21 @@ func (m *Manager) IsActive() bool {
 
 // Start launches a new debugging session.
 func (m *Manager) Start(ctx context.Context, req StartDebugRequest) error {
-	m.mu.Lock()
-	if m.state.Active {
-		m.mu.Unlock()
-		return errors.New("a debug session is already active; terminate it first")
+	m.mu.RLock()
+	isActive := m.state.Active
+	m.mu.RUnlock()
+	if isActive {
+		_ = m.Terminate()
 	}
-	m.mu.Unlock()
+
+	// Merge initial breakpoints from request if provided
+	if len(req.Breakpoints) > 0 {
+		m.mu.Lock()
+		for f, lines := range req.Breakpoints {
+			m.breakpoints[f] = lines
+		}
+		m.mu.Unlock()
+	}
 
 	// 1. Start Delve DAP runner
 	runner, err := StartDelve(ctx, req.Cwd)
@@ -112,6 +121,11 @@ func (m *Manager) Start(ctx context.Context, req StartDebugRequest) error {
 	m.mu.Unlock()
 
 	go m.eventLoop(evtCh)
+
+	go func() {
+		<-runner.doneChan
+		_ = m.Terminate()
+	}()
 
 	// 4. Initialize DAP
 	initCtx, initCancel := context.WithTimeout(ctx, 5*time.Second)
@@ -164,6 +178,10 @@ func (m *Manager) Start(ctx context.Context, req StartDebugRequest) error {
 
 // eventLoop handles events pushed by Delve DAP.
 func (m *Manager) eventLoop(evtCh chan *Event) {
+	defer func() {
+		_ = m.Terminate()
+	}()
+
 	for evt := range evtCh {
 		if evt == nil {
 			return

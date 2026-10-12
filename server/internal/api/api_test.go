@@ -1220,6 +1220,65 @@ func TestSystemShutdownEndpoint(t *testing.T) {
 	}
 }
 
+func TestTerminalResizeNotFound(t *testing.T) {
+	_, handler, tempDir := setupTestServer(t, "")
+	defer os.RemoveAll(tempDir)
+
+	resizeBody, _ := json.Marshal(TerminalResizeRequest{Cols: 80, Rows: 24})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/terminal/non-existent-session/resize", bytes.NewReader(resizeBody))
+	rr := executeRequest(handler, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found for non-existent session, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestDebugStartNoGoFiles(t *testing.T) {
+	_, handler, tempDir := setupTestServer(t, "")
+	defer os.RemoveAll(tempDir)
+
+	// An empty temp directory has no Go files
+	startBody, _ := json.Marshal(debug.StartDebugRequest{
+		Program: tempDir,
+		Cwd:     tempDir,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/debug/start", bytes.NewReader(startBody))
+	rr := executeRequest(handler, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for directory without Go files, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp["code"] != "no_go_files" {
+		t.Fatalf("expected code 'no_go_files', got %v", resp["code"])
+	}
+}
+
+func TestDebugResolveGoProgram(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "resolve-go-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create cmd/app/main.go
+	cmdAppDir := filepath.Join(tempDir, "cmd", "app")
+	if err := os.MkdirAll(cmdAppDir, 0755); err != nil {
+		t.Fatalf("failed to create cmd/app dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cmdAppDir, "main.go"), []byte("package main\nfunc main(){}"), 0644); err != nil {
+		t.Fatalf("failed to create main.go: %v", err)
+	}
+
+	// When given empty program or root tempDir, resolveGoProgram should discover cmdAppDir
+	resolved := resolveGoProgram("", tempDir)
+	if resolved != cmdAppDir {
+		t.Fatalf("expected resolved path to be %s, got %s", cmdAppDir, resolved)
+	}
+}
+
 
 
 
