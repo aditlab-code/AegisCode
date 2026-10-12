@@ -292,6 +292,7 @@ export function useChatCore() {
 
   const abortControllerRef = useRef<AbortController | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingSaveSessionRef = useRef<ChatSession | null>(null)
 
   // Fetch dynamic AI models and skills from backend
   useEffect(() => {
@@ -393,14 +394,42 @@ export function useChatCore() {
   // Debounced 3s: prevents HTTP POST spam during streaming (activeSession changes every 40ms).
   useEffect(() => {
     if (!activeSession) return
+    pendingSaveSessionRef.current = activeSession
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(() => {
       saveBackendChatSession(activeSession).catch(() => {})
+      pendingSaveSessionRef.current = null
     }, 3000)
     return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = null
+        if (pendingSaveSessionRef.current) {
+          saveBackendChatSession(pendingSaveSessionRef.current).catch(() => {})
+          pendingSaveSessionRef.current = null
+        }
+      }
     }
   }, [activeSession])
+
+  // Flush any pending session on window unload / pagehide so closing tab never drops recent messages
+  useEffect(() => {
+    const handleUnload = () => {
+      if (pendingSaveSessionRef.current) {
+        saveBackendChatSession(pendingSaveSessionRef.current, {
+          keepalive: true,
+        }).catch(() => {})
+        pendingSaveSessionRef.current = null
+      }
+    }
+    window.addEventListener("beforeunload", handleUnload)
+    window.addEventListener("pagehide", handleUnload)
+    return () => {
+      window.removeEventListener("beforeunload", handleUnload)
+      window.removeEventListener("pagehide", handleUnload)
+      handleUnload()
+    }
+  }, [])
 
   const createSession = useCallback(
     (provider?: ChatProvider, model?: string) => {

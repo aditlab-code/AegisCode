@@ -21,7 +21,7 @@ var (
 	ErrSessionClosed   = errors.New("terminal session already closed")
 )
 
-const maxHistoryBytes = 64 * 1024 // 64 KB ring buffer replay for reconnects & initial prompt
+const maxHistoryBytes = 512 * 1024 // 512 KB ring buffer replay for reconnects & initial prompt
 
 // Session represents an active interactive pseudo-terminal session.
 type Session struct {
@@ -268,6 +268,7 @@ func (m *Manager) withSession(sessionID string, fn func(sess *Session) error) er
 // Subscribe returns a channel that receives raw PTY byte output chunks,
 // immediately primed with any existing history buffer so late-joining
 // clients (like SSE EventSource) receive initial prompt and prior output.
+// Uses an elastic per-subscriber FIFO queue to absorb high bursts lossless.
 func (m *Manager) Subscribe(sessionID string) (<-chan []byte, func(), error) {
 	sess, err := m.GetSession(sessionID)
 	if err != nil {
@@ -280,24 +281,75 @@ func (m *Manager) Subscribe(sessionID string) (<-chan []byte, func(), error) {
 		return nil, nil, ErrSessionClosed
 	}
 
-	ch := make(chan []byte, 128)
+	in := make(chan []byte, 256)
+	out := make(chan []byte, 256)
+	done := make(chan struct{})
+
 	sess.subMu.Lock()
 	if len(sess.history) > 0 {
 		initial := make([]byte, len(sess.history))
 		copy(initial, sess.history)
-		ch <- initial
+		in <- initial
 	}
-	sess.subs[ch] = struct{}{}
+	sess.subs[in] = struct{}{}
 	sess.subMu.Unlock()
 	sess.mu.Unlock()
 
+	go func() {
+		defer close(out)
+		var queue [][]byte
+		for {
+			if len(queue) == 0 {
+				select {
+				case <-done:
+					return
+				case chunk, ok := <-in:
+					if !ok {
+						return
+					}
+					queue = append(queue, chunk)
+				}
+			}
+
+			select {
+			case <-done:
+				return
+			case chunk, ok := <-in:
+				if !ok {
+					for _, q := range queue {
+						select {
+						case <-done:
+							return
+						case out <- q:
+						}
+					}
+					return
+				}
+				// Elastic queue guard up to 8192 chunks (~32MB) to prevent OOM
+				if len(queue) < 8192 {
+					queue = append(queue, chunk)
+				}
+			case out <- queue[0]:
+				queue = queue[1:]
+			}
+		}
+	}()
+
 	unsubscribe := func() {
 		sess.subMu.Lock()
-		delete(sess.subs, ch)
+		if _, exists := sess.subs[in]; exists {
+			delete(sess.subs, in)
+			close(in)
+		}
 		sess.subMu.Unlock()
+		select {
+		case <-done:
+		default:
+			close(done)
+		}
 	}
 
-	return ch, unsubscribe, nil
+	return out, unsubscribe, nil
 }
 
 // WriteInput sends raw input bytes to the PTY master.

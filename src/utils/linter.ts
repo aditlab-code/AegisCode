@@ -100,6 +100,10 @@ interface DelimiterToken {
   col: number
 }
 
+interface TemplateContext {
+  depth: number
+}
+
 function validateJSOrTS(
   filename: string,
   lines: string[],
@@ -108,29 +112,179 @@ function validateJSOrTS(
   const stack: DelimiterToken[] = []
   const pairs: Record<string, string> = { "}": "{", ")": "(", "]": "[" }
 
+  let inBlockComment = false
+  const templateStack: TemplateContext[] = []
+  let inSingleQuote = false
+  let inDoubleQuote = false
+  let inRegex = false
+  let inRegexCharClass = false
+  let prevToken = ""
+
   lines.forEach((lineText, idx) => {
     const lineNum = idx + 1
-    const trimmed = lineText.trim()
+    let i = 0
 
-    // Skip comment lines
-    if (trimmed.startsWith("//") || trimmed.startsWith("/*")) return
-
-    // Check for common warning: console.log left in code
-    if (trimmed.includes("console.log(")) {
-      diagnostics.push({
-        id: `${filename}-warn-${lineNum}`,
-        title: "Unexpected console statement (no-console)",
-        location: `${filename} [${lineNum}, ${lineText.indexOf("console.log") + 1}]`,
-        type: "warning",
-        source: "eslint",
-      })
-    }
-
-    // Bracket balance tracking
-    for (let i = 0; i < lineText.length; i++) {
+    while (i < lineText.length) {
       const char = lineText[i]
+      const nextChar = i + 1 < lineText.length ? lineText[i + 1] : ""
+
+      // 1. Inside block comment /* ... */
+      if (inBlockComment) {
+        if (char === "*" && nextChar === "/") {
+          inBlockComment = false
+          i += 2
+          continue
+        }
+        i++
+        continue
+      }
+
+      // 2. Inside single quote string '...'
+      if (inSingleQuote) {
+        if (char === "\\") {
+          i += 2
+          continue
+        }
+        if (char === "'") {
+          inSingleQuote = false
+          prevToken = "string"
+        }
+        i++
+        continue
+      }
+
+      // 3. Inside double quote string "..."
+      if (inDoubleQuote) {
+        if (char === "\\") {
+          i += 2
+          continue
+        }
+        if (char === '"') {
+          inDoubleQuote = false
+          prevToken = "string"
+        }
+        i++
+        continue
+      }
+
+      // 4. Inside regex literal /.../
+      if (inRegex) {
+        if (char === "\\") {
+          i += 2
+          continue
+        }
+        if (char === "[" && !inRegexCharClass) {
+          inRegexCharClass = true
+        } else if (char === "]" && inRegexCharClass) {
+          inRegexCharClass = false
+        } else if (char === "/" && !inRegexCharClass) {
+          inRegex = false
+          prevToken = "regex"
+        }
+        i++
+        continue
+      }
+
+      // 5. Inside template literal text `...` (not inside ${...} interpolation)
+      const topTemplate = templateStack[templateStack.length - 1]
+      if (topTemplate && topTemplate.depth === 0) {
+        if (char === "\\") {
+          i += 2
+          continue
+        }
+        if (char === "`") {
+          templateStack.pop()
+          prevToken = "string"
+          i++
+          continue
+        }
+        if (char === "$" && nextChar === "{") {
+          topTemplate.depth = 1
+          stack.push({ char: "{", line: lineNum, col: i + 2 })
+          prevToken = "{"
+          i += 2
+          continue
+        }
+        i++
+        continue
+      }
+
+      // 6. Normal code or inside ${...} expression
+      if (char === " " || char === "\t" || char === "\r") {
+        i++
+        continue
+      }
+
+      // Comments
+      if (char === "/" && nextChar === "/") {
+        break
+      }
+      if (char === "/" && nextChar === "*") {
+        inBlockComment = true
+        i += 2
+        continue
+      }
+
+      // Strings
+      if (char === "'") {
+        inSingleQuote = true
+        i++
+        continue
+      }
+      if (char === '"') {
+        inDoubleQuote = true
+        i++
+        continue
+      }
+      if (char === "`") {
+        templateStack.push({ depth: 0 })
+        i++
+        continue
+      }
+
+      // Regex vs Division
+      if (char === "/") {
+        const canBeRegex =
+          !prevToken ||
+          /[=(?:,;!&|^~+*%\-<>]/.test(prevToken.slice(-1)) ||
+          [
+            "return",
+            "case",
+            "throw",
+            "typeof",
+            "instanceof",
+            "void",
+            "delete",
+            "yield",
+            "await",
+          ].includes(prevToken)
+
+        if (canBeRegex) {
+          inRegex = true
+          inRegexCharClass = false
+          i++
+          continue
+        }
+      }
+
+      // Console.log warning
+      if (lineText.slice(i, i + 12) === "console.log(") {
+        diagnostics.push({
+          id: `${filename}-warn-${lineNum}`,
+          title: "Unexpected console statement (no-console)",
+          location: `${filename} [${lineNum}, ${i + 1}]`,
+          type: "warning",
+          source: "eslint",
+        })
+      }
+
+      // Delimiter tracking
       if (char === "{" || char === "(" || char === "[") {
         stack.push({ char, line: lineNum, col: i + 1 })
+        if (topTemplate && topTemplate.depth > 0 && char === "{") {
+          topTemplate.depth++
+        }
+        prevToken = char
       } else if (char === "}" || char === ")" || char === "]") {
         const expected = pairs[char]
         const last = stack.pop()
@@ -143,8 +297,28 @@ function validateJSOrTS(
             source: "typescript",
           })
         }
+        if (topTemplate && topTemplate.depth > 0 && char === "}") {
+          topTemplate.depth--
+        }
+        prevToken = char
+      } else {
+        if (/[a-zA-Z0-9_$]/.test(char)) {
+          if (/[a-zA-Z0-9_$]/.test(prevToken)) {
+            prevToken += char
+          } else {
+            prevToken = char
+          }
+        } else {
+          prevToken = char
+        }
       }
+
+      i++
     }
+
+    inSingleQuote = false
+    inDoubleQuote = false
+    inRegex = false
   })
 
   // If stack has remaining unclosed delimiters

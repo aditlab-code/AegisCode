@@ -233,6 +233,7 @@ To eliminate race conditions and the common `fatal: Unable to create '.../.git/i
 - `GET /api/v1/events/terminal/:sessionId`
   - Headers: `Accept: text/event-stream`
   - Streams raw PTY byte output chunks to the terminal emulator.
+  - **Lossless Elastic Buffer Architecture**: Implements an elastic per-subscriber FIFO worker goroutine queue (buffering up to 8,192 chunks / ~32 MB burst capacity) and a 512 KB history replay ring buffer (`maxHistoryBytes = 512 * 1024`). Prevents silent byte drops during heavy throughput bursts while maintaining sub-microsecond non-blocking PTY pumping and leak-free teardown via `done` channel synchronization.
 - `GET /api/v1/events/workers`
   - Headers: `Accept: text/event-stream`
   - Streams real-time fail-fast crash diagnostic events (`worker:crash`) for supervised workers and terminal shells.
@@ -306,7 +307,7 @@ To eliminate race conditions and the common `fatal: Unable to create '.../.git/i
     - **Graph Format Mode (`?format=graph&tail=N`)**: Retrieves raw event nodes slice: `{ "id": "uuid", "nodes": [ { "id": "node-...", "parentId": "node-...", "type": "message", "role": "user" | "agent", "content": "...", "blobRef": "...", "timestamp": 177... } ] }`. When `tail=N` is specified ($N > 0$), executes block-buffered reverse-seek tail reader (`ReverseSeekTail`) to read only the last $N$ lines from `~/.aegis/chats/<id>.jsonl` in sub-millisecond latency.
   - **Non-Destructive Shadow Fallback**: Lazily reads legacy `~/.aegis/chats/<id>.json` if `.jsonl` has not yet been populated.
 - `POST /api/v1/chats/:id`
-  - Legacy atomic session save endpoint (kept for backward compatibility and shadow migration).
+  - Atomic session save endpoint (kept for backward compatibility and shadow migration). Fully supports HTTP `keepalive: true` requests to ensure reliable synchronous flush during browser page reloads or tab closures (`beforeunload` / `pagehide`).
 - `POST /api/v1/chats/:id/events`
   - Body: `GraphNode` JSON object:
     ```json
@@ -485,7 +486,7 @@ Testing is strictly segregated under the root `test/` directory, cleanly separat
 
 ### Core Test Pattern (Table-Driven Scenario Matrix)
 Rather than spawning dozens of scattered test files for every bug report or edge case, all regressions register directly into the **Core Test Matrix**:
-1. **Frontend Core Test**: The `coreRegressionScenarios` matrix and domain suites (8 suites, 84 tests passing) execute end-to-end state transitions:
+1. **Frontend Core Test**: The `coreRegressionScenarios` matrix and domain suites (13 suites, 130 tests passing) execute end-to-end state transitions:
    - Workspace file CRUD, buffer dirty flags, and debounced save synchronizations.
    - Editor group tabs, split pane migrations, and automatic un-splitting.
    - Git staging, unstaging, and commit creation.
@@ -498,9 +499,13 @@ Rather than spawning dozens of scattered test files for every bug report or edge
    - Review gates and workspace path boundary validation (`test/frontend/core/reviewGatesAndPathBoundary.test.ts`).
    - Git status Explorer badge indicators (`test/frontend/utils/explorerGitStatus.test.ts`).
    - Multi-file touch banner and navigation triggers (`test/frontend/chat/chatMultiFileBanner.test.ts`).
+   - Merge conflict region parser and resolution actions (`test/frontend/utils/gitConflict.test.ts`).
+   - Context-aware delimiter syntax scanner (`test/frontend/utils/linterSyntax.test.ts`).
+   - Diagnostic location format parser (`test/frontend/utils/diagnosticLocation.test.ts`).
+   - Debug DAP workflow, breakpoints, and stepping (`test/frontend/debug/debugWorkflow.test.ts`).
    - `WS-CLOSE-01`: Close workspace lifecycle (tree, buffers, and tab states cleared).
    - `WS-PATH-01`: Path normalization (trailing slash stripping, OS cross-platform paths, recent projects storage).
-2. **Backend Core Test**: The `TestCoreServerLifecycle` scenario matrix and internal packages (10 packages, including Multi-Provider AI engines in `ai` and Append-Only Ledger suites in `store`, 70+ tests passing) spin up the native Core Server binary bound to an ephemeral TCP port and an isolated OS temporary directory (`os.MkdirTemp`). It executes real HTTP/REST requests:
+2. **Backend Core Test**: The `TestCoreServerLifecycle` scenario matrix and internal packages (12 packages, including Multi-Provider AI engines in `ai`, Append-Only Ledger suites in `store`, and Elastic PTY streaming in `terminal`, 128 tests passing) spin up the native Core Server binary bound to an ephemeral TCP port and an isolated OS temporary directory (`os.MkdirTemp`). It executes real HTTP/REST requests:
    - `GET /api/v1/workspace/info`
    - `POST /api/v1/workspace/file` (Write & create directories)
    - `GET /api/v1/workspace/file` (Read verification)

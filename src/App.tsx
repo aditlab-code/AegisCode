@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useRef } from "react"
 import { WorkbenchProvider, useWorkbench } from "./context/WorkbenchContext"
 import {
   Header,
@@ -44,20 +44,38 @@ function AppShell() {
       ? group2.activeTab
       : group1.activeTab
 
+  const prevFileRef = useRef<string | null>(null)
+
   useEffect(() => {
     const buffer = activeFile ? fileBuffers[activeFile] : undefined
     const fileDiags = activeFile
       ? diagnostics.filter((d) => d.location.startsWith(activeFile))
       : []
 
-    syncBrowserAiContext({
-      activeFile: activeFile || null,
-      language: activeLanguage,
-      workspace: "AegisCodev2",
-      cursor: cursorPosition,
-      isDirty: Boolean(buffer?.isDirty),
-      diagnosticsCount: fileDiags.length,
-    })
+    const currentFile = activeFile || null
+    const isFileSwitch = prevFileRef.current !== currentFile
+    prevFileRef.current = currentFile
+
+    const doSync = () => {
+      syncBrowserAiContext({
+        activeFile: currentFile,
+        language: activeLanguage,
+        workspace: "AegisCodev2",
+        cursor: cursorPosition,
+        isDirty: Boolean(buffer?.isDirty),
+        diagnosticsCount: fileDiags.length,
+      })
+    }
+
+    // Immediately sync on file tab switches so header & titles reflect active tab
+    if (isFileSwitch) {
+      doSync()
+      return
+    }
+
+    // Debounce cursor & typing movements (150ms) to eliminate main-thread DOM churn
+    const timer = setTimeout(doSync, 150)
+    return () => clearTimeout(timer)
   }, [activeFile, activeLanguage, cursorPosition, fileBuffers, diagnostics])
 
   const gridClass = useMemo(

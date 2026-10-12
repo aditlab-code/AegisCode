@@ -223,6 +223,7 @@ export async function fetchBackendChatSession(
 
 export async function saveBackendChatSession(
   session: ChatSession,
+  options?: { keepalive?: boolean },
 ): Promise<boolean> {
   try {
     const res = await fetch(
@@ -231,6 +232,7 @@ export async function saveBackendChatSession(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(session),
+        keepalive: options?.keepalive ?? false,
       },
     )
     return res.ok
