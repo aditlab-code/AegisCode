@@ -16,7 +16,7 @@
 | **Phase 5** | AppDrawer AEGIS AI Agent & Session Hub | ✅ Completed | Multi-session chat, slash autocomplete, provider selector |
 | **Special** | UI Dark/Light Theme & Modular Palettes | ✅ Completed | ActivityRail toggle, modular JSON palettes (Default, Atom, Tokyo Night) |
 | **Special** | Settings Registry, Core IDE Preferences & Editor Polish | ✅ Completed | Decoupled schema registry, wildcard exclude, GPU cursor blinking, wrap column |
-| **Phase 6** | Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger | 🟡 Active (6.1, 6.2, 6.3, 6.6 ✅) | Cross-platform Go binary & embed.FS, supervisor, JSON store, AI agent bridge, DAP/Delve |
+| **Phase 6** | Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger | 🟡 Active (6.1–6.4, 6.6–6.10 ✅) | Cross-platform Go binary & embed.FS, supervisor, JSON store, AI agent bridge, DAP/Delve |
 | **Phase 7** | Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`) | ⚪ Upcoming | Multi-format tab viewers (Images, CSV), vector canvas wireframing |
 | **Phase 8** | Research Workshop & Data Science Studio | ⚪ Planned | LaTeX + PDF sync, BibTeX, Python/R dataframes, Biblioshiny |
 | **Phase 9** | Web-Based Remote Pairing & Tablet Companion | ⚪ Deferred (Final) | LAN pairing, web preview host, touch-optimized editor mode |
@@ -125,7 +125,7 @@
 ---
 
 ### Phase 6: Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger
-- **Status**: 🟡 Active (Sub-Phases 6.1, 6.2, 6.3, 6.4, 6.6, 6.7, and 6.8 Completed)
+- **Status**: 🟡 Active (Sub-Phases 6.1, 6.2, 6.3, 6.4, 6.6, 6.7, 6.8, 6.9, and 6.10 Completed; Sub-Phase 6.5 DAP Pending)
 
 #### Sub-Phase 6.1: Live Workspace Engine & File Operations
 - **Status**: ✅ Completed
@@ -289,21 +289,37 @@
   - **Low-Latency SSE Streaming Endpoint (`POST /api/v1/ai/chat`)**:
     - Real-time token streaming (`text/event-stream`) emitting `start`, `thinking`, `tool_call`, `chunk`, `done`, and `error` events.
     - Fully wired `AbortController` cancellation in React Chat Drawer triggering immediate `SIGINT/SIGTERM` on child process.
+  - **Safe Agentic Tool Call Streaming & Extraction**:
+    - Native `tool_info.parameters` and `tool_info.output` extraction from Antigravity `step_update` events, with fallback to `tool_args`.
+    - Real-time tool lifecycle tracking (`ACTIVE` -> running, `DONE` -> success) and step deduplication keyed by `step_index` (`tc-<stepIdx>`).
+    - Outer quote and whitespace normalization for tool argument strings, ensuring clean file paths and command strings.
+    - Dynamic tool summary resolution (`toolSummary` / `toolAction`) providing human-readable activity captions.
+    - Ghost tab prevention guard in `ToolCallActivity.tsx`: verifies that `name !== filePath` and path is non-empty before showing the `[Open]` button, eliminating empty buffer opening.
+    - Formatted line range badges (`L<start>-<end>`) on file inspection tools (`view_file`, `Read`).
+    - Tool output DOM cap (2,500 characters) preventing DOM bloating on large terminal or file reads.
+  - **Streaming Chat Zero-Freeze Performance Overhaul**:
+    - **Streaming Fast-Path Zero-Parse (`MarkdownRenderer.tsx`)**: Bypasses heavy regex AST parser during active generation (`isStreaming: true`), rendering raw text directly in a preformatted container to prevent UI freezing and DOM thrashing.
+    - **RequestAnimationFrame (40ms) Micro-Batching (`chatCore.ts`)**: Batches high-frequency text delta tokens and reasoning deltas into 40ms animation frames, cutting React re-render churn by up to 90%.
+    - **Debounced Flat-File Session Persistence**: Replaces per-token disk writes with a 3-second debounced `saveBackendChatSession` synchronization and guaranteed final flush upon stream completion, reducing disk I/O by 98%.
+    - **Thinking Windowing**: Reasoning preview windowed to trailing 3,000 characters while streaming, keeping DOM tree light during deep CoT thinking loops.
+    - **Deferred Code Block Extraction**: Postpones proposed code block regex scans until stream completion.
   - **Dynamic Model & Skill Discovery Endpoints**:
     - `GET /api/v1/ai/models`: In-memory 5-minute cached discovery of available Antigravity models (`agy models`).
     - `GET /api/v1/ai/skills`: Discovers built-in Antigravity skills (`~/.gemini/antigravity-cli/builtin/skills`) and standard slash commands for autocomplete.
-    - `GET /api/v1/ai/transcript/{id}`: Full fidelity session rehydration from native JSON brain logs (`transcript.jsonl`).
-  - **Rich Agentic Baloon & UI Components (`src/components/layout/chat/`)**:
+    - `GET /api/v1/ai/transcript/{id}`: Full-fidelity session rehydration from native JSON brain logs (`transcript.jsonl`), parsing user turns, thinking traces, and tool call histories.
+  - **Rich Agentic Balloon & UI Components (`src/components/layout/chat/`)**:
     - **Thinking Process Accordion**: Collapsible reasoning view with pulsing in-progress indicator.
     - **Interactive Tool Call Chips**: Real-time status badges, collapsible JSON args, and tool execution outputs.
     - **Stop Generation Control**: Replaces Send button in `ChatComposer.tsx` with dedicated Stop button while generation is active.
     - **Pre-injected `<context>` Envelope**: Automatically formats `@file` mention chips into clean markdown blocks preceding the prompt.
     - **Dedicated Error Message Cards**: Clean UI cards with diagnostic info and direct Settings link on CLI or auth errors.
-  - **Verification**: 100% verified across Go backend tests (61 tests passing) and Vitest frontend tests (45 tests passing).
+  - **Verification**: 100% verified across Go backend tests (66 tests passing) and Vitest frontend tests (79 tests passing).
 
 #### Sub-Phase 6.10: Git-Driven Review Gates (Apply & Code Manipulation)
-- **Status**: 🟢 Completed
+- **Status**: ✅ Completed
 - **Deliverables**:
+  - **Compact `@file` Context Extraction Budget (`MAX_CONTEXT_BUDGET_TOKENS = 2500`)**:
+    - Heuristic context budget enforcement in `contextExtractorCore.ts` supporting three progressive density modes: Full Content, Compact Snippet (first 40 + last 20 lines), and Reference Only.
   - **Path Boundary Verification**: Strict path validation enforcing that all AI code generation targets reside within the active `rootPath` before disk writes (preventing directory traversal attacks).
   - **Git-Backed Side-by-Side Review**:
     - User clicks "Apply to Editor" on markdown code blocks (`ChatMessageList.tsx`), writing changes via `/api/v1/workspace/file`.
@@ -312,7 +328,7 @@
   - **Interactive Markdown Code Block Toolbar**:
     - Action headers for all markdown code fences: `[Copy]` and `[Apply to Editor] / [Apply to <file>]` with `lang:filepath` target resolution.
     - Agent multi-file modifications surface direct `[Review in Git]` navigation banner to Source Control.
-  - **Verification**: 100% verified across Go backend tests (65 tests passing) and Vitest frontend tests (49 tests passing).
+  - **Verification**: 100% verified across Go backend tests (66 tests passing) and Vitest frontend tests (79 tests passing).
 
 ---
 

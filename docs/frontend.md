@@ -2,7 +2,8 @@
 
 > **Purpose**: Single source of truth for the active UI design and visual layout structure.  
 > **Rule**: Must be updated whenever visual components, layout regions, or styling paradigms change.  
-> **Design Principles**: Reusable Tailwind tokens, reusable UI components, zero arbitrary hex codes, lightweight modular layouts, universal on-demand code-splitting for all non-code viewers (.canvas, .pdf, .csv, .xls, .svg, .png, .jpg, .md).
+> **Design Principles**: Reusable Tailwind tokens, reusable UI components, zero arbitrary hex codes in components, lightweight modular layouts, universal on-demand code-splitting architecture for future non-code viewers (.canvas, .pdf, .csv, .xls, .svg, .png, .jpg, .md).
+> **Universal On-Demand Code Splitting Rule (Architectural Constraint for Viewers)**: Non-code viewer panes (e.g. `@tldraw/tldraw` for `.canvas`/`.design`, PDF preview for `.pdf`, Tabular spreadsheet for `.csv`/`.tsv`/`.xls`/`.xlsx`, and Media Pan-Zoom for `.png`/`.jpg`/`.svg`/`.webp`) are planned extensions that MUST NEVER be imported into the main initial bundle. When implemented, they must be loaded strictly via `React.lazy()` / dynamic `import()` on-demand when the user opens a matching file extension, keeping the main IDE bundle lightweight.
 
 ---
 
@@ -65,7 +66,7 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
 - **Path**: [`src/components/layout/activity-rail/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/activity-rail)
 - **Primary Components**: `ActivityRail.tsx`, `activity-rail.css`
 - **Visual Design**:
-  - Slim 48px vertical rail on the left border.
+  - Slim 44px vertical rail on the left border (matching `.workspace` 44px grid column).
   - Top action group: Explorer icon, Search icon, Source Control Git icon.
   - Bottom action group:
     - **Theme Toggle Button**: Interactive toggle button with dynamic `sun` (in Dark mode) and `moon` (in Light mode) icon with 20° rotation hover transition and instant toast notification.
@@ -139,23 +140,29 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
     - **Normal Mode (Sessions closed)**: Default width **340px**, minimum width **300px**, maximum width **600px**, auto-collapse threshold **< 180px**.
     - **Expanded Mode (Sessions open)**: Default width **500px**, minimum width **480px**, maximum width **600px**, auto-collapse threshold **< 320px**.
   - **Dynamic Width & State Memory**: Clicking the Session History toggle (`toggleChatSessions`) preserves the current normal chat width and auto-expands the drawer to 500px (or last expanded width). Closing the session history restores the exact previous normal width.
-  - **Adaptive Viewport Observer**: When the browser window resizes (< 1200px) and available editor space drops below 320px:
-    1. First automatically closes the Sessions sidebar to keep the chat conversation visible at normal width.
-    2. If available space remains below 320px, collapses the Chat Drawer entirely.
+  - **3-Tier Adaptive Viewport Observer (`layoutCore.ts`)**:
+    Enforces usable workspace bounds for the editor buffer across viewports:
+    1. **Mobile Breakpoint (`< 768px`)**: Auto-collapses Primary Sidebar (`setSidebarOpen(false)`).
+    2. **Compact Viewport Breakpoint (`< 980px`)**: Auto-collapses Chat Drawer (`setChatOpen(false)`).
+    3. **Mid-Size Guard Breakpoint (`980px <= winWidth < 1200px`)**: Evaluates `availableForEditor = winWidth - 44px - currentSidebarWidth - currentChatWidth`. If `availableForEditor < 320px` and Chat Drawer is open:
+       - **Step 1**: Closes Session History sidebar first (`setChatSessionsOpen(false)`), restoring normal chat width (340px) and reclaiming ~160px for the editor.
+       - **Step 2**: Clamps chat width dynamically to `maxChatPossible = winWidth - 44px - currentSidebarWidth - 320px`.
+       - **Step 3**: If `maxChatPossible < 300px` (`MIN_CHAT_WIDTH`), auto-collapses Chat Drawer entirely (`setChatOpen(false)`), preventing editor shrinkage below 320px.
   - **Header & Session Sidebar Responsive Polish**:
     - Header action buttons (`New session`, `Toggle sessions`, `Close`) shielded with `flex-shrink: 0`.
     - Active session title and agent heading dynamically adapt with `min-width: 0`, `flex: 1`, and ellipsis truncation.
     - Master session sidebar constrained to **180px** with session card titles styled with `flex: 1`, `min-width: 0`, and native `title` tooltips.
   - **AI Provider & Model Upward Popover (`ChatProviderSelect.tsx`)**:
-    - **Upward-Floating Position**: Positioned at `bottom: calc(100% + 8px); left: 0; z-index: 100; width: 325px;` with `0 8px 28px rgba(0,0,0,0.45)` shadow and smooth fade-in animation. Floats upwards above the composer footer.
+    - **Upward-Floating Position**: Positioned at `bottom: calc(100% + 8px); left: 0; z-index: 100; width: 325px;` with `var(--shadow-popover)` shadow and smooth fade-in animation. Floats upwards above the composer footer.
     - **Zero CSS Clipping Rule**: Maintained `overflow: visible` across `.composer`, `.composer-footer`, `.composer-footer-left`, and `.composer-wrapper` to prevent clipping within the footer bar.
     - **Unified Multi-Provider Catalog**: Lists all 4 AI providers (`Antigravity`, `Claude`, `OpenCode`, `OpenRouter`) and all their standard + custom models simultaneously in one menu.
     - **Quick Filter Tabs**: Horizontal pills (`[Semua]`, `[AGY]`, `[CLD]`, `[OC]`, `[OR]`) with color-coded dot badges for instant single-provider filtering.
     - **Atomic Selection Handler**: Selecting any model immediately sets both provider and model on the active session (`setSessionModel`) and persists agent settings.
   - **Dual Provider & Model Message Badges (`ChatMessageList.tsx`)**:
     - Assistant message headers render both the provider tag (`[AGY]`, `[CLD]`, `[OC]`, `[OR]`) and the model identifier pill (`[gemini-3.8-flash-high]`), providing instant visibility of the serving engine.
-  - **Live 2-Way Agentic Streaming & Real-Time SSE Consumer (`chatCore.ts`)**:
-    - Replaced mock contextual responses with live Server-Sent Events (`POST /api/v1/ai/chat`) connecting directly to the Antigravity backend engine.
+  - **Streaming AI Response via HTTP POST & Streamed SSE-Formatted Reader (`storeApi.ts` & `chatCore.ts`)**:
+    - Replaced mock contextual responses with streaming HTTP requests (`POST /api/v1/ai/chat`) connecting to the backend AI engine with multi-provider routing.
+    - Client consumes streamed Server-Sent Events (`event: start/thinking/tool_call/chunk/done/error`) through a `ReadableStreamDefaultReader` parser.
     - Typewriter streaming text updates with pulsing cursor (`.streaming-cursor`) and shimmer loader (`.message-body-streaming-shimmer`).
   - **Rich Agentic Baloon Architecture (`ChatMessageList.tsx`, `MarkdownRenderer.tsx`, `ToolCallActivity.tsx`)**:
     - **Streaming Fast-Path & Zero-Parse Markdown Architecture (`MarkdownRenderer.tsx`)**: Completely bypasses expensive $O(N)$ AST block parsing and regex syntax tokenization during active streaming (`isStreaming === true`). Renders plain typography in `whitespace-pre-wrap` during live generation to eliminate DOM reconciliation churn, memory spikes, and tab freezing/crashing. Once generation completes (`isStreaming === false`), executes a single full markdown parse to render rich interactive elements (syntax highlighting, tables, code review gates, task lists).
@@ -165,7 +172,7 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
     - **AegisCode Special Tokens**: Clickable `@file` / `@folder` mention pills that directly open the referenced file in the editor pane, and stylized `/command` chips for slash skills.
     - **Thinking Process Accordion & Windowing (`.message-thinking-block`)**: Collapsible reasoning viewer with real-time in-progress pulsing indicator (`animate-pulse text-accent`). While actively streaming, thinking text is windowed to the latest 3,000 characters to prevent browser layout thrashing on massive reasoning chains, restoring the complete thinking transcript once stream concludes.
     - **Activity Stepper & Safe Tool Navigation (`ToolCallActivity.tsx`)**: Multi-tool sequences (2+ actions) are automatically batched into an interactive summary card (`Executed 4 actions` with status pill, action breakdown badges `Run (2)`, `Edit (1)`, `Read (1)`), expandable to a vertical step timeline with memoized metadata.
-      - **Parameter & Output Sanitization**: Arguments and execution output blocks are sanitized and capped (max 2,500 chars in DOM) to prevent DOM bloat, with one-click output copy.
+      - **Parameter & Output Sanitization**: Arguments and execution output blocks are sanitized and capped (max 2,500 characters in DOM preview via `sanitizeOutput`) to prevent DOM bloat, with one-click output copy. (Note: explicitly distinct from the prompt's 2,500 token context budget).
       - **Safe File Navigation & Ghost Tab Prevention**: Tool parameters (`AbsolutePath`, `TargetFile`, `path`) are extracted from `tool_info.parameters`. If a tool call lacks a valid file path or has a path equal to the tool name (`view_file`), `targetFile` is set to `undefined`, hiding the `[Open]` button and disabling click-to-open to prevent opening empty/ghost editor tabs.
       - **Line Range Badges**: If `StartLine` and `EndLine` are present on read tools, displays a compact range badge (e.g. `style.css · L1-100`) directly on the card header.
     - **Safe Streaming Batcher & Debounced Disk Sync (`chatCore.ts`)**: Batches incoming SSE typewriter deltas (`chunk`) and reasoning deltas (`thinking`) via RAF micro-buffering (40ms / 25fps) into a unified atomic session update, eliminating $O(N^2)$ re-rendering. Calls synchronous immediate flush (`flushDeltasSync()`) on stream completion, errors, or cancellation. Pushes disk persistence (`saveBackendChatSession`) through a 3-second debounce to eliminate HTTP POST request spam to the Go backend during live streams.
@@ -181,7 +188,7 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
     - Manual `@file` mentions default to a compact structural outline manifest (`(Ref)`, ~50-200 tokens) detailing file size, line counts, and exported symbols/declarations, preventing prompt overload when multiple files are attached.
     - Interactive chip allows cycling modes: `(Ref)` (outline manifest) $\rightarrow$ `(Snippet)` (head 50 lines) $\rightarrow$ `(Full)` $\rightarrow$ `(Ref)`.
     - Asynchronously retrieves unopened file content from Go backend (`fetchFileContent`) upon mention selection.
-    - Enforces a 2,500 token budget cap across all attached context items (`enforceContextTokenBudget`), automatically demoting oversized items to reference mode.
+    - Enforces a 2,500 token budget cap across all attached context items (`MAX_CONTEXT_BUDGET_TOKENS` in `contextExtractorCore.ts`), automatically demoting oversized items to reference mode. (Note: explicitly distinct from the 2,500 character DOM preview cap for tool outputs).
   - **Setup Needed Guard**:
     - Warning badge (`Icon name="warning"`) displayed when active provider lacks credentials, linking directly to Settings Modal.
   - **Multi-line Textarea Composer**: Resilient composer with model badge, attachment triggers, and submit button fitting cleanly at 300px minimum width.
@@ -219,7 +226,7 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
     - **Antigravity Auto-Discovery Card**: Auto-detected via `~/.gemini/oauth_creds.json` and brain workspace, with 1-line concise hint and live sub-60ms connection probe.
     - **Custom Models Tag Chips**: Interactive pills allowing adding and deleting arbitrary custom model IDs per provider (`+ Add` / `✕`).
     - **Live Connection Test**: Real-time test probe buttons measuring round-trip latency (ms) with spinner and status tooltips.
-  - **Strict Zero-Emoji UI**: 100% SVG UI `<Icon name="..." />` components across all settings cards and modal controls.
+  - **Strict Zero-Emoji UI Policy**: 100% SVG UI `<Icon name="..." />` components across all settings cards, headers, sidebars, and modal controls. Prohibits graphical color emojis (e.g. 📁, ⚙️, 🚀, 💡) in favor of semantic SVG icons. Standard typographical monospace glyphs and IDE symbols (such as `⌘`, `⟳`, `✕`, `↓`, `↑`, `*`) in keyboard shortcuts, badge labels, and commit status counters are standard system text glyphs.
 
 ### 9. Command Palette (`command-palette/`)
 - **Path**: [`src/components/layout/command-palette/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/command-palette)
@@ -235,19 +242,21 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
 
 ---
 
-## 3. Remote Tablet Companion View Mode
+## 3. Remote Tablet Companion View Mode (Roadmap / Planned Architecture)
 
 For remote multi-screen workflows on tablets (iPad, Android tablets):
 - **Access Route**: `/?mode=companion` or paired via QR Code / local URL from Header.
 - **Two Primary Switcher Tabs**:
-  1. **Web Preview Host Tab**: Renders the running web application hosted by the local Go backend in a sandboxed, touch-friendly iframe/viewport with reload and address bar controls.
+  1. **Web Preview Host Tab**: Renders the running web application hosted by the local Go backend in a touch-friendly viewport. Security specification requires an isolated sandboxed iframe (`sandbox="allow-scripts allow-forms allow-same-origin"` with dedicated local port binding and postMessage bridge boundary) to isolate parent IDE state from the user's running application.
   2. **Focus Code Editor Tab**: Renders a distraction-free, touch-optimized single-pane text editor buffer without sidebars or bottom drawers. Allows direct code editing and instant auto-save synchronization back to the desktop workspace.
 
 ---
 
 ## 4. Design System & CSS Token Conventions
 
-AegisCode enforces a **Strict 100% Hex Token Architecture** with zero arbitrary hex values in components and zero hardcoded `rgb()` / `rgba()` values. All styles reference semantic CSS tokens defined in [`src/styles/tokens.css`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/styles/tokens.css) and Tailwind CSS v4 `@theme`:
+AegisCode enforces a **Strict 100% Token Architecture** across all components:
+- **Component Styling Rule**: All UI components, panels, cards, inputs, buttons, and popovers MUST strictly reference semantic CSS variables (`var(--color-canvas)`, `var(--color-surface)`, `var(--shadow-popover)`, etc.) and Tailwind CSS v4 `@theme` classes. Zero hardcoded hex values or arbitrary `rgb()`/`rgba()` values are permitted in TSX and component stylesheets.
+- **Root Ambient Canvas Glow (Architectural Exception)**: Scoped exclusively to `src/styles/base.css` on `body` for the anti-fatigue ambient viewport gradient backdrop (`radial-gradient` + `linear-gradient`), which blends with `var(--color-canvas)`.
 
 ### Dual Theme Support (Dark & Light Mode)
 Theme switching is managed globally via `WorkbenchContext.tsx`, persisted in `localStorage` (`aegis_theme`), and applied dynamically via `[data-theme="light"]` attribute on the root HTML element.

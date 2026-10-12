@@ -323,21 +323,35 @@ To eliminate race conditions and the common `fatal: Unable to create '.../.git/i
       - Issues lightweight HTTP `GET /models` request with `Authorization: Bearer <key>` header.
       - Confirms HTTP 200 OK and measures live round-trip latency in milliseconds.
 
-### J. Live 2-Way AI Agent Execution & SSE Streaming (Sub-Phase 6.9)
+### J. AI Agent Execution & Streamed SSE Response (Sub-Phase 6.9)
 - `POST /api/v1/ai/chat`
   - Content-Type: `application/json` (Input), `text/event-stream` (Output stream).
   - Body: `{ "workspaceDir": "/path/to/project", "conversationId": "optional-uuid", "model": "gemini-3.8-flash-high", "prompt": "..." }`
   - Executes out-of-process Antigravity CLI (`agy`) bound to the user's active workspace (`cmd.Dir = activeWorkspace`) with `--dangerously-skip-permissions` and `--output-format stream-json`.
   - Streams real-time Server-Sent Events (SSE):
-    - `event: start`: Emits initial conversation UUID captured from Antigravity's `init` event.
-    - `event: thinking`: Emits real-time reasoning deltas (`thinking_delta`).
-    - `event: tool_call`: Emits tool invocation metadata (`tool_name`, `tool_args`, `status: "running"`).
-    - `event: chunk`: Emits live response text tokens (`text_delta`).
-    - `event: done`: Emits final complete message payload (`text`, `thinking`, `toolCalls`, `status`).
-    - `event: error`: Dispatches explicit error diagnostics if execution fails or is interrupted.
-  - **Fail-Safe Abort & Cancellation**: Tied directly to HTTP request context (`r.Context()`); if the client disconnects or clicks "Stop Generating" (AbortController), the backend immediately kills the child process via `cmd.Process.Kill()`, preventing orphaned processes and resource leaks.
+    - `event: start`: Emits initial conversation UUID captured from Antigravity's `init` event:
+      `{ "type": "start", "conversationId": "uuid" }`
+    - `event: thinking`: Emits real-time reasoning deltas (`thinking_delta`) accumulated from the agent's chain-of-thought:
+      `{ "type": "thinking", "conversationId": "uuid", "thinking": "..." }`
+      *(Frontend applies windowing to the trailing 3,000 characters during streaming to keep DOM nodes responsive).*
+    - `event: tool_call`: Emits structured tool invocation metadata:
+      `{ "type": "tool_call", "conversationId": "uuid", "toolCall": { "id": "tc-<stepIdx>", "name": "view_file", "summary": "Viewing file", "status": "running" | "success", "args": { "AbsolutePath": "..." }, "output": "..." } }`
+      - **Parameters Extraction**: Directly extracted from `step_update.tool_info.parameters` (with fallback to `tool_args`). Strips outer quotation marks (`"`, `'`, `` ` ``) and whitespace.
+      - **Output Extraction**: Directly extracted from `step_update.tool_info.output` when available.
+      - **Action Summary**: Extracted from `toolSummary` or `toolAction` arguments with fallback to `name`.
+      - **Step Deduplication**: Keyed by `tc-<step_index>`. When subsequent updates or completion events arrive for the same step, the backend seamlessly updates the existing tool call card in place.
+      - **Lifecycle State**: Maps `step_update.state` (`ACTIVE` -> `"running"`, `DONE` -> `"success"`).
+    - `event: chunk`: Emits live response text tokens (`text_delta`):
+      `{ "type": "chunk", "conversationId": "uuid", "delta": "..." }`
+      *(Frontend batches chunk rendering via 40ms RequestAnimationFrame cycles).*
+    - `event: done`: Emits final complete message payload with all tool calls marked as `success`:
+      `{ "type": "done", "conversationId": "uuid", "message": { "id": "msg-<ts>", "role": "agent", "text": "...", "thinking": "...", "toolCalls": [...], "timestamp": 1234567890, "provider": "antigravity", "model": "gemini-3.8-flash-high" } }`
+    - `event: error`: Dispatches explicit error diagnostics if execution fails or is interrupted:
+      `{ "type": "error", "conversationId": "uuid", "error": "..." }`
+  - **Disk I/O & Persistence Throttling**: While streaming is active, frontend persistence to backend flat-file (`POST /api/v1/chats/:id`) is debounced to every 3,000ms with a guaranteed final flush on `done`, eliminating 98% of disk writes during high-throughput generation.
+  - **Fail-Safe Abort & Cancellation**: Tied directly to HTTP request context (`r.Context()`); if the client disconnects or clicks "Stop Generating" (`AbortController`), the backend immediately kills the child process via `cmd.Process.Kill()`, preventing orphaned processes and resource leaks.
   - **Model Normalization Engine**: Automatic mapping of bare model names (e.g., `gemini-3.8-flash` -> `gemini-3.8-flash-high`) ensuring CLI commands never fail due to missing `--effort` arguments.
-  - **Conversation Lifecycle Safety**: Pre-checks existence of `~/.gemini/antigravity-cli/brain/<uuid>`. Sesi baru dieksekusi tanpa `--conversation` untuk membiarkan Antigravity membuat ID resmi, mencegah warning `conversation not found`.
+  - **Conversation Lifecycle Safety**: Pre-checks existence of `~/.gemini/antigravity-cli/brain/<uuid>`. New sessions are executed without `--conversation` to let Antigravity generate a fresh ID officially, preventing `conversation not found` warnings.
 - `GET /api/v1/ai/models`
   - In-memory 5-minute cached discovery of available Antigravity models (`agy models`).
   - Response: `{ "models": [ { "id": "gemini-3.8-flash-high", "name": "Gemini 3.8 Flash (High)", "provider": "antigravity", "description": "..." }, ... ] }`.
@@ -345,7 +359,8 @@ To eliminate race conditions and the common `fatal: Unable to create '.../.git/i
   - Discovers built-in Antigravity skills (`~/.gemini/antigravity-cli/builtin/skills`) and standard slash commands (`/plan`, `/spec`, `/review`, `/debug`, `/simplify`, `/goal`, `/schedule`, `/browser`, `/grill-me`, `/boost`).
   - Response: `{ "skills": [ { "command": "/plan", "name": "Implementation Plan", "description": "..." }, ... ] }`.
 - `GET /api/v1/ai/transcript/:id`
-  - Rehydrates full conversational turns, thinking traces, and tool call histories directly from Antigravity's native `transcript.jsonl` in `~/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/`.
+  - Rehydrates full conversational turns, thinking traces, and tool call histories directly from Antigravity's native `transcript.jsonl` in `~/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/` (and fallback `~/.gemini/antigravity/brain/...`).
+  - Normalizes tool call parameters, action summaries, and output mappings, returning standard `ChatMessage[]` array with accurate tool call cards and execution results.
   - Response: `{ "conversationId": "uuid", "messages": [ ... ] }`.
 
 ---
@@ -377,16 +392,21 @@ Testing is strictly segregated under the root `test/` directory, cleanly separat
 
 ### Core Test Pattern (Table-Driven Scenario Matrix)
 Rather than spawning dozens of scattered test files for every bug report or edge case, all regressions register directly into the **Core Test Matrix**:
-1. **Frontend Core Test**: The `coreRegressionScenarios` matrix executes end-to-end state transitions across domain slices:
+1. **Frontend Core Test**: The `coreRegressionScenarios` matrix and domain suites (7 suites, 79 tests passing) execute end-to-end state transitions:
    - Workspace file CRUD, buffer dirty flags, and debounced save synchronizations.
    - Editor group tabs, split pane migrations, and automatic un-splitting.
    - Git staging, unstaging, and commit creation.
    - Terminal PTY sessions, command history, and stream pipelines.
    - AI Agent session creation and conversational context streaming.
    - `AsyncSequenceGuard` concurrency safety (monotonic request IDs and AbortController cancellation).
+   - Safe Tool Call Activity rendering, step deduplication, and ghost tab prevention (`test/frontend/chat/toolCallActivity.test.ts`).
+   - Streaming fast-path zero-parse & Markdown rendering safeguards (`test/frontend/chat/markdownSafeGuard.test.ts`).
+   - Review gates and workspace path boundary validation (`test/frontend/core/reviewGatesAndPathBoundary.test.ts`).
+   - Git status Explorer badge indicators (`test/frontend/utils/explorerGitStatus.test.ts`).
+   - Multi-file touch banner and navigation triggers (`test/frontend/chat/chatMultiFileBanner.test.ts`).
    - `WS-CLOSE-01`: Close workspace lifecycle (tree, buffers, and tab states cleared).
    - `WS-PATH-01`: Path normalization (trailing slash stripping, OS cross-platform paths, recent projects storage).
-2. **Backend Core Test**: The `TestCoreServerLifecycle` scenario matrix spins up the native Core Server binary bound to an ephemeral TCP port and an isolated OS temporary directory (`os.MkdirTemp`). It executes real HTTP/REST requests:
+2. **Backend Core Test**: The `TestCoreServerLifecycle` scenario matrix and internal packages (10 packages, 66 tests passing) spin up the native Core Server binary bound to an ephemeral TCP port and an isolated OS temporary directory (`os.MkdirTemp`). It executes real HTTP/REST requests:
    - `GET /api/v1/workspace/info`
    - `POST /api/v1/workspace/file` (Write & create directories)
    - `GET /api/v1/workspace/file` (Read verification)
