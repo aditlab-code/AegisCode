@@ -16,7 +16,7 @@
 | **Phase 5** | AppDrawer AEGIS AI Agent & Session Hub | ✅ Completed | Multi-session chat, slash autocomplete, provider selector |
 | **Special** | UI Dark/Light Theme & Modular Palettes | ✅ Completed | ActivityRail toggle, modular JSON palettes (Default, Atom, Tokyo Night) |
 | **Special** | Settings Registry, Core IDE Preferences & Editor Polish | ✅ Completed | Decoupled schema registry, wildcard exclude, GPU cursor blinking, wrap column |
-| **Phase 6** | Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger | 🟡 Active (6.1–6.4, 6.6–6.10 ✅) | Cross-platform Go binary & embed.FS, supervisor, JSON store, AI agent bridge, DAP/Delve |
+| **Phase 6** | Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger | 🟡 Active (6.1–6.4, 6.6–6.10 ✅, 6.5 & 6.11 🟡) | Cross-platform Go binary & embed.FS, supervisor, JSON store, AI agent bridge, DAP/Delve, Append-Only Ledger |
 | **Phase 7** | Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`) | ⚪ Upcoming | Multi-format tab viewers (Images, CSV), vector canvas wireframing |
 | **Phase 8** | Research Workshop & Data Science Studio | ⚪ Planned | LaTeX + PDF sync, BibTeX, Python/R dataframes, Biblioshiny |
 | **Phase 9** | Web-Based Remote Pairing & Tablet Companion | ⚪ Deferred (Final) | LAN pairing, web preview host, touch-optimized editor mode |
@@ -125,7 +125,7 @@
 ---
 
 ### Phase 6: Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger
-- **Status**: 🟡 Active (Sub-Phases 6.1, 6.2, 6.3, 6.4, 6.6, 6.7, 6.8, 6.9, and 6.10 Completed; Sub-Phase 6.5 DAP Pending)
+- **Status**: 🟡 Active (Sub-Phases 6.1, 6.2, 6.3, 6.4, 6.6, 6.7, 6.8, 6.9, and 6.10 Completed; Sub-Phases 6.5 DAP & 6.11 Append-Only Ledger Pending)
 
 #### Sub-Phase 6.1: Live Workspace Engine & File Operations
 - **Status**: ✅ Completed
@@ -330,6 +330,31 @@
     - Agent multi-file modifications surface direct `[Review in Git]` navigation banner to Source Control.
   - **Verification**: 100% verified across Go backend tests (66 tests passing) and Vitest frontend tests (79 tests passing).
 
+#### Sub-Phase 6.11: Append-Only Event Ledger & Graph Storage for AI Conversations ([ADR 0009](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0009-append-only-chat-graph-ledger.md), [RFC](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/rfc-append-only-chat-graph-ledger.md))
+- **Status**: 🟡 Next
+- **Deliverables**:
+  - **Decoupled Session Metadata Index (`~/.aegis/sessions.json`)**:
+    - High-performance session descriptor index enabling $O(1)$ response times for `GET /api/v1/chats` without scanning or deserializing individual chat files.
+  - **Append-Only Event Ledger (`~/.aegis/chats/<session_id>.jsonl`)**:
+    - Sequential JSONL event node storage with parent pointers (`parent: "node-id"`), replacing monolithic whole-file rewrites with true $O(1)$ appends (`os.O_APPEND|os.O_WRONLY`).
+    - Eliminates the 3-second disk write debouncing workaround in `chatCore.ts`.
+  - **Graph Lineage & Zero-Mutation Branching / Forking**:
+    - Reconstructs active dialogue threads via in-memory backtracking traversal ($O(D)$ where $D$ is branch depth).
+    - Enables retrying prompt turns and generating alternative responses without destructively mutating or truncating past conversation nodes.
+  - **Content-Addressed Payload Offloading & Instant Teardown (`~/.aegis/blobs/<session_id>_<hash>.raw`)**:
+    - Large tool execution outputs, terminal logs, and buffer reads exceeding 4 KB offloaded to raw blob files keyed by session ID and SHA-256 hash.
+    - Lightweight previews displayed in UI; full outputs loaded on-demand via `GET /api/v1/blobs/:hash`.
+    - Session teardown cleans up all associated blobs instantly via `filepath.Glob` pattern matching; background lightweight sweeper prunes any dangling orphaned blobs.
+  - **Forward Map Traversal & Periodic Checkpoint Nodes**:
+    - High-speed in-memory map mapping ($O(N)$) with $O(H)$ sub-millisecond backtracking traversal.
+    - Periodic checkpoint nodes inserted every 200 turns for deep trees, eliminating ancestor re-traversal.
+  - **Fast Tail-Reading & Boot Lazy Healing**:
+    - Reverse-seek reader (`os.SEEK_END`) loading only the trailing 30–50 nodes for instantaneous chat drawer hydration on long-running sessions.
+    - Reconciliation on Boot: compares file modification timestamp (`mtime`) with `sessions.json` `updatedAt`, executing single-line tail reads via `os.Seek` only when out-of-sync (zero full-scan overhead).
+  - **Resilience & Non-Destructive Migration**:
+    - Self-healing startup indexer resolving dual-write inconsistencies between `sessions.json` and `.jsonl` files.
+    - Non-destructive shadow migration converting legacy `chats/<id>.json` to ledger format without modifying source files ([ADR 0007](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0007-non-destructive-shadow-migration.md)).
+
 ---
 
 ### Phase 7: Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`)
@@ -379,8 +404,7 @@
     - **Host Web Preview Tab**: Embedded webview displaying the application running from the workspace server, with touch-friendly refresh and navigation controls.
     - **Focus Code Editor Tab**: Distraction-free, single-buffer touch-optimized text editor allowing tablet users to edit active code files with instant synchronization to the desktop workspace.
   - **Realtime Sync Protocol**: WebSocket / SSE event bus keeping file buffers and cursor states synchronized between desktop and tablet.
+  - **Zero-Config Discovery & Pairing UI**:
+    - Embedded lightweight mDNS / Bonjour daemon in Go core server exposing `.local` domain (e.g. `aegis.local:8080`).
+    - Status bar pairing popover rendering local QR Code and Pair URL with one-time session token for instantaneous second-device connection.
 - **Exit Criteria**: A developer can open AegisCode on an iPad/tablet on the same Wi-Fi, run the web application preview on the tablet, and edit code buffers with zero desktop layout corruption.
-
-Jalankan server mDNS/Bonjour kecil di daemon Go (misal: mengekspos aegis.local:5173).
-
-Sediakan modal kecil di status bar yang menampilkan QR Code / Pair URL berisi session token lokal sekali pakai, sehingga laptop kedua langsung terhubung begitu link dibuka.

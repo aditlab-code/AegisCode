@@ -125,7 +125,8 @@ The Go Core Server adheres to a pragmatic, flat package-by-feature layout avoidi
 - [`docs/feature-backend.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/feature-backend.md): Backend technical blueprint, core features, and critical REST/SSE/WS endpoints.
 - [`docs/report.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/report.md): Feature assessment guidelines, scorecard metrics, and pre-implementation gate checklist.
 - [`docs/installation.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/installation.md): Installation prerequisites, build instructions, and developer setup.
-- [`docs/adr/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr): Architectural Decision Records (ADR 0001 through 0008).
+- [`docs/adr/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr): Architectural Decision Records (ADR 0001 through 0009).
+- [`docs/rfc-append-only-chat-graph-ledger.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/rfc-append-only-chat-graph-ledger.md): Feature RFC for Append-Only Event Ledger and Graph Storage for AI Conversations.
 
 ---
 

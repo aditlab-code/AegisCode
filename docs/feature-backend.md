@@ -298,14 +298,17 @@ To eliminate race conditions and the common `fatal: Unable to create '.../.git/i
 - `DELETE /api/v1/state/recent`
   - Query parameters: `?path=<path>` to remove a specific project, or `?all=true` to clear the list.
 - `GET /api/v1/chats`
-  - Returns metadata summaries for all conversation files in `~/.aegis/chats/` without loading full message arrays.
+  - Retrieves fast session metadata summaries from `~/.aegis/sessions.json` in $O(1)$ without scanning individual chat files.
 - `GET /api/v1/chats/:id`
-  - Retrieves full multi-turn chat session with messages from `~/.aegis/chats/<id>.json`.
+  - Retrieves chat session and event nodes from `~/.aegis/chats/<id>.jsonl` (or legacy fallback `~/.aegis/chats/<id>.json`). Supports query parameter `?tail=N` for fast reverse-seek hydration.
 - `POST /api/v1/chats/:id`
-  - Body: `ChatSession` JSON payload.
-  - Atomically saves chat session to `~/.aegis/chats/<id>.json`.
+  - Legacy atomic session save endpoint (kept for backward compatibility and shadow migration).
+- `POST /api/v1/chats/:id/events`
+  - Appends an atomic event node (`GraphNode`) directly to `~/.aegis/chats/<id>.jsonl` in $O(1)$ (`os.O_APPEND`) with parent lineage pointer. Automatically offloads payloads $>4\text{ KB}$ to `~/.aegis/blobs/<session_id>_<hash>.raw`. Supports periodic checkpoint nodes for deep trees.
+- `GET /api/v1/blobs/:sessionId/:hash` (or `GET /api/v1/blobs/:hash`)
+  - Streams full raw payload for externalized tool execution results or large buffer reads.
 - `DELETE /api/v1/chats/:id`
-  - Removes session file from `~/.aegis/chats/<id>.json`.
+  - Removes session entry from `~/.aegis/sessions.json`, deletes ledger file `~/.aegis/chats/<id>.jsonl`, and instantly cleans up all associated blobs via `filepath.Glob("~/.aegis/blobs/" + id + "_*")`.
 
 ### I. AI Provider Testing, Probing & Auto-Discovery (Sub-Phase 6.8)
 - `POST /api/v1/ai/test`
