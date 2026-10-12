@@ -2,6 +2,7 @@ import { useState, memo, useMemo } from "react"
 import { Icon } from "../../ui/Icon"
 import type { ToolCallItem, IconName } from "../../../types/workbench"
 import { cleanFilePath } from "../../../utils/workspaceApi"
+import { fetchChatBlob } from "../../../utils/storeApi"
 
 export interface ParsedToolCall {
   actionLabel: string
@@ -12,6 +13,7 @@ export interface ParsedToolCall {
   command?: string
   targetFile?: string
   output?: string
+  blobRef?: string
   error?: string
   rawArgs?: Record<string, any>
   linesCount?: number
@@ -39,15 +41,16 @@ function sanitizeRawArgs(
 /**
  * Truncates massive tool output strings so they do not inflate DOM memory.
  */
-function sanitizeOutput(output?: string): string | undefined {
-  if (!output) return undefined
-  if (output.length > 2500) {
+function sanitizeOutput(output?: string, preview?: string): string | undefined {
+  const content = output || preview
+  if (!content) return undefined
+  if (content.length > 2500) {
     return (
-      output.slice(0, 2500) +
-      `\n\n... [output truncated: ${output.length} characters total]`
+      content.slice(0, 2500) +
+      `\n\n... [output truncated: ${content.length} characters total]`
     )
   }
-  return output
+  return content
 }
 
 /**
@@ -68,7 +71,8 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
       fullTarget: cmd,
       secondary: desc,
       command: cmd,
-      output: sanitizeOutput(tc.output),
+      output: sanitizeOutput(tc.output, tc.preview),
+      blobRef: tc.blobRef,
       rawArgs: sanitizeRawArgs(tc.args),
     }
   }
@@ -124,7 +128,8 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
       fullTarget: hasValidPath ? filePath : "",
       secondary,
       targetFile: hasValidPath ? filePath : undefined,
-      output: sanitizeOutput(tc.output),
+      output: sanitizeOutput(tc.output, tc.preview),
+      blobRef: tc.blobRef,
       rawArgs: sanitizeRawArgs(tc.args),
     }
   }
@@ -182,7 +187,8 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
       fullTarget: hasValidPath ? filePath : "",
       secondary,
       targetFile: hasValidPath ? filePath : undefined,
-      output: sanitizeOutput(tc.output),
+      output: sanitizeOutput(tc.output, tc.preview),
+      blobRef: tc.blobRef,
       rawArgs: sanitizeRawArgs(tc.args),
       linesCount,
     }
@@ -202,7 +208,8 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
       target: query ? `"${query}"` : "Search",
       fullTarget: query,
       secondary: args.toolSummary || "",
-      output: sanitizeOutput(tc.output),
+      output: sanitizeOutput(tc.output, tc.preview),
+      blobRef: tc.blobRef,
       rawArgs: sanitizeRawArgs(tc.args),
     }
   }
@@ -218,7 +225,8 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
     target: tc.summary || name,
     fullTarget: tc.summary || name,
     secondary: "",
-    output: sanitizeOutput(tc.output),
+    output: sanitizeOutput(tc.output, tc.preview),
+    blobRef: tc.blobRef,
     rawArgs: sanitizeRawArgs(tc.args),
   }
 }
@@ -577,6 +585,66 @@ export const ToolCallStepper = memo(function ToolCallStepper({
   )
 })
 
+function ToolOutputBlock({
+  output,
+  blobRef,
+}: {
+  output?: string
+  blobRef?: string
+}) {
+  const [fullOutput, setFullOutput] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const content = fullOutput || output || ""
+
+  const handleFetchBlob = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!blobRef || loading) return
+    setLoading(true)
+    const res = await fetchChatBlob(blobRef)
+    if (res) setFullOutput(res)
+    setLoading(false)
+  }
+
+  if (!content) return null
+
+  return (
+    <div className="timeline-detail-item">
+      <div className="flex items-center justify-between gap-1 mb-1">
+        <span className="detail-label">Output:</span>
+        <div className="flex items-center gap-1">
+          {blobRef && !fullOutput && (
+            <button
+              type="button"
+              className="detail-copy-btn"
+              onClick={handleFetchBlob}
+              disabled={loading}
+            >
+              <span>{loading ? "Loading..." : "Load full output"}</span>
+            </button>
+          )}
+          <button
+            type="button"
+            className="detail-copy-btn"
+            onClick={(e) => {
+              e.stopPropagation()
+              if (navigator?.clipboard && content) {
+                navigator.clipboard.writeText(content)
+              }
+            }}
+          >
+            <Icon name="copy" size={9} />
+            <span>Copy</span>
+          </button>
+        </div>
+      </div>
+      <pre className="detail-output">
+        <code>{content}</code>
+      </pre>
+    </div>
+  )
+}
+
 export interface UnifiedActivityTimelineProps {
   thinking?: string
   toolCalls?: ToolCallItem[]
@@ -824,27 +892,10 @@ export const UnifiedActivityTimeline = memo(function UnifiedActivityTimeline({
                         </div>
                       )}
                       {parsed.output && (
-                        <div className="timeline-detail-item">
-                          <div className="flex items-center justify-between gap-1 mb-1">
-                            <span className="detail-label">Output:</span>
-                            <button
-                              type="button"
-                              className="detail-copy-btn"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                if (navigator?.clipboard && parsed.output) {
-                                  navigator.clipboard.writeText(parsed.output)
-                                }
-                              }}
-                            >
-                              <Icon name="copy" size={9} />
-                              <span>Copy</span>
-                            </button>
-                          </div>
-                          <pre className="detail-output">
-                            <code>{parsed.output}</code>
-                          </pre>
-                        </div>
+                        <ToolOutputBlock
+                          output={parsed.output}
+                          blobRef={parsed.blobRef}
+                        />
                       )}
                     </div>
                   )}

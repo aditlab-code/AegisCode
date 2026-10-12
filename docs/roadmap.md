@@ -16,7 +16,7 @@
 | **Phase 5** | AppDrawer AEGIS AI Agent & Session Hub | ✅ Completed | Multi-session chat, slash autocomplete, provider selector |
 | **Special** | UI Dark/Light Theme & Modular Palettes | ✅ Completed | ActivityRail toggle, modular JSON palettes (Default, Atom, Tokyo Night) |
 | **Special** | Settings Registry, Core IDE Preferences & Editor Polish | ✅ Completed | Decoupled schema registry, wildcard exclude, GPU cursor blinking, wrap column |
-| **Phase 6** | Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger | 🟡 Active (6.1–6.4, 6.6–6.10 ✅, 6.5 & 6.11 🟡) | Cross-platform Go binary & embed.FS, supervisor, JSON store, AI agent bridge, DAP/Delve, Append-Only Ledger |
+| **Phase 6** | Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger | 🟡 Active (6.1–6.4, 6.6–6.11 ✅, 6.5 🟡) | Cross-platform Go binary & embed.FS, supervisor, JSON store, AI agent bridge, DAP/Delve, Append-Only Ledger |
 | **Phase 7** | Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`) | ⚪ Upcoming | Multi-format tab viewers (Images, CSV), vector canvas wireframing |
 | **Phase 8** | Research Workshop & Data Science Studio | ⚪ Planned | LaTeX + PDF sync, BibTeX, Python/R dataframes, Biblioshiny |
 | **Phase 9** | Web-Based Remote Pairing & Tablet Companion | ⚪ Deferred (Final) | LAN pairing, web preview host, touch-optimized editor mode |
@@ -337,7 +337,7 @@
   - **Verification**: 100% verified across Go backend tests (66 tests passing) and Vitest frontend tests (79 tests passing).
 
 #### Sub-Phase 6.11: Append-Only Event Ledger & Graph Storage for AI Conversations ([ADR 0009](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0009-append-only-chat-graph-ledger.md), [RFC](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/rfc-append-only-chat-graph-ledger.md))
-- **Status**: 🟡 Next
+- **Status**: ✅ Completed
 - **Deliverables**:
   - **Decoupled Session Metadata Index (`~/.aegis/sessions.json`)**:
     - High-performance session descriptor index enabling $O(1)$ response times for `GET /api/v1/chats` without scanning or deserializing individual chat files.
@@ -349,7 +349,7 @@
     - Enables retrying prompt turns and generating alternative responses without destructively mutating or truncating past conversation nodes.
   - **Content-Addressed Payload Offloading & Instant Teardown (`~/.aegis/blobs/<session_id>_<hash>.raw`)**:
     - Large tool execution outputs, terminal logs, and buffer reads exceeding 4 KB offloaded to raw blob files keyed by session ID and SHA-256 hash.
-    - Lightweight previews displayed in UI; full outputs loaded on-demand via `GET /api/v1/blobs/:hash`.
+    - Lightweight previews displayed in UI; full outputs loaded on-demand via `GET /api/v1/blobs/:hash` or `ToolOutputBlock`.
     - Session teardown cleans up all associated blobs instantly via `filepath.Glob` pattern matching; background lightweight sweeper prunes any dangling orphaned blobs.
   - **Forward Map Traversal & Periodic Checkpoint Nodes**:
     - High-speed in-memory map mapping ($O(N)$) with $O(H)$ sub-millisecond backtracking traversal.
@@ -360,6 +360,7 @@
   - **Resilience & Non-Destructive Migration**:
     - Self-healing startup indexer resolving dual-write inconsistencies between `sessions.json` and `.jsonl` files.
     - Non-destructive shadow migration converting legacy `chats/<id>.json` to ledger format without modifying source files ([ADR 0007](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0007-non-destructive-shadow-migration.md)).
+  - **Verification**: 100% verified across Go backend tests (`TestAppendEventNodeAndBlobOffload`, `TestReverseSeekTail`, `TestReconstructChatAndBranching`, `TestDeleteSessionAndBlobs`, `TestReconcileSessionsOnBoot` in `server/internal/store/ledger_test.go`, and `TestStorageEndpoints` in `server/internal/api/api_test.go`) and Vitest frontend regression tests (`test/frontend/chat/chatGraphLedger.test.ts`, 84 tests passing).
 
 ---
 

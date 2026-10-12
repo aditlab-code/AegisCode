@@ -227,6 +227,42 @@ export interface ToolCallItem {
   targetFile?: string
   args?: Record<string, any>
   output?: string
+  blobRef?: string
+  preview?: string
+}
+
+export interface SessionDescriptor {
+  id: string
+  title: string
+  provider: ChatProvider
+  model: string
+  createdAt: number
+  updatedAt: number
+  rootNodeId?: string
+  activeLeafId?: string
+  nodeCount: number
+  totalTokens?: number
+}
+
+export interface SessionsIndex {
+  version: number
+  updatedAt: number
+  sessions: SessionDescriptor[]
+}
+
+export interface GraphNode {
+  id: string
+  parent?: string | null
+  type: "user" | "thought" | "tool_call" | "tool_result" | "agent" | "checkpoint"
+  text?: string
+  content?: string
+  tool?: string
+  args?: Record<string, any>
+  output?: string
+  blobRef?: string
+  preview?: string
+  ts: number
+  meta?: Record<string, any>
 }
 
 export interface ChatMessage {

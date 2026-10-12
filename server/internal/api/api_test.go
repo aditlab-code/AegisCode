@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -911,7 +912,65 @@ func TestStorageEndpoints(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// 10. Test automatic AddRecentProject via /api/v1/workspace/open
+	// 10. Test POST /api/v1/chats/session-ledger/events and GET ...?format=graph
+	eventNode := store.GraphNode{
+		ID:     "n-api-1",
+		Type:   "user",
+		Text:   "Ledger API test prompt",
+		Output: strings.Repeat("Large diagnostic log payload\n", 150), // triggers CAS blob
+	}
+	eventBytes, _ := json.Marshal(eventNode)
+	resp, err = http.Post(ts.URL+"/api/v1/chats/session-ledger/events", "application/json", bytes.NewReader(eventBytes))
+	if err != nil {
+		t.Fatalf("failed to append event node via API: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 on event post, got %d", resp.StatusCode)
+	}
+	var appendRes struct {
+		Status string          `json:"status"`
+		NodeId string          `json:"nodeId"`
+		Node   store.GraphNode `json:"node"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&appendRes)
+	resp.Body.Close()
+	if appendRes.NodeId != "n-api-1" || appendRes.Node.BlobRef == "" {
+		t.Errorf("expected node n-api-1 with BlobRef, got %+v", appendRes)
+	}
+
+	// 11. Test GET /api/v1/blobs/:hash
+	resp, err = http.Get(ts.URL + "/api/v1/blobs/" + appendRes.Node.BlobRef)
+	if err != nil {
+		t.Fatalf("failed to fetch blob via API: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for blob fetch, got %d", resp.StatusCode)
+	}
+	blobBody, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(blobBody), "Large diagnostic log payload") {
+		t.Errorf("blob body mismatch")
+	}
+
+	// 12. Test GET /api/v1/chats/session-ledger?format=graph
+	resp, err = http.Get(ts.URL + "/api/v1/chats/session-ledger?format=graph")
+	if err != nil {
+		t.Fatalf("failed to get chat graph: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for chat graph, got %d", resp.StatusCode)
+	}
+	var graphRes struct {
+		ID    string            `json:"id"`
+		Nodes []store.GraphNode `json:"nodes"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&graphRes)
+	resp.Body.Close()
+	if len(graphRes.Nodes) != 1 || graphRes.Nodes[0].ID != "n-api-1" {
+		t.Errorf("expected 1 graph node n-api-1, got %+v", graphRes)
+	}
+
+	// 13. Test automatic AddRecentProject via /api/v1/workspace/open
 	openReq := map[string]string{"path": tempDir}
 	openBytes, _ := json.Marshal(openReq)
 	resp, err = http.Post(ts.URL+"/api/v1/workspace/open", "application/json", bytes.NewReader(openBytes))

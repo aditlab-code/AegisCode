@@ -1,4 +1,4 @@
-import type { ChatSession } from "../types/workbench"
+import type { ChatSession, GraphNode } from "../types/workbench"
 
 export interface BackendConfig {
   theme?: string
@@ -387,4 +387,85 @@ export async function streamAIChat(
     }
     onEvent({ type: "error", error: err?.message || "Stream read error" })
   }
+}
+
+export interface AppendEventResponse {
+  status: string
+  nodeId?: string
+  node?: GraphNode
+}
+
+export async function appendChatEvent(
+  sessionId: string,
+  node: GraphNode,
+): Promise<AppendEventResponse | null> {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/v1/chats/${encodeURIComponent(sessionId)}/events`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(node),
+      },
+    )
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
+export async function fetchChatBlob(hash: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/v1/blobs/${encodeURIComponent(hash)}`,
+    )
+    if (!res.ok) return null
+    return await res.text()
+  } catch {
+    return null
+  }
+}
+
+export async function fetchChatNodes(
+  sessionId: string,
+  tail?: number,
+): Promise<GraphNode[]> {
+  try {
+    const url = `${API_BASE}/api/v1/chats/${encodeURIComponent(sessionId)}?format=graph${
+      tail ? `&tail=${tail}` : ""
+    }`
+    const res = await fetch(url)
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.nodes || []
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Reconstructs the linear dialogue path from any active leaf node back to the root.
+ * Time Complexity: O(D), where D is depth of the conversation branch (typically < 100).
+ * Space Complexity: O(D).
+ */
+export function reconstructPath(
+  nodes: Map<string, GraphNode> | GraphNode[],
+  activeLeafId: string,
+): GraphNode[] {
+  const nodeMap: Map<string, GraphNode> =
+    nodes instanceof Map ? nodes : new Map(nodes.map((n) => [n.id, n]))
+
+  const path: GraphNode[] = []
+  let current: GraphNode | undefined = nodeMap.get(activeLeafId)
+  const visited = new Set<string>()
+
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id)
+    path.unshift(current)
+    if (!current.parent) break
+    current = nodeMap.get(current.parent)
+  }
+
+  return path
 }

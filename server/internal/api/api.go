@@ -195,6 +195,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/state/recent", s.handleStateRecent)
 	mux.HandleFunc("/api/v1/chats", s.handleChatsList)
 	mux.HandleFunc("/api/v1/chats/", s.handleChatOperations)
+	mux.HandleFunc("/api/v1/blobs/", s.handleBlob)
 
 	// AI Provider Connection Probe & Antigravity Endpoints
 	mux.HandleFunc("/api/v1/ai/test", s.handleAITest)
@@ -1547,15 +1548,71 @@ func (s *Server) handleChatOperations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := strings.TrimPrefix(r.URL.Path, "/api/v1/chats/")
-	id = strings.TrimSpace(id)
-	if id == "" {
+	subPath := strings.TrimPrefix(r.URL.Path, "/api/v1/chats/")
+	subPath = strings.TrimSpace(subPath)
+	if subPath == "" {
 		jsonError(w, http.StatusBadRequest, "chat session id is required")
 		return
 	}
 
+	// Handle POST /api/v1/chats/:id/events (Append-Only Event Ledger)
+	if strings.HasSuffix(subPath, "/events") {
+		sessionID := strings.TrimSuffix(subPath, "/events")
+		sessionID = strings.Trim(sessionID, "/")
+		if sessionID == "" {
+			jsonError(w, http.StatusBadRequest, "chat session id is required")
+			return
+		}
+		if r.Method != http.MethodPost {
+			jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+
+		var node store.GraphNode
+		if err := json.NewDecoder(r.Body).Decode(&node); err != nil {
+			jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+
+		savedNode, err := s.store.AppendEventNode(sessionID, node)
+		if err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to append event node: "+err.Error())
+			return
+		}
+
+		jsonResponse(w, http.StatusOK, map[string]any{
+			"status": "ok",
+			"nodeId": savedNode.ID,
+			"node":   savedNode,
+		})
+		return
+	}
+
+	id := subPath
+
 	switch r.Method {
 	case http.MethodGet:
+		// Check for ?format=graph or ?tail=<n>
+		q := r.URL.Query()
+		if q.Get("format") == "graph" {
+			tail := 0
+			if tStr := q.Get("tail"); tStr != "" {
+				if parsed, err := strconv.Atoi(tStr); err == nil && parsed > 0 {
+					tail = parsed
+				}
+			}
+			nodes, err := s.store.GetChatNodes(id, tail)
+			if err != nil {
+				jsonError(w, http.StatusInternalServerError, "failed to get chat nodes: "+err.Error())
+				return
+			}
+			jsonResponse(w, http.StatusOK, map[string]any{
+				"id":    id,
+				"nodes": nodes,
+			})
+			return
+		}
+
 		sess, err := s.store.GetChat(id)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -1598,6 +1655,38 @@ func (s *Server) handleChatOperations(w http.ResponseWriter, r *http.Request) {
 	default:
 		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func (s *Server) handleBlob(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		jsonError(w, http.StatusServiceUnavailable, "store unavailable")
+		return
+	}
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	hash := strings.TrimPrefix(r.URL.Path, "/api/v1/blobs/")
+	hash = strings.TrimSpace(hash)
+	if hash == "" {
+		jsonError(w, http.StatusBadRequest, "blob hash is required")
+		return
+	}
+
+	data, err := s.store.GetBlob(hash)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			jsonError(w, http.StatusNotFound, "blob not found")
+			return
+		}
+		jsonError(w, http.StatusInternalServerError, "failed to read blob: "+err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
 
 func (s *Server) handleAITest(w http.ResponseWriter, r *http.Request) {

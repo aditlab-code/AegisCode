@@ -83,3 +83,41 @@ type ChatSummary struct {
 	CreatedAt    int64  `json:"createdAt"`
 	UpdatedAt    int64  `json:"updatedAt"`
 }
+
+// SessionDescriptor represents high-performance session metadata stored in ~/.aegis/sessions.json.
+type SessionDescriptor struct {
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	Provider     string `json:"provider"`
+	Model        string `json:"model"`
+	CreatedAt    int64  `json:"createdAt"`
+	UpdatedAt    int64  `json:"updatedAt"`
+	RootNodeID   string `json:"rootNodeId,omitempty"`
+	ActiveLeafID string `json:"activeLeafId,omitempty"`
+	NodeCount    int    `json:"nodeCount"`
+	TotalTokens  int    `json:"totalTokens,omitempty"`
+}
+
+// SessionsIndex represents the global session metadata index in ~/.aegis/sessions.json.
+type SessionsIndex struct {
+	Version   int                 `json:"version"`
+	UpdatedAt int64               `json:"updatedAt"`
+	Sessions  []SessionDescriptor `json:"sessions"`
+}
+
+// GraphNode represents an atomic interaction event in the append-only ledger (~/.aegis/chats/<id>.jsonl).
+type GraphNode struct {
+	ID      string         `json:"id"`
+	Parent  *string        `json:"parent"` // nil for root node
+	Type    string         `json:"type"`   // "user" | "thought" | "tool_call" | "tool_result" | "agent" | "checkpoint"
+	Text    string         `json:"text,omitempty"`
+	Content string         `json:"content,omitempty"`
+	Tool    string         `json:"tool,omitempty"`
+	Args    map[string]any `json:"args,omitempty"`
+	Output  string         `json:"output,omitempty"`
+	BlobRef string         `json:"blobRef,omitempty"`
+	Preview string         `json:"preview,omitempty"`
+	Ts      int64          `json:"ts"`
+	Meta    map[string]any `json:"meta,omitempty"`
+}
+

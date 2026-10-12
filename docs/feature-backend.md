@@ -281,7 +281,7 @@ To eliminate race conditions and the common `fatal: Unable to create '.../.git/i
 - `POST /api/v1/workers/:id/stop` / `DELETE /api/v1/workers/:id`
   - Terminates the worker process group gracefully.
 
-### H. Flat-File Persistence & State Management (Sub-Phase 6.4)
+### H. Flat-File Persistence & State Management (Sub-Phase 6.4 & 6.11)
 - `GET /api/v1/config`
   - Retrieves global user preferences, model choices, provider credentials, and custom models from `~/.aegis/config.json`.
 - `POST /api/v1/config`
@@ -298,17 +298,63 @@ To eliminate race conditions and the common `fatal: Unable to create '.../.git/i
 - `DELETE /api/v1/state/recent`
   - Query parameters: `?path=<path>` to remove a specific project, or `?all=true` to clear the list.
 - `GET /api/v1/chats`
-  - Retrieves fast session metadata summaries from `~/.aegis/sessions.json` in $O(1)$ without scanning individual chat files.
+  - Retrieves session metadata summaries from `~/.aegis/sessions.json` in $O(1)$ without scanning individual chat files or directory walking.
+  - Response: `{ "sessions": [ { "id": "uuid", "title": "string", "createdAt": 177..., "updatedAt": 177..., "model": "string", "provider": "string", "messageCount": 10 } ] }`
 - `GET /api/v1/chats/:id`
-  - Retrieves chat session and event nodes from `~/.aegis/chats/<id>.jsonl` (or legacy fallback `~/.aegis/chats/<id>.json`). Supports query parameter `?tail=N` for fast reverse-seek hydration.
+  - Supports dual formats via query parameters:
+    - **Default Mode (Linear Path Reconstructed)**: Backtracks from active head pointer through parent lineage pointers (`parentId`) to reconstruct a linear conversational thread matching standard `ChatSession` struct (`{ "id": "uuid", "title": "string", "createdAt": 177..., "updatedAt": 177..., "messages": [...] }`).
+    - **Graph Format Mode (`?format=graph&tail=N`)**: Retrieves raw event nodes slice: `{ "id": "uuid", "nodes": [ { "id": "node-...", "parentId": "node-...", "type": "message", "role": "user" | "agent", "content": "...", "blobRef": "...", "timestamp": 177... } ] }`. When `tail=N` is specified ($N > 0$), executes block-buffered reverse-seek tail reader (`ReverseSeekTail`) to read only the last $N$ lines from `~/.aegis/chats/<id>.jsonl` in sub-millisecond latency.
+  - **Non-Destructive Shadow Fallback**: Lazily reads legacy `~/.aegis/chats/<id>.json` if `.jsonl` has not yet been populated.
 - `POST /api/v1/chats/:id`
   - Legacy atomic session save endpoint (kept for backward compatibility and shadow migration).
 - `POST /api/v1/chats/:id/events`
-  - Appends an atomic event node (`GraphNode`) directly to `~/.aegis/chats/<id>.jsonl` in $O(1)$ (`os.O_APPEND`) with parent lineage pointer. Automatically offloads payloads $>4\text{ KB}$ to `~/.aegis/blobs/<session_id>_<hash>.raw`. Supports periodic checkpoint nodes for deep trees.
-- `GET /api/v1/blobs/:sessionId/:hash` (or `GET /api/v1/blobs/:hash`)
-  - Streams full raw payload for externalized tool execution results or large buffer reads.
+  - Body: `GraphNode` JSON object:
+    ```json
+    {
+      "id": "node-1773000000000",
+      "parentId": "node-root",
+      "type": "message",
+      "role": "user",
+      "content": "Hello AI",
+      "thinking": "",
+      "toolCalls": [],
+      "diff": "",
+      "timestamp": 1773000000000
+    }
+    ```
+  - Appends an atomic event node directly to `~/.aegis/chats/<id>.jsonl` in $O(1)$ (`os.O_APPEND | os.O_CREATE | os.O_WRONLY`).
+  - **Content-Addressed Storage (CAS) Offloading**: If payload size exceeds 4 KB (4,096 bytes), calculates SHA-256 hash, offloads raw payload to `~/.aegis/blobs/<session_id>_<hash>.raw`, clears inline content, and records `blobRef: "<hash>"`.
+  - **Index Synchronization**: Updates `updatedAt`, `messageCount`, and session metadata in `~/.aegis/sessions.json`.
+  - Response: `{ "status": "ok", "nodeId": "string", "node": { ... } }`.
+- `GET /api/v1/blobs/:hash`
+  - Content-Addressed Storage (CAS) stream endpoint. Locates and streams raw bytes of an offloaded tool output or message payload from `~/.aegis/blobs/<session_id>_<hash>.raw`.
+  - Response: `200 OK` with `Content-Type: text/plain; charset=utf-8` and raw payload body. Returns `404 Not Found` if blob has been removed.
 - `DELETE /api/v1/chats/:id`
-  - Removes session entry from `~/.aegis/sessions.json`, deletes ledger file `~/.aegis/chats/<id>.jsonl`, and instantly cleans up all associated blobs via `filepath.Glob("~/.aegis/blobs/" + id + "_*")`.
+  - Removes session entry from `~/.aegis/sessions.json` in $O(1)$.
+  - Deletes event ledger file `~/.aegis/chats/<id>.jsonl` (and legacy shadow `~/.aegis/chats/<id>.json`).
+  - **Instant CAS Blob Teardown**: Scans and unlinks all associated content-addressed raw blobs via `filepath.Glob("~/.aegis/blobs/" + id + "_*.raw")`.
+  - Response: `{ "status": "ok", "id": "uuid" }`.
+
+#### Append-Only Event Ledger & Content-Addressed Blob Storage Architecture (Sub-Phase 6.11)
+To ensure unbounded scalability, zero file corruption during unexpected crashes, and instant drawer hydration:
+1. **$O(1)$ Indexing & Lazy Boot Healing (`sessions.json`)**:
+   - `~/.aegis/sessions.json` maintains an atomic descriptor map `{ "version": 1, "sessions": { [id]: SessionDescriptor } }`.
+   - Listing chat sessions (`ListChats`) reads this single small index file in $O(1)$ without scanning directory entries or parsing chat history files.
+   - **Boot Lazy Healing**: On server startup (`store.NewStore`), if `sessions.json` is missing or out of sync with existing `.jsonl` files in `~/.aegis/chats/`, the backend executes an automatic reconciliation pass that extracts titles and timestamps to reconstruct the index non-destructively.
+2. **Append-Only Sequential Ledger (`.jsonl`)**:
+   - Sequential writes via `os.OpenFile(..., os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)` completely eliminate file rewrites and truncation race conditions.
+   - Each turn, message, or tool execution is an immutable `GraphNode` with a `parentId` pointer, providing native DAG branching support for exploratory AI workflows.
+3. **Content-Addressed Storage (CAS) Offloading**:
+   - Payloads larger than 4 KB (e.g. bulky terminal command outputs, multi-file diffs, large file views) are SHA-256 hashed and stored separately as `~/.aegis/blobs/<session_id>_<hash>.raw`.
+   - The ledger entry records only the cryptographic `blobRef`, keeping `.jsonl` lines compact and ensuring parse operations finish in sub-millisecond time.
+   - The frontend (`ToolCallActivity.tsx`) retrieves these large payloads on-demand via `fetchChatBlob`.
+4. **Reverse-Seek Block-Buffered Tail Hydration**:
+   - `ReverseSeekTail(path, tail)` performs backwards seeks from EOF in 8 KB chunk buffers.
+   - Reads only the trailing $N$ events from disk, allowing the UI chat drawer to render instantly even on conversations with thousands of messages.
+5. **Branching Lineage & Linear Path Backtracking**:
+   - Linear conversation history is reconstructed via backwards parent-pointer traversal (`ReconstructChat`), navigating from head to root in $O(K)$ where $K$ is the thread length, while preserving alternate branches in the underlying ledger.
+6. **Instant Session & Blob Teardown**:
+   - Deleting a chat cleans up the ledger, updates `sessions.json`, and sweeps all session-scoped CAS blobs via glob pattern in one synchronous step, preventing disk leaks.
 
 ### I. AI Provider Testing, Probing & Auto-Discovery (Sub-Phase 6.8)
 - `POST /api/v1/ai/test`
@@ -329,13 +375,51 @@ To eliminate race conditions and the common `fatal: Unable to create '.../.git/i
 ### J. AI Agent Execution & Streamed SSE Response (Sub-Phase 6.9: Multi-Provider Engine)
 - `POST /api/v1/ai/chat`
   - Content-Type: `application/json` (Input), `text/event-stream` (Output stream).
-  - Body: `{ "workspaceDir": "/path/to/project", "conversationId": "optional-uuid", "provider": "antigravity | opencode | openrouter | claude", "model": "...", "prompt": "...", "apiKey": "optional", "baseUrl": "optional" }`
+  - Body:
+    ```json
+    {
+      "workspaceDir": "/path/to/project",
+      "conversationId": "optional-uuid",
+      "provider": "antigravity" | "opencode" | "openrouter" | "claude",
+      "model": "string",
+      "prompt": "string",
+      "apiKey": "optional",
+      "baseUrl": "optional"
+    }
+    ```
   - **Multi-Provider Engine Abstraction (`server/internal/ai/engine.go`)**:
-    - Dispatches chat requests dynamically via `ProviderEngine` interface (`GetEngine(provider)`).
-    - Automatically resolves omitted `Provider`, `Model`, `APIKey`, and `BaseURL` from persistent user preferences in `~/.aegis/config.json` (`s.store.GetConfig()`).
-    - **Antigravity Engine (`server/internal/ai/antigravity.go`)**: Out-of-process CLI invocation (`agy`) bound to active workspace directory with `--dangerously-skip-permissions` and NDJSON parsing.
-    - **OpenAI / OpenCode / OpenRouter Engine (`server/internal/ai/openai.go`)**: Direct HTTP SSE streaming with `OpenAIAggregator` assembling fragmented delta tool call arguments into verified JSON tool items.
-    - **Claude Engine (`server/internal/ai/claude.go`)**: Direct Anthropic Messages SSE streaming with `ClaudeBlockHandler` parsing `content_block_start`, `content_block_delta`, and `content_block_stop` tool blocks.
+    - Dispatches chat requests dynamically via `ProviderEngine` interface:
+      ```go
+      type ProviderEngine interface {
+          StreamChat(ctx context.Context, req StreamChatRequest, sendEvent EventSender) error
+      }
+      ```
+    - Factory resolver `GetEngine(provider)` resolves:
+      - `"antigravity"` / `"agy"`: `AntigravityEngine` (out-of-process CLI invocation).
+      - `"opencode"` / `"openrouter"` / `"openai"`: `OpenAIEngine` (direct HTTP SSE streaming with OpenAI tool specs).
+      - `"claude"` / `"anthropic"`: `ClaudeEngine` (direct Anthropic Messages SSE streaming).
+    - **Automatic Config Fallback & Credential Injection**:
+      - If `provider`, `model`, `apiKey`, or `baseUrl` are omitted in request, the backend automatically reads user preferences from `~/.aegis/config.json` via `s.store.GetConfig()`:
+        - `req.Provider = cfg.DefaultProvider` (default: `"antigravity"`)
+        - `req.Model = cfg.DefaultModel`
+        - `req.APIKey = cfg.ProviderKeys[provKey]`
+        - `req.BaseURL = cfg.ProviderBaseURLs[provKey]`
+      - Enables frontend clients to trigger completions without resending secrets in request payloads.
+    - **OpenAI Streaming Tool Delta Aggregator (`OpenAIAggregator` in `openai.go`)**:
+      - OpenAI / OpenCode / OpenRouter stream tool calls as incremental delta chunks (`OpenAIToolChunk`).
+      - `OpenAIAggregator` tracks in-flight tool states in `map[int]*InFlightToolState`.
+      - Emits an initial `tool_call` running event immediately upon receiving the first chunk for an index to provide instant visual feedback in the activity timeline.
+      - On stream completion, `Finalize()` unmarshals the concatenated JSON argument string into structured `map[string]any`, applies string sanitization, extracts target files, synthesizes action summaries, and marks status as `success`.
+    - **Claude Block-Based Streaming Handler (`ClaudeBlockHandler` in `claude.go`)**:
+      - Anthropic Messages API delivers tool invocations across distinct block events:
+        - `content_block_start`: Declares `tool_use` with `id` and `name`. Emits running `tool_call` event.
+        - `content_block_delta`: Streams partial `input_json_delta` fragments into an internal buffer.
+        - `content_block_stop`: Finalizes the block, deserializes arguments, resolves target file, synthesizes human-readable action summary, and emits normalized `tool_call` success event.
+    - **Tool Normalization & Resiliency Guards (`server/internal/ai/normalizer.go`)**:
+      - **Anti-Ghost Tab Guard (`ExtractTargetFile`)**: Inspects arguments (`AbsolutePath`, `TargetFile`, `targetFile`, `path`, `file`, etc.). Rejects directory paths and invalid strings matching tool action names (e.g. `"view_file"` or `"run_command"`), preventing accidental blank editor tabs.
+      - **Output Capping (`CapOutput`)**: Caps tool output payloads at 2,500 characters during streaming to keep DOM nodes responsive, while full payloads are preserved in CAS blobs.
+      - **Summary Synthesis (`GenerateSummary`)**: Automatically crafts concise UI timeline labels (e.g. `Melihat src/App.tsx`, `Menjalankan rtk npm test`, `Mengedit server/main.go`).
+      - **String Sanitization (`SanitizeString`)**: Strips stray outer quotes and whitespace from tool argument paths.
   - Streams real-time Server-Sent Events (SSE):
     - `event: start`: Emits initial conversation UUID:
       `{ "type": "start", "conversationId": "uuid" }`
@@ -401,12 +485,13 @@ Testing is strictly segregated under the root `test/` directory, cleanly separat
 
 ### Core Test Pattern (Table-Driven Scenario Matrix)
 Rather than spawning dozens of scattered test files for every bug report or edge case, all regressions register directly into the **Core Test Matrix**:
-1. **Frontend Core Test**: The `coreRegressionScenarios` matrix and domain suites (7 suites, 79 tests passing) execute end-to-end state transitions:
+1. **Frontend Core Test**: The `coreRegressionScenarios` matrix and domain suites (8 suites, 84 tests passing) execute end-to-end state transitions:
    - Workspace file CRUD, buffer dirty flags, and debounced save synchronizations.
    - Editor group tabs, split pane migrations, and automatic un-splitting.
    - Git staging, unstaging, and commit creation.
    - Terminal PTY sessions, command history, and stream pipelines.
    - AI Agent session creation and conversational context streaming.
+   - Append-Only Event Ledger & Content-Addressed Blob Storage (`test/frontend/chat/chatGraphLedger.test.ts`).
    - `AsyncSequenceGuard` concurrency safety (monotonic request IDs and AbortController cancellation).
    - Safe Tool Call Activity rendering, step deduplication, and ghost tab prevention (`test/frontend/chat/toolCallActivity.test.ts`).
    - Streaming fast-path zero-parse & Markdown rendering safeguards (`test/frontend/chat/markdownSafeGuard.test.ts`).
@@ -415,7 +500,7 @@ Rather than spawning dozens of scattered test files for every bug report or edge
    - Multi-file touch banner and navigation triggers (`test/frontend/chat/chatMultiFileBanner.test.ts`).
    - `WS-CLOSE-01`: Close workspace lifecycle (tree, buffers, and tab states cleared).
    - `WS-PATH-01`: Path normalization (trailing slash stripping, OS cross-platform paths, recent projects storage).
-2. **Backend Core Test**: The `TestCoreServerLifecycle` scenario matrix and internal packages (10 packages, 66 tests passing) spin up the native Core Server binary bound to an ephemeral TCP port and an isolated OS temporary directory (`os.MkdirTemp`). It executes real HTTP/REST requests:
+2. **Backend Core Test**: The `TestCoreServerLifecycle` scenario matrix and internal packages (10 packages, including Multi-Provider AI engines in `ai` and Append-Only Ledger suites in `store`, 70+ tests passing) spin up the native Core Server binary bound to an ephemeral TCP port and an isolated OS temporary directory (`os.MkdirTemp`). It executes real HTTP/REST requests:
    - `GET /api/v1/workspace/info`
    - `POST /api/v1/workspace/file` (Write & create directories)
    - `GET /api/v1/workspace/file` (Read verification)

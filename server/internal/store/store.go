@@ -17,6 +17,7 @@ import (
 type Store struct {
 	baseDir  string
 	chatsDir string
+	blobsDir string
 	mu       sync.RWMutex
 }
 
@@ -54,13 +55,18 @@ func New(baseDir string) (*Store, error) {
 	}
 
 	chatsDir := filepath.Join(baseDir, "chats")
+	blobsDir := filepath.Join(baseDir, "blobs")
 	if err := os.MkdirAll(chatsDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create storage directories: %w", err)
+	}
+	if err := os.MkdirAll(blobsDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create blobs directory: %w", err)
 	}
 
 	st := &Store{
 		baseDir:  baseDir,
 		chatsDir: chatsDir,
+		blobsDir: blobsDir,
 	}
 
 	// Non-destructive shadow migration check:
@@ -71,6 +77,10 @@ func New(baseDir string) (*Store, error) {
 			_ = st.SaveConfig(migratedCfg)
 		}
 	}
+
+	// Sub-Phase 6.11: Migrate legacy .json chats to .jsonl and reconcile sessions.json
+	_ = st.MigrateLegacyJSONChats()
+	_ = st.ReconcileSessionsOnBoot()
 
 	return st, nil
 }
@@ -361,8 +371,26 @@ func (s *Store) ClearRecentProjects() error {
 
 // --- Chat Operations ---
 
-// ListChats reads all session summaries from ~/.aegis/chats/*.json, sorted by UpdatedAt desc.
+// ListChats reads all session summaries from ~/.aegis/sessions.json in O(1) time,
+// with graceful fallback to directory scanning.
 func (s *Store) ListChats() ([]ChatSummary, error) {
+	idx, err := s.GetSessionsIndex()
+	if err == nil && len(idx.Sessions) > 0 {
+		summaries := make([]ChatSummary, len(idx.Sessions))
+		for i, sess := range idx.Sessions {
+			summaries[i] = ChatSummary{
+				ID:           sess.ID,
+				Title:        sess.Title,
+				Provider:     sess.Provider,
+				Model:        sess.Model,
+				MessageCount: sess.NodeCount,
+				CreatedAt:    sess.CreatedAt,
+				UpdatedAt:    sess.UpdatedAt,
+			}
+		}
+		return summaries, nil
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -376,30 +404,32 @@ func (s *Store) ListChats() ([]ChatSummary, error) {
 
 	var summaries []ChatSummary
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || strings.HasPrefix(entry.Name(), ".") {
+		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
 
-		filePath := filepath.Join(s.chatsDir, entry.Name())
-		data, rErr := os.ReadFile(filePath)
-		if rErr != nil {
-			continue
-		}
+		if strings.HasSuffix(entry.Name(), ".json") {
+			filePath := filepath.Join(s.chatsDir, entry.Name())
+			data, rErr := os.ReadFile(filePath)
+			if rErr != nil {
+				continue
+			}
 
-		var session ChatSession
-		if uErr := json.Unmarshal(data, &session); uErr != nil {
-			continue
-		}
+			var session ChatSession
+			if uErr := json.Unmarshal(data, &session); uErr != nil {
+				continue
+			}
 
-		summaries = append(summaries, ChatSummary{
-			ID:           session.ID,
-			Title:        session.Title,
-			Provider:     session.Provider,
-			Model:        session.Model,
-			MessageCount: len(session.Messages),
-			CreatedAt:    session.CreatedAt,
-			UpdatedAt:    session.UpdatedAt,
-		})
+			summaries = append(summaries, ChatSummary{
+				ID:           session.ID,
+				Title:        session.Title,
+				Provider:     session.Provider,
+				Model:        session.Model,
+				MessageCount: len(session.Messages),
+				CreatedAt:    session.CreatedAt,
+				UpdatedAt:    session.UpdatedAt,
+			})
+		}
 	}
 
 	sort.Slice(summaries, func(i, j int) bool {
@@ -421,13 +451,23 @@ func (s *Store) ListChats() ([]ChatSummary, error) {
 	return summaries, nil
 }
 
-// GetChat loads a specific chat session by its ID.
+// GetChat loads a specific chat session by its ID, reconstructing from ledger if available.
 func (s *Store) GetChat(id string) (*ChatSession, error) {
 	cleanID, err := sanitizeID(id)
 	if err != nil {
 		return nil, err
 	}
 
+	// 1. Try reconstructing from append-only ledger .jsonl
+	jsonlPath := filepath.Join(s.chatsDir, cleanID+".jsonl")
+	if _, statErr := os.Stat(jsonlPath); statErr == nil {
+		sess, rErr := s.ReconstructChat(cleanID, "")
+		if rErr == nil && sess != nil {
+			return sess, nil
+		}
+	}
+
+	// 2. Fallback to legacy .json
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -452,7 +492,7 @@ func (s *Store) GetChat(id string) (*ChatSession, error) {
 	return &session, nil
 }
 
-// SaveChat atomically persists a chat session to ~/.aegis/chats/<session_id>.json.
+// SaveChat persists a chat session atomically, updating both legacy JSON and the event ledger.
 func (s *Store) SaveChat(session *ChatSession) error {
 	if session == nil {
 		return errors.New("cannot save nil session")
@@ -464,9 +504,6 @@ func (s *Store) SaveChat(session *ChatSession) error {
 	}
 	session.ID = cleanID
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if session.CreatedAt == 0 {
 		session.CreatedAt = time.Now().UnixMilli()
 	}
@@ -475,16 +512,54 @@ func (s *Store) SaveChat(session *ChatSession) error {
 		session.Messages = []ChatMessage{}
 	}
 
+	// 1. Write legacy JSON for backwards compatibility
 	data, err := json.MarshalIndent(session, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to serialize chat session: %w", err)
 	}
 
+	s.mu.Lock()
 	filePath := filepath.Join(s.chatsDir, cleanID+".json")
-	return atomicWrite(filePath, data)
+	if err := atomicWrite(filePath, data); err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	s.mu.Unlock()
+
+	// 2. Sync to .jsonl ledger and sessions.json
+	nodes := ConvertMessagesToGraphNodes(cleanID, session.Provider, session.Model, session.Messages)
+	if len(nodes) > 0 {
+		jsonlPath := filepath.Join(s.chatsDir, cleanID+".jsonl")
+		f, err := os.OpenFile(jsonlPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		if err == nil {
+			for _, node := range nodes {
+				line, mErr := json.Marshal(node)
+				if mErr == nil {
+					_, _ = f.Write(append(line, '\n'))
+				}
+			}
+			_ = f.Close()
+		}
+
+		rootID := nodes[0].ID
+		leafID := nodes[len(nodes)-1].ID
+		_ = s.UpdateSessionDescriptor(SessionDescriptor{
+			ID:           cleanID,
+			Title:        session.Title,
+			Provider:     session.Provider,
+			Model:        session.Model,
+			CreatedAt:    session.CreatedAt,
+			UpdatedAt:    session.UpdatedAt,
+			RootNodeID:   rootID,
+			ActiveLeafID: leafID,
+			NodeCount:    len(nodes),
+		})
+	}
+
+	return nil
 }
 
-// DeleteChat removes a chat session file.
+// DeleteChat removes a chat session and cleans up its ledger, index, and associated CAS blobs.
 func (s *Store) DeleteChat(id string) error {
 	cleanID, err := sanitizeID(id)
 	if err != nil {
@@ -492,15 +567,20 @@ func (s *Store) DeleteChat(id string) error {
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	// 1. Remove legacy .json
 	filePath := filepath.Join(s.chatsDir, cleanID+".json")
-	if err := os.Remove(filePath); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("failed to remove chat session file: %w", err)
-	}
+	_ = os.Remove(filePath)
+
+	// 2. Remove .jsonl ledger
+	jsonlPath := filepath.Join(s.chatsDir, cleanID+".jsonl")
+	_ = os.Remove(jsonlPath)
+	s.mu.Unlock()
+
+	// 3. Remove from sessions.json index
+	_ = s.RemoveSessionDescriptor(cleanID)
+
+	// 4. Remove session-scoped blobs
+	_ = s.DeleteSessionBlobs(cleanID)
 
 	return nil
 }
