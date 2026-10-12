@@ -1,15 +1,19 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process"
+import { execSync, spawn } from "node:child_process"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { terminatePorts } from "./clean-ports.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const rootDir = path.resolve(__dirname, "..")
 const serverDir = path.resolve(rootDir, "server")
+const distServerDir = path.resolve(rootDir, "dist-server")
 const viteBin = path.resolve(rootDir, "node_modules/vite/bin/vite.js")
 
 const isWin = process.platform === "win32"
+const serverBinName = isWin ? "aegis-server.exe" : "aegis-server"
+const serverBin = path.resolve(distServerDir, serverBinName)
 
 let shuttingDown = false
 const children = []
@@ -27,14 +31,14 @@ function killChild(child, signal = "SIGTERM") {
     }
   } else {
     try {
-      // Send signal to process group
-      process.kill(-pid, signal)
-    } catch {
+      // Send signal to process group first, fallback to direct PID
       try {
-        process.kill(pid, signal)
+        process.kill(-pid, signal)
       } catch {
-        // Ignore ESRCH
+        process.kill(pid, signal)
       }
+    } catch {
+      // Ignore ESRCH
     }
   }
 }
@@ -49,29 +53,14 @@ function cleanup(exitCode = 0) {
     killChild(child, "SIGTERM")
   }
 
-  const forceKillTimer = setTimeout(() => {
+  // Ensure ports 8080 and 5173 are freed
+  setTimeout(() => {
     for (const child of children) {
       killChild(child, "SIGKILL")
     }
+    terminatePorts([8080, 5173], false)
     process.exit(exitCode)
-  }, 2000)
-
-  if (forceKillTimer.unref) {
-    forceKillTimer.unref()
-  }
-
-  const checkInterval = setInterval(() => {
-    const alive = children.some((c) => !c.killed && c.exitCode === null)
-    if (!alive) {
-      clearInterval(checkInterval)
-      clearTimeout(forceKillTimer)
-      process.exit(exitCode)
-    }
-  }, 100)
-
-  if (checkInterval.unref) {
-    checkInterval.unref()
-  }
+  }, 400)
 }
 ;["SIGINT", "SIGTERM", "SIGHUP"].forEach((sig) => {
   process.on(sig, () => {
@@ -83,10 +72,29 @@ process.on("exit", () => {
   for (const child of children) {
     killChild(child, "SIGKILL")
   }
+  terminatePorts([8080, 5173], false)
 })
 
-// 1. Spawn Go Core Server
-const goServer = spawn("go", ["run", "./cmd/server"], {
+// 0. Pre-flight: Clean any orphaned processes on port 8080 or 5173
+console.log(
+  "[dev:all] Pre-flight: ensuring ports 8080 and 5173 are available...",
+)
+terminatePorts([8080, 5173], false)
+
+// 1. Compile Go server binary directly to eliminate 'go run' intermediate processes
+console.log("[dev:all] Building Go Core Server binary...")
+try {
+  execSync(`go build -o "${serverBin}" ./cmd/server`, {
+    cwd: serverDir,
+    stdio: "inherit",
+  })
+} catch (err) {
+  console.error("[dev:all] Failed to build Go Core Server:", err.message)
+  process.exit(1)
+}
+
+// 2. Spawn Go Core Server binary directly
+const goServer = spawn(serverBin, [], {
   cwd: serverDir,
   stdio: "inherit",
   detached: !isWin,
@@ -106,7 +114,7 @@ goServer.on("exit", (code, signal) => {
   }
 })
 
-// 2. Spawn Vite Frontend
+// 3. Spawn Vite Frontend
 const viteFrontend = spawn(process.execPath, [viteBin], {
   cwd: rootDir,
   stdio: "inherit",

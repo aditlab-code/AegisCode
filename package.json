@@ -17,7 +17,9 @@
     "format": "oxfmt",
     "test:frontend": "vitest run",
     "test:backend": "go -C server test ./... && go -C test/backend test ./...",
-    "test": "npm run test:frontend && npm run test:backend"
+    "test": "npm run test:frontend && npm run test:backend",
+    "stop": "node scripts/clean-ports.js",
+    "clean:ports": "node scripts/clean-ports.js"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

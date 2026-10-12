@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/aditwicaksono/aegiscode/server/internal/ai"
@@ -34,8 +35,9 @@ type Server struct {
 	debug      *debug.Manager
 	logMu      sync.RWMutex
 	logSubs    map[chan LogEvent]struct{}
-	workerMu   sync.RWMutex
-	workerSubs map[chan supervisor.CrashEvent]struct{}
+	workerMu     sync.RWMutex
+	workerSubs   map[chan supervisor.CrashEvent]struct{}
+	shutdownChan chan struct{}
 }
 
 func NewServer(ws *workspace.Manager, picker platform.FolderPicker, customStore ...*store.Store) *Server {
@@ -80,6 +82,11 @@ func (s *Server) Store() *store.Store {
 // Supervisor returns the active process supervisor manager.
 func (s *Server) Supervisor() *supervisor.Manager {
 	return s.supervisor
+}
+
+// SetShutdownChannel sets the channel triggered on graceful system shutdown request.
+func (s *Server) SetShutdownChannel(ch chan struct{}) {
+	s.shutdownChan = ch
 }
 
 // BroadcastWorkerCrash dispatches a structured crash event to worker event subscribers.
@@ -219,6 +226,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/debug/state", s.handleDebugState)
 	mux.HandleFunc("/api/v1/debug/terminate", s.handleDebugTerminate)
 	mux.HandleFunc("/api/v1/events/debug", s.handleDebugEvents)
+
+	// System Management
+	mux.HandleFunc("/api/v1/system/shutdown", s.handleSystemShutdown)
 
 	return corsMiddleware(mux)
 }
@@ -2019,6 +2029,32 @@ func (s *Server) handleDebugEvents(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// handleSystemShutdown triggers clean asynchronous server process termination.
+func (s *Server) handleSystemShutdown(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	jsonResponse(w, http.StatusOK, map[string]string{
+		"status":  "shutting_down",
+		"message": "AegisCode Go Core Server shutting down cleanly",
+	})
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		if s.shutdownChan != nil {
+			select {
+			case s.shutdownChan <- struct{}{}:
+			default:
+			}
+			return
+		}
+		p, err := os.FindProcess(os.Getpid())
+		if err == nil {
+			_ = p.Signal(syscall.SIGTERM)
+		}
+	}()
 }
 
 

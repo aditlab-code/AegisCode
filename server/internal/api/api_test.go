@@ -1184,6 +1184,42 @@ func TestDebugApiEndpoints(t *testing.T) {
 	}
 }
 
+func TestSystemShutdownEndpoint(t *testing.T) {
+	srv, handler, tempDir := setupTestServer(t, "")
+	defer os.RemoveAll(tempDir)
+
+	shutdownNotified := make(chan struct{}, 1)
+	srv.SetShutdownChannel(shutdownNotified)
+
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+
+	resp, err := http.Post(ts.URL+"/api/v1/system/shutdown", "application/json", nil)
+	if err != nil {
+		t.Fatalf("failed to post system shutdown: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", resp.StatusCode)
+	}
+
+	var data map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		t.Fatalf("failed to decode json response: %v", err)
+	}
+	if data["status"] != "shutting_down" {
+		t.Fatalf("expected status 'shutting_down', got %s", data["status"])
+	}
+
+	select {
+	case <-shutdownNotified:
+		// success: shutdown channel was triggered
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("expected shutdownChannel to receive signal")
+	}
+}
+
 
 
 

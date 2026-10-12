@@ -110,6 +110,10 @@ func main() {
 	}
 	serverURL := fmt.Sprintf("http://localhost:%d", activePort)
 	fmt.Printf("AegisCode %s Go Core Server listening on %s\n", Version, serverURL)
+	if activePort != 8080 && os.Getenv("PORT") == "" {
+		fmt.Printf("⚠️  WARNING: Default port 8080 was occupied. Server bound to %s instead.\n", serverURL)
+		fmt.Println("   To free port 8080, run: npm run stop")
+	}
 	if rootPath == "" {
 		fmt.Println("Active Workspace: None (Awaiting folder)")
 	} else {
@@ -141,6 +145,9 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
+	shutdownReq := make(chan struct{}, 1)
+	server.SetShutdownChannel(shutdownReq)
+
 	serverErr := make(chan error, 1)
 	go func() {
 		if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -151,6 +158,8 @@ func main() {
 	select {
 	case sig := <-stop:
 		fmt.Printf("\nReceived signal %s, shutting down gracefully...\n", sig)
+	case <-shutdownReq:
+		fmt.Println("\nReceived shutdown API request, shutting down gracefully...")
 	case err := <-serverErr:
 		log.Fatalf("server exited with error: %v", err)
 	}
