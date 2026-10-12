@@ -97,7 +97,7 @@
 }
 
 .workbench-panel-closed {
-  grid-template-rows: minmax(0, 1fr) !important;
+  grid-template-rows: minmax(0, 1fr) 28px !important;
 }
 
 .workbench-panel-maximized {

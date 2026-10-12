@@ -95,7 +95,7 @@ function AppShell() {
           }
         >
           <Editor />
-          {panelOpen && <BottomPanel />}
+          <BottomPanel />
         </div>
         {chatOpen && <ChatDrawer />}
       </main>

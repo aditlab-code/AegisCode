@@ -29,6 +29,7 @@ export function BottomPanel() {
     reorderBottomTabs,
     panelMaximized,
     togglePanelMaximized,
+    panelOpen,
     setPanelOpen,
     setBottomPanelHeight,
     resetBottomPanelHeight,
@@ -136,8 +137,10 @@ export function BottomPanel() {
   }
 
   return (
-    <section className="bottom-panel">
-      {!panelMaximized && (
+    <section
+      className={`bottom-panel ${panelOpen ? "" : "bottom-panel-collapsed"}`}
+    >
+      {panelOpen && !panelMaximized && (
         <ResizeSash
           className="sash-bottom"
           direction="horizontal"
@@ -160,153 +163,194 @@ export function BottomPanel() {
           title="Drag to resize bottom panel (Double-click to reset)"
         />
       )}
-      <div className="bottom-panel-header">
-        <div className="bottom-tabs">
-          {bottomTabOrder.map((name: BottomTab, index: number) => (
-            <button
-              className={`bottom-tab-button ${
-                activeBottomTab === name ? "bottom-tab-active" : ""
-              } ${dragOverIndex === index ? "tab-drag-over" : ""}`}
-              draggable
-              key={name}
-              onClick={() => setActiveBottomTab(name)}
-              onDragEnd={() => setDragOverIndex(null)}
-              onDragLeave={() => setDragOverIndex(null)}
-              onDragOver={(e) => {
-                e.preventDefault()
-                setDragOverIndex(index)
-              }}
-              onDragStart={(e) => handleDragStart(e, index)}
-              onDrop={(e) => handleDrop(e, index)}
-              type="button"
-            >
-              {name}
-              {name === "Problems" && (
-                <span className="count-badge">{diagnostics.length}</span>
-              )}
-            </button>
-          ))}
-        </div>
 
-        <div className="panel-controls">
-          {activeBottomTab === "Terminal" && (
-            <>
-              <select
-                aria-label="Select terminal session"
-                className="panel-select"
-                onChange={(e) => setActiveTerminalSessionId(e.target.value)}
-                value={activeTerminalSessionId}
-              >
-                {terminalSessions.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="Shell type"
-                className="panel-select"
-                onChange={(e) => setNewShell(e.target.value)}
-                value={newShell}
-              >
-                <option value="zsh">zsh</option>
-                <option value="bash">bash</option>
-                <option value="fish">fish</option>
-                <option value="sh">sh</option>
-              </select>
-              <IconButton
-                label={`New ${newShell} session`}
-                onClick={() => createTerminalSession(newShell)}
-              >
-                <Icon name="plus" size={14} />
-              </IconButton>
-              <IconButton
-                label="Kill terminal session"
-                onClick={() => closeTerminalSession(activeTerminalSessionId)}
-              >
-                <Icon name="trash" size={14} />
-              </IconButton>
-              <IconButton
-                label="Clear terminal buffer"
-                onClick={() => clearTerminal()}
-              >
-                <Icon name="close" size={14} />
-              </IconButton>
-              <span
-                className={
-                  terminalRunning ? "session-running" : "session-stopped"
-                }
-              >
-                <span className="status-dot" />{" "}
-                {terminalRunning ? "SSE active" : "terminated"}
-              </span>
-              <IconButton label="Copy terminal output" onClick={handleCopy}>
-                <Icon name="copy" size={14} />
-              </IconButton>
-              <IconButton
-                label={
-                  terminalRunning ? "Terminate terminal" : "Restart terminal"
-                }
-                onClick={() => {
-                  if (terminalRunning) {
-                    terminateTerminalSession(activeTerminalSessionId)
-                  } else {
-                    restartTerminalSession(activeTerminalSessionId, newShell)
-                  }
+      {panelOpen ? (
+        <div className="bottom-panel-header">
+          <div className="bottom-tabs">
+            {bottomTabOrder.map((name: BottomTab, index: number) => (
+              <button
+                className={`bottom-tab-button ${
+                  activeBottomTab === name ? "bottom-tab-active" : ""
+                } ${dragOverIndex === index ? "tab-drag-over" : ""}`}
+                draggable
+                key={name}
+                onClick={() => setActiveBottomTab(name)}
+                onDragEnd={() => setDragOverIndex(null)}
+                onDragLeave={() => setDragOverIndex(null)}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  setDragOverIndex(index)
                 }}
+                onDragStart={(e) => handleDragStart(e, index)}
+                onDrop={(e) => handleDrop(e, index)}
+                type="button"
               >
-                <Icon name={terminalRunning ? "close" : "play"} size={14} />
-              </IconButton>
-            </>
-          )}
+                {name}
+                {name === "Problems" && (
+                  <span className="count-badge">{diagnostics.length}</span>
+                )}
+              </button>
+            ))}
+          </div>
 
-          {activeBottomTab === "Output" && (
-            <>
-              <select
-                aria-label="Select output channel"
-                className="panel-select"
-                onChange={(e) =>
-                  setOutputChannel(e.target.value as OutputChannel)
-                }
-                value={outputChannel}
-              >
-                <option value="Server">Server / Runner</option>
-                <option value="Tasks">Tasks & Build</option>
-                <option value="Linter">Linter / Syntax</option>
-                <option value="Git">Git / Source Control</option>
-              </select>
-              <IconButton
-                label="Clear output channel"
-                onClick={handleClearOutput}
-              >
-                <Icon name="trash" size={14} />
-              </IconButton>
-            </>
-          )}
+          <div className="panel-controls">
+            {activeBottomTab === "Terminal" && (
+              <>
+                <select
+                  aria-label="Select terminal session"
+                  className="panel-select"
+                  onChange={(e) => setActiveTerminalSessionId(e.target.value)}
+                  value={activeTerminalSessionId}
+                >
+                  {terminalSessions.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  aria-label="Shell type"
+                  className="panel-select"
+                  onChange={(e) => setNewShell(e.target.value)}
+                  value={newShell}
+                >
+                  <option value="zsh">zsh</option>
+                  <option value="bash">bash</option>
+                  <option value="fish">fish</option>
+                  <option value="sh">sh</option>
+                </select>
+                <IconButton
+                  label={`New ${newShell} session`}
+                  onClick={() => createTerminalSession(newShell)}
+                >
+                  <Icon name="plus" size={14} />
+                </IconButton>
+                <IconButton
+                  label="Kill terminal session"
+                  onClick={() => closeTerminalSession(activeTerminalSessionId)}
+                >
+                  <Icon name="trash" size={14} />
+                </IconButton>
+                <IconButton
+                  label="Clear terminal buffer"
+                  onClick={() => clearTerminal()}
+                >
+                  <Icon name="discard" size={14} />
+                </IconButton>
+                <span
+                  className={
+                    terminalRunning ? "session-running" : "session-stopped"
+                  }
+                >
+                  <span className="status-dot" />{" "}
+                  {terminalRunning ? "SSE active" : "terminated"}
+                </span>
+                <IconButton label="Copy terminal output" onClick={handleCopy}>
+                  <Icon name="copy" size={14} />
+                </IconButton>
+                <IconButton
+                  label={
+                    terminalRunning
+                      ? "Restart terminal session"
+                      : "Start terminal session"
+                  }
+                  onClick={() => {
+                    restartTerminalSession(activeTerminalSessionId, newShell)
+                  }}
+                >
+                  <Icon name={terminalRunning ? "refresh" : "play"} size={14} />
+                </IconButton>
+              </>
+            )}
 
-          <span className="panel-control-divider" />
+            {activeBottomTab === "Output" && (
+              <>
+                <select
+                  aria-label="Select output channel"
+                  className="panel-select"
+                  onChange={(e) =>
+                    setOutputChannel(e.target.value as OutputChannel)
+                  }
+                  value={outputChannel}
+                >
+                  <option value="Server">Server / Runner</option>
+                  <option value="Tasks">Tasks & Build</option>
+                  <option value="Linter">Linter / Syntax</option>
+                  <option value="Git">Git / Source Control</option>
+                </select>
+                <IconButton
+                  label="Clear output channel"
+                  onClick={handleClearOutput}
+                >
+                  <Icon name="trash" size={14} />
+                </IconButton>
+              </>
+            )}
 
-          <IconButton
-            label={
-              panelMaximized ? "Restore panel size" : "Maximize panel size"
-            }
-            onClick={togglePanelMaximized}
-          >
-            <Icon
-              name={panelMaximized ? "chevron-down" : "maximize"}
-              size={14}
-            />
-          </IconButton>
-          <IconButton
-            label="Close panel (Ctrl+J)"
-            onClick={() => setPanelOpen(false)}
-          >
-            <Icon name="close" size={14} />
-          </IconButton>
+            <span className="panel-control-divider" />
+
+            <IconButton
+              label={
+                panelMaximized ? "Restore panel size" : "Maximize panel size"
+              }
+              onClick={togglePanelMaximized}
+            >
+              <Icon
+                name={panelMaximized ? "chevron-down" : "maximize"}
+                size={14}
+              />
+            </IconButton>
+            <IconButton
+              label="Hide panel (Ctrl+J)"
+              onClick={() => setPanelOpen(false)}
+            >
+              <Icon name="close" size={14} />
+            </IconButton>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="bottom-panel-dock">
+          <div className="bottom-tabs">
+            {bottomTabOrder.map((name: BottomTab) => (
+              <button
+                className={`bottom-tab-button ${
+                  activeBottomTab === name ? "bottom-tab-active" : ""
+                }`}
+                key={name}
+                onClick={() => {
+                  setActiveBottomTab(name)
+                  setPanelOpen(true)
+                }}
+                type="button"
+              >
+                {name}
+                {name === "Problems" && diagnostics.length > 0 && (
+                  <span className="count-badge">{diagnostics.length}</span>
+                )}
+              </button>
+            ))}
+          </div>
 
-      <div className="bottom-panel-content">
+          <div className="panel-controls">
+            {terminalRunning && (
+              <span className="session-running">
+                <span className="status-dot" /> SSE active
+              </span>
+            )}
+            <IconButton
+              label="Open panel (Ctrl+J)"
+              onClick={() => setPanelOpen(true)}
+            >
+              <Icon name="chevron-up" size={14} />
+            </IconButton>
+          </div>
+        </div>
+      )}
+
+      <div
+        className="bottom-panel-content"
+        style={{ display: panelOpen ? undefined : "none" }}
+      >
         <div
           className={
             activeBottomTab === "Terminal"

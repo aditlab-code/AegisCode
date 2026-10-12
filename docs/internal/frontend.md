@@ -22,9 +22,9 @@ The AegisCode interface utilizes a multi-column, multi-panel desktop shell (`.ap
 | V | - Search & Replace   | [CodePane + Gutter]                          | - Autocomplete (/ & @)   |
 | I |                      | [Minimap]                                    | - Model Selector         |
 | T |                      +----------------------------------------------+                          |
-| Y |                      | BOTTOM PANEL                                 |                          |
-|   |                      |                                              |                          |
-| R |                      | [Terminal PTY] [Problems Diagnostics] [Logs] |                          |
+| Y |                      | BOTTOM PANEL (Expanded: 180px / Dock: 28px)  |                          |
+|   |                      | [Terminal] [Problems] [Output] [Debug]       |                          |
+| R |                      | [Persistent PTY / Dynamic Dark-Light Canvas] |                          |
 +---+----------------------+----------------------------------------------+--------------------------+
 |  STATUS BAR (Cursor Position Ln/Col, Active Language, Git Branch, Notification Center)            |
 +----------------------------------------------------------------------------------------------------+
@@ -43,7 +43,8 @@ The desktop shell (`.workspace`) distributes columns dynamically according to pa
 | **Workbench Editor** | `minmax(0, 1fr)` | 320px (target) | Viewport-bound | N/A | Flexible |
 | **Chat Drawer (Normal)** | 340px (width) | 300px | 600px | Drag < 180px | Last width or 340px |
 | **Chat Drawer (+Sessions)**| 500px (width) | 480px | 600px | Drag < 320px | Last width or 500px |
-| **Bottom Panel** | 180px (height) | 100px (height) | 800px (height) | N/A | Last height or 180px |
+| **Bottom Panel (Open)** | 180px (height) | 100px (height) | 800px (height) | Drag < 80px (collapses to dock) | Last height or 180px |
+| **Bottom Panel (Dock)** | 28px (height) | 28px (height) | 28px (height) | N/A (click tab/expand to open) | Opens last active tab |
 
 ---
 
@@ -123,14 +124,24 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
 
 ### 5. Bottom Panel (`bottom-panel/`)
 - **Path**: [`src/components/layout/bottom-panel/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/bottom-panel)
-- **Primary Components**: `BottomPanel.tsx`, `TerminalView.tsx`, `ProblemsView.tsx`, `OutputView.tsx`, `bottom-panel.css`
-- **Visual Design**:
-  - Collapsible lower drawer with draggable vertical resize sash.
-  - Tab bar: **Terminal**, **Problems**, **Output**. Tab drag-and-drop reordering supported.
-  - Panel header actions: Maximize/Restore panel, Close drawer.
-  - **Terminal View**: Multi-session terminal emulator tabs, command history (Arrow Up/Down), terminal clear, interrupt (`Ctrl+C`).
-  - **Problems View**: Diagnostics table filtered by severity (Errors, Warnings, Info). Clicking a problem jumps to the exact line/column in the active editor.
-  - **Output View**: Channel selector (Linter, Tasks, Git, Server) with auto-scroll and clear actions.
+- **Primary Components**: `BottomPanel.tsx`, `TerminalView.tsx`, `ProblemsView.tsx`, `OutputView.tsx`, `DebugView.tsx`, `bottom-panel.css`
+- **Visual Design & Interactive Architecture**:
+  - **VS Code-Style Hide / Minimize**: Tombol close `[x]` pada header panel atau pintasan keyboard `Ctrl+J` hanya menyembunyikan (*hide / minimize*) drawer ke mini dock strip permanen 28px di atas Status Bar, tanpa mematikan proses PTY shell atau memutuskan koneksi SSE.
+  - **Interactive 28px Mini Dock Strip (`.bottom-panel-dock`)**: Saat panel diminimalkan, strip 28px menampilkan tab-tab interaktif (`Problems`, `Output`, `Debug`, `Terminal`), badge hitungan diagnostik, status live runner (`SSE active`), dan tombol expand `chevron-up`. Mengklik tab manapun langsung membuka kembali panel ke tab tersebut.
+  - **DOM-Persistent Terminal Architecture**: `<BottomPanel />` selalu terpasang di DOM dan merender `<TerminalView />` dengan CSS `style={{ display: panelOpen ? undefined : "none" }}`. Ini menjamin xterm instance dan SSE EventSource tidak pernah ter-unmount, tidak reconnect, dan mempertahankan live output streaming 100% tanpa jeda (0ms lag).
+  - **Dynamic Theme Re-Hydration**: Hook sinkronisasi reaktif `useEffect([theme, themePalette])` di `TerminalView.tsx` mengeksekusi `term.options.theme = getDynamicTerminalTheme(palette, mode)` secara instan (0ms snap) dengan palet hex konkret dan kontras warna ANSI yang tepat, sehingga canvas xterm langsung berganti warna seketika saat tema beralih antara Dark, Light, Atom One, dan Tokyo Night.
+  - **Standardized Canvas Background**: Seluruh area konten panel bawah (`.bottom-panel-content`, `.terminal-session`, `.lint-output`, `.problems-container`, `DebugView`) menggunakan background canvas (`var(--color-canvas)` / `bg-canvas`) dengan teks `var(--color-ink)`, sementara header tab panel dan mini dock strip tetap menggunakan `var(--color-surface)` untuk memisahkan chrome dan konten secara elegan.
+  - **Refreshed Toolbar Actions**:
+    - **Session Shell Selector**: Dropdown pemilihan shell (`zsh`, `bash`, `fish`, `sh`) dan sesi aktif.
+    - **New Session (`+`)**: Membuat sesi terminal baru via `createTerminalSession`.
+    - **Kill Session (`trash` 🗑)**: Menghentikan proses dan menghapus sesi terminal via `closeTerminalSession`.
+    - **Clear Buffer (`discard`)**: Mengosongkan buffer output xterm via `clearTerminal`.
+    - **Restart Session (`refresh` ⟳ / `play` ▶)**: Me-restart proses shell baru via `restartTerminalSession`.
+    - **Maximize/Restore (`maximize` / `chevron-down`)**: Toggle ukuran penuh panel (1fr).
+    - **Hide Panel (`close` ✕)**: Menyembunyikan drawer ke mini dock strip (`setPanelOpen(false)`).
+  - **Problems View**: Tabel diagnostik dengan filter chip (All, Errors, Warnings), jump-to-code saat baris diklik, dan tombol "Ask AI" untuk integrasi langsung ke AI chat drawer.
+  - **Output View**: Pilihan channel (Server, Tasks, Linter, Git) dengan streaming log real-time melalui SSE endpoint `/api/v1/events/logs`.
+  - **Debug View**: Visualisasi sesi Delve DAP debugger aktif, menampilkan status runtime, panel Variables inspection, Call Stack frames, dan tombol Start Debugging (F5).
 
 ### 6. AEGIS AI Agent Drawer (`chat/`)
 - **Path**: [`src/components/layout/chat/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/chat)

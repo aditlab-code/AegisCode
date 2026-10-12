@@ -21,7 +21,7 @@ export function DebugView() {
       : "Auto-detect (.go / .py / .cpp)"
 
     return (
-      <div className="flex flex-col items-center justify-center h-full text-center px-4 py-8 text-ink-muted">
+      <div className="flex flex-col items-center justify-center h-full text-center px-4 py-8 text-ink-muted bg-canvas">
         <Icon name="debug" size={32} className="mb-3 text-ink-muted/50" />
         <p className="text-sm font-medium text-ink mb-1">
           No active debug session
@@ -50,9 +50,9 @@ export function DebugView() {
   const variables = debugState.variables || []
 
   return (
-    <div className="flex h-full divide-x divide-line text-xs font-mono">
+    <div className="flex h-full divide-x divide-line text-xs font-mono bg-canvas">
       {/* Variables Section */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-canvas">
         <div className="flex items-center justify-between px-3 py-1.5 bg-surface border-b border-line text-[11px] font-sans font-semibold text-ink-muted tracking-wider uppercase select-none">
           <span>Variables ({variables.length})</span>
           {debugState.stopReason && (
@@ -61,7 +61,7 @@ export function DebugView() {
             </span>
           )}
         </div>
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+        <div className="flex-1 overflow-y-auto p-2 space-y-1 bg-canvas">
           {variables.length === 0 ? (
             <div className="text-ink-muted text-center py-6 text-xs font-sans">
               {debugState.status === "running"
@@ -84,11 +84,11 @@ export function DebugView() {
       </div>
 
       {/* Call Stack Section */}
-      <div className="w-80 flex flex-col shrink-0 overflow-hidden">
+      <div className="w-80 flex flex-col shrink-0 overflow-hidden bg-canvas">
         <div className="px-3 py-1.5 bg-surface border-b border-line text-[11px] font-sans font-semibold text-ink-muted tracking-wider uppercase select-none">
           Call Stack ({stackFrames.length})
         </div>
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+        <div className="flex-1 overflow-y-auto p-2 space-y-1 bg-canvas">
           {stackFrames.length === 0 ? (
             <div className="text-ink-muted text-center py-6 text-xs font-sans">
               No active stack frames

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react"
-import { Terminal } from "@xterm/xterm"
+import { Terminal, type ITheme } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import "@xterm/xterm/css/xterm.css"
 import { useWorkbench } from "../../../context/WorkbenchContext"
@@ -7,39 +7,57 @@ import {
   resizeTerminalApi,
   sendTerminalInputApi,
 } from "../../../utils/terminalApi"
+import {
+  getThemeDefinition,
+  type ThemePaletteId,
+  type ThemeMode,
+} from "../../../themes/themeRegistry"
 
-function getDynamicTerminalTheme() {
-  if (typeof window === "undefined") {
-    return {}
+function getDynamicTerminalTheme(
+  palette: ThemePaletteId = "default",
+  mode: ThemeMode = "dark",
+): ITheme {
+  const themeDef = getThemeDefinition(palette, mode)
+  const t = themeDef.tokens || {}
+  const isLight = mode === "light"
+
+  const get = (name: string, fallback: string) => {
+    if (t[name]) return t[name]
+    if (typeof window !== "undefined") {
+      const val = getComputedStyle(document.documentElement)
+        .getPropertyValue(name)
+        .trim()
+      if (val && !val.startsWith("var(")) return val
+    }
+    return fallback
   }
 
-  const cs = getComputedStyle(document.documentElement)
-  const get = (name: string) =>
-    cs.getPropertyValue(name).trim() || `var(${name})`
-
   return {
-    background: get("--color-canvas"),
-    foreground: get("--color-ink"),
-    cursor: get("--color-accent"),
-    cursorAccent: get("--color-canvas"),
-    selectionBackground: get("--color-accent-soft"),
-    selectionForeground: get("--color-ink"),
-    black: get("--color-surface-raised"),
-    red: get("--color-red"),
-    green: get("--color-green"),
-    yellow: get("--color-orange"),
-    blue: get("--color-blue"),
-    magenta: get("--color-pink"),
-    cyan: get("--color-cyan"),
-    white: get("--color-ink"),
-    brightBlack: get("--color-ink-muted"),
-    brightRed: get("--color-red"),
-    brightGreen: get("--color-green"),
-    brightYellow: get("--color-orange"),
-    brightBlue: get("--color-blue"),
-    brightMagenta: get("--color-pink"),
-    brightCyan: get("--color-cyan"),
-    brightWhite: get("--color-ink"),
+    background: get("--color-canvas", isLight ? "#f6f8fb" : "#090d16"),
+    foreground: get("--color-ink", isLight ? "#0f172a" : "#e7edf7"),
+    cursor: get("--color-accent", isLight ? "#0284c7" : "#38bdf8"),
+    cursorAccent: get("--color-canvas", isLight ? "#f6f8fb" : "#090d16"),
+    selectionBackground: get(
+      "--color-accent-soft",
+      isLight ? "#0284c726" : "#38bdf826",
+    ),
+    selectionForeground: get("--color-ink", isLight ? "#0f172a" : "#e7edf7"),
+    black: get("--color-surface-raised", isLight ? "#eef2f7" : "#1c2434"),
+    red: get("--color-red", isLight ? "#dc2626" : "#f87171"),
+    green: get("--color-green", isLight ? "#16a34a" : "#4ade80"),
+    yellow: get("--color-orange", isLight ? "#d97706" : "#fb923c"),
+    blue: get("--color-blue", isLight ? "#2563eb" : "#60a5fa"),
+    magenta: get("--color-pink", isLight ? "#c026d3" : "#f472b6"),
+    cyan: get("--color-cyan", isLight ? "#0891b2" : "#38bdf8"),
+    white: get("--color-ink", isLight ? "#0f172a" : "#e7edf7"),
+    brightBlack: get("--color-ink-muted", isLight ? "#64748b" : "#6f7d91"),
+    brightRed: get("--color-red", isLight ? "#dc2626" : "#f87171"),
+    brightGreen: get("--color-green", isLight ? "#16a34a" : "#4ade80"),
+    brightYellow: get("--color-orange", isLight ? "#d97706" : "#fb923c"),
+    brightBlue: get("--color-blue", isLight ? "#2563eb" : "#60a5fa"),
+    brightMagenta: get("--color-pink", isLight ? "#c026d3" : "#f472b6"),
+    brightCyan: get("--color-cyan", isLight ? "#0891b2" : "#38bdf8"),
+    brightWhite: get("--color-ink", isLight ? "#0f172a" : "#e7edf7"),
   }
 }
 
@@ -49,6 +67,8 @@ export function TerminalView() {
     setTerminalRunning,
     createTerminalSession,
     settings,
+    theme,
+    themePalette,
   } = useWorkbench()
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -70,6 +90,13 @@ export function TerminalView() {
     }
   }, [activeTerminalSession, createTerminalSession])
 
+  // Synchronize terminal theme dynamically on theme or palette changes
+  useEffect(() => {
+    if (!termRef.current) return
+    const updatedTheme = getDynamicTerminalTheme(themePalette, theme)
+    termRef.current.options.theme = updatedTheme
+  }, [theme, themePalette])
+
   useEffect(() => {
     if (!containerRef.current || !sessionId) return
 
@@ -85,7 +112,7 @@ export function TerminalView() {
         settings?.features?.terminal?.fontFamily ||
         "'JetBrains Mono', 'Fira Code', 'SFMono-Regular', Consolas, monospace",
       lineHeight: settings?.features?.terminal?.lineHeight || 1.35,
-      theme: getDynamicTerminalTheme(),
+      theme: getDynamicTerminalTheme(themePalette, theme),
     })
 
     const fitAddon = new FitAddon()
