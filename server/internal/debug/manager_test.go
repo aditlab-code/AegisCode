@@ -2,6 +2,8 @@ package debug
 
 import (
 	"context"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -132,3 +134,52 @@ func TestDebugManagerRealLifecycle(t *testing.T) {
 		t.Fatalf("expected manager to be inactive after terminate")
 	}
 }
+
+func TestDebugManagerPythonLifecycle(t *testing.T) {
+	pyBin, err := FindPython()
+	if err != nil {
+		t.Skip("skipping TestDebugManagerPythonLifecycle: python3 not found")
+	}
+	if err := exec.Command(pyBin, "-m", "debugpy", "--version").Run(); err != nil {
+		t.Skip("skipping TestDebugManagerPythonLifecycle: debugpy not installed")
+	}
+
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "test_debug.py")
+	scriptContent := "import time\nx = 42\nprint('Python debug test running')\ntime.sleep(2)\n"
+	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0644); err != nil {
+		t.Fatalf("failed to write test python file: %v", err)
+	}
+
+	mgr := NewManager()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	err = mgr.Start(ctx, StartDebugRequest{
+		Program:  scriptPath,
+		Cwd:      tmpDir,
+		Language: "python",
+	})
+	if err != nil {
+		t.Fatalf("Start python debug failed: %v", err)
+	}
+
+	if !mgr.IsActive() {
+		t.Fatalf("expected manager to be active after start")
+	}
+
+	st := mgr.GetState()
+	if !st.Active {
+		t.Fatalf("expected active state, got: %+v", st)
+	}
+
+	// Cleanly terminate
+	if err := mgr.Terminate(); err != nil {
+		t.Fatalf("Terminate failed: %v", err)
+	}
+
+	if mgr.IsActive() {
+		t.Fatalf("expected manager to be inactive after terminate")
+	}
+}
+

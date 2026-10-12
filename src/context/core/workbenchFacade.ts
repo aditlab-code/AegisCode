@@ -533,7 +533,12 @@ export function useWorkbenchFacade() {
     async (program?: string) => {
       let target = program
       if (!target) {
-        if (editor.activeTab?.endsWith(".go")) {
+        if (
+          editor.activeTab?.endsWith(".go") ||
+          editor.activeTab?.endsWith(".py") ||
+          editor.activeTab?.endsWith(".cpp") ||
+          editor.activeTab?.endsWith(".c")
+        ) {
           target = editor.activeTab
         } else {
           target = workspace.rootWorkspacePath || "."
@@ -541,17 +546,30 @@ export function useWorkbenchFacade() {
       }
 
       try {
+        const lang = target.endsWith(".py")
+          ? "python"
+          : target.endsWith(".cpp") || target.endsWith(".c")
+            ? "cpp"
+            : target.endsWith(".go")
+              ? "go"
+              : undefined
+
         const res = await startDebugSession(
           target,
           undefined,
           undefined,
           workspace.rootWorkspacePath || undefined,
           editor.breakpoints,
+          lang,
         )
         if (res.status === "error") {
           if (res.code === "delve_not_found" || res.code === "dlv_not_found") {
             showToast(
               "Delve (dlv) not found. Run 'go install github.com/go-delve/delve/cmd/dlv@latest'",
+            )
+          } else if (res.code === "debugpy_not_found") {
+            showToast(
+              "debugpy not found. Run 'pip install debugpy' to enable Python debugging.",
             )
           } else {
             showToast(`Failed to start debugger: ${res.error}`)

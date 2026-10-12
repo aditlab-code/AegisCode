@@ -41,7 +41,8 @@ type Event struct {
 
 // StartDebugRequest holds parameters for launching a debug session.
 type StartDebugRequest struct {
-	Program     string              `json:"program"`               // e.g. "./cmd/server" or workspace root
+	Program     string              `json:"program"`               // e.g. "./cmd/server", "script.py", or workspace root
+	Language    string              `json:"language,omitempty"`    // "go" | "python" (auto-detected if empty)
 	Args        []string            `json:"args,omitempty"`        // CLI args for program
 	Env         map[string]string   `json:"env,omitempty"`         // Custom environment variables
 	Mode        string              `json:"mode,omitempty"`        // "debug" | "test" | "exec" (default: "debug")

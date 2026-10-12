@@ -92,21 +92,19 @@ func (m *Manager) Start(ctx context.Context, req StartDebugRequest) error {
 		m.mu.Unlock()
 	}
 
-	// 1. Start Delve DAP runner
-	runner, err := StartDelve(ctx, req.Cwd)
+	lang := DetectLanguage(req.Language, req.Program)
+	cfg, ok := GetAdapter(lang)
+	if !ok {
+		cfg = Registry["go"]
+	}
+
+	// 1. Start runner and DAP client via Adapter Registry
+	runner, client, err := StartAdapter(ctx, cfg, req.Program, req.Cwd)
 	if err != nil {
 		return err
 	}
 
-	// 2. Dial DAP client
-	dapAddr := fmt.Sprintf("127.0.0.1:%d", runner.Port)
-	client, err := DialDAP(ctx, dapAddr)
-	if err != nil {
-		_ = runner.Close()
-		return fmt.Errorf("failed to connect to delve DAP: %w", err)
-	}
-
-	// 3. Subscribe to DAP events early to capture compiler/runtime outputs during Launch
+	// 2. Subscribe to DAP events early to capture compiler/runtime outputs during Launch
 	evtCh, unsub := client.SubscribeEvents()
 
 	m.mu.Lock()
@@ -127,25 +125,24 @@ func (m *Manager) Start(ctx context.Context, req StartDebugRequest) error {
 		_ = m.Terminate()
 	}()
 
-	// 4. Initialize DAP
+	// 3. Initialize DAP specifying adapter ID
 	initCtx, initCancel := context.WithTimeout(ctx, 5*time.Second)
-	_, err = client.Initialize(initCtx)
+	_, err = client.InitializeWithAdapter(initCtx, cfg.AdapterID)
 	initCancel()
 	if err != nil {
 		_ = m.Terminate()
 		return fmt.Errorf("DAP initialize failed: %w", err)
 	}
 
-	// 5. Launch target
-	launchCtx, launchCancel := context.WithTimeout(ctx, 15*time.Second)
-	_, err = client.Launch(launchCtx, req.Program, req.Args, req.Env, req.Cwd, req.Mode)
-	launchCancel()
+	// 4. Launch target asynchronously
+	launchArgs := cfg.LaunchArgs(req.Program, req.Args, req.Env, req.Cwd)
+	launchSeq, launchRespCh, err := client.SendRequestAsync("launch", launchArgs)
 	if err != nil {
 		_ = m.Terminate()
-		return fmt.Errorf("DAP launch failed: %w", err)
+		return fmt.Errorf("DAP launch request failed: %w", err)
 	}
 
-	// 6. Send existing registered breakpoints
+	// 5. Send existing registered breakpoints
 	m.mu.RLock()
 	bpsToSet := make(map[string][]int, len(m.breakpoints))
 	for f, lines := range m.breakpoints {
@@ -163,10 +160,19 @@ func (m *Manager) Start(ctx context.Context, req StartDebugRequest) error {
 		bpCancel()
 	}
 
-	// 7. Configuration Done
+	// 6. Configuration Done
 	cfgCtx, cfgCancel := context.WithTimeout(ctx, 3*time.Second)
 	_ = client.ConfigurationDone(cfgCtx)
 	cfgCancel()
+
+	// 7. Await launch response
+	launchCtx, launchCancel := context.WithTimeout(ctx, 15*time.Second)
+	_, err = client.WaitResponse(launchCtx, launchSeq, launchRespCh, "launch")
+	launchCancel()
+	if err != nil {
+		_ = m.Terminate()
+		return fmt.Errorf("DAP launch failed: %w", err)
+	}
 
 	m.broadcast(StreamDebugEvent{
 		Type:   "debug:started",

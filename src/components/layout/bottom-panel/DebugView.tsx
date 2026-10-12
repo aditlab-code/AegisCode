@@ -11,10 +11,14 @@ export function DebugView() {
   } = useWorkbench()
 
   if (!isDebugging || debugState.status === "idle") {
-    const isGoActive = activeTab?.endsWith(".go")
-    const targetLabel = isGoActive
+    const isDebuggableActive =
+      activeTab?.endsWith(".go") ||
+      activeTab?.endsWith(".py") ||
+      activeTab?.endsWith(".cpp") ||
+      activeTab?.endsWith(".c")
+    const targetLabel = isDebuggableActive
       ? activeTab
-      : "Auto-detect (Go package / main.go)"
+      : "Auto-detect (.go / .py / .cpp)"
 
     return (
       <div className="flex flex-col items-center justify-center h-full text-center px-4 py-8 text-ink-muted">
@@ -24,7 +28,7 @@ export function DebugView() {
         </p>
         <p className="text-xs text-ink-muted mb-3 max-w-sm">
           Set breakpoints by clicking the line number gutter, then start
-          step-by-step Go debugging.
+          step-by-step debugging.
         </p>
         <div className="flex items-center gap-1.5 px-2.5 py-1 mb-4 rounded bg-surface border border-line text-[11px] font-mono text-ink">
           <span className="text-ink-muted">Target:</span>

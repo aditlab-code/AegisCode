@@ -1976,30 +1976,62 @@ func (s *Server) handleDebugStart(w http.ResponseWriter, r *http.Request) {
 		req.Cwd, _ = s.ws.GetRoot()
 	}
 
-	req.Program = resolveGoProgram(req.Program, req.Cwd)
+	lang := debug.DetectLanguage(req.Language, req.Program)
 
-	// Validate whether target or its folder contains Go files
-	checkTarget := req.Program
-	if !filepath.IsAbs(checkTarget) && req.Cwd != "" {
-		checkTarget = filepath.Join(req.Cwd, checkTarget)
-	}
-
-	if fi, err := os.Stat(checkTarget); err == nil && fi.IsDir() {
-		entries, _ := os.ReadDir(checkTarget)
-		hasGo := false
-		for _, e := range entries {
-			if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") {
-				hasGo = true
-				break
-			}
+	if lang == "python" {
+		targetFile := req.Program
+		if !filepath.IsAbs(targetFile) && req.Cwd != "" {
+			targetFile = filepath.Join(req.Cwd, targetFile)
 		}
-		if !hasGo {
+		if fi, err := os.Stat(targetFile); err != nil || fi.IsDir() {
 			jsonResponse(w, http.StatusBadRequest, map[string]any{
 				"status":  "error",
-				"code":    "no_go_files",
-				"message": "No Go files found in target directory. Please open a .go file or specify an entrypoint package.",
+				"code":    "file_not_found",
+				"message": fmt.Sprintf("Python file not found: %s. Please open or specify an existing .py file.", req.Program),
 			})
 			return
+		}
+		req.Program = targetFile
+	} else if lang == "cpp" {
+		targetFile := req.Program
+		if !filepath.IsAbs(targetFile) && req.Cwd != "" {
+			targetFile = filepath.Join(req.Cwd, targetFile)
+		}
+		if fi, err := os.Stat(targetFile); err != nil || fi.IsDir() {
+			jsonResponse(w, http.StatusBadRequest, map[string]any{
+				"status":  "error",
+				"code":    "file_not_found",
+				"message": fmt.Sprintf("Target executable not found: %s", req.Program),
+			})
+			return
+		}
+		req.Program = targetFile
+	} else {
+		req.Program = resolveGoProgram(req.Program, req.Cwd)
+
+		// Validate whether target or its folder contains Go files
+		checkTarget := req.Program
+		if !filepath.IsAbs(checkTarget) && req.Cwd != "" {
+			checkTarget = filepath.Join(req.Cwd, checkTarget)
+		}
+
+		if fi, err := os.Stat(checkTarget); err == nil && fi.IsDir() {
+			entries, _ := os.ReadDir(checkTarget)
+			hasGo := false
+			for _, e := range entries {
+				if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") {
+					hasGo = true
+					break
+				}
+			}
+			if !hasGo {
+				jsonResponse(w, http.StatusBadRequest, map[string]any{
+					"status":  "error",
+					"code":    "no_go_files",
+					"message": "No Go files found in target directory. Please open a .go file or specify an entrypoint package.",
+				})
+				return
+			}
 		}
 	}
 
@@ -2008,6 +2040,14 @@ func (s *Server) handleDebugStart(w http.ResponseWriter, r *http.Request) {
 			jsonResponse(w, http.StatusNotFound, map[string]any{
 				"status":  "error",
 				"code":    "delve_not_found",
+				"message": err.Error(),
+			})
+			return
+		}
+		if errors.Is(err, debug.ErrDebugpyNotFound) || strings.Contains(err.Error(), "debugpy") {
+			jsonResponse(w, http.StatusNotFound, map[string]any{
+				"status":  "error",
+				"code":    "debugpy_not_found",
 				"message": err.Error(),
 			})
 			return

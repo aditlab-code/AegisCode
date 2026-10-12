@@ -22,11 +22,12 @@ export async function startDebugSession(
   env?: Record<string, string>,
   cwd?: string,
   breakpoints?: Record<string, number[]>,
+  language?: string,
 ): Promise<StartDebugResult> {
   const resp = await fetch(`${API_BASE}/api/v1/debug/start`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ program, args, env, cwd, breakpoints }),
+    body: JSON.stringify({ program, args, env, cwd, breakpoints, language }),
   })
   const data = await resp.json().catch(() => ({}))
   if (!resp.ok) {

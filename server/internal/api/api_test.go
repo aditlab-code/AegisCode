@@ -1279,6 +1279,32 @@ func TestDebugResolveGoProgram(t *testing.T) {
 	}
 }
 
+func TestDebugStartPythonValidation(t *testing.T) {
+	_, handler, tempDir := setupTestServer(t, "")
+	defer os.RemoveAll(tempDir)
+
+	// Non-existent python file should return 400 with code file_not_found
+	startBody, _ := json.Marshal(debug.StartDebugRequest{
+		Program:  "nonexistent_script.py",
+		Cwd:      tempDir,
+		Language: "python",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/debug/start", bytes.NewReader(startBody))
+	rr := executeRequest(handler, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for nonexistent python script, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp["code"] != "file_not_found" {
+		t.Fatalf("expected code 'file_not_found', got %v", resp["code"])
+	}
+}
+
+
 
 
 

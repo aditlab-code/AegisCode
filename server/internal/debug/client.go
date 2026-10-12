@@ -13,17 +13,40 @@ import (
 	"sync"
 )
 
-// DAPClient manages the low-level JSON-RPC connection to a DAP adapter.
+// StdioPair wraps an io.Reader and io.WriteCloser into a single io.ReadWriteCloser.
+type StdioPair struct {
+	io.Reader
+	io.WriteCloser
+}
+
+func (s *StdioPair) Close() error {
+	return s.WriteCloser.Close()
+}
+
+// DAPClient manages the low-level JSON-RPC connection to a DAP adapter over any io.ReadWriteCloser (TCP socket or stdio pipes).
 type DAPClient struct {
-	conn       net.Conn
-	reader     *bufio.Reader
-	writeMu    sync.Mutex
-	mu         sync.Mutex
-	seq        int
-	pending    map[int]chan *Response
+	conn        io.ReadWriteCloser
+	reader      *bufio.Reader
+	writeMu     sync.Mutex
+	mu          sync.Mutex
+	seq         int
+	pending     map[int]chan *Response
 	subscribers map[chan *Event]struct{}
-	closed     bool
-	doneChan   chan struct{}
+	closed      bool
+	doneChan    chan struct{}
+}
+
+// NewDAPClient instantiates a DAPClient over any io.ReadWriteCloser transport (TCP or stdio).
+func NewDAPClient(rw io.ReadWriteCloser) *DAPClient {
+	client := &DAPClient{
+		conn:        rw,
+		reader:      bufio.NewReader(rw),
+		pending:     make(map[int]chan *Response),
+		subscribers: make(map[chan *Event]struct{}),
+		doneChan:    make(chan struct{}),
+	}
+	go client.readLoop()
+	return client
 }
 
 // DialDAP connects to the DAP adapter at the given TCP address.
@@ -33,18 +56,7 @@ func DialDAP(ctx context.Context, addr string) (*DAPClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial DAP server at %s: %w", addr, err)
 	}
-
-	client := &DAPClient{
-		conn:        conn,
-		reader:      bufio.NewReader(conn),
-		pending:     make(map[int]chan *Response),
-		subscribers: make(map[chan *Event]struct{}),
-		doneChan:    make(chan struct{}),
-	}
-
-	go client.readLoop()
-
-	return client, nil
+	return NewDAPClient(conn), nil
 }
 
 // SubscribeEvents registers a channel to receive real-time DAP events.
@@ -62,12 +74,12 @@ func (c *DAPClient) SubscribeEvents() (chan *Event, func()) {
 	return ch, unsubscribe
 }
 
-// SendRequest sends a DAP request and synchronously waits for matching response.
-func (c *DAPClient) SendRequest(ctx context.Context, command string, args any) (*Response, error) {
+// SendRequestAsync sends a DAP request and returns the sequence number and response channel.
+func (c *DAPClient) SendRequestAsync(command string, args any) (int, <-chan *Response, error) {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
-		return nil, errors.New("DAP client connection is closed")
+		return 0, nil, errors.New("DAP client connection is closed")
 	}
 	c.seq++
 	seq := c.seq
@@ -75,17 +87,14 @@ func (c *DAPClient) SendRequest(ctx context.Context, command string, args any) (
 	c.pending[seq] = respCh
 	c.mu.Unlock()
 
-	defer func() {
-		c.mu.Lock()
-		delete(c.pending, seq)
-		c.mu.Unlock()
-	}()
-
 	var rawArgs json.RawMessage
 	if args != nil {
 		data, err := json.Marshal(args)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request arguments: %w", err)
+			c.mu.Lock()
+			delete(c.pending, seq)
+			c.mu.Unlock()
+			return 0, nil, fmt.Errorf("failed to marshal request arguments: %w", err)
 		}
 		rawArgs = data
 	}
@@ -99,7 +108,10 @@ func (c *DAPClient) SendRequest(ctx context.Context, command string, args any) (
 
 	payload, err := json.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		c.mu.Lock()
+		delete(c.pending, seq)
+		c.mu.Unlock()
+		return 0, nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	frame := fmt.Sprintf("Content-Length: %d\r\n\r\n%s", len(payload), string(payload))
@@ -109,9 +121,23 @@ func (c *DAPClient) SendRequest(ctx context.Context, command string, args any) (
 	c.writeMu.Unlock()
 
 	if writeErr != nil {
+		c.mu.Lock()
+		delete(c.pending, seq)
+		c.mu.Unlock()
 		_ = c.Close()
-		return nil, fmt.Errorf("failed to write DAP frame: %w", writeErr)
+		return 0, nil, fmt.Errorf("failed to write DAP frame: %w", writeErr)
 	}
+
+	return seq, respCh, nil
+}
+
+// WaitResponse waits for a response for a specific sequence number.
+func (c *DAPClient) WaitResponse(ctx context.Context, seq int, respCh <-chan *Response, command string) (*Response, error) {
+	defer func() {
+		c.mu.Lock()
+		delete(c.pending, seq)
+		c.mu.Unlock()
+	}()
 
 	select {
 	case <-ctx.Done():
@@ -141,6 +167,15 @@ func (c *DAPClient) SendRequest(ctx context.Context, command string, args any) (
 		}
 		return resp, nil
 	}
+}
+
+// SendRequest sends a DAP request and synchronously waits for matching response.
+func (c *DAPClient) SendRequest(ctx context.Context, command string, args any) (*Response, error) {
+	seq, respCh, err := c.SendRequestAsync(command, args)
+	if err != nil {
+		return nil, err
+	}
+	return c.WaitResponse(ctx, seq, respCh, command)
 }
 
 // readLoop reads Content-Length framed JSON messages.
@@ -244,10 +279,18 @@ func (c *DAPClient) Close() error {
 
 // Initialize performs the standard DAP initialize handshake.
 func (c *DAPClient) Initialize(ctx context.Context) (*Response, error) {
+	return c.InitializeWithAdapter(ctx, "dlv-dap")
+}
+
+// InitializeWithAdapter performs the DAP initialize handshake with a specific adapter identifier.
+func (c *DAPClient) InitializeWithAdapter(ctx context.Context, adapterID string) (*Response, error) {
+	if adapterID == "" {
+		adapterID = "dlv-dap"
+	}
 	args := map[string]any{
 		"clientID":        "aegiscode",
 		"clientName":      "AegisCode IDE",
-		"adapterID":       "dlv-dap",
+		"adapterID":       adapterID,
 		"linesStartAt1":   true,
 		"columnsStartAt1": true,
 		"pathFormat":      "path",
@@ -255,14 +298,12 @@ func (c *DAPClient) Initialize(ctx context.Context) (*Response, error) {
 	return c.SendRequest(ctx, "initialize", args)
 }
 
-// Launch sends a launch request to compile and start a program.
-func (c *DAPClient) Launch(ctx context.Context, program string, args []string, env map[string]string, cwd string, mode string) (*Response, error) {
-	if mode == "" {
-		mode = "debug"
-	}
+func buildLaunchArgs(program string, args []string, env map[string]string, cwd string, mode string) map[string]any {
 	launchArgs := map[string]any{
-		"mode":    mode,
 		"program": program,
+	}
+	if mode != "" && mode != "python" {
+		launchArgs["mode"] = mode
 	}
 	if len(args) > 0 {
 		launchArgs["args"] = args
@@ -273,7 +314,19 @@ func (c *DAPClient) Launch(ctx context.Context, program string, args []string, e
 	if cwd != "" {
 		launchArgs["cwd"] = cwd
 	}
+	return launchArgs
+}
+
+// Launch sends a launch request to compile and start a program.
+func (c *DAPClient) Launch(ctx context.Context, program string, args []string, env map[string]string, cwd string, mode string) (*Response, error) {
+	launchArgs := buildLaunchArgs(program, args, env, cwd, mode)
 	return c.SendRequest(ctx, "launch", launchArgs)
+}
+
+// LaunchAsync sends a launch request asynchronously, returning seq and channel to await after configurationDone.
+func (c *DAPClient) LaunchAsync(program string, args []string, env map[string]string, cwd string, mode string) (int, <-chan *Response, error) {
+	launchArgs := buildLaunchArgs(program, args, env, cwd, mode)
+	return c.SendRequestAsync("launch", launchArgs)
 }
 
 // SetBreakpoints registers breakpoints for a target file path.

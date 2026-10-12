@@ -188,6 +188,59 @@ describe("DAP Debugger (Delve) Frontend Workflow", () => {
       expect(res.error).toBe("No Go files found in target directory")
     })
 
+    it("starts a Python debug session with language specified", async () => {
+      const mockState: DebugState = { active: true, status: "running" }
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ status: "started", state: mockState }),
+      })
+
+      const res = await startDebugSession(
+        "scripts/app.py",
+        undefined,
+        undefined,
+        undefined,
+        { "scripts/app.py": [10] },
+        "python",
+      )
+      expect(res.status).toBe("started")
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "/api/v1/debug/start",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            program: "scripts/app.py",
+            breakpoints: { "scripts/app.py": [10] },
+            language: "python",
+          }),
+        }),
+      )
+    })
+
+    it("handles debugpy_not_found error response correctly", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        json: async () => ({
+          error:
+            "debugpy debugger not found. Run 'pip install debugpy' to install Python debugger.",
+          code: "debugpy_not_found",
+        }),
+      })
+
+      const res = await startDebugSession(
+        "app.py",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "python",
+      )
+      expect(res.status).toBe("error")
+      expect(res.code).toBe("debugpy_not_found")
+      expect(res.error).toContain("pip install debugpy")
+    })
+
     it("sets breakpoints via POST /api/v1/debug/breakpoints", async () => {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,

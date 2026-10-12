@@ -53,12 +53,16 @@ func TestDelveRunnerLifecycle(t *testing.T) {
 		t.Fatalf("expected positive port, got %d", runner.Port)
 	}
 
-	// Verify TCP connection succeeds
-	conn, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(runner.Port), 1*time.Second)
-	if err != nil {
-		t.Fatalf("failed to dial delve dap: %v", err)
+	// Verify DAP client is connected and responds
+	if runner.Client == nil {
+		t.Fatalf("expected non-nil runner.Client")
 	}
-	_ = conn.Close()
+	initCtx, initCancel := context.WithTimeout(ctx, 3*time.Second)
+	_, err = runner.Client.Initialize(initCtx)
+	initCancel()
+	if err != nil {
+		t.Fatalf("failed to initialize delve dap client: %v", err)
+	}
 
 	// Clean teardown
 	if err := runner.Close(); err != nil {
