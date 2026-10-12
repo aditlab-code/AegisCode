@@ -8,15 +8,45 @@ interface MarkdownRendererProps {
   isStreaming?: boolean
 }
 
-type Block =
-  | { type: "code"; lang: string; content: string; unclosed?: boolean }
-  | { type: "header"; level: 1 | 2 | 3 | 4; content: string }
-  | { type: "blockquote"; content: string[] }
-  | { type: "ul"; items: string[] }
-  | { type: "ol"; items: string[] }
-  | { type: "table"; headers: string[]; rows: string[][] }
-  | { type: "hr" }
-  | { type: "p"; content: string }
+interface CodeBlock {
+  type: "code"
+  lang: string
+  content: string
+  unclosed?: boolean
+}
+
+interface HeaderBlock {
+  type: "header"
+  level: 1 | 2 | 3 | 4
+  content: string
+}
+
+interface BlockquoteBlock {
+  type: "blockquote"
+  content: string[]
+}
+
+interface ListBlock {
+  type: "ul" | "ol"
+  items: string[]
+}
+
+interface TableBlock {
+  type: "table"
+  headers: string[]
+  rows: string[][]
+}
+
+interface HrBlock {
+  type: "hr"
+}
+
+interface ParagraphBlock {
+  type: "p"
+  content: string
+}
+
+type Block = CodeBlock | HeaderBlock | BlockquoteBlock | ListBlock | TableBlock | HrBlock | ParagraphBlock
 
 export const MarkdownRenderer = memo(function MarkdownRenderer({
   text,
@@ -110,7 +140,8 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
             return (
               <ul key={`block-${idx}`} className="markdown-ul">
                 {block.items.map((item, itemIdx) => {
-                  const isTask = item.startsWith("[ ] ") || item.startsWith("[x] ")
+                  const isTask =
+                    item.startsWith("[ ] ") || item.startsWith("[x] ")
                   if (isTask) {
                     const checked = item.startsWith("[x] ")
                     const content = item.slice(4)
@@ -275,9 +306,7 @@ function CodeBlockView({
               {tokenizeLine(line)}
             </span>
           ))}
-          {unclosed && isStreaming && (
-            <span className="streaming-cursor" />
-          )}
+          {unclosed && isStreaming && <span className="streaming-cursor" />}
         </code>
       </pre>
     </div>
@@ -340,7 +369,15 @@ function parseMarkdownBlocks(text: string, isStreaming: boolean): Block[] {
     // 4. Blockquote (> ...)
     if (line.startsWith(">")) {
       const bqLines: string[] = []
-      while (i < lines.length && (lines[i].startsWith(">") || (lines[i].trim() !== "" && bqLines.length > 0 && !lines[i].startsWith("#") && !lines[i].startsWith("-") && !lines[i].startsWith("```")))) {
+      while (
+        i < lines.length &&
+        (lines[i].startsWith(">") ||
+          (lines[i].trim() !== "" &&
+            bqLines.length > 0 &&
+            !lines[i].startsWith("#") &&
+            !lines[i].startsWith("-") &&
+            !lines[i].startsWith("```")))
+      ) {
         if (lines[i].startsWith(">")) {
           bqLines.push(lines[i].replace(/^>\s?/, ""))
         } else {
@@ -379,10 +416,14 @@ function parseMarkdownBlocks(text: string, isStreaming: boolean): Block[] {
     }
 
     // 7. Markdown Table (| Col 1 | Col 2 |)
-    if (line.trim().startsWith("|") && line.trim().endsWith("|") && i + 1 < lines.length && /^\s*\|?\s*[-:]+[-| :]*\|?\s*$/.test(lines[i + 1])) {
+    if (
+      line.trim().startsWith("|") &&
+      line.trim().endsWith("|") &&
+      i + 1 < lines.length &&
+      /^\s*\|?\s*[-:]+[-| :]*\|?\s*$/.test(lines[i + 1])
+    ) {
       const parseCells = (l: string) =>
-        l
-          .trim()
+        l.trim()
           .replace(/^\||\|$/g, "")
           .split("|")
           .map((c) => c.trim())
@@ -390,7 +431,11 @@ function parseMarkdownBlocks(text: string, isStreaming: boolean): Block[] {
       const headers = parseCells(line)
       i += 2 // Skip header and separator
       const rows: string[][] = []
-      while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
+      while (
+        i < lines.length &&
+        lines[i].trim().startsWith("|") &&
+        lines[i].trim().endsWith("|")
+      ) {
         rows.push(parseCells(lines[i]))
         i++
       }

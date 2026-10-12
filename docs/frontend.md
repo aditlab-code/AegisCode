@@ -131,7 +131,7 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
 
 ### 6. AEGIS AI Agent Drawer (`chat/`)
 - **Path**: [`src/components/layout/chat/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/chat)
-- **Primary Components**: `ChatDrawer.tsx`, `ChatHeader.tsx`, `ChatSessionSidebar.tsx`, `ChatMessageList.tsx`, `ChatSuggestions.tsx`, `ChatComposer.tsx`, `ChatCommandPopover.tsx`, `ChatProviderSelect.tsx`, `chat.css`
+- **Primary Components**: `ChatDrawer.tsx`, `ChatHeader.tsx`, `ChatSessionSidebar.tsx`, `ChatMessageList.tsx`, `MarkdownRenderer.tsx`, `ChatSuggestions.tsx`, `ChatComposer.tsx`, `ChatCommandPopover.tsx`, `ChatProviderSelect.tsx`, `chat.css`
 - **Visual Design & Responsive Architecture**:
   - **Dual Dimension Modes & Drag Sash**: Resized along the left sash (`ResizeSash.tsx`) using cumulative drag tracking (`dragWidthRef`):
     - **Normal Mode (Sessions closed)**: Default width **340px**, minimum width **300px**, maximum width **600px**, auto-collapse threshold **< 180px**.
@@ -155,7 +155,11 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
   - **Live 2-Way Agentic Streaming & Real-Time SSE Consumer (`chatCore.ts`)**:
     - Replaced mock contextual responses with live Server-Sent Events (`POST /api/v1/ai/chat`) connecting directly to the Antigravity backend engine.
     - Typewriter streaming text updates with pulsing cursor (`.streaming-cursor`) and shimmer loader (`.message-body-streaming-shimmer`).
-  - **Rich Agentic Baloon Architecture (`ChatMessageList.tsx`)**:
+  - **Rich Agentic Baloon Architecture (`ChatMessageList.tsx` & `MarkdownRenderer.tsx`)**:
+    - **Streaming-Safe Native Markdown Engine (`MarkdownRenderer.tsx`)**: Zero-dependency parser converting streaming AI chunks into styled HTML without bundle overhead. Automatically auto-closes unclosed code blocks and formatting markers during live stream, preventing layout shifts.
+    - **Interactive Code Blocks**: Fenced code blocks with language badge, syntax highlighting (reusing `tokenizeLine` token classes), one-click **Copy Code** button with feedback, and **Apply to Editor** button inserting/updating the code directly into the active editor buffer.
+    - **Typography & Structural Elements**: Full support for headers (`#` to `####`), lists (unordered, ordered, task checkboxes `- [ ]` / `- [x]`), blockquotes (`>`), horizontal rules (`---`), and GitHub-Flavored Markdown tables.
+    - **AegisCode Special Tokens**: Clickable `@file` / `@folder` mention pills that directly open the referenced file in the editor pane, and stylized `/command` chips for slash skills.
     - **Thinking Process Accordion (`.message-thinking-block`)**: Collapsible reasoning viewer with real-time in-progress pulsing indicator (`animate-pulse text-accent`).
     - **Interactive Tool Call Action Chips (`.tool-call-chip`)**: Real-time status indicators (spinner during execution, green checkmark on completion, red error badge on failure) with collapsible JSON arguments and tool output viewer (`.tool-call-details`).
     - **Dedicated In-Chat Error Cards (`.chat-error-card`)**: High-visibility error diagnostics with an actionable `Open Settings` button, preventing blank bubbles or unhandled exceptions.
