@@ -87,6 +87,11 @@
   width: 350px;
 }
 
+.lsp-popover {
+  right: 80px;
+  width: 370px;
+}
+
 .status-popover-header {
   display: flex;
   align-items: center;

@@ -22,6 +22,8 @@ type Manager struct {
 	versionMu     sync.Mutex
 	diagSubs      map[chan PublishDiagnosticsParams]struct{}
 	diagMu        sync.RWMutex
+	customServers map[string]string
+	customMu      sync.RWMutex
 }
 
 func NewManager(workspacePath string) *Manager {
@@ -30,6 +32,17 @@ func NewManager(workspacePath string) *Manager {
 		clients:       make(map[string]*Client),
 		docVersions:   make(map[string]int),
 		diagSubs:      make(map[chan PublishDiagnosticsParams]struct{}),
+		customServers: make(map[string]string),
+	}
+}
+
+// SetCustomServers updates user-configured language server binary paths.
+func (m *Manager) SetCustomServers(servers map[string]string) {
+	m.customMu.Lock()
+	defer m.customMu.Unlock()
+	m.customServers = make(map[string]string)
+	for k, v := range servers {
+		m.customServers[normalizeLang(k)] = v
 	}
 }
 
@@ -45,35 +58,251 @@ func (m *Manager) SetWorkspace(newPath string) {
 	}
 }
 
-// FindServerBinary searches for a language server binary on the host machine.
-func (m *Manager) FindServerBinary(lang string) (string, []string, error) {
-	switch strings.ToLower(lang) {
+// normalizeLang standardizes language identifiers.
+func normalizeLang(lang string) string {
+	l := strings.ToLower(strings.TrimSpace(lang))
+	switch l {
+	case "ts", "typescript", "typescriptreact", "tsx":
+		return "typescript"
+	case "js", "javascript", "javascriptreact", "jsx":
+		return "javascript"
+	case "py", "python":
+		return "python"
+	case "golang", "go":
+		return "go"
+	case "rs", "rust":
+		return "rust"
+	case "c", "cpp", "c++", "cxx", "cc", "h", "hpp":
+		return "cpp"
+	case "json":
+		return "json"
+	case "html", "htm":
+		return "html"
+	case "css":
+		return "css"
+	default:
+		return l
+	}
+}
+
+// clientGroup maps related languages to a shared client group.
+func clientGroup(normLang string) string {
+	switch normLang {
+	case "javascript":
+		return "typescript"
+	default:
+		return normLang
+	}
+}
+
+type langCandidate struct {
+	binaryName string
+	args       []string
+}
+
+type langSpec struct {
+	candidates     []langCandidate
+	installCommand string
+}
+
+func (m *Manager) getLangSpec(normLang string) langSpec {
+	switch normLang {
 	case "go":
-		// 1. Check PATH
-		if path, err := exec.LookPath("gopls"); err == nil {
-			return path, nil, nil
+		return langSpec{
+			candidates: []langCandidate{
+				{binaryName: "gopls", args: nil},
+			},
+			installCommand: "go install golang.org/x/tools/gopls@latest",
 		}
-		// 2. Check GOPATH/bin
-		gopath := os.Getenv("GOPATH")
-		if gopath != "" {
-			cand := filepath.Join(gopath, "bin", "gopls")
-			if _, err := os.Stat(cand); err == nil {
-				return cand, nil, nil
-			}
+
+	case "typescript", "javascript":
+		return langSpec{
+			candidates: []langCandidate{
+				{binaryName: "vtsls", args: []string{"--stdio"}},
+				{binaryName: "typescript-language-server", args: []string{"--stdio"}},
+			},
+			installCommand: "npm install -g @vtsls/language-server (or npm install -g typescript-language-server typescript)",
 		}
-		// 3. Check ~/go/bin
-		home, err := os.UserHomeDir()
-		if err == nil {
-			cand := filepath.Join(home, "go", "bin", "gopls")
-			if _, err := os.Stat(cand); err == nil {
-				return cand, nil, nil
-			}
+
+	case "python":
+		return langSpec{
+			candidates: []langCandidate{
+				{binaryName: "pyright-langserver", args: []string{"--stdio"}},
+				{binaryName: "pyright", args: []string{"--stdio"}},
+				{binaryName: "ruff", args: []string{"server"}},
+				{binaryName: "pylsp", args: nil},
+			},
+			installCommand: "pip install pyright (or npm install -g pyright)",
 		}
-		return "", nil, fmt.Errorf("gopls binary not found in PATH or ~/go/bin")
+
+	case "rust":
+		return langSpec{
+			candidates: []langCandidate{
+				{binaryName: "rust-analyzer", args: nil},
+			},
+			installCommand: "rustup component add rust-analyzer (or cargo install rust-analyzer)",
+		}
+
+	case "cpp":
+		return langSpec{
+			candidates: []langCandidate{
+				{binaryName: "clangd", args: nil},
+			},
+			installCommand: "brew install llvm (macOS) or sudo apt-get install clangd (Linux)",
+		}
+
+	case "json":
+		return langSpec{
+			candidates: []langCandidate{
+				{binaryName: "vscode-json-language-server", args: []string{"--stdio"}},
+			},
+			installCommand: "npm install -g vscode-langservers-extracted",
+		}
+
+	case "html":
+		return langSpec{
+			candidates: []langCandidate{
+				{binaryName: "vscode-html-language-server", args: []string{"--stdio"}},
+			},
+			installCommand: "npm install -g vscode-langservers-extracted",
+		}
+
+	case "css":
+		return langSpec{
+			candidates: []langCandidate{
+				{binaryName: "vscode-css-language-server", args: []string{"--stdio"}},
+			},
+			installCommand: "npm install -g vscode-langservers-extracted",
+		}
 
 	default:
-		return "", nil, fmt.Errorf("unsupported language server for '%s'", lang)
+		return langSpec{
+			candidates:     []langCandidate{{binaryName: normLang, args: nil}},
+			installCommand: "",
+		}
 	}
+}
+
+// FindServerBinary searches for a language server binary on the host machine.
+func (m *Manager) FindServerBinary(lang string) (string, []string, error) {
+	norm := normalizeLang(lang)
+
+	// 1. Check user custom override
+	m.customMu.RLock()
+	customPath, hasCustom := m.customServers[norm]
+	m.customMu.RUnlock()
+
+	if hasCustom && customPath != "" {
+		if _, err := os.Stat(customPath); err == nil {
+			spec := m.getLangSpec(norm)
+			var args []string
+			if len(spec.candidates) > 0 {
+				args = spec.candidates[0].args
+			}
+			return customPath, args, nil
+		}
+		if p, err := exec.LookPath(customPath); err == nil {
+			spec := m.getLangSpec(norm)
+			var args []string
+			if len(spec.candidates) > 0 {
+				args = spec.candidates[0].args
+			}
+			return p, args, nil
+		}
+	}
+
+	spec := m.getLangSpec(norm)
+	homeDir, _ := os.UserHomeDir()
+
+	for _, cand := range spec.candidates {
+		// A. Check PATH
+		if p, err := exec.LookPath(cand.binaryName); err == nil {
+			return p, cand.args, nil
+		}
+
+		// B. Check workspace local binaries (e.g. node_modules/.bin, .venv/bin)
+		if m.workspacePath != "" {
+			localCandDirs := []string{
+				filepath.Join(m.workspacePath, "node_modules", ".bin"),
+				filepath.Join(m.workspacePath, ".venv", "bin"),
+				filepath.Join(m.workspacePath, "venv", "bin"),
+				filepath.Join(m.workspacePath, ".conda", "bin"),
+				filepath.Join(m.workspacePath, "env", "bin"),
+				// Windows venv support
+				filepath.Join(m.workspacePath, ".venv", "Scripts"),
+				filepath.Join(m.workspacePath, "venv", "Scripts"),
+			}
+			for _, dir := range localCandDirs {
+				p := filepath.Join(dir, cand.binaryName)
+				if _, err := os.Stat(p); err == nil {
+					return p, cand.args, nil
+				}
+				// Windows .exe / .cmd check
+				if _, err := os.Stat(p + ".cmd"); err == nil {
+					return p + ".cmd", cand.args, nil
+				}
+				if _, err := os.Stat(p + ".exe"); err == nil {
+					return p + ".exe", cand.args, nil
+				}
+			}
+		}
+
+		// C. Check environment-specific standard paths
+		extraDirs := []string{}
+		if homeDir != "" {
+			extraDirs = append(extraDirs,
+				filepath.Join(homeDir, "go", "bin"),
+				filepath.Join(homeDir, ".cargo", "bin"),
+				filepath.Join(homeDir, ".local", "bin"),
+				filepath.Join(homeDir, ".npm-global", "bin"),
+				filepath.Join(homeDir, ".pyenv", "shims"),
+				filepath.Join(homeDir, "miniconda3", "bin"),
+				filepath.Join(homeDir, "anaconda3", "bin"),
+			)
+			// NVM check
+			nvmBase := filepath.Join(homeDir, ".nvm", "versions", "node")
+			if entries, err := os.ReadDir(nvmBase); err == nil {
+				for _, entry := range entries {
+					if entry.IsDir() {
+						extraDirs = append(extraDirs, filepath.Join(nvmBase, entry.Name(), "bin"))
+					}
+				}
+			}
+		}
+
+		// Go GOPATH check
+		if gopath := os.Getenv("GOPATH"); gopath != "" {
+			extraDirs = append(extraDirs, filepath.Join(gopath, "bin"))
+		}
+
+		// macOS Homebrew & LLVM standard locations
+		extraDirs = append(extraDirs,
+			"/opt/homebrew/bin",
+			"/usr/local/bin",
+			"/usr/bin",
+			"/usr/local/opt/llvm/bin",
+			"/opt/homebrew/opt/llvm/bin",
+		)
+
+		for _, dir := range extraDirs {
+			p := filepath.Join(dir, cand.binaryName)
+			if _, err := os.Stat(p); err == nil {
+				return p, cand.args, nil
+			}
+			if _, err := os.Stat(p + ".cmd"); err == nil {
+				return p + ".cmd", cand.args, nil
+			}
+			if _, err := os.Stat(p + ".exe"); err == nil {
+				return p + ".exe", cand.args, nil
+			}
+		}
+	}
+
+	hint := spec.installCommand
+	if hint != "" {
+		return "", nil, fmt.Errorf("language server for '%s' not found. Install via: %s", lang, hint)
+	}
+	return "", nil, fmt.Errorf("unsupported or missing language server for '%s'", lang)
 }
 
 // IsLanguageSupported checks if a language server binary exists.
@@ -82,51 +311,151 @@ func (m *Manager) IsLanguageSupported(lang string) bool {
 	return err == nil
 }
 
+// GetStatus returns the operational status and installation commands of all standard language servers.
+func (m *Manager) GetStatus() []LanguageServerStatus {
+	standardLangs := []string{"go", "typescript", "python", "rust", "cpp", "json", "html", "css"}
+	result := make([]LanguageServerStatus, 0, len(standardLangs))
+
+	m.clientMu.Lock()
+	activeClients := make(map[string]*Client)
+	for k, v := range m.clients {
+		activeClients[k] = v
+	}
+	m.clientMu.Unlock()
+
+	for _, lang := range standardLangs {
+		norm := normalizeLang(lang)
+		group := clientGroup(norm)
+		spec := m.getLangSpec(norm)
+
+		primaryBin := norm
+		if len(spec.candidates) > 0 {
+			primaryBin = spec.candidates[0].binaryName
+		}
+
+		client, isRunning := activeClients[group]
+		if isRunning && client != nil && client.IsAlive() {
+			result = append(result, LanguageServerStatus{
+				Language:       lang,
+				BinaryName:     primaryBin,
+				Path:           "active",
+				Status:         "running",
+				ActivePID:      client.PID(),
+				InstallCommand: spec.installCommand,
+			})
+			continue
+		}
+
+		binPath, _, err := m.FindServerBinary(lang)
+		if err == nil && binPath != "" {
+			result = append(result, LanguageServerStatus{
+				Language:       lang,
+				BinaryName:     filepath.Base(binPath),
+				Path:           binPath,
+				Status:         "available",
+				InstallCommand: spec.installCommand,
+			})
+		} else {
+			result = append(result, LanguageServerStatus{
+				Language:       lang,
+				BinaryName:     primaryBin,
+				Path:           "",
+				Status:         "not_found",
+				InstallCommand: spec.installCommand,
+			})
+		}
+	}
+
+	return result
+}
+
 // GetOrStartClient returns an initialized LSP client for the given language.
 func (m *Manager) GetOrStartClient(lang string) (*Client, error) {
+	norm := normalizeLang(lang)
+	group := clientGroup(norm)
+
 	m.clientMu.Lock()
 	defer m.clientMu.Unlock()
 
-	client, exists := m.clients[lang]
+	client, exists := m.clients[group]
 	if exists && client != nil {
-		return client, nil
+		if client.IsAlive() {
+			return client, nil
+		}
+		// Client died; clean up and respawn
+		_ = client.Close()
+		delete(m.clients, group)
 	}
 
-	bin, args, err := m.FindServerBinary(lang)
+	bin, args, err := m.FindServerBinary(norm)
 	if err != nil {
 		return nil, err
 	}
 
-	newClient, err := StartClient(bin, args, m.broadcastDiagnostic)
+	newClient, err := StartClient(bin, args, m.broadcastDiagnostic, func() {
+		m.clientMu.Lock()
+		delete(m.clients, group)
+		m.clientMu.Unlock()
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	// Initialize the LSP server
+	// Initialize the LSP server with full modern capabilities
 	initCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	rootURI := m.filePathToURI(m.workspacePath)
+	workspaceName := filepath.Base(m.workspacePath)
+	if workspaceName == "" || workspaceName == "." || workspaceName == "/" {
+		workspaceName = "workspace"
+	}
+
 	initParams := InitializeParams{
 		ProcessID: os.Getpid(),
 		RootURI:   rootURI,
+		RootPath:  m.workspacePath,
+		WorkspaceFolders: []WorkspaceFolder{
+			{Name: workspaceName, URI: rootURI},
+		},
 		Capabilities: ClientCapabilities{
+			Workspace: map[string]any{
+				"workspaceFolders": true,
+				"configuration":    true,
+			},
 			TextDocument: map[string]any{
-				"completion": map[string]any{"dynamicRegistration": false},
-				"hover":      map[string]any{"dynamicRegistration": false},
-				"definition": map[string]any{"dynamicRegistration": false},
+				"synchronization": map[string]any{
+					"dynamicRegistration": false,
+					"willSave":            false,
+					"didSave":             true,
+				},
+				"completion": map[string]any{
+					"dynamicRegistration": false,
+					"snippetSupport":      true,
+				},
+				"hover": map[string]any{
+					"dynamicRegistration": false,
+					"contentFormat":       []string{"markdown", "plaintext"},
+				},
+				"definition": map[string]any{
+					"dynamicRegistration": false,
+					"linkSupport":         true,
+				},
+				"formatting": map[string]any{
+					"dynamicRegistration": false,
+				},
 			},
 		},
 	}
 
 	if _, err := newClient.Call(initCtx, "initialize", initParams); err != nil {
 		_ = newClient.Close()
-		return nil, fmt.Errorf("failed to initialize lsp: %w", err)
+		return nil, fmt.Errorf("failed to initialize lsp (%s): %w", bin, err)
 	}
 
 	_ = newClient.Notify("initialized", struct{}{})
 
-	m.clients[lang] = newClient
+	m.clients[group] = newClient
 	return newClient, nil
 }
 
@@ -136,9 +465,13 @@ func (m *Manager) filePathToURI(relOrAbsPath string) string {
 		abs = filepath.Join(m.workspacePath, relOrAbsPath)
 	}
 	abs = filepath.Clean(abs)
+	slashPath := filepath.ToSlash(abs)
+	if !strings.HasPrefix(slashPath, "/") {
+		slashPath = "/" + slashPath
+	}
 	u := url.URL{
 		Scheme: "file",
-		Path:   filepath.ToSlash(abs),
+		Path:   slashPath,
 	}
 	return u.String()
 }
@@ -200,7 +533,7 @@ func (m *Manager) Completion(relPath string, line int, char int, lang string) ([
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	uri := m.filePathToURI(relPath)
@@ -239,7 +572,7 @@ func (m *Manager) Hover(relPath string, line int, char int, lang string) (*Hover
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	uri := m.filePathToURI(relPath)
@@ -272,7 +605,7 @@ func (m *Manager) Definition(relPath string, line int, char int, lang string) ([
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	uri := m.filePathToURI(relPath)
@@ -290,17 +623,68 @@ func (m *Manager) Definition(relPath string, line int, char int, lang string) ([
 		return []Location{}, nil
 	}
 
+	// 1. Single Location
 	var loc Location
-	if err := json.Unmarshal(resp.Result, &loc); err == nil {
+	if err := json.Unmarshal(resp.Result, &loc); err == nil && loc.URI != "" {
 		return []Location{loc}, nil
 	}
 
+	// 2. Array of Location
 	var locs []Location
-	if err := json.Unmarshal(resp.Result, &locs); err == nil {
+	if err := json.Unmarshal(resp.Result, &locs); err == nil && len(locs) > 0 {
 		return locs, nil
 	}
 
+	// 3. Array of LocationLink (modern protocol)
+	var links []LocationLink
+	if err := json.Unmarshal(resp.Result, &links); err == nil && len(links) > 0 {
+		out := make([]Location, 0, len(links))
+		for _, link := range links {
+			out = append(out, Location{
+				URI:   link.TargetURI,
+				Range: link.TargetSelectionRange,
+			})
+		}
+		return out, nil
+	}
+
 	return []Location{}, nil
+}
+
+// Formatting formats a document via textDocument/formatting.
+func (m *Manager) Formatting(relPath string, tabSize int, insertSpaces bool, lang string) ([]TextEdit, error) {
+	client, err := m.GetOrStartClient(lang)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	uri := m.filePathToURI(relPath)
+	params := DocumentFormattingParams{
+		TextDocument: TextDocumentIdentifier{URI: uri},
+		Options: FormattingOptions{
+			TabSize:      tabSize,
+			InsertSpaces: insertSpaces,
+		},
+	}
+
+	resp, err := client.Call(ctx, "textDocument/formatting", params)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(resp.Result) == 0 || string(resp.Result) == "null" {
+		return []TextEdit{}, nil
+	}
+
+	var edits []TextEdit
+	if err := json.Unmarshal(resp.Result, &edits); err != nil {
+		return []TextEdit{}, nil
+	}
+
+	return edits, nil
 }
 
 // SubscribeDiagnostics registers an event listener for compiler diagnostics.

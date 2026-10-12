@@ -728,6 +728,127 @@ export function buildSettingsSchema(
         }))
       },
     },
+    {
+      id: "features.lsp.formatOnSave",
+      category: "Features",
+      title: "LSP: Format on Save",
+      description:
+        "Automatically format documents with the active language server when pressing Cmd+S / Ctrl+S.",
+      type: "boolean",
+      value: settings?.features?.lsp?.formatOnSave ?? true,
+      onChange: (v) => {
+        updateFeaturesSettings((prev) => ({
+          ...prev,
+          lsp: {
+            ...prev.lsp,
+            formatOnSave: Boolean(v),
+            servers: prev.lsp?.servers || {},
+          },
+        }))
+        showToast(`Format on save ${v ? "enabled" : "disabled"}`)
+      },
+    },
+    {
+      id: "features.lsp.servers.typescript",
+      category: "Features",
+      title: "LSP: TypeScript/JavaScript Binary Path",
+      description:
+        "Custom path to vtsls or typescript-language-server executable.",
+      type: "text",
+      value: settings?.features?.lsp?.servers?.typescript ?? "",
+      onChange: (v) => {
+        updateFeaturesSettings((prev) => ({
+          ...prev,
+          lsp: {
+            ...prev.lsp,
+            servers: {
+              ...(prev.lsp?.servers || {}),
+              typescript: String(v).trim(),
+            },
+          },
+        }))
+      },
+    },
+    {
+      id: "features.lsp.servers.python",
+      category: "Features",
+      title: "LSP: Python Binary Path",
+      description: "Custom path to pyright-langserver or ruff executable.",
+      type: "text",
+      value: settings?.features?.lsp?.servers?.python ?? "",
+      onChange: (v) => {
+        updateFeaturesSettings((prev) => ({
+          ...prev,
+          lsp: {
+            ...prev.lsp,
+            servers: {
+              ...(prev.lsp?.servers || {}),
+              python: String(v).trim(),
+            },
+          },
+        }))
+      },
+    },
+    {
+      id: "features.lsp.servers.go",
+      category: "Features",
+      title: "LSP: Go Binary Path",
+      description: "Custom path to gopls executable.",
+      type: "text",
+      value: settings?.features?.lsp?.servers?.go ?? "",
+      onChange: (v) => {
+        updateFeaturesSettings((prev) => ({
+          ...prev,
+          lsp: {
+            ...prev.lsp,
+            servers: {
+              ...(prev.lsp?.servers || {}),
+              go: String(v).trim(),
+            },
+          },
+        }))
+      },
+    },
+    {
+      id: "features.lsp.servers.rust",
+      category: "Features",
+      title: "LSP: Rust Binary Path",
+      description: "Custom path to rust-analyzer executable.",
+      type: "text",
+      value: settings?.features?.lsp?.servers?.rust ?? "",
+      onChange: (v) => {
+        updateFeaturesSettings((prev) => ({
+          ...prev,
+          lsp: {
+            ...prev.lsp,
+            servers: {
+              ...(prev.lsp?.servers || {}),
+              rust: String(v).trim(),
+            },
+          },
+        }))
+      },
+    },
+    {
+      id: "features.lsp.servers.cpp",
+      category: "Features",
+      title: "LSP: C/C++ Binary Path",
+      description: "Custom path to clangd executable.",
+      type: "text",
+      value: settings?.features?.lsp?.servers?.cpp ?? "",
+      onChange: (v) => {
+        updateFeaturesSettings((prev) => ({
+          ...prev,
+          lsp: {
+            ...prev.lsp,
+            servers: {
+              ...(prev.lsp?.servers || {}),
+              cpp: String(v).trim(),
+            },
+          },
+        }))
+      },
+    },
 
     // 6. Companion (Remote Tablet)
     {

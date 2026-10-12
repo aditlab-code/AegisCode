@@ -11,6 +11,7 @@ type Config struct {
 	BypassCommands   map[string]string   `json:"bypassCommands,omitempty"`
 	BypassTokens     map[string]string   `json:"bypassTokens,omitempty"`
 	CustomModels     map[string][]string `json:"customModels,omitempty"`
+	LspServers       map[string]string   `json:"lspServers,omitempty"`
 	Settings         map[string]any      `json:"settings,omitempty"`
 	UpdatedAt        int64               `json:"updatedAt"`
 }

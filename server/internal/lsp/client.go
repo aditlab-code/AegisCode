@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -25,6 +26,8 @@ type Client struct {
 	pendingMu    sync.Mutex
 	pending      map[int64]chan *Response
 	onDiagnostic func(PublishDiagnosticsParams)
+	onExit       func()
+	isDead       atomic.Bool
 	writeMu      sync.Mutex
 	closeOnce    sync.Once
 	ctx          context.Context
@@ -32,9 +35,10 @@ type Client struct {
 }
 
 // StartClient spawns an LSP process and initializes reader/writer loops.
-func StartClient(binaryPath string, args []string, onDiag func(PublishDiagnosticsParams)) (*Client, error) {
+func StartClient(binaryPath string, args []string, onDiag func(PublishDiagnosticsParams), onExit ...func()) (*Client, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	setProcessGroup(cmd)
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -56,6 +60,11 @@ func StartClient(binaryPath string, args []string, onDiag func(PublishDiagnostic
 		return nil, fmt.Errorf("failed to start LSP binary '%s': %w", binaryPath, err)
 	}
 
+	var exitHook func()
+	if len(onExit) > 0 && onExit[0] != nil {
+		exitHook = onExit[0]
+	}
+
 	c := &Client{
 		cmd:          cmd,
 		stdin:        stdin,
@@ -63,6 +72,7 @@ func StartClient(binaryPath string, args []string, onDiag func(PublishDiagnostic
 		reader:       bufio.NewReader(stdout),
 		pending:      make(map[int64]chan *Response),
 		onDiagnostic: onDiag,
+		onExit:       exitHook,
 		ctx:          ctx,
 		cancel:       cancel,
 	}
@@ -72,9 +82,34 @@ func StartClient(binaryPath string, args []string, onDiag func(PublishDiagnostic
 	return c, nil
 }
 
+// PID returns the OS process ID of the running language server.
+func (c *Client) PID() int {
+	if c.cmd != nil && c.cmd.Process != nil {
+		return c.cmd.Process.Pid
+	}
+	return 0
+}
+
+// IsAlive checks whether the client process is still healthy.
+func (c *Client) IsAlive() bool {
+	return !c.isDead.Load()
+}
+
 // readLoop listens for incoming JSON-RPC messages framed with Content-Length headers.
 func (c *Client) readLoop() {
-	defer c.Close()
+	defer func() {
+		c.isDead.Store(true)
+		c.pendingMu.Lock()
+		for id, ch := range c.pending {
+			close(ch)
+			delete(c.pending, id)
+		}
+		c.pendingMu.Unlock()
+		_ = c.Close()
+		if c.onExit != nil {
+			c.onExit()
+		}
+	}()
 
 	for {
 		// Read headers until empty line
@@ -153,6 +188,10 @@ func (c *Client) readLoop() {
 
 // Call sends a JSON-RPC request and awaits the response with a timeout.
 func (c *Client) Call(ctx context.Context, method string, params any) (*Response, error) {
+	if c.isDead.Load() {
+		return nil, errors.New("lsp client closed")
+	}
+
 	id := c.nextID.Add(1)
 
 	var rawParams json.RawMessage
@@ -248,6 +287,7 @@ func (c *Client) sendFramed(data []byte) error {
 func (c *Client) Close() error {
 	var closeErr error
 	c.closeOnce.Do(func() {
+		c.isDead.Store(true)
 		// Attempt graceful LSP shutdown
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		_, _ = c.Call(shutdownCtx, "shutdown", nil)
@@ -259,7 +299,19 @@ func (c *Client) Close() error {
 		c.cancel()
 
 		if c.cmd.Process != nil {
-			_ = c.cmd.Process.Kill()
+			pid := c.cmd.Process.Pid
+			_ = killProcessGroup(pid, syscall.SIGTERM)
+			done := make(chan struct{})
+			go func() {
+				_ = c.cmd.Wait()
+				close(done)
+			}()
+			select {
+			case <-done:
+			case <-time.After(300 * time.Millisecond):
+				_ = killProcessGroup(pid, syscall.SIGKILL)
+				_ = c.cmd.Process.Kill()
+			}
 		}
 	})
 	return closeErr

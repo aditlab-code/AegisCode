@@ -31,6 +31,27 @@ export function detectLanguage(filename: string): string {
   }
 }
 
+const LSP_EXTENSIONS = new Set([
+  "go",
+  "ts",
+  "tsx",
+  "js",
+  "jsx",
+  "py",
+  "rs",
+  "c",
+  "cpp",
+  "cc",
+  "cxx",
+  "h",
+  "hpp",
+])
+
+export function isLspLanguage(filename: string): boolean {
+  const ext = filename.split(".").pop()?.toLowerCase() || ""
+  return LSP_EXTENSIONS.has(ext)
+}
+
 export function validateSyntax(
   filename: string,
   content: string,

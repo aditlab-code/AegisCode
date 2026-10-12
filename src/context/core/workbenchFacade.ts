@@ -11,7 +11,11 @@ import {
   buildMentionContextItem,
   enforceContextTokenBudget,
 } from "./contextExtractorCore"
-import { detectLanguage, validateSyntax } from "../../utils/linter"
+import {
+  detectLanguage,
+  validateSyntax,
+  isLspLanguage,
+} from "../../utils/linter"
 import {
   isGitDiffTab,
   makeGitDiffTab,
@@ -270,7 +274,7 @@ export function useWorkbenchFacade() {
     }
 
     const timer = setTimeout(() => {
-      if (currentFocusedFile) {
+      if (currentFocusedFile && !isLspLanguage(currentFocusedFile)) {
         const buffer = workspace.fileBuffers[currentFocusedFile]
         if (buffer) {
           const fileDiags = validateSyntax(

@@ -13,7 +13,11 @@ import {
   initialFiles,
   initialNotifications,
 } from "../../data/mockData"
-import { detectLanguage, validateSyntax } from "../../utils/linter"
+import {
+  detectLanguage,
+  validateSyntax,
+  isLspLanguage,
+} from "../../utils/linter"
 import {
   closeWorkspace,
   deleteWorkspaceFile,
@@ -829,7 +833,11 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
         updateBufferContentLogic(prev, filename, content),
       )
 
-      if (linterSettings.enabled && linterSettings.trigger === "onType") {
+      if (
+        linterSettings.enabled &&
+        linterSettings.trigger === "onType" &&
+        !isLspLanguage(filename)
+      ) {
         const diags = validateSyntax(
           filename,
           content,
@@ -888,7 +896,7 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
         return marked
       })
 
-      if (linterSettings.enabled && buf) {
+      if (linterSettings.enabled && buf && !isLspLanguage(filenameToSave)) {
         const fileDiags = validateSyntax(
           filenameToSave,
           contentToSave,
@@ -910,7 +918,7 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
       setFileBuffers((prev) => revertBufferContentLogic(prev, filename))
       const buf = fileBuffers[filename]
       const reverted = buf?.savedContent ?? buf?.content ?? ""
-      if (linterSettings.enabled) {
+      if (linterSettings.enabled && !isLspLanguage(filename)) {
         const diags = validateSyntax(
           filename,
           reverted,

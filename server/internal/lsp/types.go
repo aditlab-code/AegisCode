@@ -130,11 +130,55 @@ type PublishDiagnosticsParams struct {
 	Diagnostics []Diagnostic `json:"diagnostics"`
 }
 
+type WorkspaceFolder struct {
+	URI  string `json:"uri"`
+	Name string `json:"name"`
+}
+
+// LocationLink represents an extended link to a target location.
+type LocationLink struct {
+	TargetURI            string `json:"targetUri"`
+	TargetRange          Range  `json:"targetRange"`
+	TargetSelectionRange Range  `json:"targetSelectionRange"`
+	OriginSelectionRange *Range `json:"originSelectionRange,omitempty"`
+}
+
+// Document formatting structures
+type FormattingOptions struct {
+	TabSize                int  `json:"tabSize"`
+	InsertSpaces           bool `json:"insertSpaces"`
+	TrimTrailingWhitespace bool `json:"trimTrailingWhitespace,omitempty"`
+	InsertFinalNewline     bool `json:"insertFinalNewline,omitempty"`
+	TrimFinalNewlines      bool `json:"trimFinalNewlines,omitempty"`
+}
+
+type DocumentFormattingParams struct {
+	TextDocument TextDocumentIdentifier `json:"textDocument"`
+	Options      FormattingOptions      `json:"options"`
+}
+
+type TextEdit struct {
+	Range   Range  `json:"range"`
+	NewText string `json:"newText"`
+}
+
+// LanguageServerStatus provides status and installation command hints.
+type LanguageServerStatus struct {
+	Language       string `json:"language"`
+	BinaryName     string `json:"binaryName"`
+	Path           string `json:"path"`
+	Status         string `json:"status"` // "running" | "available" | "not_found"
+	ActivePID      int    `json:"activePid,omitempty"`
+	InstallCommand string `json:"installCommand,omitempty"`
+}
+
 // Initialize parameters
 type InitializeParams struct {
-	ProcessID    int                `json:"processId"`
-	RootURI      string             `json:"rootUri"`
-	Capabilities ClientCapabilities `json:"capabilities"`
+	ProcessID        int                `json:"processId"`
+	RootURI          string             `json:"rootUri,omitempty"`
+	RootPath         string             `json:"rootPath,omitempty"`
+	WorkspaceFolders []WorkspaceFolder  `json:"workspaceFolders,omitempty"`
+	Capabilities     ClientCapabilities `json:"capabilities"`
 }
 
 type ClientCapabilities struct {

@@ -78,6 +78,11 @@ func NewServer(ws *workspace.Manager, picker platform.FolderPicker, customStore 
 		s.BroadcastLog("Tasks", fmt.Sprintf("[Supervisor] Worker %s (%s) crashed: %v", evt.Name, evt.WorkerID, evt.Error), "error")
 		s.BroadcastWorkerCrash(evt)
 	})
+	if st != nil && s.lsp != nil {
+		if cfg, err := st.GetConfig(); err == nil && cfg != nil && cfg.LspServers != nil {
+			s.lsp.SetCustomServers(cfg.LspServers)
+		}
+	}
 	return s
 }
 
@@ -331,6 +336,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/lsp/completion", s.handleLSPCompletion)
 	mux.HandleFunc("/api/v1/lsp/hover", s.handleLSPHover)
 	mux.HandleFunc("/api/v1/lsp/definition", s.handleLSPDefinition)
+	mux.HandleFunc("/api/v1/lsp/formatting", s.handleLSPFormatting)
+	mux.HandleFunc("/api/v1/lsp/status", s.handleLSPStatus)
 	mux.HandleFunc("/api/v1/events/lsp", s.handleLSPEvents)
 
 	// System Management
@@ -1599,6 +1606,9 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, http.StatusInternalServerError, "failed to save config: "+err.Error())
 			return
 		}
+		if s.lsp != nil && cfg.LspServers != nil {
+			s.lsp.SetCustomServers(cfg.LspServers)
+		}
 		jsonResponse(w, http.StatusOK, map[string]any{
 			"status": "ok",
 			"config": cfg,
@@ -2458,6 +2468,45 @@ func (s *Server) handleLSPDefinition(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResponse(w, http.StatusOK, LSPDefinitionResponse{Locations: locs})
+}
+
+func (s *Server) handleLSPFormatting(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req LSPFormattingRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	if s.lsp == nil {
+		jsonResponse(w, http.StatusOK, LSPFormattingResponse{Edits: []lsp.TextEdit{}})
+		return
+	}
+	tabSize := req.TabSize
+	if tabSize <= 0 {
+		tabSize = 2
+	}
+	edits, err := s.lsp.Formatting(req.Path, tabSize, req.InsertSpaces, req.Language)
+	if err != nil {
+		jsonResponse(w, http.StatusOK, LSPFormattingResponse{Edits: []lsp.TextEdit{}})
+		return
+	}
+	jsonResponse(w, http.StatusOK, LSPFormattingResponse{Edits: edits})
+}
+
+func (s *Server) handleLSPStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.lsp == nil {
+		jsonResponse(w, http.StatusOK, LSPStatusResponse{Servers: []lsp.LanguageServerStatus{}})
+		return
+	}
+	servers := s.lsp.GetStatus()
+	jsonResponse(w, http.StatusOK, LSPStatusResponse{Servers: servers})
 }
 
 func (s *Server) handleLSPEvents(w http.ResponseWriter, r *http.Request) {

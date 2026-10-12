@@ -61,6 +61,16 @@ export function resolveLanguage(filename: string): LanguageInfo {
       return { ext: html(), id: "html" }
     case "css":
       return { ext: css(), id: "css" }
+    case "rs":
+      return { ext: null, id: "rust" }
+    case "c":
+    case "h":
+      return { ext: null, id: "c" }
+    case "cpp":
+    case "cc":
+    case "cxx":
+    case "hpp":
+      return { ext: null, id: "cpp" }
     default:
       return { ext: null, id: "plaintext" }
   }

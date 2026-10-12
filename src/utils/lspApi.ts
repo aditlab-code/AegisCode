@@ -28,6 +28,20 @@ export interface LspLocation {
   range: LspRange
 }
 
+export interface LspTextEdit {
+  range: LspRange
+  newText: string
+}
+
+export interface LanguageServerStatusInfo {
+  language: string
+  binaryName: string
+  path: string
+  status: "running" | "available" | "not_found"
+  activePid?: number
+  installCommand?: string
+}
+
 export async function notifyLspOpen(
   path: string,
   content: string,
@@ -115,6 +129,37 @@ export async function fetchLspDefinition(
     if (!res.ok) return []
     const data = await res.json()
     return data.locations || []
+  } catch (err) {
+    return []
+  }
+}
+
+export async function fetchLspFormatting(
+  path: string,
+  tabSize: number,
+  insertSpaces: boolean,
+  language: string,
+): Promise<LspTextEdit[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/lsp/formatting`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, tabSize, insertSpaces, language }),
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.edits || []
+  } catch (err) {
+    return []
+  }
+}
+
+export async function fetchLspStatus(): Promise<LanguageServerStatusInfo[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/lsp/status`)
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.servers || []
   } catch (err) {
     return []
   }

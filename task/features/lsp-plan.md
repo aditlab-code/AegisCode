@@ -1,74 +1,109 @@
-Berikut adalah **rencana pentahapan implementasi (*Implementation Phases*)** untuk menambahkan **Git Conflict Resolution Editor** pada AegisCode, dirancang secara presisi berdasarkan arsitektur dan struktur kode saat ini:
+Berikut adalah **Rencana Pentahapan Lengkap (*Comprehensive Phased Implementation Plan*)** untuk menghadirkan **LSP Multi-Bahasa Penuh** di AegisCode, dibangun di atas modul yang sudah ada (`server/internal/lsp/` dan CodeMirror 6 di `src/components/layout/editor/`):
 
 ---
 
-### Arsitektur Alur Resolusi Konflik
+### Arsitektur Multi-Bahasa yang Dituju
 
 ```
-[Git CLI (Status 'u')] ➔ [Go Server API] ➔ [gitCore State] ➔ [Source Control Panel]
-                                                                     │
-                                    ┌────────────────────────────────┴────────────────────────┐
-                                    ▼                                                         ▼
-                      [Inline CodeLens di CMEditor]                         [Dedicated Conflict Editor]
-                      (Deteksi <<<<<<<, =======, >>>>>>>)                   (3-Way / Side-by-Side MergeView)
+                                  ┌───► [gopls] (Go)
+                                  │
+[Frontend: CMEditor / CodeMirror] ──► [Go LSP Manager] ──► [vtsls / tsserver] (TS/JS)
+  - Completion (Autocompletion)   │   (map[string]*Client)
+  - Hover Tooltip (Dokumentasi)   ├───► [pyright / ruff] (Python)
+  - Go-to-Definition (F12)        │
+  - Diagnostics (Problems Panel)  ├───► [rust-analyzer] (Rust)
+                                  │
+                                  └───► [clangd] (C/C++)
 
 ```
 
 ---
 
-### Phase 1: Backend Go Engine & Deteksi Unmerged Entry
+### Phase 1: Multi-Language Binary Resolver & Environment Discovery (Backend Go)
 
-**Target**: Membaca status konflik Git dari `--porcelain=v2` dan menyediakan endpoint ekstraksi konten 3 versi (*Base*, *Ours*, *Theirs*).
+**Fokus**: Memperluas `FindServerBinary` agar secara cerdas menemukan compiler server resmi di komputer pengembang.
 
-1. **Update `RepoStatus` Struct (`server/internal/git/git.go:34-45`)**:
-* Tambahkan field `Conflicted []GitChange` pada `RepoStatus`:
+* **Lokasi Kode**: `server/internal/lsp/manager.go:50-80`
+* **Implementasi**:
+1. **Pemetaan Bahasa ke Binary Resmi**:
+* **TypeScript / JavaScript (`typescript`, `javascript`)**:
+* Prioritas 1: `vtsls` (ultra-cepat, berbasis Rust/Node).
+* Prioritas 2: `typescript-language-server` (`[]string{"--stdio"}`).
+* Lokasi pencarian: `PATH`, lokal project `node_modules/.bin/`, global npm (`npm root -g`), Yarn/pnpm global, NVM path.
+
+
+* **Python (`python`)**:
+* Prioritas 1: `pyright-langserver` (`[]string{"--stdio"}`) atau `pyright`.
+* Prioritas 2: `ruff server` atau `pylsp`.
+* Lokasi pencarian: `PATH`, virtual environment aktif (`.venv/bin/`, `venv/bin/`), conda/poetry.
+
+
+* **Rust (`rust`)**:
+* Binary: `rust-analyzer`.
+* Lokasi pencarian: `PATH`, `~/.cargo/bin/rust-analyzer`.
+
+
+* **C / C++ (`c`, `cpp`)**:
+* Binary: `clangd`.
+* Lokasi pencarian: `PATH`, `/usr/bin/clangd`, `/opt/homebrew/bin/clangd`, `LLVM/bin`.
+
+
+* **Web Core (`json`, `html`, `css`)**:
+* `vscode-json-language-server`, `vscode-html-language-server`, `vscode-css-language-server`.
+
+
+
+
+2. **Dukungan Custom Binary Path dari Config (`~/.aegis/config.json`)**:
+* Jika pengembang menaruh binary di lokasi non-standar, server membaca `config.LspServers[lang]`.
+
+
+
+
+
+---
+
+### Phase 2: Inisialisasi Workspace & Negosiasi Kemampuan (*Capabilities*) (Backend Go)
+
+**Fokus**: Memenuhi protokol inisialisasi yang dibutuhkan oleh server bahasa modern (seperti Pyright dan TypeScript) agar tidak menolak inisialisasi.
+
+* **Lokasi Kode**: `server/internal/lsp/manager.go:100-130` & `server/internal/lsp/types.go`
+* **Implementasi**:
+1. **Struktur Parameter `initialize` Lengkap**:
 ```go
-type RepoStatus struct {
-    // ...
-    Staged     []GitChange `json:"staged"`
-    Unstaged   []GitChange `json:"unstaged"`
-    Conflicted []GitChange `json:"conflicted"` // Berkas dengan konflik belum terselesaikan
+initParams := InitializeParams{
+    ProcessID: os.Getpid(),
+    RootURI:   rootURI,
+    RootPath:  m.workspacePath,
+    WorkspaceFolders: []WorkspaceFolder{
+        {Name: filepath.Base(m.workspacePath), URI: rootURI},
+    },
+    Capabilities: ClientCapabilities{
+        Workspace: WorkspaceClientCapabilities{
+            WorkspaceFolders: true,
+            Configuration:    true,
+        },
+        TextDocument: TextDocumentClientCapabilities{
+            Synchronization: map[string]any{
+                "dynamicRegistration": false,
+                "willSave":            false,
+                "didSave":             true,
+            },
+            Completion: map[string]any{
+                "snippetSupport": true, // Mendukung snippet completion
+            },
+            Hover:      map[string]any{"contentFormat": []string{"markdown", "plaintext"}},
+            Definition: map[string]any{"linkSupport": true},
+            Formatting: map[string]any{"dynamicRegistration": false},
+        },
+    },
 }
 
 ```
 
 
-
-
-2. **Parser Baris `u ` di `GetStatus` (`server/internal/git/git.go:365-460`)**:
-* Saat ini parser hanya mengenali baris `1 ` (modified), `2 ` (renamed), dan `? ` (untracked).
-* Tambahkan penanganan baris berawalan `u ` (*unmerged entries*):
-```go
-// Unmerged entry: u <xy> <sub> <m1> <m2> <m3> <mW> <h1> <h2> <h3> <path>
-if strings.HasPrefix(line, "u ") {
-    parts := strings.SplitN(line, " ", 11)
-    if len(parts) >= 11 {
-        filePath := parts[10]
-        status.Conflicted = append(status.Conflicted, GitChange{
-            Code:   parts[1], // e.g. "UU", "AA", "UD", "DU"
-            File:   filePath,
-            Status: "conflict",
-        })
-    }
-    continue
-}
-
-```
-
-
-
-
-3. **Endpoint Konten Konflik 3-Stage (`server/internal/api/api.go` & `git.go`)**:
-* Tambahkan endpoint `GET /api/v1/git/conflict/content?file=<relPath>`:
-* Baca **Ours (Current)**: `git show :2:<file>`
-* Baca **Theirs (Incoming)**: `git show :3:<file>`
-* Baca **Base (Ancestor)**: `git show :1:<file>`
-* Baca **Working Tree**: `os.ReadFile(fullPath)` (berisi marker `<<<<<<<`)
-
-
-* Tambahkan endpoint `POST /api/v1/git/conflict/resolve`:
-* Menerima payload `{ file: string, resolvedContent: string }`.
-* Tulis konten bersih ke disk, lalu jalankan `git add -- <file>` untuk menandai resolusi selesai.
+2. **Normalisasi Respons Completion**:
+* Standardisasi parser agar mendukung format array `[]CompletionItem` maupun format objek `CompletionList { items: [] }`.
 
 
 
@@ -76,42 +111,50 @@ if strings.HasPrefix(line, "u ") {
 
 ---
 
-### Phase 2: Frontend State Management & Type Registry
+### Phase 3: Penanganan Crash & Pengawasan Siklus Hidup Proses (*Supervisor*)
 
-**Target**: Memperluas state Git di React agar mengenali daftar berkas yang berkonflik.
+**Fokus**: Menjamin kestabilan server jika salah satu language server mengalami kehabisan memori (*out of memory*) atau crash.
 
-1. **Perbarui Tipe Data (`src/types/workbench.ts:320-330`)**:
+* **Lokasi Kode**: `server/internal/lsp/client.go` & `server/internal/supervisor/`
+* **Implementasi**:
+1. **Integrasi dengan Process Supervisor**:
+* Bungkus eksekusi `exec.CommandContext` dengan pola supervisor AegisCode untuk isolasi memori dan auto-restart.
+
+
+2. **Graceful Teardown saat Ganti Workspace**:
+* Saat `SetWorkspace(newPath)` dipanggil, kirim notifikasi `shutdown` dan `exit` ke seluruh client aktif di `m.clients` sebelum membunuhnya dengan `SIGTERM`.
+
+
+3. **Request Timeout Guard**:
+* Berikan timeout (2–3 detik) pada pemanggilan completion/hover agar UI editor tidak terblokir jika language server sedang melakukan re-indexing besar.
+
+---
+
+### Phase 4: Diagnostik Kompiler Real-Time ke Problems Panel (Full-Duplex SSE)
+
+**Fokus**: Mengalirkan error kompilasi dan peringatan (*diagnostics*) langsung ke Problems View dan editor gutter.
+
+* **Lokasi Kode**: `server/internal/api/api.go:334` & `src/components/layout/bottom-panel/ProblemsView.tsx`
+* **Implementasi**:
+1. **Langganan SSE Diagnostik di Frontend**:
+* Sambungkan `subscribeLspDiagnostics` di `WorkbenchContext`:
 ```typescript
-export interface RepoStatus {
-  // ...
-  staged: GitChange[]
-  unstaged: GitChange[]
-  conflicted: GitChange[] // Baru
-}
+subscribeLspDiagnostics((data) => {
+  // data: { uri, diagnostics: [...] }
+  updateLspDiagnostics(data.uri, data.diagnostics)
+})
 
 ```
 
 
-2. **Perbarui State Git (`src/context/core/gitCore.ts:140-200`)**:
-* Tambahkan state `const [conflictedChanges, setConflictedChanges] = useState<GitChange[]>([])`.
-* Update `refreshGitStatus`:
-```typescript
-setConflictedChanges(status.conflicted || [])
-
-```
 
 
-* Tambahkan fungsi aksi `resolveGitConflict(file: string, content: string)`:
-* Menyimpan konten bersih via `saveWorkspaceFile`.
-* Memanggil `stageGitChange(file)` untuk menandai *conflict resolved*.
+2. **Gutter Linting di CodeMirror 6**:
+* Integrasikan dengan ekstensi resmi `@codemirror/lint` di `CMEditor.tsx` untuk menampilkan garis bawah merah/kuning (*squiggly lines*) dan dot peringatan di gutter baris.
 
 
-
-
-3. **Tab Descriptor Baru (`src/utils/gitDiffTab.ts`)**:
-* Tambahkan helper tab:
-* `makeGitConflictTab(file: string): string` -> `git-conflict:${file}`
-* `isGitConflictTab(tab?: string): boolean`
+3. **Eliminasi Heuristic Regex Duplikat**:
+* Saat LSP aktif untuk berkas `.go`, `.ts`, atau `.py`, nonaktifkan linter regex heuristik (`linter.ts`) agar pengguna hanya melihat diagnosa resmi dari kompiler.
 
 
 
@@ -119,84 +162,25 @@ setConflictedChanges(status.conflicted || [])
 
 ---
 
-### Phase 3: Integrasi UI di Source Control Panel
+### Phase 5: Fitur Interaksi Editor Lanjutan (CodeMirror 6)
 
-**Target**: Menampilkan section **"Merge Conflicts"** dengan aksen peringatan di panel Source Control.
+**Fokus**: Menghadirkan kapabilitas navigasi kode setara editor produksi.
 
-1. **Modifikasi `src/components/layout/sidebar/SourceControlPanel.tsx**`:
-* Letakkan section **Merge Conflicts** di paling atas (sebelum *Staged Changes*):
-```tsx
-{conflictedChanges.length > 0 && (
-  <div className="conflict-section border-b border-line pb-2 mb-2">
-    <div className="section-header text-[var(--color-warning)] font-medium flex items-center justify-between">
-      <span className="flex items-center gap-1.5">
-        <Icon name="alert" size={13} />
-        <span>Merge Conflicts ({conflictedChanges.length})</span>
-      </span>
-    </div>
-    <div className="conflict-list">
-      {conflictedChanges.map((change) => (
-        <div key={change.file} className="conflict-item flex items-center justify-between">
-          <button onClick={() => openConflictEditor(change.file)} className="truncate text-left">
-            {change.file}
-          </button>
-          <span className="badge badge-warning">Conflicted</span>
-        </div>
-      ))}
-    </div>
-  </div>
-)}
-
-```
+* **Lokasi Kode**: `src/components/layout/editor/CMEditor.tsx` & `src/utils/lspApi.ts`
+* **Implementasi**:
+1. **Go-to-Definition (`F12` / `Cmd+Click`)**:
+* Tangkap tombol `F12` atau klik mouse dengan modifier `Cmd`/`Ctrl`.
+* Panggil `fetchLspDefinition(filename, line, col, langInfo.id)`.
+* Jika lokasi berada di berkas lain: buka berkas via `openFileInPane(loc.path)` dan posisikan kursor serta scroll ke baris/kolom target.
 
 
+2. **Format on Save (`Cmd+S` / `Ctrl+S`)**:
+* Tambahkan endpoint `POST /api/v1/lsp/formatting`.
+* Sebelum menyimpan berkas ke disk, panggil formatte LSP dan terapkan `view.dispatch({ changes: edits })`.
 
 
-2. **Indikator Badge di File Explorer (`src/utils/explorerGitStatus.ts`)**:
-* Tambahkan badge `!` atau `C` berwarna merah/oranye untuk berkas dalam `conflictedChanges`.
-
-
-
----
-
-### Phase 4: CodeMirror 6 Inline CodeLens Extension
-
-**Target**: Memberikan tombol aksi interaktif tepat di atas penanda konflik di dalam editor (`CMEditor.tsx`).
-
-1. **Buat Extension `src/components/layout/editor/cm-extensions/conflictMarkers.ts**`:
-* Buat CodeMirror 6 `ViewPlugin` yang memindai regex penanda konflik:
-```text
-<<<<<<< HEAD (Current Change)
-[Baris Konten A]
-=======
-[Baris Konten B]
->>>>>>> branch-name (Incoming Change)
-
-```
-
-
-* Pasang CodeLens widget di atas baris `<<<<<<<`:
-* Tombol: **Accept Current** | **Accept Incoming** | **Accept Both**
-
-
-* **Logika Eksekusi Penggantian (*Replacement Dispatch*)**:
-```typescript
-function acceptCurrent(view: EditorView, from: number, to: number, currentText: string) {
-  view.dispatch({
-    changes: { from, to, insert: currentText }
-  })
-}
-
-```
-
-
-
-
-2. **Pewarnaan Sintaks Khusus Blok Konflik**:
-* Gunakan `Decoration.mark` dengan Tailwind semantic tokens:
-* Blok *Current*: Latar hijau lembut (`bg-[var(--color-success)]/10`).
-* Blok *Incoming*: Latar biru lembut (`bg-[var(--color-accent)]/10`).
-* Garis pembatas `=======`: Border pemisah yang jelas.
+3. **Dokumentasi Markdown pada Hover Tooltip**:
+* Parse konten markdown dari hover LSP (misalnya docstring Python atau TSDoc) menggunakan `MarkdownRenderer` agar teks tampil rapi dengan *syntax highlighting* pada blok kode contoh.
 
 
 
@@ -204,43 +188,48 @@ function acceptCurrent(view: EditorView, from: number, to: number, currentText: 
 
 ---
 
-### Phase 5: Dedicated 3-Way / Split Conflict View
+### Phase 6: Indikator UI, Status Bar & Panduan Instalasi Mandiri
 
-**Target**: Antarmuka visual resolusi konflik untuk berkas kompleks yang membutuhkan perbandingan komprehensif.
+**Fokus**: Transparansi status dan kemudahan bagi pengembang.
 
-1. **Buat Komponen `src/components/layout/editor/ConflictEditorPane.tsx**`:
-* Memanfaatkan `@codemirror/merge` (`MergeView`) yang sudah terpasang di codebase:
-* **Pane Kiri (Read-Only)**: *Ours / Current Change* (`:2:file`)
-* **Pane Kanan (Read-Only)**: *Theirs / Incoming Change* (`:3:file`)
-* **Pane Tengah / Bawah (Live Editable Buffer)**: Hasil resolusi aktif (*Working Copy*).
-
-
-
-
-2. **Floating Action Bar di Bagian Atas Pane**:
-* **Conflict Counter**: Menampilkan indikator `X of Y conflicts remaining`.
-* **Navigasi Cepat**: Tombol `Previous Conflict` dan `Next Conflict`.
-* **Tombol Finalisasi**:
-* `Complete Merge & Stage`: Tombol ini memverifikasi bahwa tidak ada lagi string `<<<<<<<` di dokumen, menyimpan berkas, dan memicu `stageChange(file)`.
+* **Lokasi Kode**: `src/components/layout/status-bar/StatusBar.tsx` & `src/components/layout/settings/SettingsModal.tsx`
+* **Implementasi**:
+1. **Indikator Bahasa di Status Bar**:
+* Tampilkan status LSP di samping nama bahasa:
+* `Go: gopls` 🟢
+* `TypeScript: vtsls` 🟢
+* `Python: Not Found` 🟡
 
 
 
 
+2. **Panduan Instalasi 1-Klik / Copy-Command**:
+* Jika pengguna membuka file `.py` tetapi `pyright` belum terpasang, tampilkan popover informatif:
+> *"Python Language Server tidak ditemukan di sistem. Pasang dengan:*
+> `npm i -g pyright` *atau* `pip install pyright`"
+
+
+
+
+3. **Tab Pengaturan LSP di Settings Modal**:
+* Toggle on/off per bahasa dan input manual jika pengguna ingin mengarahkan path binary kustom.
 
 ---
 
-### Phase 6: Verifikasi Kualitas & Automated Tests
+### Phase 7: Matriks Pengujian & Verifikasi Mutu
 
-**Target**: Menjamin keandalan alur resolusi tanpa regresi.
+**Fokus**: Menjamin stabilitas dan keandalan lintas sistem operasi (Linux, macOS, Windows).
 
-1. **Backend Unit Tests (`server/internal/git/git_test.go`)**:
-* Inisialisasi repo sementara, buat dua branch yang mengubah baris yang sama, picu `git merge` berkonflik.
-* Verifikasi bahwa `GetStatus` mendeteksi berkas dengan status `conflict` dan masuk ke `status.Conflicted`.
-
-
-2. **Frontend Unit Tests (`test/frontend/editor/conflictMarkers.test.ts`)**:
-* Uji parser penanda konflik: pastikan klik pada *Accept Current*, *Accept Incoming*, dan *Accept Both* menghasilkan teks yang bersih tanpa sisa penanda `<<<<<<<` atau `>>>>>>>`.
+1. **Backend Go Unit Tests (`server/internal/lsp/manager_test.go`)**:
+* Uji deteksi binary palsu vs asli untuk Go, TypeScript, dan Python.
+* Uji konversi path berkas ke URI standar RFC (`file:///...`).
+* Mock LSP server untuk memverifikasi handshake protokol JSON-RPC `Content-Length`.
 
 
-3. **Gerbang Verifikasi Mandatori**:
-* Jalankan `npm run format`, `npm test`, dan verifikasi build TypeScript lolos tanpa error.
+2. **Frontend Vitest (`test/frontend/editor/lspIntegration.test.ts`)**:
+* Uji parsing respons completion dan hover.
+* Uji lompatan navigasi *Go-to-Definition* ke tab baru.
+
+
+3. **Gerbang Build**:
+* `npm run format` & `npm run build` bebas error.

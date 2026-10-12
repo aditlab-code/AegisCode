@@ -4,6 +4,7 @@ import { useWorkbench } from "../../../context/WorkbenchContext"
 import { BranchPopover } from "./BranchPopover"
 import { ProblemsPopover } from "./ProblemsPopover"
 import { NotificationsPopover } from "./NotificationsPopover"
+import { LspStatusPopover } from "./LspStatusPopover"
 
 export function StatusBar() {
   const {
@@ -29,7 +30,7 @@ export function StatusBar() {
   } = useWorkbench()
 
   const [activePanel, setActivePanel] =
-    useState<"branch" | "notifications" | "problems" | null>(null)
+    useState<"branch" | "notifications" | "problems" | "lsp" | null>(null)
   const statusBarRef = useRef<HTMLElement>(null)
 
   const isDirty = gitChanges.length > 0 || stagedChanges.length > 0
@@ -37,7 +38,7 @@ export function StatusBar() {
   const errorCount = diagnostics.filter((d) => d.type === "error").length
   const warningCount = diagnostics.filter((d) => d.type === "warning").length
 
-  function togglePanel(panel: "branch" | "notifications" | "problems") {
+  function togglePanel(panel: "branch" | "notifications" | "problems" | "lsp") {
     setActivePanel((current) => (current === panel ? null : panel))
   }
 
@@ -149,6 +150,21 @@ export function StatusBar() {
           {activeLanguage}
         </span>
         <button
+          className={`status-item cursor-pointer hover:text-[var(--color-ink)] ${
+            activePanel === "lsp" ? "status-button-active" : ""
+          }`}
+          onClick={() => togglePanel("lsp")}
+          title="Language Server Protocol (LSP) Status (Click to inspect)"
+          type="button"
+        >
+          <span
+            className={`status-dot ${
+              serverConnected ? "status-dot-online" : "status-dot-offline"
+            }`}
+          />{" "}
+          LSP
+        </button>
+        <button
           className="status-item cursor-pointer hover:text-[var(--color-ink)]"
           onClick={handleServerConnectionClick}
           title={
@@ -187,6 +203,9 @@ export function StatusBar() {
       )}
       {activePanel === "problems" && (
         <ProblemsPopover onClose={() => setActivePanel(null)} />
+      )}
+      {activePanel === "lsp" && (
+        <LspStatusPopover onClose={() => setActivePanel(null)} />
       )}
       {activePanel === "notifications" && (
         <NotificationsPopover onClose={() => setActivePanel(null)} />

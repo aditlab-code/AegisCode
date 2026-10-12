@@ -324,4 +324,19 @@ type LSPDefinitionResponse struct {
 	Locations []lsp.Location `json:"locations"`
 }
 
+type LSPFormattingRequest struct {
+	Path         string `json:"path"`
+	TabSize      int    `json:"tabSize"`
+	InsertSpaces bool   `json:"insertSpaces"`
+	Language     string `json:"language"`
+}
+
+type LSPFormattingResponse struct {
+	Edits []lsp.TextEdit `json:"edits"`
+}
+
+type LSPStatusResponse struct {
+	Servers []lsp.LanguageServerStatus `json:"servers"`
+}
+
 

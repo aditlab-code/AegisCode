@@ -59,6 +59,7 @@ export function CodePane({
     breakpoints,
     toggleBreakpoint,
     activeDebugLine,
+    openFileInPane,
   } = useWorkbench()
 
   const editorFontSize = settings?.editor?.fontSize ?? 13.5
@@ -347,10 +348,17 @@ export function CodePane({
             lineHeight={editorLineHeight}
             breakpoints={breakpoints?.[filename] || []}
             activeDebugLine={activeDebugLine}
+            diagnostics={diagnostics.filter((d) =>
+              d.location.startsWith(filename),
+            )}
             onChange={(newVal) => updateFileContent(filename, newVal)}
             onCursorChange={(line, col) =>
               setCursorPosition({ line, column: col })
             }
+            onNavigateDefinition={(targetPath, line, col) => {
+              openFileInPane(targetPath)
+              setCursorPosition({ line, column: col })
+            }}
             onToggleBreakpoint={(line) => toggleBreakpoint(filename, line)}
             onSave={() => saveFile(filename)}
             onFind={() => openFind(focusedGroup, false)}

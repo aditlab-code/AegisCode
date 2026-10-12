@@ -21,11 +21,19 @@ import {
   goToPreviousChunk as cmGoToPreviousChunk,
 } from "@codemirror/merge"
 import {
+  lintGutter,
+  setDiagnostics,
+  type Diagnostic as CMDiagnostic,
+} from "@codemirror/lint"
+import {
   fetchLspCompletion,
+  fetchLspDefinition,
+  fetchLspFormatting,
   fetchLspHover,
   notifyLspChange,
   notifyLspOpen,
 } from "../../../utils/lspApi"
+import type { DiagnosticItem } from "../../../types/workbench"
 import { getBaseEditorExtensions, resolveLanguage } from "./cmTheme"
 
 export interface ActiveDebugLine {
@@ -57,9 +65,15 @@ export interface CMEditorProps {
   lineHeight?: number
   breakpoints?: number[]
   activeDebugLine?: ActiveDebugLine | null
+  diagnostics?: DiagnosticItem[]
   onChange: (value: string) => void
   onCursorChange?: (line: number, column: number) => void
   onToggleBreakpoint?: (line: number) => void
+  onNavigateDefinition?: (
+    targetPath: string,
+    line: number,
+    column: number,
+  ) => void
   onSave?: () => void
   onFind?: () => void
 }
@@ -77,9 +91,11 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
       lineHeight = 22,
       breakpoints: _breakpoints = [],
       activeDebugLine: _activeDebugLine,
+      diagnostics = [],
       onChange,
       onCursorChange,
       onToggleBreakpoint,
+      onNavigateDefinition,
       onSave,
       onFind,
     },
@@ -169,7 +185,97 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
       [filename, langInfo.id],
     )
 
-    // Custom LSP hover tooltip
+    // Go to definition via LSP
+    const handleGoToDefinition = useCallback(
+      async (view: EditorView, targetPos?: number) => {
+        const pos = targetPos ?? view.state.selection.main.head
+        const line = view.state.doc.lineAt(pos)
+        const lineNum = line.number - 1
+        const charNum = pos - line.from
+
+        const locs = await fetchLspDefinition(
+          filename,
+          lineNum,
+          charNum,
+          langInfo.id,
+        )
+        if (!locs || locs.length === 0) return
+
+        const loc = locs[0]
+        let targetPath = loc.uri
+        if (targetPath.startsWith("file://")) {
+          targetPath = targetPath.slice(7)
+        }
+
+        const isCurrentFile =
+          targetPath === filename ||
+          targetPath.endsWith("/" + filename) ||
+          filename.endsWith(targetPath)
+
+        const targetLine = (loc.range?.start?.line ?? 0) + 1
+        const targetCol = (loc.range?.start?.character ?? 0) + 1
+
+        if (isCurrentFile) {
+          if (targetLine <= view.state.doc.lines) {
+            const lineObj = view.state.doc.line(targetLine)
+            const newPos = Math.min(
+              lineObj.from + Math.max(0, targetCol - 1),
+              lineObj.to,
+            )
+            view.dispatch({
+              selection: { anchor: newPos },
+              scrollIntoView: true,
+            })
+            view.focus()
+          }
+        } else if (onNavigateDefinition) {
+          onNavigateDefinition(targetPath, targetLine, targetCol)
+        }
+      },
+      [filename, langInfo.id, onNavigateDefinition],
+    )
+
+    // Format on save via LSP
+    const handleSaveWithFormat = useCallback(
+      async (view: EditorView) => {
+        if (!isReadOnly) {
+          try {
+            const edits = await fetchLspFormatting(
+              filename,
+              tabSize,
+              true,
+              langInfo.id,
+            )
+            if (edits && edits.length > 0 && view.state) {
+              const changes = edits.map((edit) => {
+                const startLine = view.state.doc.line(
+                  Math.min(edit.range.start.line + 1, view.state.doc.lines),
+                )
+                const endLine = view.state.doc.line(
+                  Math.min(edit.range.end.line + 1, view.state.doc.lines),
+                )
+                const from = Math.min(
+                  startLine.from + edit.range.start.character,
+                  startLine.to,
+                )
+                const to = Math.min(
+                  endLine.from + edit.range.end.character,
+                  endLine.to,
+                )
+                return { from, to, insert: edit.newText }
+              })
+              view.dispatch({ changes })
+            }
+          } catch {
+            // Non-blocking formatting fallback
+          }
+        }
+        onSave?.()
+      },
+      [filename, isReadOnly, langInfo.id, onSave, tabSize],
+    )
+
+    // Custom LSP hover tooltip with Markdown code block parsing
     const lspHoverExtension = useCallback(() => {
       return hoverTooltip(async (view, pos) => {
         const line = view.state.doc.lineAt(pos)
@@ -203,8 +309,30 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
           create() {
             const dom = document.createElement("div")
             dom.className =
-              "cm-hover-card bg-surface-raised border border-line text-xs font-mono p-2 rounded shadow-lg max-w-sm text-ink whitespace-pre-wrap select-text z-50"
-            dom.textContent = text
+              "cm-hover-card bg-surface-raised border border-line text-xs font-mono p-2.5 rounded shadow-xl max-w-md text-ink select-text z-50 flex flex-col gap-2"
+
+            const parts = text.split(/(```[\s\S]*?```)/g)
+            for (const part of parts) {
+              if (part.startsWith("```")) {
+                const lines = part.slice(3, -3).trim().split("\n")
+                const lang = lines[0].trim()
+                const code =
+                  lang && lines.length > 1
+                    ? lines.slice(1).join("\n")
+                    : lines.join("\n")
+                const pre = document.createElement("pre")
+                pre.className =
+                  "p-2 rounded bg-surface border border-line/60 font-mono text-[11px] text-accent overflow-x-auto whitespace-pre"
+                pre.textContent = code
+                dom.appendChild(pre)
+              } else if (part.trim()) {
+                const div = document.createElement("div")
+                div.className =
+                  "text-ink-muted text-xs leading-relaxed whitespace-pre-wrap font-sans"
+                div.textContent = part.trim()
+                dom.appendChild(div)
+              }
+            }
             return { dom }
           },
         }
@@ -221,8 +349,15 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
       const customKeymaps = keymap.of([
         {
           key: "Mod-s",
-          run: () => {
-            onSave?.()
+          run: (view) => {
+            void handleSaveWithFormat(view)
+            return true
+          },
+        },
+        {
+          key: "F12",
+          run: (view) => {
+            void handleGoToDefinition(view)
             return true
           },
         },
@@ -240,6 +375,23 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
         blur() {
           if (!isReadOnly) {
             onSave?.()
+          }
+          return false
+        },
+      })
+
+      // Go-to-definition click handler (Cmd+Click / Ctrl+Click)
+      const clickDomHandler = EditorView.domEventHandlers({
+        click(event, view) {
+          if (event.metaKey || event.ctrlKey) {
+            const pos = view.posAtCoords({
+              x: event.clientX,
+              y: event.clientY,
+            })
+            if (pos !== null) {
+              void handleGoToDefinition(view, pos)
+              return true
+            }
           }
           return false
         },
@@ -278,9 +430,11 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
 
           const extensionsB = [
             ...baseExtensionsB,
+            lintGutter(),
             EditorState.readOnly.of(isReadOnly),
             EditorView.editable.of(!isReadOnly),
             blurDomHandler,
+            clickDomHandler,
             customKeymaps,
             keymap.of([
               ...closeBracketsKeymap,
@@ -333,6 +487,7 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
           // Unified MergeView
           const unifiedExtensions = [
             ...baseExtensionsB,
+            lintGutter(),
             EditorState.readOnly.of(isReadOnly),
             EditorView.editable.of(!isReadOnly),
             unifiedMergeView({
@@ -342,6 +497,7 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
               collapseUnchanged: { margin: 3 },
             }),
             blurDomHandler,
+            clickDomHandler,
             customKeymaps,
             keymap.of([
               ...closeBracketsKeymap,
@@ -416,7 +572,9 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
             ? EditorView.lineWrapping
             : [],
         ),
+        lintGutter(),
         blurDomHandler,
+        clickDomHandler,
         customKeymaps,
         keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap]),
         autocompletion({ override: [lspCompletionSource] }),
@@ -536,6 +694,42 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
         window.removeEventListener("aegis:editor-redo", handleRedo)
       }
     }, [])
+
+    // Sync external compiler/linter diagnostics into CodeMirror lint markers
+    useEffect(() => {
+      const view =
+        viewRef.current || unifiedViewRef.current || mergeViewRef.current?.b
+      if (!view) return
+
+      const cmDiags: CMDiagnostic[] = []
+      for (const d of diagnostics) {
+        const matchLineCol = d.location.match(/\[(\d+),\s*(\d+)\]/)
+        const matchLine = d.location.match(/:(\d+)/)
+        let line = 1
+        let col = 1
+        if (matchLineCol) {
+          line = parseInt(matchLineCol[1], 10)
+          col = parseInt(matchLineCol[2], 10)
+        } else if (matchLine) {
+          line = parseInt(matchLine[1], 10)
+        }
+
+        if (line >= 1 && line <= view.state.doc.lines) {
+          const lineObj = view.state.doc.line(line)
+          const from = Math.min(lineObj.from + Math.max(0, col - 1), lineObj.to)
+          const to = Math.max(from + 1, lineObj.to)
+          cmDiags.push({
+            from,
+            to,
+            severity: d.type === "error" ? "error" : "warning",
+            message: d.title,
+            source: d.source || "lsp",
+          })
+        }
+      }
+
+      view.dispatch(setDiagnostics(view.state, cmDiags))
+    }, [diagnostics])
 
     const renderSideBySide = diff?.renderSideBySide ?? true
 

@@ -85,6 +85,10 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
       fontFamily: "SFMono-Regular, Menlo, monospace",
       lineHeight: 1.4,
     },
+    lsp: {
+      formatOnSave: true,
+      servers: {},
+    },
   },
   companion: {
     port: 8080,

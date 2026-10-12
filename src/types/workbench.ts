@@ -65,6 +65,10 @@ export interface FeaturesSettings {
     fontFamily: string
     lineHeight: number
   }
+  lsp?: {
+    formatOnSave?: boolean
+    servers?: Record<string, string>
+  }
 }
 
 export interface CompanionSettings {
