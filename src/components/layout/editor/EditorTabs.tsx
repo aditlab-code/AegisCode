@@ -39,12 +39,31 @@ export function EditorTabs({
     revertFile,
     requestRevertFile,
     showToast,
+    startDebugging,
+    runFileInTerminal,
   } = useWorkbench()
 
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [isDropTarget, setIsDropTarget] = useState(false)
   const [contextMenu, setContextMenu] = useState<ContextMenuData | null>(null)
+  const [runMenuOpen, setRunMenuOpen] = useState(false)
+  const [preferredRunMode, setPreferredRunMode] =
+    useState<"terminal" | "debug">(() => {
+      if (typeof window !== "undefined") {
+        const saved = localStorage.getItem("aegis_preferred_run_mode")
+        if (saved === "debug" || saved === "terminal") return saved
+      }
+      return "terminal"
+    })
   const contextMenuRef = useRef<HTMLDivElement>(null)
+  const runMenuRef = useRef<HTMLDivElement>(null)
+
+  const selectRunMode = (mode: "terminal" | "debug") => {
+    setPreferredRunMode(mode)
+    if (typeof window !== "undefined") {
+      localStorage.setItem("aegis_preferred_run_mode", mode)
+    }
+  }
 
   useEffect(() => {
     function handleDismiss(e: MouseEvent) {
@@ -54,12 +73,22 @@ export function EditorTabs({
       ) {
         setContextMenu(null)
       }
+      if (
+        runMenuRef.current &&
+        !runMenuRef.current.contains(e.target as Node)
+      ) {
+        setRunMenuOpen(false)
+      }
     }
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setContextMenu(null)
+      if (e.key === "Escape") {
+        setContextMenu(null)
+        setRunMenuOpen(false)
+      }
     }
     function handleResize() {
       setContextMenu(null)
+      setRunMenuOpen(false)
     }
 
     window.addEventListener("click", handleDismiss)
@@ -287,12 +316,75 @@ export function EditorTabs({
         >
           <Icon name="check" size={14} />
         </IconButton>
-        <IconButton
-          label="Run file (unscoped in Phase 1)"
-          onClick={() => showToast("Code runner unscoped for Phase 1")}
-        >
-          <Icon name="play" />
-        </IconButton>
+        <div className="relative flex items-center" ref={runMenuRef}>
+          <IconButton
+            disabled={!currentGroup.activeTab}
+            label={
+              preferredRunMode === "debug"
+                ? `Debug ${currentGroup.activeTab || "file"} (F5)`
+                : `Run ${currentGroup.activeTab || "file"} in terminal (Ctrl+F5)`
+            }
+            onClick={() => {
+              if (preferredRunMode === "debug") {
+                void startDebugging(currentGroup.activeTab)
+              } else {
+                void runFileInTerminal(currentGroup.activeTab)
+              }
+            }}
+          >
+            <Icon
+              name={preferredRunMode === "debug" ? "debug" : "play"}
+              size={14}
+            />
+          </IconButton>
+          <IconButton
+            disabled={!currentGroup.activeTab}
+            label="Run or Debug options"
+            onClick={() => setRunMenuOpen((prev) => !prev)}
+            active={runMenuOpen}
+            className="!px-0.5"
+          >
+            <Icon name="chevron-down" size={10} />
+          </IconButton>
+
+          {runMenuOpen && (
+            <div
+              className="editor-tab-context-menu"
+              style={{
+                position: "absolute",
+                top: "calc(100% + 4px)",
+                right: 0,
+                zIndex: 1000,
+              }}
+            >
+              <div className="context-menu-header">Run / Debug Target</div>
+              <button
+                className="context-menu-item"
+                onClick={() => {
+                  selectRunMode("terminal")
+                  setRunMenuOpen(false)
+                  void runFileInTerminal(currentGroup.activeTab)
+                }}
+                type="button"
+              >
+                <Icon name="play" size={12} />
+                <span>Run in Terminal</span>
+              </button>
+              <button
+                className="context-menu-item"
+                onClick={() => {
+                  selectRunMode("debug")
+                  setRunMenuOpen(false)
+                  void startDebugging(currentGroup.activeTab)
+                }}
+                type="button"
+              >
+                <Icon name="debug" size={12} />
+                <span>Start Debugging (F5)</span>
+              </button>
+            </div>
+          )}
+        </div>
         {currentGroup.id === "group1" ? (
           <IconButton
             active={splitEditor}
@@ -361,6 +453,29 @@ export function EditorTabs({
             >
               <Icon name="close" size={12} />
               <span>Close All</span>
+            </button>
+            <div className="context-menu-separator" />
+            <button
+              className="context-menu-item"
+              onClick={() => {
+                void runFileInTerminal(contextMenu.tab)
+                setContextMenu(null)
+              }}
+              type="button"
+            >
+              <Icon name="play" size={12} />
+              <span>Run in Terminal</span>
+            </button>
+            <button
+              className="context-menu-item"
+              onClick={() => {
+                void startDebugging(contextMenu.tab)
+                setContextMenu(null)
+              }}
+              type="button"
+            >
+              <Icon name="debug" size={12} />
+              <span>Start Debugging</span>
             </button>
             <div className="context-menu-separator" />
             <button

@@ -9,6 +9,7 @@ import {
 } from "@/utils/debugApi"
 import type { DebugState, StreamDebugEvent } from "@/types/workbench"
 import { loadStoredBottomTabOrder } from "@/context/core/layoutCore"
+import { getTerminalRunCommand } from "@/context/core/workbenchFacade"
 
 describe("DAP Debugger (Delve) Frontend Workflow", () => {
   const originalFetch = globalThis.fetch
@@ -398,6 +399,41 @@ describe("DAP Debugger (Delve) Frontend Workflow", () => {
       } finally {
         ;(globalThis as any).window = prevWindow
       }
+    })
+  })
+
+  describe("Terminal Runner Command Resolution", () => {
+    it("resolves python command correctly", () => {
+      expect(getTerminalRunCommand("scripts/app.py")).toBe(
+        'python3 "scripts/app.py"',
+      )
+      expect(getTerminalRunCommand("test.pyw")).toBe('python3 "test.pyw"')
+    })
+
+    it("resolves go run command correctly", () => {
+      expect(getTerminalRunCommand("cmd/server/main.go")).toBe(
+        'go run "cmd/server/main.go"',
+      )
+    })
+
+    it("resolves node and tsx commands correctly", () => {
+      expect(getTerminalRunCommand("index.js")).toBe('node "index.js"')
+      expect(getTerminalRunCommand("src/main.ts")).toBe('npx tsx "src/main.ts"')
+    })
+
+    it("resolves bash, cpp, and rust commands", () => {
+      expect(getTerminalRunCommand("deploy.sh")).toBe('bash "deploy.sh"')
+      expect(getTerminalRunCommand("main.cpp")).toBe(
+        'clang++ "main.cpp" -o /tmp/aegis_bin && /tmp/aegis_bin',
+      )
+      expect(getTerminalRunCommand("main.rs")).toBe(
+        'rustc "main.rs" -o /tmp/aegis_bin && /tmp/aegis_bin',
+      )
+    })
+
+    it("returns null for unsupported or non-executable file types", () => {
+      expect(getTerminalRunCommand("README.md")).toBeNull()
+      expect(getTerminalRunCommand("styles.css")).toBeNull()
     })
   })
 })

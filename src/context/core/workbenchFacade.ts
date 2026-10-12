@@ -41,6 +41,38 @@ export interface ConfirmCloseState {
   filename: string
 }
 
+export function getTerminalRunCommand(filePath: string): string | null {
+  const ext = filePath.split(".").pop()?.toLowerCase()
+  switch (ext) {
+    case "py":
+    case "pyw":
+      return `python3 "${filePath}"`
+    case "go":
+      return `go run "${filePath}"`
+    case "js":
+    case "mjs":
+    case "cjs":
+      return `node "${filePath}"`
+    case "ts":
+    case "mts":
+    case "cts":
+      return `npx tsx "${filePath}"`
+    case "sh":
+    case "bash":
+    case "zsh":
+      return `bash "${filePath}"`
+    case "cpp":
+    case "cc":
+    case "cxx":
+    case "c":
+      return `clang++ "${filePath}" -o /tmp/aegis_bin && /tmp/aegis_bin`
+    case "rs":
+      return `rustc "${filePath}" -o /tmp/aegis_bin && /tmp/aegis_bin`
+    default:
+      return null
+  }
+}
+
 export function useWorkbenchFacade() {
   // Toast notifications
   const [toast, setToast] = useState("")
@@ -545,6 +577,10 @@ export function useWorkbenchFacade() {
         }
       }
 
+      if (target && workspace.fileBuffers[target]?.isDirty) {
+        await saveFile(target)
+      }
+
       try {
         const lang = target.endsWith(".py")
           ? "python"
@@ -595,7 +631,9 @@ export function useWorkbenchFacade() {
       editor.activeTab,
       editor.breakpoints,
       layout,
+      saveFile,
       showToast,
+      workspace.fileBuffers,
       workspace.rootWorkspacePath,
     ],
   )
@@ -650,6 +688,40 @@ export function useWorkbenchFacade() {
       }
     },
     [debugState.active, editor],
+  )
+
+  const runFileInTerminal = useCallback(
+    async (file?: string) => {
+      const target = file || editor.activeTab
+      if (!target) {
+        showToast("No active file to run")
+        return false
+      }
+
+      const cmd = getTerminalRunCommand(target)
+      if (!cmd) {
+        showToast(`No terminal runner configured for file: ${target}`)
+        return false
+      }
+
+      if (workspace.fileBuffers[target]?.isDirty) {
+        await saveFile(target)
+      }
+
+      layout.setPanelOpen(true)
+      layout.setActiveBottomTab("Terminal")
+      terminal.sendTerminalCommand(cmd)
+      showToast(`Running in Terminal: ${cmd}`)
+      return true
+    },
+    [
+      editor.activeTab,
+      layout,
+      saveFile,
+      showToast,
+      terminal,
+      workspace.fileBuffers,
+    ],
   )
 
   useEffect(() => {
@@ -817,11 +889,25 @@ export function useWorkbenchFacade() {
         saveFile()
       } else if (action === "debug") {
         startDebugging()
+      } else if (
+        action === "run-terminal" ||
+        action === "run-file" ||
+        action === "run"
+      ) {
+        void runFileInTerminal()
       } else {
         showToast(actionMessages[action] ?? "Command completed")
       }
     },
-    [editor.activeTab, layout, saveFile, showToast, startDebugging, workspace],
+    [
+      editor.activeTab,
+      layout,
+      runFileInTerminal,
+      saveFile,
+      showToast,
+      startDebugging,
+      workspace,
+    ],
   )
 
   // Global keyboard shortcuts
@@ -829,10 +915,12 @@ export function useWorkbenchFacade() {
     if (typeof window === "undefined") return
 
     function handleKeyDown(event: KeyboardEvent) {
-      // DAP Debugger shortcuts
+      // DAP Debugger & Terminal Runner shortcuts
       if (event.key === "F5") {
         event.preventDefault()
-        if (event.shiftKey) {
+        if (event.ctrlKey || event.metaKey) {
+          void runFileInTerminal()
+        } else if (event.shiftKey) {
           if (isDebugging) {
             terminateDebugging()
           }
@@ -965,6 +1053,7 @@ export function useWorkbenchFacade() {
     stepDebugging,
     terminateDebugging,
     toggleBreakpoint,
+    runFileInTerminal,
   ])
 
   const createSessionWithSettings = useCallback(
@@ -1237,6 +1326,7 @@ export function useWorkbenchFacade() {
     clearBreakpoints: editor.clearBreakpoints,
     activeDebugLine: editor.activeDebugLine,
     setActiveDebugLine: editor.setActiveDebugLine,
+    runFileInTerminal,
 
     // Chat & Context Extractor
     sessions: chat.sessions,

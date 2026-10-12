@@ -29,6 +29,8 @@ export function CommandPalette() {
     rootWorkspacePath,
     recentProjects,
     openFind,
+    runFileInTerminal,
+    startDebugging,
   } = useWorkbench()
 
   const allCommands = useMemo<CommandPaletteItem[]>(() => {
@@ -124,6 +126,24 @@ export function CommandPalette() {
           )
         },
       },
+      {
+        id: "run-terminal",
+        label: "Run: Run File in Terminal",
+        detail: "Execute active file in integrated terminal",
+        icon: "play",
+        action: () => {
+          void runFileInTerminal()
+        },
+      },
+      {
+        id: "debug-start",
+        label: "Debug: Start Debugging",
+        detail: "Start DAP debug session on active file (F5)",
+        icon: "debug",
+        action: () => {
+          void startDebugging()
+        },
+      },
     ]
 
     recentProjects.forEach((p) => {
@@ -146,6 +166,8 @@ export function CommandPalette() {
     openRootFolder,
     rootWorkspacePath,
     recentProjects,
+    runFileInTerminal,
+    startDebugging,
     setActiveActivity,
     setSettingsModalOpen,
     setSidebarOpen,
