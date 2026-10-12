@@ -114,18 +114,24 @@ To enable multi-screen remote workflows on tablets without external cloud server
   - Response: Recursive JSON file tree: `{ "tree": [ { "path": "src/App.tsx", "name": "App.tsx", "type": "file" | "folder", "depth": 0, "children": [] } ] }`
 - `GET /api/v1/workspace/file`
   - Query: `?path=relative/path/to/file.ts`
+  - Path Boundary Security: Strictly validated via `filepath.Rel(m.rootPath, target)`. Directory traversal sequences (`..`) and host absolute escapes outside `rootPath` immediately return `400 Bad Request` with descriptive error payload.
   - Response: `{ "path": "string", "content": "string" }`
 - `POST /api/v1/workspace/file`
   - Body: `{ "path": "string", "content": "string", "isFolder": boolean }`
+  - Path Boundary Security: Enforces strict containment within `m.rootPath`. Out-of-bounds writes return `400 Bad Request` with `{ "error": "path '...' escapes root directory '...'" }`.
+  - Review Gate Integration (Sub-Phase 6.10): Writes AI code generation directly to disk, triggering the in-editor Side-by-Side review gate (`DiffEditorPane.tsx`) without redundant temporary buffers.
   - Response: `{ "status": "ok", "path": "string" }`
 - `DELETE /api/v1/workspace/file`
   - Query: `?path=relative/path/to/file.ts`
+  - Path Boundary Security: Rejects root directory deletion and out-of-workspace targets with `400 Bad Request`.
   - Response: `{ "status": "deleted", "path": "string" }`
 - `POST /api/v1/workspace/rename`
   - Body: `{ "oldPath": "string", "newPath": "string" }`
+  - Validates boundaries for both `oldPath` and `newPath`.
   - Response: `{ "status": "renamed", "oldPath": "string", "newPath": "string" }`
 - `POST /api/v1/workspace/move`
   - Body: `{ "sourcePath": "string", "targetDirectory": "string" }`
+  - Validates boundaries for both `sourcePath` and `targetDirectory`.
   - Response: `{ "status": "moved", "sourcePath": "string", "newPath": "string" }`
 - `POST /api/v1/workspace/search`
   - Body: `{ "query": "string", "isRegex": boolean, "isMatchCase": boolean, "isWholeWord": boolean }`
@@ -173,7 +179,7 @@ All operations interact directly with the local native Git CLI binary on the act
   - Body: `{ "files": ["string"], "all": boolean }`
   - Response: `{ "status": "ok" }`
 - `POST /api/v1/git/discard`
-  - Discards uncommitted working copy changes (`git restore -- <files>` and `git clean -fd`).
+  - Discards uncommitted working copy changes. For tracked files, executes `git restore -- <files>`; for untracked/newly created files, automatically removes them from disk. For all changes, executes `git restore .` and `git clean -fd`.
   - Body: `{ "files": ["string"], "all": boolean }`
   - Response: `{ "status": "ok" }`
 - `POST /api/v1/git/commit`
@@ -206,6 +212,7 @@ All operations interact directly with the local native Git CLI binary on the act
   - Response: `{ "status": "ok" }`
 - `GET /api/v1/git/diff?file=<path>&staged=<bool>&commit=<hash>`
   - Retrieves unified diff text, original content (from HEAD/commit), and modified content for the in-editor Side-by-Side diff viewer (`DiffEditorPane.tsx`).
+  - Untracked / New File Support (Sub-Phase 6.10): For untracked files not yet in index/HEAD, automatically generates a synthesized addition diff against `/dev/null` with empty original content and full modified working tree text, enabling unified review gates for newly generated files.
   - Response: `{ "file": string, "staged": boolean, "diff": string, "original": string, "modified": string }`
 - `POST /api/v1/git/unlock`
   - Safely scans and removes stale lock files left behind by interrupted external Git commands, AI agents, or crashed editors (`.git/index.lock`, `.git/HEAD.lock`, `.git/config.lock`, `.git/packed-refs.lock`, and any orphaned `.git/refs/**/*.lock`).

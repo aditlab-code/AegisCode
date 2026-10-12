@@ -391,7 +391,11 @@ func (s *Server) handleWorkspaceFile(w http.ResponseWriter, r *http.Request) {
 
 		content, err := s.ws.GetFile(path)
 		if err != nil {
-			jsonError(w, http.StatusNotFound, err.Error())
+			if strings.Contains(err.Error(), "escapes root directory") || strings.Contains(err.Error(), "empty path") {
+				jsonError(w, http.StatusBadRequest, err.Error())
+			} else {
+				jsonError(w, http.StatusNotFound, err.Error())
+			}
 			return
 		}
 
@@ -415,7 +419,11 @@ func (s *Server) handleWorkspaceFile(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if opErr != nil {
-			jsonError(w, http.StatusInternalServerError, opErr.Error())
+			if strings.Contains(opErr.Error(), "escapes root directory") || strings.Contains(opErr.Error(), "empty path") {
+				jsonError(w, http.StatusBadRequest, opErr.Error())
+			} else {
+				jsonError(w, http.StatusInternalServerError, opErr.Error())
+			}
 			return
 		}
 
@@ -432,7 +440,11 @@ func (s *Server) handleWorkspaceFile(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := s.ws.DeleteFile(path); err != nil {
-			jsonError(w, http.StatusInternalServerError, err.Error())
+			if strings.Contains(err.Error(), "escapes root directory") || strings.Contains(err.Error(), "empty path") {
+				jsonError(w, http.StatusBadRequest, err.Error())
+			} else {
+				jsonError(w, http.StatusInternalServerError, err.Error())
+			}
 			return
 		}
 

@@ -302,7 +302,7 @@
   - **Verification**: 100% verified across Go backend tests (61 tests passing) and Vitest frontend tests (45 tests passing).
 
 #### Sub-Phase 6.10: Git-Driven Review Gates (Apply & Code Manipulation)
-- **Status**: ⚪ Planned
+- **Status**: 🟢 Completed
 - **Deliverables**:
   - **Path Boundary Verification**: Strict path validation enforcing that all AI code generation targets reside within the active `rootPath` before disk writes (preventing directory traversal attacks).
   - **Git-Backed Side-by-Side Review**:
@@ -310,7 +310,9 @@
     - Leverage Phase 6.2 real Git CLI: modifications immediately surface in [`DiffEditorPane.tsx`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/editor/DiffEditorPane.tsx) side-by-side view with synchronized scrolling.
     - Zero redundant temporary buffer system: users accept via native Git Stage/Commit or reject via native Discard Changes.
   - **Interactive Markdown Code Block Toolbar**:
-    - Action headers for all markdown code fences: `[Copy]`, `[Apply to Editor]`, and `[Insert at Cursor]`.
+    - Action headers for all markdown code fences: `[Copy]` and `[Apply to Editor] / [Apply to <file>]` with `lang:filepath` target resolution.
+    - Agent multi-file modifications surface direct `[Review in Git]` navigation banner to Source Control.
+  - **Verification**: 100% verified across Go backend tests (65 tests passing) and Vitest frontend tests (49 tests passing).
 
 ---
 

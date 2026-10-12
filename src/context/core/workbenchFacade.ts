@@ -16,6 +16,7 @@ import {
   makeGitDiffTab,
   parseGitDiffTab,
 } from "../../utils/gitDiffTab"
+import { saveWorkspaceFile } from "../../utils/workspaceApi"
 import type {
   ChatProvider,
   ContextItem,
@@ -243,6 +244,71 @@ export function useWorkbenchFacade() {
       await gitRef.current?.refreshGit()
     },
     [editor.activeTab, settingsCore.settings.files, workspace],
+  )
+
+  const applyCodeWithReview = useCallback(
+    async (targetPath: string, code: string): Promise<boolean> => {
+      const cleanPath = targetPath.trim()
+      if (!cleanPath) {
+        showToast("Cannot apply: target file path is empty")
+        return false
+      }
+
+      // Check dirty buffer conflict before overwriting
+      const existingBuf = workspace.fileBuffers[cleanPath]
+      if (existingBuf?.isDirty) {
+        const confirmOverwrite = window.confirm(
+          `File "${cleanPath}" has unsaved changes. Overwrite with AI code and review in Git diff?`,
+        )
+        if (!confirmOverwrite) {
+          showToast("Apply cancelled")
+          return false
+        }
+      }
+
+      try {
+        await saveWorkspaceFile(cleanPath, code, false)
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        showToast(`Apply failed: ${msg}`)
+        return false
+      }
+
+      // Synchronize in-memory file buffer cleanly
+      workspace.setFileBuffers((prev) => ({
+        ...prev,
+        [cleanPath]: {
+          content: code,
+          savedContent: code,
+          isDirty: false,
+          hasDiskConflict: false,
+          language: detectLanguage(cleanPath),
+          lastSaved: Date.now(),
+        },
+      }))
+
+      // Invalidate diff caches and trigger working copy update
+      await gitRef.current?.refreshGit()
+      setGitDiffVersion((v) => v + 1)
+
+      // Open git-diff tab in focused group
+      openGitDiff(cleanPath)
+
+      showToast(`Applied code to ${cleanPath} — opened Git review`)
+      return true
+    },
+    [openGitDiff, showToast, workspace],
+  )
+
+  const discardChangeWithBufferSync = useCallback(
+    async (file: string) => {
+      await git.discardChange(file)
+      if (workspace.fileBuffers[file]) {
+        await workspace.fetchBufferSafely(file)
+      }
+      setGitDiffVersion((v) => v + 1)
+    },
+    [git, workspace],
   )
 
   // Auto-Save Engine: afterDelay
@@ -761,6 +827,7 @@ export function useWorkbenchFacade() {
     fileBuffers: workspace.fileBuffers,
     updateFileContent: workspace.updateFileContent,
     saveFile,
+    applyCodeWithReview,
     cursorPosition: editor.cursorPosition,
     setCursorPosition: editor.setCursorPosition,
     selection: editor.selection,
@@ -842,7 +909,7 @@ export function useWorkbenchFacade() {
     unstageChange: git.unstageChange,
     stageAllChanges: git.stageAllChanges,
     unstageAllChanges: git.unstageAllChanges,
-    discardChange: git.discardChange,
+    discardChange: discardChangeWithBufferSync,
     discardAllChanges: git.discardAllChanges,
     commitChanges: git.commitChanges,
     gitPull: git.gitPull,

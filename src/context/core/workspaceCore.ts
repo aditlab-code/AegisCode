@@ -998,6 +998,7 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
     saveFile,
     revertBufferContent,
     ensureFileBuffer,
+    fetchBufferSafely,
     diagnostics,
     setDiagnostics,
     notifications,

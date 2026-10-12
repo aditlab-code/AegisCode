@@ -11,6 +11,8 @@ export function ChatMessageList() {
     activeModel,
     showToast,
     setSettingsModalOpen,
+    setActiveActivity,
+    setSidebarOpen,
   } = useWorkbench()
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -258,6 +260,59 @@ export function ChatMessageList() {
                   Sedang menunggu respons...
                 </div>
               ) : null}
+
+              {/* Agent Multi-File Review Banner */}
+              {(() => {
+                const modifiedFiles = (item.toolCalls || [])
+                  .filter(
+                    (tc) =>
+                      tc.name === "write_to_file" ||
+                      tc.name === "replace_file_content" ||
+                      tc.name === "create_file" ||
+                      tc.name === "delete_file",
+                  )
+                  .map((tc) => {
+                    const raw = (tc.args?.TargetFile ||
+                      tc.args?.targetFile ||
+                      tc.args?.path ||
+                      tc.args?.target ||
+                      "") as string
+                    return raw.split("/").pop() || raw
+                  })
+                  .filter(Boolean)
+                const uniqueModifiedFiles = Array.from(new Set(modifiedFiles))
+
+                if (uniqueModifiedFiles.length === 0) return null
+
+                return (
+                  <div className="mt-2.5 p-2 rounded bg-surface-raised border border-line flex items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-accent shrink-0">
+                        <Icon name="git" size={13} />
+                      </span>
+                      <span className="text-ink text-[11px] truncate">
+                        Modified {uniqueModifiedFiles.length} file
+                        {uniqueModifiedFiles.length > 1 ? "s" : ""}:{" "}
+                        <span className="font-mono text-ink-muted">
+                          {uniqueModifiedFiles.join(", ")}
+                        </span>
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded bg-accent text-accent-fg hover:opacity-90 transition-opacity text-[11px] font-medium cursor-pointer"
+                      onClick={() => {
+                        setActiveActivity("Source Control")
+                        setSidebarOpen(true)
+                      }}
+                      title="Open Source Control to review side-by-side diffs"
+                    >
+                      <span>Review in Git</span>
+                      <Icon name="chevron" size={10} />
+                    </button>
+                  </div>
+                )
+              })()}
             </div>
           )
         })

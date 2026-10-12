@@ -207,7 +207,27 @@ export async function fetchWorkspaceTree(
   }
 }
 
+export function validateWorkspaceRelativePath(path: string): void {
+  const trimmed = path.trim()
+  if (!trimmed) {
+    throw new Error("Workspace file path cannot be empty")
+  }
+  const segments = trimmed.replace(/\\/g, "/").split("/")
+  let depth = 0
+  for (const seg of segments) {
+    if (seg === "..") {
+      depth--
+      if (depth < 0) {
+        throw new Error(`Path '${path}' escapes workspace root directory`)
+      }
+    } else if (seg && seg !== ".") {
+      depth++
+    }
+  }
+}
+
 export async function fetchFileContent(path: string): Promise<string> {
+  validateWorkspaceRelativePath(path)
   const res = await fetch(
     `${API_BASE}/api/v1/workspace/file?path=${encodeURIComponent(path)}`,
   )
@@ -224,6 +244,7 @@ export async function saveWorkspaceFile(
   content: string,
   isFolder = false,
 ): Promise<void> {
+  validateWorkspaceRelativePath(path)
   const res = await fetch(`${API_BASE}/api/v1/workspace/file`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -236,6 +257,7 @@ export async function saveWorkspaceFile(
 }
 
 export async function deleteWorkspaceFile(path: string): Promise<void> {
+  validateWorkspaceRelativePath(path)
   const res = await fetch(
     `${API_BASE}/api/v1/workspace/file?path=${encodeURIComponent(path)}`,
     {
@@ -252,6 +274,8 @@ export async function renameWorkspaceFile(
   oldPath: string,
   newPath: string,
 ): Promise<void> {
+  validateWorkspaceRelativePath(oldPath)
+  validateWorkspaceRelativePath(newPath)
   const res = await fetch(`${API_BASE}/api/v1/workspace/rename`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

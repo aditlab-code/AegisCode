@@ -202,9 +202,27 @@ func (m *Manager) resolvePath(relPath string) (string, error) {
 		return "", errors.New("no active workspace root")
 	}
 
-	cleaned := filepath.Clean(relPath)
-	if filepath.IsAbs(cleaned) && strings.HasPrefix(cleaned, root) {
-		return cleaned, nil
+	trimmed := strings.TrimSpace(relPath)
+	if trimmed == "" {
+		return "", errors.New("empty path provided")
+	}
+
+	cleaned := filepath.Clean(trimmed)
+
+	if filepath.IsAbs(cleaned) {
+		// Clean absolute path residing inside root
+		relToRoot, err := filepath.Rel(root, cleaned)
+		if err == nil && relToRoot != ".." && !strings.HasPrefix(relToRoot, ".."+string(filepath.Separator)) {
+			return cleaned, nil
+		}
+
+		// Reject absolute path targeting an existing file or directory outside root
+		if _, err := os.Stat(cleaned); err == nil {
+			return "", fmt.Errorf("path '%s' escapes root directory '%s'", relPath, root)
+		}
+		if dirStat, err := os.Stat(filepath.Dir(cleaned)); err == nil && dirStat.IsDir() && filepath.Dir(cleaned) != string(filepath.Separator) {
+			return "", fmt.Errorf("path '%s' escapes root directory '%s'", relPath, root)
+		}
 	}
 
 	// Strip leading slashes so workspace-relative paths like "/App.tsx" resolve inside root
@@ -212,7 +230,8 @@ func (m *Manager) resolvePath(relPath string) (string, error) {
 	rel = strings.TrimPrefix(rel, "\\")
 
 	target := filepath.Join(root, rel)
-	if !strings.HasPrefix(target, root) {
+	relToRoot, err := filepath.Rel(root, target)
+	if err != nil || relToRoot == ".." || strings.HasPrefix(relToRoot, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("path '%s' escapes root directory '%s'", relPath, root)
 	}
 	return target, nil

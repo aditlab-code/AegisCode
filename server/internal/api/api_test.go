@@ -131,6 +131,17 @@ func TestWorkspaceFileCRUDAndTree(t *testing.T) {
 		t.Fatalf("expected 200 OK for file write, got %d: %s", rrW.Code, rrW.Body.String())
 	}
 
+	// 2b. POST write traversal attempt must return 400 Bad Request
+	badPayload, _ := json.Marshal(WriteFileRequest{
+		Path:    "../../escape.txt",
+		Content: "bad content",
+	})
+	badReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspace/file", bytes.NewReader(badPayload))
+	rrBad := executeRequest(handler, badReq)
+	if rrBad.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for traversal write, got %d: %s", rrBad.Code, rrBad.Body.String())
+	}
+
 	// 3. GET read file
 	rReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspace/file?path=src/app.txt", nil)
 	rrR := executeRequest(handler, rReq)

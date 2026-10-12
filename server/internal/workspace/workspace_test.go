@@ -228,3 +228,35 @@ func TestGetGitStatus(t *testing.T) {
 		t.Fatalf("expected isRepo false after close, got true")
 	}
 }
+
+func TestPathBoundarySecurity(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "ws-boundary-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	mgr, err := NewManager(tempDir)
+	if err != nil {
+		t.Fatalf("failed to initialize manager: %v", err)
+	}
+
+	traversalCases := []string{
+		"../../outside.txt",
+		"sub/../../outside.txt",
+		"/etc/passwd",
+		"../" + filepath.Base(tempDir) + "-evil/file.txt",
+	}
+
+	for _, tc := range traversalCases {
+		if err := mgr.WriteFile(tc, "malicious payload"); err == nil {
+			t.Fatalf("expected error for traversal path '%s', got nil", tc)
+		}
+		if _, err := mgr.GetFile(tc); err == nil {
+			t.Fatalf("expected error for reading traversal path '%s', got nil", tc)
+		}
+		if err := mgr.DeleteFile(tc); err == nil {
+			t.Fatalf("expected error for deleting traversal path '%s', got nil", tc)
+		}
+	}
+}

@@ -2,6 +2,7 @@ import { memo, useMemo, useState, type ReactNode } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbench } from "../../../context/WorkbenchContext"
 import { tokenizeLine } from "../../../utils/syntax"
+import { isGitDiffTab } from "../../../utils/gitDiffTab"
 
 interface MarkdownRendererProps {
   text: string
@@ -11,6 +12,7 @@ interface MarkdownRendererProps {
 interface CodeBlock {
   type: "code"
   lang: string
+  targetPath?: string
   content: string
   unclosed?: boolean
 }
@@ -52,7 +54,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   text,
   isStreaming = false,
 }: MarkdownRendererProps) {
-  const { openFileInPane, activeTab, updateFileContent, showToast } =
+  const { openFileInPane, activeTab, applyCodeWithReview, showToast } =
     useWorkbench()
 
   // Parse raw text into structured markdown blocks
@@ -69,16 +71,18 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
               <CodeBlockView
                 key={`block-${idx}`}
                 lang={block.lang}
+                targetPath={block.targetPath}
                 code={block.content}
                 unclosed={block.unclosed}
                 isStreaming={isStreaming}
                 activeTab={activeTab}
-                onApply={(code) => {
-                  if (activeTab) {
-                    updateFileContent(activeTab, code)
-                    showToast(`Applied code to ${activeTab}`)
+                onApply={(target, code) => {
+                  if (target) {
+                    void applyCodeWithReview(target, code)
                   } else {
-                    showToast("No active file open in editor to apply code")
+                    showToast(
+                      "Please open a target file in the editor to apply code",
+                    )
                   }
                 }}
                 onCopy={(code) => {
@@ -245,16 +249,18 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
 
 interface CodeBlockViewProps {
   lang: string
+  targetPath?: string
   code: string
   unclosed?: boolean
   isStreaming?: boolean
   activeTab?: string
-  onApply: (code: string) => void
+  onApply: (target: string, code: string) => void
   onCopy: (code: string) => void
 }
 
 function CodeBlockView({
   lang,
+  targetPath,
   code,
   unclosed,
   isStreaming,
@@ -270,24 +276,45 @@ function CodeBlockView({
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const effectiveTarget =
+    targetPath || (!isGitDiffTab(activeTab) ? activeTab || "" : "")
+  const baseName = effectiveTarget
+    ? effectiveTarget.split("/").pop() || effectiveTarget
+    : ""
+  const applyLabel = effectiveTarget
+    ? `Apply to ${baseName}`
+    : "Apply to Editor"
+
   const lines = code.split("\n")
 
   return (
     <div className="markdown-code-block">
       <div className="markdown-code-header">
-        <span className="markdown-code-lang">{lang || "CODE"}</span>
-        <div className="markdown-code-actions">
-          {activeTab && (
-            <button
-              type="button"
-              className="markdown-code-action-btn"
-              onClick={() => onApply(code)}
-              title={`Apply code into active file (${activeTab})`}
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="markdown-code-lang">{lang || "CODE"}</span>
+          {targetPath && (
+            <span
+              className="text-[10px] text-ink-muted font-mono truncate max-w-[200px]"
+              title={targetPath}
             >
-              <Icon name="check" size={11} />
-              <span>Apply</span>
-            </button>
+              {targetPath}
+            </span>
           )}
+        </div>
+        <div className="markdown-code-actions">
+          <button
+            type="button"
+            className="markdown-code-action-btn"
+            onClick={() => onApply(effectiveTarget, code)}
+            title={
+              effectiveTarget
+                ? `Apply code to ${effectiveTarget} and review in Git diff`
+                : "Open a target file in editor to apply code"
+            }
+          >
+            <Icon name="check" size={11} />
+            <span>{applyLabel}</span>
+          </button>
           <button
             type="button"
             className="markdown-code-action-btn"
@@ -321,10 +348,11 @@ function parseMarkdownBlocks(text: string, isStreaming: boolean): Block[] {
   while (i < lines.length) {
     const line = lines[i]
 
-    // 1. Fenced Code Block
-    const fenceMatch = line.match(/^```(\w+)?/)
+    // 1. Fenced Code Block: ```lang or ```lang:filepath
+    const fenceMatch = line.match(/^```(?:([a-zA-Z0-9_.-]+)(?::(\S+))?)?/)
     if (fenceMatch) {
       const lang = fenceMatch[1] || ""
+      const targetPath = fenceMatch[2] || undefined
       const codeLines: string[] = []
       let closed = false
       i++
@@ -340,6 +368,7 @@ function parseMarkdownBlocks(text: string, isStreaming: boolean): Block[] {
       blocks.push({
         type: "code",
         lang,
+        targetPath,
         content: codeLines.join("\n"),
         unclosed: !closed,
       })
