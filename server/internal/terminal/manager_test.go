@@ -2,6 +2,8 @@ package terminal
 
 import (
 	"bytes"
+	"fmt"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -353,3 +355,181 @@ func TestResolveShells(t *testing.T) {
 		t.Fatalf("expected sh with no args, got %v", argsSh)
 	}
 }
+
+func TestLosslessHighThroughputBurst(t *testing.T) {
+	mgr := NewManager()
+	sess, err := mgr.CreateSession("term-burst", "sh", "", 80, 24)
+	if err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+	defer func() { _ = mgr.CloseSession(sess.ID) }()
+
+	sub, unsub, err := mgr.Subscribe("term-burst")
+	if err != nil {
+		t.Fatalf("failed to subscribe: %v", err)
+	}
+	defer unsub()
+
+	// Allow shell process to initialize and emit startup prompt
+	time.Sleep(150 * time.Millisecond)
+
+	// Generate 1000 sequential lines quickly using seq command
+	// The completion marker is dynamically evaluated to avoid matching the echoed command text
+	script := "seq 1 1000; echo DONE_$(echo BURST_FLAG)\n"
+	if err := mgr.WriteInput("term-burst", []byte(script)); err != nil {
+		t.Fatalf("failed to write input: %v", err)
+	}
+
+	var output bytes.Buffer
+	deadline := time.After(10 * time.Second)
+	done := false
+
+	for !done {
+		select {
+		case chunk, ok := <-sub:
+			if !ok {
+				t.Fatalf("subscription closed before completion, output so far: %d bytes", output.Len())
+			}
+			output.Write(chunk)
+			if bytes.Contains(output.Bytes(), []byte("DONE_BURST_FLAG")) {
+				done = true
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for burst output completion, output size: %d bytes", output.Len())
+		}
+	}
+
+	outStr := output.String()
+	for i := 1; i <= 1000; i++ {
+		// Verify every sequence number is present as a standalone line in terminal output
+		if !strings.Contains(outStr, fmt.Sprintf("%d\r", i)) && !strings.Contains(outStr, fmt.Sprintf("%d\n", i)) {
+			t.Fatalf("loss detected: missing expected sequence item %d in stream, total len: %d", i, len(outStr))
+		}
+	}
+}
+
+func TestAdaptiveBackpressurePacing(t *testing.T) {
+	mgr := NewManager()
+	sess, err := mgr.CreateSession("term-bp", "sh", "", 80, 24)
+	if err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+	defer func() { _ = mgr.CloseSession(sess.ID) }()
+
+	sub, unsub, err := mgr.Subscribe("term-bp")
+	if err != nil {
+		t.Fatalf("failed to subscribe: %v", err)
+	}
+	defer unsub()
+
+	// Locate the active subscriber
+	sess.subMu.Lock()
+	var targetSub *subscriber
+	for s := range sess.subs {
+		targetSub = s
+		break
+	}
+	sess.subMu.Unlock()
+
+	if targetSub == nil {
+		t.Fatal("no subscriber found")
+	}
+
+	// Write 5 MB dummy data to cross highWaterMarkBytes (2 MB) even with out channel buffer
+	dummyData := bytes.Repeat([]byte("X"), 5*1024*1024)
+	targetSub.write(dummyData)
+
+	bpTriggered := make(chan struct{})
+	go func() {
+		sess.waitBackpressure()
+		close(bpTriggered)
+	}()
+
+	// waitBackpressure should NOT return immediately
+	select {
+	case <-bpTriggered:
+		t.Fatal("expected waitBackpressure to pause when buffer > highWaterMarkBytes, but returned immediately")
+	case <-time.After(50 * time.Millisecond):
+		// Expected: it is paused
+	}
+
+	// Drain subscriber buffer below lowWaterMarkBytes
+	targetSub.mu.Lock()
+	_ = targetSub.buf.PopChunk(targetSub.buf.Len())
+	targetSub.mu.Unlock()
+	sess.notifyDrain()
+
+	// Read from sub channel to keep pipe moving
+	go func() {
+		for len(sub) > 0 {
+			<-sub
+		}
+	}()
+
+	// waitBackpressure should now unblock promptly
+	select {
+	case <-bpTriggered:
+		// Succeeded unblocking
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for waitBackpressure to unblock after drain")
+	}
+}
+
+func TestStalledSubscriberEviction(t *testing.T) {
+	mgr := NewManager()
+	sess, err := mgr.CreateSession("term-stalled", "sh", "", 80, 24)
+	if err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+	defer func() { _ = mgr.CloseSession(sess.ID) }()
+
+	_, unsub, err := mgr.Subscribe("term-stalled")
+	if err != nil {
+		t.Fatalf("failed to subscribe: %v", err)
+	}
+	defer unsub()
+
+	sess.subMu.Lock()
+	var targetSub *subscriber
+	for s := range sess.subs {
+		targetSub = s
+		break
+	}
+	sess.subMu.Unlock()
+
+	if targetSub == nil {
+		t.Fatal("no subscriber found")
+	}
+
+	// Write data > highWaterMarkBytes and set lastActive to older than stalledTimeout
+	dummyData := bytes.Repeat([]byte("Y"), 5*1024*1024)
+	targetSub.write(dummyData)
+	time.Sleep(50 * time.Millisecond) // wait for worker to fill out channel
+	targetSub.mu.Lock()
+	targetSub.lastActive = time.Now().Add(-20 * time.Second)
+	targetSub.mu.Unlock()
+
+	// waitBackpressure should evict the stalled subscriber without hanging
+	done := make(chan struct{})
+	go func() {
+		sess.waitBackpressure()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// waitBackpressure finished by evicting the stalled sub
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("waitBackpressure timed out; stalled sub was not evicted")
+	}
+
+	// Verify subscriber was removed from sess.subs
+	sess.subMu.Lock()
+	_, exists := sess.subs[targetSub]
+	sess.subMu.Unlock()
+
+	if exists {
+		t.Fatal("expected stalled subscriber to be evicted from sess.subs")
+	}
+}
+

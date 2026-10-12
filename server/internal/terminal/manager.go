@@ -21,7 +21,68 @@ var (
 	ErrSessionClosed   = errors.New("terminal session already closed")
 )
 
-const maxHistoryBytes = 512 * 1024 // 512 KB ring buffer replay for reconnects & initial prompt
+const (
+	maxHistoryBytes      = 512 * 1024       // 512 KB ring buffer replay for reconnects & initial prompt
+	defaultInitialBufCap = 64 * 1024        // 64 KB initial dynamic ring buffer size
+	defaultMaxBufCap     = 8 * 1024 * 1024  // 8 MB max dynamic ring buffer size per subscriber
+	highWaterMarkBytes   = 2 * 1024 * 1024  // 2 MB threshold: triggers PTY readPump backpressure
+	lowWaterMarkBytes    = 512 * 1024       // 512 KB threshold: releases PTY readPump backpressure
+	stalledTimeout       = 15 * time.Second // timeout to evict unresponsive stalled subscribers
+	maxChunkReadBytes    = 32 * 1024        // 32 KB chunk size for SSE batching during bursts
+)
+
+// subscriber manages buffered byte streaming to a client using an elastic circular buffer.
+type subscriber struct {
+	mu         sync.Mutex
+	buf        *dynamicRingBuffer
+	notify     chan struct{}
+	out        chan []byte
+	done       chan struct{}
+	closed     bool
+	lastActive time.Time
+}
+
+func newSubscriber(initialCap, maxCap int) *subscriber {
+	return &subscriber{
+		buf:        newDynamicRingBuffer(initialCap, maxCap),
+		notify:     make(chan struct{}, 1),
+		out:        make(chan []byte, 16),
+		done:       make(chan struct{}),
+		lastActive: time.Now(),
+	}
+}
+
+func (sub *subscriber) write(chunk []byte) {
+	sub.mu.Lock()
+	defer sub.mu.Unlock()
+
+	if sub.closed {
+		return
+	}
+
+	_, _ = sub.buf.Write(chunk)
+
+	select {
+	case sub.notify <- struct{}{}:
+	default:
+	}
+}
+
+func (sub *subscriber) close() {
+	sub.mu.Lock()
+	if sub.closed {
+		sub.mu.Unlock()
+		return
+	}
+	sub.closed = true
+	sub.mu.Unlock()
+
+	select {
+	case <-sub.done:
+	default:
+		close(sub.done)
+	}
+}
 
 // Session represents an active interactive pseudo-terminal session.
 type Session struct {
@@ -36,7 +97,8 @@ type Session struct {
 	cancel    context.CancelFunc
 	mu        sync.Mutex
 	subMu     sync.RWMutex
-	subs      map[chan []byte]struct{}
+	subs      map[*subscriber]struct{}
+	drainCh   chan struct{}
 	history   []byte
 	closed    bool
 }
@@ -169,7 +231,8 @@ func (m *Manager) CreateSession(id, shellName, cwd string, cols, rows uint16) (*
 		Pty:     ptyMaster,
 		Done:    make(chan struct{}),
 		cancel:  cancel,
-		subs:    make(map[chan []byte]struct{}),
+		subs:    make(map[*subscriber]struct{}),
+		drainCh: make(chan struct{}, 1),
 		history: make([]byte, 0, 4096),
 	}
 
@@ -183,6 +246,73 @@ func (m *Manager) CreateSession(id, shellName, cwd string, cols, rows uint16) (*
 	return sess, nil
 }
 
+func (s *Session) notifyDrain() {
+	select {
+	case s.drainCh <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Session) waitBackpressure() {
+	for {
+		s.mu.Lock()
+		closed := s.closed
+		s.mu.Unlock()
+		if closed {
+			return
+		}
+
+		s.subMu.Lock()
+		if len(s.subs) == 0 {
+			s.subMu.Unlock()
+			return
+		}
+
+		now := time.Now()
+		var congestedSubs []*subscriber
+		var stalledSubs []*subscriber
+
+		for sub := range s.subs {
+			sub.mu.Lock()
+			buffered := sub.buf.Len()
+			lastActive := sub.lastActive
+			sub.mu.Unlock()
+
+			if buffered >= highWaterMarkBytes {
+				if now.Sub(lastActive) > stalledTimeout {
+					stalledSubs = append(stalledSubs, sub)
+				} else {
+					congestedSubs = append(congestedSubs, sub)
+				}
+			}
+		}
+
+		// Evict any dead / unresponsive subscribers that exceeded stalledTimeout
+		for _, sub := range stalledSubs {
+			log.Printf("[terminal] evicting stalled subscriber for session %s (stalled for %v)", s.ID, now.Sub(sub.lastActive))
+			delete(s.subs, sub)
+			sub.close()
+		}
+
+		if len(congestedSubs) == 0 {
+			s.subMu.Unlock()
+			return
+		}
+
+		drainCh := s.drainCh
+		s.subMu.Unlock()
+
+		select {
+		case <-s.Done:
+			return
+		case <-drainCh:
+			// Woken up by a subscriber draining below lowWaterMark
+		case <-time.After(10 * time.Millisecond):
+			// Adaptive backpressure polling fallback
+		}
+	}
+}
+
 func (s *Session) readPump(mgr *Manager) {
 	defer func() {
 		if err := mgr.CloseSession(s.ID); err != nil && !errors.Is(err, ErrSessionNotFound) && !errors.Is(err, ErrSessionClosed) {
@@ -192,6 +322,8 @@ func (s *Session) readPump(mgr *Manager) {
 
 	buf := make([]byte, 4096)
 	for {
+		s.waitBackpressure()
+
 		n, err := s.Pty.Read(buf)
 		if n > 0 {
 			chunk := make([]byte, n)
@@ -224,12 +356,8 @@ func (s *Session) broadcast(chunk []byte) {
 		s.history = s.history[len(s.history)-maxHistoryBytes:]
 	}
 
-	for ch := range s.subs {
-		select {
-		case ch <- chunk:
-		default:
-			// Non-blocking drop to prevent lagging subscribers from stalling PTY
-		}
+	for sub := range s.subs {
+		sub.write(chunk)
 	}
 }
 
@@ -281,75 +409,66 @@ func (m *Manager) Subscribe(sessionID string) (<-chan []byte, func(), error) {
 		return nil, nil, ErrSessionClosed
 	}
 
-	in := make(chan []byte, 256)
-	out := make(chan []byte, 256)
-	done := make(chan struct{})
+	sub := newSubscriber(defaultInitialBufCap, defaultMaxBufCap)
 
 	sess.subMu.Lock()
 	if len(sess.history) > 0 {
 		initial := make([]byte, len(sess.history))
 		copy(initial, sess.history)
-		in <- initial
+		sub.write(initial)
 	}
-	sess.subs[in] = struct{}{}
+	sess.subs[sub] = struct{}{}
 	sess.subMu.Unlock()
 	sess.mu.Unlock()
 
 	go func() {
-		defer close(out)
-		var queue [][]byte
+		defer close(sub.out)
 		for {
-			if len(queue) == 0 {
-				select {
-				case <-done:
-					return
-				case chunk, ok := <-in:
-					if !ok {
-						return
-					}
-					queue = append(queue, chunk)
+			sub.mu.Lock()
+			if sub.buf.Len() > 0 {
+				chunk := sub.buf.PopChunk(maxChunkReadBytes)
+				remaining := sub.buf.Len()
+				sub.lastActive = time.Now()
+				sub.mu.Unlock()
+
+				if remaining <= lowWaterMarkBytes {
+					sess.notifyDrain()
 				}
+
+				select {
+				case <-sub.done:
+					return
+				case sub.out <- chunk:
+				}
+				continue
 			}
 
-			select {
-			case <-done:
+			if sub.closed {
+				sub.mu.Unlock()
 				return
-			case chunk, ok := <-in:
-				if !ok {
-					for _, q := range queue {
-						select {
-						case <-done:
-							return
-						case out <- q:
-						}
-					}
-					return
-				}
-				// Elastic queue guard up to 8192 chunks (~32MB) to prevent OOM
-				if len(queue) < 8192 {
-					queue = append(queue, chunk)
-				}
-			case out <- queue[0]:
-				queue = queue[1:]
+			}
+			sub.mu.Unlock()
+
+			select {
+			case <-sub.done:
+				return
+			case <-sub.notify:
 			}
 		}
 	}()
 
 	unsubscribe := func() {
 		sess.subMu.Lock()
-		if _, exists := sess.subs[in]; exists {
-			delete(sess.subs, in)
-			close(in)
+		if _, exists := sess.subs[sub]; exists {
+			delete(sess.subs, sub)
 		}
 		sess.subMu.Unlock()
-		select {
-		case <-done:
-		default:
-			close(done)
-		}
+
+		sub.close()
+		sess.notifyDrain()
 	}
 
-	return out, unsubscribe, nil
+	return sub.out, unsubscribe, nil
 }
 
 // WriteInput sends raw input bytes to the PTY master.
@@ -400,12 +519,13 @@ func (m *Manager) CloseSession(sessionID string) error {
 
 	// Close all subscriber channels to wake up active SSE streams
 	sess.subMu.Lock()
-	for ch := range sess.subs {
-		delete(sess.subs, ch)
-		close(ch)
+	for sub := range sess.subs {
+		delete(sess.subs, sub)
+		sub.close()
 	}
 	sess.history = nil
 	sess.subMu.Unlock()
+	sess.notifyDrain()
 
 	// Terminate process tree
 	sess.cancel()
