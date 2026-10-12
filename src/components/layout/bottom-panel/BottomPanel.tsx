@@ -211,6 +211,7 @@ export function BottomPanel() {
               >
                 <option value="zsh">zsh</option>
                 <option value="bash">bash</option>
+                <option value="fish">fish</option>
                 <option value="sh">sh</option>
               </select>
               <IconButton

@@ -66,7 +66,7 @@ export function TerminalView() {
     if (hasAttemptedLiveUpgradeRef.current) return
     hasAttemptedLiveUpgradeRef.current = true
     if (activeTerminalSession && !activeTerminalSession.isLive) {
-      createTerminalSession("zsh")
+      createTerminalSession(activeTerminalSession.shell || "zsh")
     }
   }, [activeTerminalSession, createTerminalSession])
 
@@ -131,10 +131,14 @@ export function TerminalView() {
     let sendPromiseChain: Promise<boolean> = Promise.resolve(true)
 
     const flushInput = () => {
+      if (!isLive || !isConnected) {
+        // Retain pending keystrokes until SSE connection handshake completes
+        return
+      }
       const pending = inputBufferRef.current
+      if (!pending) return
       inputBufferRef.current = ""
       flushTimerRef.current = null
-      if (!pending || !isLive || !isConnected) return
 
       sendPromiseChain = sendPromiseChain.then(() =>
         sendTerminalInputApi(sessionId, pending),
@@ -157,6 +161,7 @@ export function TerminalView() {
         isConnected = true
         setTerminalRunning(true)
         syncSize()
+        flushInput()
       })
 
       sse.addEventListener("data", (event) => {

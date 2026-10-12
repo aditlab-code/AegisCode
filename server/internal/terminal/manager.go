@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -19,6 +20,8 @@ var (
 	ErrSessionNotFound = errors.New("terminal session not found")
 	ErrSessionClosed   = errors.New("terminal session already closed")
 )
+
+const maxHistoryBytes = 64 * 1024 // 64 KB ring buffer replay for reconnects & initial prompt
 
 // Session represents an active interactive pseudo-terminal session.
 type Session struct {
@@ -34,6 +37,7 @@ type Session struct {
 	mu        sync.Mutex
 	subMu     sync.RWMutex
 	subs      map[chan []byte]struct{}
+	history   []byte
 	closed    bool
 }
 
@@ -49,33 +53,58 @@ func NewManager() *Manager {
 	}
 }
 
-// resolveShell determines the executable shell path.
-func resolveShell(preferred string) (string, error) {
+// resolveShell determines the executable shell path and appropriate startup args (e.g. login shell).
+func resolveShell(preferred string) (string, []string, error) {
+	var shellPath string
 	if preferred != "" && preferred != "default" {
-		path, err := exec.LookPath(preferred)
-		if err == nil {
-			return path, nil
+		if path, err := exec.LookPath(preferred); err == nil {
+			shellPath = path
 		}
 	}
 
-	envShell := os.Getenv("SHELL")
-	if envShell != "" {
-		if path, err := exec.LookPath(envShell); err == nil {
-			return path, nil
+	if shellPath == "" {
+		envShell := os.Getenv("SHELL")
+		if envShell != "" {
+			if path, err := exec.LookPath(envShell); err == nil {
+				shellPath = path
+			}
 		}
 	}
 
-	for _, candidate := range []string{"/bin/zsh", "/bin/bash", "/bin/sh"} {
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate, nil
+	if shellPath == "" {
+		// Standard paths across macOS and Linux for zsh, fish, bash, and sh
+		for _, candidate := range []string{
+			"/bin/zsh", "/usr/bin/zsh",
+			"/usr/local/bin/fish", "/opt/homebrew/bin/fish", "/bin/fish", "/usr/bin/fish",
+			"/bin/bash", "/usr/bin/bash", "/usr/local/bin/bash", "/opt/homebrew/bin/bash",
+			"/bin/sh", "/usr/bin/sh",
+		} {
+			if _, err := os.Stat(candidate); err == nil {
+				shellPath = candidate
+				break
+			}
 		}
 	}
 
-	path, err := exec.LookPath("sh")
-	if err != nil {
-		return "", fmt.Errorf("no suitable shell found: %w", err)
+	if shellPath == "" {
+		path, err := exec.LookPath("sh")
+		if err != nil {
+			return "", nil, fmt.Errorf("no suitable shell found: %w", err)
+		}
+		shellPath = path
 	}
-	return path, nil
+
+	// Determine startup args: interactive login shell for zsh, bash, fish
+	base := filepath.Base(shellPath)
+	var args []string
+	switch base {
+	case "zsh", "bash", "fish":
+		args = []string{"-l"}
+	default:
+		args = []string{}
+	}
+
+	return shellPath, args, nil
 }
 
 // CreateSession allocates a new PTY and launches the specified shell process.
@@ -84,7 +113,7 @@ func (m *Manager) CreateSession(id, shellName, cwd string, cols, rows uint16) (*
 		return nil, errors.New("session id must not be empty")
 	}
 
-	shellPath, err := resolveShell(shellName)
+	shellPath, shellArgs, err := resolveShell(shellName)
 	if err != nil {
 		return nil, fmt.Errorf("resolve shell: %w", err)
 	}
@@ -105,19 +134,18 @@ func (m *Manager) CreateSession(id, shellName, cwd string, cols, rows uint16) (*
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(ctx, shellPath)
+	cmd := exec.CommandContext(ctx, shellPath, shellArgs...)
 	cmd.Dir = cwd
 
 	// Inherit environment and inject required terminal defaults
 	cmd.Env = append(cmd.Env, os.Environ()...)
 	cmd.Env = append(cmd.Env,
+		fmt.Sprintf("SHELL=%s", shellPath),
 		"TERM=xterm-256color",
 		"COLORTERM=truecolor",
 		"LANG=en_US.UTF-8",
 		fmt.Sprintf("WORKSPACE_ROOT=%s", cwd),
 	)
-
-
 
 	// Ensure process is created as a process group leader (Setpgid)
 	setProcessGroup(cmd)
@@ -132,16 +160,17 @@ func (m *Manager) CreateSession(id, shellName, cwd string, cols, rows uint16) (*
 	}
 
 	sess := &Session{
-		ID:     id,
-		Shell:  shellPath,
-		Cwd:    cwd,
-		Cols:   cols,
-		Rows:   rows,
-		Cmd:    cmd,
-		Pty:    ptyMaster,
-		Done:   make(chan struct{}),
-		cancel: cancel,
-		subs:   make(map[chan []byte]struct{}),
+		ID:      id,
+		Shell:   shellPath,
+		Cwd:     cwd,
+		Cols:    cols,
+		Rows:    rows,
+		Cmd:     cmd,
+		Pty:     ptyMaster,
+		Done:    make(chan struct{}),
+		cancel:  cancel,
+		subs:    make(map[chan []byte]struct{}),
+		history: make([]byte, 0, 4096),
 	}
 
 	m.mu.Lock()
@@ -186,8 +215,14 @@ func (s *Session) broadcast(chunk []byte) {
 	}
 	s.mu.Unlock()
 
-	s.subMu.RLock()
-	defer s.subMu.RUnlock()
+	s.subMu.Lock()
+	defer s.subMu.Unlock()
+
+	// Append to history buffer so reconnecting or late-joining clients can replay
+	s.history = append(s.history, chunk...)
+	if len(s.history) > maxHistoryBytes {
+		s.history = s.history[len(s.history)-maxHistoryBytes:]
+	}
 
 	for ch := range s.subs {
 		select {
@@ -230,7 +265,9 @@ func (m *Manager) withSession(sessionID string, fn func(sess *Session) error) er
 	return fn(sess)
 }
 
-// Subscribe returns a channel that receives raw PTY byte output chunks.
+// Subscribe returns a channel that receives raw PTY byte output chunks,
+// immediately primed with any existing history buffer so late-joining
+// clients (like SSE EventSource) receive initial prompt and prior output.
 func (m *Manager) Subscribe(sessionID string) (<-chan []byte, func(), error) {
 	sess, err := m.GetSession(sessionID)
 	if err != nil {
@@ -245,6 +282,11 @@ func (m *Manager) Subscribe(sessionID string) (<-chan []byte, func(), error) {
 
 	ch := make(chan []byte, 128)
 	sess.subMu.Lock()
+	if len(sess.history) > 0 {
+		initial := make([]byte, len(sess.history))
+		copy(initial, sess.history)
+		ch <- initial
+	}
 	sess.subs[ch] = struct{}{}
 	sess.subMu.Unlock()
 	sess.mu.Unlock()
@@ -310,6 +352,7 @@ func (m *Manager) CloseSession(sessionID string) error {
 		delete(sess.subs, ch)
 		close(ch)
 	}
+	sess.history = nil
 	sess.subMu.Unlock()
 
 	// Terminate process tree

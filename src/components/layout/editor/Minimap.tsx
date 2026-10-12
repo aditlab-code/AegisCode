@@ -1,4 +1,4 @@
-import { useRef, type MouseEvent } from "react"
+import { useRef, memo, type PointerEvent, type WheelEvent } from "react"
 import { tokenizeLine } from "../../../utils/syntax"
 import type { MinimapScale } from "../../../types/workbench"
 
@@ -54,13 +54,13 @@ interface MinimapProps {
   scrollTop: number
   scrollHeight: number
   clientHeight: number
-  onScrollToLine: (lineIndex: number) => void
+  onScrollToLine: (lineIndex: number, smooth?: boolean) => void
   scale?: MinimapScale
   editorFontSize?: number
   editorLineHeight?: number
 }
 
-export function Minimap({
+export const Minimap = memo(function Minimap({
   lines,
   scrollTop,
   scrollHeight,
@@ -140,24 +140,57 @@ export function Minimap({
   const bottomPadding = (lines.length - visibleEnd) * scaleConfig.lineHeight
   const visibleLines = lines.slice(visibleStart, visibleEnd)
 
-  function handleMinimapClick(e: MouseEvent<HTMLDivElement>) {
+  const isDraggingRef = useRef(false)
+
+  const scrollToPointer = (clientY: number, smooth: boolean) => {
     if (!containerRef.current) return
     const rect = containerRef.current.getBoundingClientRect()
-    const clickY = e.clientY - rect.top
+    const clickY = clientY - rect.top
     const totalY = clickY + minimapOffsetY
     const targetLine = Math.floor(totalY / scaleConfig.lineHeight)
+    onScrollToLine(Math.max(0, Math.min(lines.length - 1, targetLine)), smooth)
+  }
 
-    onScrollToLine(Math.max(0, Math.min(lines.length - 1, targetLine)))
+  function handlePointerDown(e: PointerEvent<HTMLDivElement>) {
+    isDraggingRef.current = true
+    ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+    scrollToPointer(e.clientY, false)
+  }
+
+  function handlePointerMove(e: PointerEvent<HTMLDivElement>) {
+    if (!isDraggingRef.current) return
+    scrollToPointer(e.clientY, false)
+  }
+
+  function handlePointerUp(e: PointerEvent<HTMLDivElement>) {
+    isDraggingRef.current = false
+    try {
+      ;(e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId)
+    } catch {
+      // safe fallback
+    }
+  }
+
+  function handleWheel(e: WheelEvent<HTMLDivElement>) {
+    const scroller =
+      containerRef.current?.parentElement?.querySelector(".cm-scroller") ||
+      document.querySelector(".cm-scroller")
+    if (scroller) {
+      scroller.scrollTop += e.deltaY
+    }
   }
 
   return (
     <div
       aria-hidden="true"
       className={`minimap-container minimap-scale-${scale}`}
-      onClick={handleMinimapClick}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onWheel={handleWheel}
       ref={containerRef}
       style={{ width: `${scaleConfig.width}px` }}
-      title="Minimap: Click to navigate"
+      title="Minimap: Drag or click to navigate"
     >
       <div
         className="minimap-slider"
@@ -193,4 +226,4 @@ export function Minimap({
       </div>
     </div>
   )
-}
+})

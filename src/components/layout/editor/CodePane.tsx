@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { Minimap } from "./Minimap"
@@ -72,10 +72,11 @@ export function CodePane({
   const cursorBlinking = settings?.editor?.cursorBlinking ?? "smooth"
   const renderWhitespace = settings?.editor?.renderWhitespace ?? "selection"
 
+  const paneRef = useRef<HTMLDivElement>(null)
   const buffer = fileBuffers[filename]
   const content = buffer?.content ?? ""
   const isDirty = buffer?.isDirty ?? false
-  const lines = content.split("\n")
+  const lines = useMemo(() => content.split("\n"), [content])
 
   const conflictRegions = useMemo(() => {
     return parseConflictRegions(content)
@@ -96,30 +97,58 @@ export function CodePane({
   })
 
   useEffect(() => {
-    const scroller = document.querySelector(".cm-scroller")
+    const scroller =
+      paneRef.current?.querySelector(".cm-scroller") ||
+      document.querySelector(".cm-scroller")
     if (!scroller) return
+
+    let rafId: number | null = null
     const onScroll = () => {
-      setScrollInfo({
-        scrollTop: scroller.scrollTop,
-        scrollHeight: scroller.scrollHeight || 1,
-        clientHeight: scroller.clientHeight || 1,
+      if (rafId !== null) return
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        setScrollInfo({
+          scrollTop: scroller.scrollTop,
+          scrollHeight: scroller.scrollHeight || 1,
+          clientHeight: scroller.clientHeight || 1,
+        })
       })
     }
-    scroller.addEventListener("scroll", onScroll)
-    onScroll()
-    return () => {
-      scroller.removeEventListener("scroll", onScroll)
-    }
-  }, [filename, content])
 
-  function handleScrollToLine(lineIndex: number) {
-    const scroller = document.querySelector(".cm-scroller")
-    if (!scroller) return
-    scroller.scrollTop = Math.max(0, lineIndex * editorLineHeight - 60)
-  }
+    scroller.addEventListener("scroll", onScroll, { passive: true })
+    onScroll()
+
+    const ro = new ResizeObserver(() => {
+      onScroll()
+    })
+    ro.observe(scroller)
+
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId)
+      scroller.removeEventListener("scroll", onScroll)
+      ro.disconnect()
+    }
+  }, [filename])
+
+  const handleScrollToLine = useCallback(
+    (lineIndex: number, smooth: boolean = true) => {
+      const scroller =
+        paneRef.current?.querySelector(".cm-scroller") ||
+        document.querySelector(".cm-scroller")
+      if (!scroller) return
+      const target = Math.max(0, lineIndex * editorLineHeight - 60)
+      if (smooth) {
+        scroller.scrollTo({ top: target, behavior: "smooth" })
+      } else {
+        scroller.scrollTop = target
+      }
+    },
+    [editorLineHeight],
+  )
 
   return (
     <div
+      ref={paneRef}
       className={`editor-pane relative ${
         isFocused ? "editor-pane-focused" : ""
       }`}

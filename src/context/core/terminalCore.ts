@@ -158,7 +158,6 @@ export function useTerminalCore() {
               commandHistory: [],
               isLive: true,
             }
-            setActiveTerminalSessionId(upgraded.id)
             return [upgraded]
           }
 
@@ -172,21 +171,25 @@ export function useTerminalCore() {
             commandHistory: [],
             isLive: true,
           }
-          setActiveTerminalSessionId(newSession.id)
           return [...sessions, newSession]
         })
+        setActiveTerminalSessionId(data.sessionId)
         return
       }
 
       // Fallback to offline logic
+      let fallbackId = ""
       setTerminalSessions((sessions) => {
         const res = createTerminalSessionLogic(sessions, shellName)
+        fallbackId = res.newSession.id
         const updated = res.sessions.map((s) =>
           s.id === res.newSession.id ? { ...s, isLive: false } : s,
         )
-        setActiveTerminalSessionId(res.newSession.id)
         return updated
       })
+      if (fallbackId) {
+        setActiveTerminalSessionId(fallbackId)
+      }
     })()
   }, [])
 
@@ -222,7 +225,6 @@ export function useTerminalCore() {
               }
               const next = [...sessions]
               next[index] = restarted
-              setActiveTerminalSessionId(restarted.id)
               return next
             }
 
@@ -235,9 +237,9 @@ export function useTerminalCore() {
               commandHistory: [],
               isLive: true,
             }
-            setActiveTerminalSessionId(freshSession.id)
             return [freshSession]
           })
+          setActiveTerminalSessionId(data.sessionId)
           return
         }
 

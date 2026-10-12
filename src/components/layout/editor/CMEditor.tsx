@@ -118,6 +118,7 @@ export function CMEditor({
   contentRef.current = content
 
   const langInfo = resolveLanguage(filename)
+  const lspChangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Notify backend LSP of file open
   useEffect(() => {
@@ -222,12 +223,13 @@ export function CMEditor({
         userSelect: "none",
       },
       ".cm-activeLineGutter": {
-        color: "var(--color-ink)",
-        fontWeight: "600",
+        backgroundColor: "transparent !important",
+        color: "var(--color-ink) !important",
+        fontWeight: "700 !important",
       },
       ".cm-activeLine": {
         backgroundColor:
-          "color-mix(in srgb, var(--color-surface) 60%, transparent)",
+          "color-mix(in srgb, var(--color-ink) 5%, transparent) !important",
       },
       ".cm-cursor": {
         borderLeftColor: "var(--color-ink)",
@@ -298,7 +300,12 @@ export function CMEditor({
         if (update.docChanged) {
           const val = update.state.doc.toString()
           onChange(val)
-          notifyLspChange(filename, val, langInfo.id)
+          if (lspChangeTimerRef.current) {
+            clearTimeout(lspChangeTimerRef.current)
+          }
+          lspChangeTimerRef.current = setTimeout(() => {
+            notifyLspChange(filename, val, langInfo.id)
+          }, 300)
         }
         if (update.selectionSet && onCursorChange) {
           const mainSel = update.state.selection.main
@@ -325,6 +332,9 @@ export function CMEditor({
     viewRef.current = view
 
     return () => {
+      if (lspChangeTimerRef.current) {
+        clearTimeout(lspChangeTimerRef.current)
+      }
       view.destroy()
       viewRef.current = null
     }

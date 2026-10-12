@@ -11,6 +11,9 @@ export default defineConfig({
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
+  optimizeDeps: {
+    include: ["react", "react-dom", "react-dom/client"],
+  },
   server: {
     port: 5173,
     proxy: {

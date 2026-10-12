@@ -392,8 +392,13 @@
   background: color-mix(in srgb, var(--color-accent) 18%, transparent);
   border-top: 1px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
-  pointer-events: none;
-  transition: top 0.04s linear;
+  cursor: grab;
+  will-change: top;
+}
+
+.minimap-slider:active {
+  cursor: grabbing;
+  background: color-mix(in srgb, var(--color-accent) 26%, transparent);
 }
 
 @media (max-width: 640px) {

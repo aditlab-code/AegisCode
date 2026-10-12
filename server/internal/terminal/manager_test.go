@@ -240,3 +240,116 @@ func TestRecreateSessionAfterAllTerminated(t *testing.T) {
 		}
 	}
 }
+
+func TestZshSession(t *testing.T) {
+	mgr := NewManager()
+	sess, err := mgr.CreateSession("term-zsh", "zsh", "", 80, 24)
+	if err != nil {
+		t.Fatalf("failed to create zsh session: %v", err)
+	}
+	defer func() { _ = mgr.CloseSession(sess.ID) }()
+
+	sub, unsub, err := mgr.Subscribe("term-zsh")
+	if err != nil {
+		t.Fatalf("failed to subscribe to zsh: %v", err)
+	}
+	defer unsub()
+
+	if err := mgr.WriteInput("term-zsh", []byte("echo ZSH_RUNNING_TEST\n")); err != nil {
+		t.Fatalf("failed to write input: %v", err)
+	}
+
+	var output bytes.Buffer
+	deadline := time.After(3 * time.Second)
+	found := false
+
+	for !found {
+		select {
+		case chunk, ok := <-sub:
+			if !ok {
+				t.Fatalf("subscription closed prematurely, output so far: %q", output.String())
+			}
+			output.Write(chunk)
+			if bytes.Contains(output.Bytes(), []byte("ZSH_RUNNING_TEST")) {
+				found = true
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for zsh output, received: %q", output.String())
+		}
+	}
+}
+
+func TestReplayHistoryBuffer(t *testing.T) {
+	mgr := NewManager()
+	sess, err := mgr.CreateSession("term-replay", "sh", "", 80, 24)
+	if err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+	defer func() { _ = mgr.CloseSession(sess.ID) }()
+
+	// Write input BEFORE subscribing, simulating prompt/output before SSE connects
+	if err := mgr.WriteInput("term-replay", []byte("echo REPLAYED_PROMPT_12345\n")); err != nil {
+		t.Fatalf("failed to write input: %v", err)
+	}
+
+	// Give shell a brief moment to process and emit output into history buffer
+	time.Sleep(100 * time.Millisecond)
+
+	// Late subscriber joins now
+	sub, unsub, err := mgr.Subscribe("term-replay")
+	if err != nil {
+		t.Fatalf("failed to subscribe: %v", err)
+	}
+	defer unsub()
+
+	var output bytes.Buffer
+	deadline := time.After(2 * time.Second)
+	found := false
+
+	for !found {
+		select {
+		case chunk, ok := <-sub:
+			if !ok {
+				t.Fatalf("subscription closed prematurely")
+			}
+			output.Write(chunk)
+			if bytes.Contains(output.Bytes(), []byte("REPLAYED_PROMPT_12345")) {
+				found = true
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for replayed output, received: %q", output.String())
+		}
+	}
+}
+
+func TestResolveShells(t *testing.T) {
+	// 1. Preferred zsh
+	pathZsh, argsZsh, err := resolveShell("zsh")
+	if err != nil {
+		t.Fatalf("resolve zsh failed: %v", err)
+	}
+	if pathZsh == "" || len(argsZsh) != 1 || argsZsh[0] != "-l" {
+		t.Fatalf("expected zsh with [-l], got %s %v", pathZsh, argsZsh)
+	}
+
+	// 2. Preferred bash
+	pathBash, argsBash, err := resolveShell("bash")
+	if err != nil {
+		t.Fatalf("resolve bash failed: %v", err)
+	}
+	if pathBash == "" || len(argsBash) != 1 || argsBash[0] != "-l" {
+		t.Fatalf("expected bash with [-l], got %s %v", pathBash, argsBash)
+	}
+
+	// 3. Preferred sh
+	pathSh, argsSh, err := resolveShell("sh")
+	if err != nil {
+		t.Fatalf("resolve sh failed: %v", err)
+	}
+	if pathSh == "" {
+		t.Fatalf("expected valid sh path, got empty")
+	}
+	if len(argsSh) != 0 {
+		t.Fatalf("expected sh with no args, got %v", argsSh)
+	}
+}
