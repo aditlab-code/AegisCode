@@ -281,12 +281,29 @@ export function useGitCore({
     refreshGit()
   }, [refreshGit, rootWorkspacePath])
 
-  // Periodic background check every 6s
+  // Heartbeat check (every 30s) when tab is active, plus immediate refresh on window focus
   useEffect(() => {
-    const timer = setInterval(() => {
+    const handleFocus = () => {
       refreshGit()
-    }, 6000)
-    return () => clearInterval(timer)
+    }
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("focus", handleFocus)
+    }
+
+    const timer = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) {
+        return
+      }
+      refreshGit()
+    }, 30000)
+
+    return () => {
+      clearInterval(timer)
+      if (typeof window !== "undefined") {
+        window.removeEventListener("focus", handleFocus)
+      }
+    }
   }, [refreshGit])
 
   const initRepo = useCallback(async () => {

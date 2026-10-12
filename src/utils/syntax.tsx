@@ -191,9 +191,9 @@ export function tokenizeLine(
     ]
   }
 
-  // Regex matching tokens: strings, numbers, identifiers, punctuation
+  // Regex matching tokens: strings (supporting escaped quotes), numbers, identifiers, punctuation
   const regex =
-    /(".*?"|'.*?'|`.*?`|\b\d+(?:\.\d+)?\b|\b[A-Za-z_$][A-Za-z0-9_$]*\b|[<>{}[\](),;.:=+\-*/&|!])/g
+    /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b\d+(?:\.\d+)?\b|\b[A-Za-z_$][A-Za-z0-9_$]*\b|[<>{}[\](),;.:=+\-*/&|!])/g
   const nodes: ReactNode[] = []
   let lastIndex = 0
   let match: RegExpExecArray | null

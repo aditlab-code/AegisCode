@@ -85,6 +85,38 @@ export function EditorFindWidget({
       const flags = caseSensitive ? "g" : "gi"
       const regex = new RegExp(pattern, flags)
 
+      // Pre-calculate line start offsets in O(N)
+      const lineStarts: number[] = [0]
+      for (let i = 0; i < content.length; i++) {
+        if (content[i] === "\n") {
+          lineStarts.push(i + 1)
+        }
+      }
+
+      interface MatchLocation {
+        line: number
+        col: number
+      }
+
+      function getLineAndCol(idx: number): MatchLocation {
+        let low = 0
+        let high = lineStarts.length - 1
+        let lineIdx = 0
+        while (low <= high) {
+          const mid = (low + high) >> 1
+          if (lineStarts[mid] <= idx) {
+            lineIdx = mid
+            low = mid + 1
+          } else {
+            high = mid - 1
+          }
+        }
+        return {
+          line: lineIdx + 1,
+          col: idx - lineStarts[lineIdx] + 1,
+        }
+      }
+
       const results: EditorMatch[] = []
       let match: RegExpExecArray | null
       while ((match = regex.exec(content)) !== null) {
@@ -92,16 +124,13 @@ export function EditorFindWidget({
         const text = match[0]
         if (!text) break
 
-        const textBefore = content.substring(0, index)
-        const linesBefore = textBefore.split("\n")
-        const line = linesBefore.length
-        const col = linesBefore[linesBefore.length - 1].length + 1
+        const loc = getLineAndCol(index)
 
         results.push({
           index,
           length: text.length,
-          line,
-          col,
+          line: loc.line,
+          col: loc.col,
           text,
         })
         if (!regex.global) break

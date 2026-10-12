@@ -518,7 +518,7 @@ export function parseMarkdownBlocks(
   return blocks
 }
 
-function renderInlineMarkdown(
+export function renderInlineMarkdown(
   text: string,
   onOpenFile: (path: string) => void,
   keyPrefix: string,
@@ -591,6 +591,10 @@ function renderInlineMarkdown(
         nodes.push(raw)
       }
     } else if (raw.trim().startsWith("@")) {
+      const leadingSpace = raw.match(/^\s+/)?.[0]
+      if (leadingSpace) {
+        nodes.push(leadingSpace)
+      }
       const trimmed = raw.trim()
       const cleanPath = trimmed.slice(1)
       const isFolder = cleanPath.endsWith("/")
@@ -607,6 +611,10 @@ function renderInlineMarkdown(
         </button>,
       )
     } else if (raw.trim().startsWith("/")) {
+      const leadingSpace = raw.match(/^\s+/)?.[0]
+      if (leadingSpace) {
+        nodes.push(leadingSpace)
+      }
       const trimmed = raw.trim()
       nodes.push(
         <span key={key} className="markdown-command-chip">

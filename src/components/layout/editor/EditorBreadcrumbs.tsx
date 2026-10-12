@@ -1,5 +1,6 @@
+import { useContext } from "react"
 import { Icon } from "../../ui/Icon"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { WorkbenchContext } from "../../../context/WorkbenchContext"
 import { isGitDiffTab, parseGitDiffTab } from "../../../utils/gitDiffTab"
 
 interface EditorBreadcrumbsProps {
@@ -7,14 +8,14 @@ interface EditorBreadcrumbsProps {
 }
 
 export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
-  const { activeTab, secondaryActiveTab, focusedPane, splitEditor } =
-    useWorkbench()
+  const workbench = useContext(WorkbenchContext)
 
   const currentFile =
     file ||
-    (focusedPane === "secondary" && splitEditor
-      ? secondaryActiveTab
-      : activeTab)
+    (workbench?.focusedPane === "secondary" && workbench?.splitEditor
+      ? workbench?.secondaryActiveTab
+      : workbench?.activeTab) ||
+    ""
 
   const isDiff = isGitDiffTab(currentFile)
   const diffInfo = isDiff ? parseGitDiffTab(currentFile) : null
@@ -38,20 +39,33 @@ export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
 
   const isComponent =
     currentFile.endsWith(".tsx") || currentFile.endsWith(".jsx")
+  const parts = currentFile.replace(/\\/g, "/").split("/").filter(Boolean)
+
+  if (parts.length === 0) return null
 
   return (
     <div className="breadcrumbs">
       <div className="breadcrumb-path">
-        <span>src</span>
-        <Icon name="chevron" size={11} />
-        <span>{currentFile}</span>
-        {isComponent && (
-          <>
-            <Icon name="chevron" size={11} />
-            <Icon name="code" size={12} />
-            <span>{currentFile.replace(/\.[^/.]+$/, "")}</span>
-          </>
-        )}
+        {parts.map((segment, idx) => {
+          const isLast = idx === parts.length - 1
+          return (
+            <span key={`${segment}-${idx}`} className="flex items-center gap-1">
+              {idx > 0 && <Icon name="chevron" size={11} />}
+              {isLast && (
+                <Icon
+                  name={isComponent ? "code" : "file"}
+                  size={12}
+                  className="shrink-0"
+                />
+              )}
+              <span
+                className={isLast ? "text-ink font-medium" : "text-ink-muted"}
+              >
+                {segment}
+              </span>
+            </span>
+          )
+        })}
       </div>
     </div>
   )

@@ -1,5 +1,8 @@
-import { describe, it, expect } from "vitest"
-import { parseMarkdownBlocks } from "@/components/layout/chat/MarkdownRenderer"
+import { describe, it, expect, vi } from "vitest"
+import {
+  parseMarkdownBlocks,
+  renderInlineMarkdown,
+} from "@/components/layout/chat/MarkdownRenderer"
 
 describe("MarkdownRenderer Safe Guard & Block Parser", () => {
   it("handles cleanly closed fenced code blocks", () => {
@@ -55,5 +58,24 @@ describe("MarkdownRenderer Safe Guard & Block Parser", () => {
     expect(blocks[1].type).toBe("header")
     expect(blocks[2].type).toBe("ul")
     expect(blocks[3].type).toBe("table")
+  })
+
+  it("preserves leading whitespace before @mention pills and /commands", () => {
+    const onOpenFile = vi.fn()
+    const nodes = renderInlineMarkdown(
+      "Open @src/app.tsx now and run /test suite",
+      onOpenFile,
+      "test-key",
+    )
+
+    // Verify whitespace is preserved between preceding words and pills/chips
+    expect(nodes.length).toBeGreaterThanOrEqual(4)
+    expect(nodes[0]).toBe("Open")
+    expect(nodes[1]).toBe(" ")
+    // nodes[2] is the mention pill button
+    expect(nodes[3]).toBe(" now and run")
+    expect(nodes[4]).toBe(" ")
+    // nodes[5] is the command chip
+    expect(nodes[6]).toBe(" suite")
   })
 })

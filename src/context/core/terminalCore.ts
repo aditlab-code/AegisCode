@@ -272,53 +272,58 @@ export function useTerminalCore() {
 
   const closeTerminalSession = useCallback(
     (idToClose: string) => {
-      setTerminalSessions((sessions) => {
-        const target = sessions.find((s) => s.id === idToClose)
-        if (target?.isLive) {
-          void closeTerminalApi(idToClose)
-        }
+      const target = terminalSessions.find((s) => s.id === idToClose)
+      if (target?.isLive) {
+        void closeTerminalApi(idToClose)
+      }
 
-        // If closing the last remaining session, immediately spin up a fresh live session
-        if (sessions.length <= 1) {
-          const shell = target?.shell || "zsh"
-          void (async () => {
-            const data = await createTerminalApi(shell)
-            if (data) {
-              const freshSession: TerminalSession = {
-                id: data.sessionId,
-                name: `1: ${shell}`,
-                shell,
-                lines: [],
-                running: true,
-                commandHistory: [],
-                isLive: true,
-              }
-              setTerminalSessions([freshSession])
-              setActiveTerminalSessionId(freshSession.id)
-              return
+      // If closing the last remaining session, immediately spin up a fresh live session
+      if (terminalSessions.length <= 1) {
+        const shell = target?.shell || "zsh"
+        void (async () => {
+          const data = await createTerminalApi(shell)
+          if (data) {
+            const freshSession: TerminalSession = {
+              id: data.sessionId,
+              name: `1: ${shell}`,
+              shell,
+              lines: [],
+              running: true,
+              commandHistory: [],
+              isLive: true,
             }
+            setTerminalSessions([freshSession])
+            setActiveTerminalSessionId(freshSession.id)
+            return
+          }
 
-            // Fallback to offline reset
-            const res = closeTerminalSessionLogic(sessions, idToClose)
-            setActiveTerminalSessionId(res.nextActiveId)
-            setTerminalSessions(res.sessions)
-          })()
-          return sessions
-        }
+          // Fallback to offline reset
+          const res = closeTerminalSessionLogic(terminalSessions, idToClose)
+          setActiveTerminalSessionId(res.nextActiveId)
+          setTerminalSessions(res.sessions)
+        })()
+        return
+      }
 
-        const res = closeTerminalSessionLogic(sessions, idToClose)
-        setActiveTerminalSessionId((currId) =>
-          currId === idToClose ? res.nextActiveId : currId,
-        )
-        return res.sessions
-      })
+      const res = closeTerminalSessionLogic(terminalSessions, idToClose)
+      setActiveTerminalSessionId((currId) =>
+        currId === idToClose ? res.nextActiveId : currId,
+      )
+      setTerminalSessions(res.sessions)
     },
-    [],
+    [terminalSessions],
   )
 
   const clearTerminal = useCallback(
     (sessionId?: string) => {
       const targetId = sessionId || activeTerminalSessionId
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("aegis:terminal-clear", {
+            detail: { sessionId: targetId },
+          }),
+        )
+      }
       setTerminalSessions((sessions) =>
         clearTerminalSessionLogic(sessions, targetId),
       )
@@ -329,17 +334,17 @@ export function useTerminalCore() {
   const sendTerminalCommand = useCallback(
     (commandText: string, sessionId?: string) => {
       const targetId = sessionId || activeTerminalSessionId
-      setTerminalSessions((sessions) => {
-        const target = sessions.find((s) => s.id === targetId)
-        if (target?.isLive) {
-          void sendTerminalInputApi(targetId, commandText + "\n")
-        }
-        return sessions.map((s) =>
+      const target = terminalSessions.find((s) => s.id === targetId)
+      if (target?.isLive) {
+        void sendTerminalInputApi(targetId, commandText + "\n")
+      }
+      setTerminalSessions((sessions) =>
+        sessions.map((s) =>
           s.id === targetId ? processTerminalCommandLogic(s, commandText) : s,
-        )
-      })
+        ),
+      )
     },
-    [activeTerminalSessionId],
+    [activeTerminalSessionId, terminalSessions],
   )
 
   return {

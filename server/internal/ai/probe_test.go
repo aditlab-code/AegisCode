@@ -101,6 +101,80 @@ func TestProbeCLI(t *testing.T) {
 	}
 }
 
+func TestProbeOpenAI(t *testing.T) {
+	// 1. Missing Key
+	resMissing := ProbeProvider(context.Background(), ProbeRequest{
+		Provider: "openai",
+	})
+	if resMissing.Success {
+		t.Errorf("expected failure when API key is missing")
+	}
+
+	// 2. Success with Mock Server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test-openai-key" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer ts.Close()
+
+	SetHTTPClient(ts.Client())
+
+	resSuccess := ProbeProvider(context.Background(), ProbeRequest{
+		Provider: "openai",
+		APIKey:   "test-openai-key",
+		BaseURL:  ts.URL,
+	})
+	if !resSuccess.Success {
+		t.Errorf("expected success with mock server, got error: %s", resSuccess.Error)
+	}
+
+	// 3. Unauthorized
+	resAuthFail := ProbeProvider(context.Background(), ProbeRequest{
+		Provider: "openai",
+		APIKey:   "invalid-key",
+		BaseURL:  ts.URL,
+	})
+	if resAuthFail.Success {
+		t.Errorf("expected auth failure, got success")
+	}
+}
+
+func TestProbeClaudeHTTP(t *testing.T) {
+	// 1. Missing Key when Command is empty
+	resMissing := ProbeProvider(context.Background(), ProbeRequest{
+		Provider: "claude",
+	})
+	if resMissing.Success {
+		t.Errorf("expected failure when API key is missing")
+	}
+
+	// 2. Success with Mock Server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("x-api-key") != "test-claude-key" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer ts.Close()
+
+	SetHTTPClient(ts.Client())
+
+	resSuccess := ProbeProvider(context.Background(), ProbeRequest{
+		Provider: "claude",
+		APIKey:   "test-claude-key",
+		BaseURL:  ts.URL,
+	})
+	if !resSuccess.Success {
+		t.Errorf("expected success with mock server, got error: %s", resSuccess.Error)
+	}
+}
+
 func TestProbeUnsupportedProvider(t *testing.T) {
 	res := ProbeProvider(context.Background(), ProbeRequest{
 		Provider: "unknown-ai",

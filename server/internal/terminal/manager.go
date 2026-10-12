@@ -377,7 +377,7 @@ func (m *Manager) CloseSession(sessionID string) error {
 
 		select {
 		case <-done:
-		case <-time.After(50 * time.Millisecond):
+		case <-time.After(500 * time.Millisecond):
 			if pid > 0 {
 				if err := killProcessGroup(pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
 					log.Printf("[terminal] warning sending SIGKILL to process group %d: %v", pid, err)

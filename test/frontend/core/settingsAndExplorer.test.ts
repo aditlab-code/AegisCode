@@ -96,6 +96,20 @@ describe("Settings, Explorer Exclude, and Syntax Highlighting", () => {
       expect(stringified).toContain("syntax-todo-tag")
       expect(stringified).toContain("syntax-todo-TODO")
     })
+
+    it("handles escaped quotes inside strings without breaking syntax tokens", () => {
+      const tokens = tokenizeLine('const str = "hello \\"world\\""')
+      const stringToken = tokens.find(
+        (t) =>
+          typeof t === "object" &&
+          t !== null &&
+          ("props" in t) as Record<string, unknown> &&
+          ((t as Record<string, unknown>).props as Record<string, unknown>)
+            ?.className === "syntax-green",
+      ) as { props: { children: string } } | undefined
+      expect(stringToken).toBeDefined()
+      expect(stringToken?.props.children).toBe('"hello \\"world\\""')
+    })
   })
 
   describe("buildSettingsSchema (Settings Registry)", () => {

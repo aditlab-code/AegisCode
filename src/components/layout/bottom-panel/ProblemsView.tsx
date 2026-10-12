@@ -2,6 +2,44 @@ import { useState } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbench } from "../../../context/WorkbenchContext"
 
+export interface DiagnosticLocation {
+  filename: string
+  lineCol: string
+}
+
+export function parseDiagnosticLocation(loc: string): DiagnosticLocation {
+  if (!loc) return { filename: "", lineCol: "Ln 1, Col 1" }
+
+  // Format 1: "filename [line, col]"
+  const bracketMatch = loc.match(/^(.*?)\s*\[(\d+),\s*(\d+)\]$/)
+  if (bracketMatch) {
+    const filename = bracketMatch[1].trim()
+    const line = bracketMatch[2]
+    const col = bracketMatch[3]
+    return {
+      filename: filename || loc,
+      lineCol: `Ln ${line}, Col ${col}`,
+    }
+  }
+
+  // Format 2: "filename:line:col" or "filename:line"
+  const colonMatch = loc.match(/^(.*?):(\d+)(?::(\d+))?$/)
+  if (colonMatch) {
+    const filename = colonMatch[1].trim()
+    const line = colonMatch[2]
+    const col = colonMatch[3] || "1"
+    return {
+      filename: filename || loc,
+      lineCol: `Ln ${line}, Col ${col}`,
+    }
+  }
+
+  return {
+    filename: loc.trim(),
+    lineCol: "Ln 1, Col 1",
+  }
+}
+
 export function ProblemsView() {
   const {
     diagnostics,
@@ -78,12 +116,9 @@ export function ProblemsView() {
                 </tr>
               ) : (
                 filteredDiagnostics.map((diag) => {
-                  const locationParts = diag.location.split(":")
-                  const filename = locationParts[0] || diag.location
-                  const lineCol =
-                    locationParts.length > 1
-                      ? `Ln ${locationParts[1]}, Col ${locationParts[2] || 1}`
-                      : "Ln 1, Col 1"
+                  const { filename, lineCol } = parseDiagnosticLocation(
+                    diag.location,
+                  )
                   return (
                     <tr
                       className="problems-table-row"
@@ -143,24 +178,29 @@ export function ProblemsView() {
               No problems found in workspace.
             </p>
           ) : (
-            filteredDiagnostics.map((diag) => (
-              <button
-                key={diag.id}
-                onClick={() => navigateToDiagnostic(diag)}
-                type="button"
-              >
-                <Icon
-                  name={diag.type === "error" ? "error" : "warning"}
-                  size={14}
-                />
-                <span>
-                  <strong>{diag.title}</strong>
-                  <small>
-                    {diag.source} · {diag.location}
-                  </small>
-                </span>
-              </button>
-            ))
+            filteredDiagnostics.map((diag) => {
+              const { filename, lineCol } = parseDiagnosticLocation(
+                diag.location,
+              )
+              return (
+                <button
+                  key={diag.id}
+                  onClick={() => navigateToDiagnostic(diag)}
+                  type="button"
+                >
+                  <Icon
+                    name={diag.type === "error" ? "error" : "warning"}
+                    size={14}
+                  />
+                  <span>
+                    <strong>{diag.title}</strong>
+                    <small>
+                      {diag.source} · {filename} ({lineCol})
+                    </small>
+                  </span>
+                </button>
+              )
+            })
           )}
         </div>
       )}

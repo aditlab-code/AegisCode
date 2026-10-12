@@ -230,7 +230,28 @@ export function TerminalView() {
       )
     }
 
+    const handleClearEvent = (e: Event) => {
+      const custom = e as CustomEvent<{ sessionId?: string }>
+      if (!custom.detail?.sessionId || custom.detail.sessionId === sessionId) {
+        term.clear()
+      }
+    }
+
+    const handleCopyEvent = () => {
+      term.selectAll()
+      const content = term.getSelection()
+      term.clearSelection()
+      if (content && typeof navigator !== "undefined" && navigator.clipboard) {
+        void navigator.clipboard.writeText(content)
+      }
+    }
+
+    window.addEventListener("aegis:terminal-clear", handleClearEvent)
+    window.addEventListener("aegis:terminal-copy", handleCopyEvent)
+
     return () => {
+      window.removeEventListener("aegis:terminal-clear", handleClearEvent)
+      window.removeEventListener("aegis:terminal-copy", handleCopyEvent)
       resizeObserver.disconnect()
       onDataDisposable.dispose()
       if (sse) {

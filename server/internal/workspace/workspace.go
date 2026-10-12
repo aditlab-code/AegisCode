@@ -21,10 +21,11 @@ type FileNode struct {
 }
 
 type SearchMatch struct {
-	LineNumber  int    `json:"lineNumber"`
-	Column      int    `json:"column"`
-	LineContent string `json:"lineContent"`
-	MatchText   string `json:"matchText"`
+	LineNumber      int    `json:"lineNumber"`
+	Column          int    `json:"column"`
+	LineContent     string `json:"lineContent"`
+	MatchText       string `json:"matchText"`
+	IsFilenameMatch bool   `json:"isFilenameMatch,omitempty"`
 }
 
 type SearchResult struct {
@@ -330,6 +331,15 @@ func (m *Manager) buildSubTree(dirPath string, currentDepth int, maxDepth int, s
 		}
 
 		isDir := entry.IsDir()
+		if !isDir && entry.Type()&os.ModeSymlink != 0 {
+			if fi, err := os.Stat(fullPath); err == nil && fi.IsDir() {
+				// Verify symlinked target directory stays within allowed workspace boundaries
+				if _, err := m.resolvePath(relPath); err == nil {
+					isDir = true
+				}
+			}
+		}
+
 		node := FileNode{
 			Path:  relPath,
 			Name:  name,
@@ -663,10 +673,11 @@ func (m *Manager) Search(query string, isRegex bool, isMatchCase bool, isWholeWo
 				Filename: relPath,
 				Matches: []SearchMatch{
 					{
-						LineNumber:  1,
-						Column:      1,
-						LineContent: d.Name(),
-						MatchText:   d.Name(),
+						LineNumber:      1,
+						Column:          1,
+						LineContent:     d.Name(),
+						MatchText:       d.Name(),
+						IsFilenameMatch: true,
 					},
 				},
 			})

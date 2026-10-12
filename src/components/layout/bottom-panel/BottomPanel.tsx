@@ -16,6 +16,7 @@ export function BottomPanel() {
     terminalRunning,
     setTerminalRunning,
     terminalSessions,
+    activeTerminalSession,
     activeTerminalSessionId,
     setActiveTerminalSessionId,
     createTerminalSession,
@@ -99,6 +100,11 @@ export function BottomPanel() {
   }, [])
 
   function handleCopy() {
+    if (activeTerminalSession?.isLive) {
+      window.dispatchEvent(new CustomEvent("aegis:terminal-copy"))
+      showToast("Terminal output copied to clipboard")
+      return
+    }
     if (navigator.clipboard) {
       void navigator.clipboard.writeText(terminalLines.join("\n"))
       showToast("Terminal output copied to clipboard")

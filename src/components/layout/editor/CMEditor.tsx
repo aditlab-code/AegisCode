@@ -7,7 +7,7 @@ import {
 } from "react"
 import { EditorState, Compartment } from "@codemirror/state"
 import { EditorView, keymap, lineNumbers, hoverTooltip } from "@codemirror/view"
-import { defaultKeymap, historyKeymap } from "@codemirror/commands"
+import { defaultKeymap, historyKeymap, undo, redo } from "@codemirror/commands"
 import {
   autocompletion,
   closeBracketsKeymap,
@@ -520,6 +520,22 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
         ),
       })
     }, [wordWrap])
+
+    // Listen to global undo and redo menu actions
+    useEffect(() => {
+      const handleUndo = () => {
+        if (viewRef.current) undo(viewRef.current)
+      }
+      const handleRedo = () => {
+        if (viewRef.current) redo(viewRef.current)
+      }
+      window.addEventListener("aegis:editor-undo", handleUndo)
+      window.addEventListener("aegis:editor-redo", handleRedo)
+      return () => {
+        window.removeEventListener("aegis:editor-undo", handleUndo)
+        window.removeEventListener("aegis:editor-redo", handleRedo)
+      }
+    }, [])
 
     const renderSideBySide = diff?.renderSideBySide ?? true
 

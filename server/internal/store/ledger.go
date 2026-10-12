@@ -46,16 +46,17 @@ func (s *Store) AppendEventNode(sessionID string, node GraphNode) (*GraphNode, e
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	jsonlPath := filepath.Join(s.chatsDir, cleanID+".jsonl")
 	f, err := os.OpenFile(jsonlPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
+		s.mu.Unlock()
 		return nil, fmt.Errorf("failed to open chat ledger %s: %w", cleanID, err)
 	}
 
 	if _, err := f.Write(append(lineBytes, '\n')); err != nil {
 		_ = f.Close()
+		s.mu.Unlock()
 		return nil, fmt.Errorf("failed to append graph node: %w", err)
 	}
 	_ = f.Close()
@@ -116,7 +117,11 @@ func (s *Store) AppendEventNode(sessionID string, node GraphNode) (*GraphNode, e
 	}
 
 	idx.UpdatedAt = time.Now().UnixMilli()
-	if out, mErr := json.MarshalIndent(&idx, "", "  "); mErr == nil {
+	out, mErr := json.MarshalIndent(&idx, "", "  ")
+	s.mu.Unlock()
+
+	// Execute atomicWrite (which invokes hardware flush f.Sync()) outside mutex lock
+	if mErr == nil {
 		_ = atomicWrite(indexPath, out)
 	}
 

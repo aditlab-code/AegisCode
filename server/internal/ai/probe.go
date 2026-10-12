@@ -55,6 +55,8 @@ func ProbeProvider(ctx context.Context, req ProbeRequest) ProbeResponse {
 		return probeOpenRouter(probeCtx, req, start)
 	case "opencode":
 		return probeOpenCode(probeCtx, req, start)
+	case "openai":
+		return probeOpenAI(probeCtx, req, start)
 	case "claude":
 		return probeClaude(probeCtx, req, start)
 	case "antigravity":
@@ -229,12 +231,170 @@ func probeOpenCode(ctx context.Context, req ProbeRequest, start time.Time) Probe
 	}
 }
 
-func probeClaude(ctx context.Context, req ProbeRequest, start time.Time) ProbeResponse {
-	cmdStr := strings.TrimSpace(req.Command)
-	if cmdStr == "" {
-		cmdStr = "claude"
+func probeOpenAI(ctx context.Context, req ProbeRequest, start time.Time) ProbeResponse {
+	apiKey := strings.TrimSpace(req.APIKey)
+	if apiKey == "" {
+		return ProbeResponse{
+			Success:   false,
+			Provider:  "openai",
+			LatencyMs: 0,
+			Message:   "API Key missing",
+			Error:     "OpenAI API Key is empty. Please enter your API key in Settings.",
+		}
 	}
 
+	endpoint := "https://api.openai.com/v1/models"
+	if req.BaseURL != "" {
+		endpoint = strings.TrimRight(strings.TrimSpace(req.BaseURL), "/") + "/models"
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return ProbeResponse{
+			Success:   false,
+			Provider:  "openai",
+			LatencyMs: time.Since(start).Milliseconds(),
+			Message:   "Failed to create request",
+			Error:     err.Error(),
+		}
+	}
+
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	httpReq.Header.Set("User-Agent", "AegisCode-Server/2.0")
+
+	resp, err := client.Do(httpReq)
+	latency := time.Since(start).Milliseconds()
+	if err != nil {
+		return ProbeResponse{
+			Success:   false,
+			Provider:  "openai",
+			LatencyMs: latency,
+			Message:   "Connection error",
+			Error:     fmt.Sprintf("Failed to reach OpenAI: %v", err),
+		}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		msg := "Connected successfully to OpenAI API"
+		if req.Model != "" {
+			msg = fmt.Sprintf("OpenAI model '%s' verified", req.Model)
+		}
+		return ProbeResponse{
+			Success:   true,
+			Provider:  "openai",
+			Model:     req.Model,
+			LatencyMs: latency,
+			Message:   msg,
+		}
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return ProbeResponse{
+			Success:   false,
+			Provider:  "openai",
+			Model:     req.Model,
+			LatencyMs: latency,
+			Message:   "Authentication failed",
+			Error:     fmt.Sprintf("Invalid API key (HTTP %d)", resp.StatusCode),
+		}
+	}
+
+	return ProbeResponse{
+		Success:   false,
+		Provider:  "openai",
+		Model:     req.Model,
+		LatencyMs: latency,
+		Message:   fmt.Sprintf("Upstream returned HTTP %d", resp.StatusCode),
+		Error:     fmt.Sprintf("Unexpected status from OpenAI: %s", resp.Status),
+	}
+}
+
+func probeClaude(ctx context.Context, req ProbeRequest, start time.Time) ProbeResponse {
+	apiKey := strings.TrimSpace(req.APIKey)
+
+	// If APIKey is provided (or if Command is empty), probe via official Anthropic HTTP API
+	if apiKey != "" || strings.TrimSpace(req.Command) == "" {
+		if apiKey == "" {
+			return ProbeResponse{
+				Success:   false,
+				Provider:  "claude",
+				LatencyMs: 0,
+				Message:   "API Key missing",
+				Error:     "Anthropic Claude API Key is empty. Please enter your API key in Settings.",
+			}
+		}
+
+		endpoint := "https://api.anthropic.com/v1/models"
+		if req.BaseURL != "" {
+			endpoint = strings.TrimRight(strings.TrimSpace(req.BaseURL), "/") + "/models"
+		}
+
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		if err != nil {
+			return ProbeResponse{
+				Success:   false,
+				Provider:  "claude",
+				LatencyMs: time.Since(start).Milliseconds(),
+				Message:   "Failed to create request",
+				Error:     err.Error(),
+			}
+		}
+
+		httpReq.Header.Set("x-api-key", apiKey)
+		httpReq.Header.Set("anthropic-version", "2023-06-01")
+		httpReq.Header.Set("User-Agent", "AegisCode-Server/2.0")
+
+		resp, err := client.Do(httpReq)
+		latency := time.Since(start).Milliseconds()
+		if err != nil {
+			return ProbeResponse{
+				Success:   false,
+				Provider:  "claude",
+				LatencyMs: latency,
+				Message:   "Connection error",
+				Error:     fmt.Sprintf("Failed to reach Anthropic: %v", err),
+			}
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			msg := "Connected successfully to Claude API"
+			if req.Model != "" {
+				msg = fmt.Sprintf("Claude model '%s' verified", req.Model)
+			}
+			return ProbeResponse{
+				Success:   true,
+				Provider:  "claude",
+				Model:     req.Model,
+				LatencyMs: latency,
+				Message:   msg,
+			}
+		}
+
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return ProbeResponse{
+				Success:   false,
+				Provider:  "claude",
+				Model:     req.Model,
+				LatencyMs: latency,
+				Message:   "Authentication failed",
+				Error:     fmt.Sprintf("Invalid Anthropic API key (HTTP %d)", resp.StatusCode),
+			}
+		}
+
+		return ProbeResponse{
+			Success:   false,
+			Provider:  "claude",
+			Model:     req.Model,
+			LatencyMs: latency,
+			Message:   fmt.Sprintf("Upstream returned HTTP %d", resp.StatusCode),
+			Error:     fmt.Sprintf("Unexpected status from Anthropic: %s", resp.Status),
+		}
+	}
+
+	// Fallback to CLI binary probe if Command is explicitly specified without APIKey
+	cmdStr := strings.TrimSpace(req.Command)
 	parts := strings.Fields(cmdStr)
 	binary := parts[0]
 

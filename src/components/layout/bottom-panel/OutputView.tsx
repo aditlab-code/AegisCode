@@ -17,12 +17,13 @@ export function OutputView({ channel, logs }: OutputViewProps) {
       ) : (
         currentLogs.map((line, index) => {
           const hasTimestamp = line.startsWith("[") && line.indexOf("]") === 9
-          const time = hasTimestamp ? line.slice(1, 9) : "10:42:08"
+          const time = hasTimestamp ? line.slice(1, 9) : null
           const text = hasTimestamp ? line.slice(11) : line
 
           return (
             <p key={`${line}-${index}`}>
-              <span className="event-time">{time}</span> {text}
+              {time && <span className="event-time">{time}</span>}
+              <span>{text}</span>
             </p>
           )
         })

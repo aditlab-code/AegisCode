@@ -2,7 +2,7 @@ import { createContext, useContext, type ReactNode } from "react"
 import type { WorkbenchContextType } from "../types/workbench"
 import { useWorkbenchFacade } from "./core/workbenchFacade"
 
-const WorkbenchContext = createContext<WorkbenchContextType | null>(null)
+export const WorkbenchContext = createContext<WorkbenchContextType | null>(null)
 
 export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const value = useWorkbenchFacade()

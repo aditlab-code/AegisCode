@@ -8,10 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 )
+
+const maxWatchedDirs = 5000
 
 // WorkspaceChangeEvent contains batched changes across the workspace.
 type WorkspaceChangeEvent struct {
@@ -34,6 +37,8 @@ type Watcher struct {
 	subs  map[chan WorkspaceChangeEvent]struct{}
 
 	debounceDuration time.Duration
+
+	watchedDirs int64
 }
 
 // NewWatcher instantiates a workspace Watcher configured with the 200ms debounce window.
@@ -160,8 +165,14 @@ func (w *Watcher) watchRecursive(dirPath string) error {
 			if w.isIgnoredPath(path) {
 				return filepath.SkipDir
 			}
+			if atomic.LoadInt64(&w.watchedDirs) >= maxWatchedDirs {
+				log.Printf("[watcher] warning: reached maximum watch directory quota (%d), skipping %s", maxWatchedDirs, path)
+				return filepath.SkipDir
+			}
 			if err := w.fsw.Add(path); err != nil {
 				log.Printf("warning: failed to watch path %s: %v", path, err)
+			} else {
+				atomic.AddInt64(&w.watchedDirs, 1)
 			}
 		}
 		return nil
@@ -253,19 +264,25 @@ func (w *Watcher) eventLoop() {
 			}
 			relSlash := filepath.ToSlash(relPath)
 
-			// Dynamic directory registration on Create
+			// Dynamic directory registration on Create (non-blocking)
 			if event.Has(fsnotify.Create) {
 				if stat, err := os.Stat(event.Name); err == nil && stat.IsDir() {
 					if !w.isIgnoredPath(event.Name) {
-						if err := w.watchRecursive(event.Name); err != nil {
-							log.Printf("[watcher] warning: failed to watch dynamic dir %s: %v", event.Name, err)
-						}
+						go func(dir string) {
+							if err := w.watchRecursive(dir); err != nil {
+								log.Printf("[watcher] warning: failed to watch dynamic dir %s: %v", dir, err)
+							}
+						}(event.Name)
 					}
 				}
 			}
 
 			// Aggregate event ops into relative path buckets
 			if event.Has(fsnotify.Remove) {
+				_ = w.fsw.Remove(event.Name)
+				if atomic.LoadInt64(&w.watchedDirs) > 0 {
+					atomic.AddInt64(&w.watchedDirs, -1)
+				}
 				delete(createdMap, relSlash)
 				delete(modifiedMap, relSlash)
 				deletedMap[relSlash] = struct{}{}

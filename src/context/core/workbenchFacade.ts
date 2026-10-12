@@ -881,6 +881,28 @@ export function useWorkbenchFacade() {
 
       if (action === "commands") {
         layout.setCommandPaletteOpen(true)
+      } else if (action === "new-file") {
+        let counter = 1
+        while (
+          workspace.files.some(
+            (f) =>
+              f.path === `Untitled-${counter}.txt` ||
+              f.name === `Untitled-${counter}.txt`,
+          )
+        ) {
+          counter++
+        }
+        const untitledName = `Untitled-${counter}.txt`
+        void createFileAndOpen(untitledName)
+        showToast(`Created ${untitledName}`)
+      } else if (action === "undo") {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("aegis:editor-undo"))
+        }
+      } else if (action === "redo") {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("aegis:editor-redo"))
+        }
       } else if (action === "open-folder") {
         workspace.openFolderPicker()
       } else if (action === "close-folder") {
@@ -904,6 +926,7 @@ export function useWorkbenchFacade() {
       }
     },
     [
+      createFileAndOpen,
       editor.activeTab,
       layout,
       runFileInTerminal,

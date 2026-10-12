@@ -15,6 +15,7 @@ interface MatchItem {
   column: number
   lineContent: string
   matchText: string
+  isFilenameMatch?: boolean
 }
 
 interface FileSearchResult {
@@ -81,6 +82,7 @@ export function SearchPanel() {
             column: m.column,
             lineContent: m.lineContent,
             matchText: m.matchText,
+            isFilenameMatch: m.isFilenameMatch,
           })),
         })),
       )
@@ -131,6 +133,11 @@ export function SearchPanel() {
 
   // 1. Replace single match
   async function handleReplaceSingle(match: MatchItem) {
+    if (match.isFilenameMatch) {
+      showToast(`Cannot replace text for filename match: ${match.filename}`)
+      return
+    }
+
     try {
       let content = ""
       const hasBuffer = Boolean(fileBuffers[match.filename])
@@ -189,6 +196,10 @@ export function SearchPanel() {
       }
 
       const updated = content.replace(regex, replace)
+      if (content === updated) {
+        showToast(`No text content matches to replace in ${filename}`)
+        return
+      }
       if (hasBuffer) {
         updateFileContent(filename, updated)
       }
@@ -470,19 +481,20 @@ export function SearchPanel() {
                   </button>
 
                   <div className="search-file-actions">
-                    {/* Replace all in this file button */}
-                    {replaceOpen && (
-                      <IconButton
-                        className="file-replace-btn"
-                        label={`Replace all in ${fileName}`}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleReplaceInFile(fileRes.filename)
-                        }}
-                      >
-                        <Icon name="edit" size={11} />
-                      </IconButton>
-                    )}
+                    {/* Replace all in this file button (only if content matches exist) */}
+                    {replaceOpen &&
+                      fileRes.matches.some((m) => !m.isFilenameMatch) && (
+                        <IconButton
+                          className="file-replace-btn"
+                          label={`Replace all in ${fileName}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleReplaceInFile(fileRes.filename)
+                          }}
+                        >
+                          <Icon name="edit" size={11} />
+                        </IconButton>
+                      )}
                     {/* Dismiss file from results button */}
                     <IconButton
                       className="file-dismiss-btn"
@@ -505,26 +517,36 @@ export function SearchPanel() {
                         key={`${match.filename}-${match.lineNumber}-${match.column}-${idx}`}
                         onClick={() => {
                           openFileInGroup(match.filename, focusedGroup)
-                          setCursorPosition({
-                            line: match.lineNumber,
-                            col: match.column,
-                          })
-                          showToast(
-                            `Jumped to ${match.filename} [Ln ${match.lineNumber}]`,
-                          )
+                          if (!match.isFilenameMatch) {
+                            setCursorPosition({
+                              line: match.lineNumber,
+                              col: match.column,
+                            })
+                            showToast(
+                              `Jumped to ${match.filename} [Ln ${match.lineNumber}]`,
+                            )
+                          } else {
+                            showToast(`Opened ${match.filename}`)
+                          }
                         }}
                       >
                         <span className="match-line-num">
-                          {match.lineNumber}
+                          {match.isFilenameMatch ? "file" : match.lineNumber}
                         </span>
                         <span
                           className="match-snippet"
                           title={match.lineContent}
                         >
-                          {renderHighlightedSnippet(match)}
+                          {match.isFilenameMatch ? (
+                            <span className="text-ink-muted italic">
+                              Matching file name
+                            </span>
+                          ) : (
+                            renderHighlightedSnippet(match)
+                          )}
                         </span>
-                        {/* Replace this single occurrence */}
-                        {replaceOpen && (
+                        {/* Replace this single occurrence (disabled for filename matches) */}
+                        {replaceOpen && !match.isFilenameMatch && (
                           <IconButton
                             className="single-replace-btn"
                             label="Replace this match"

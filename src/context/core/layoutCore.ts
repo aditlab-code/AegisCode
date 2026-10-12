@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import type { BottomTab, ThemeMode } from "../../types/workbench"
 
 export const DEFAULT_SIDEBAR_WIDTH = 260
@@ -187,20 +187,40 @@ export function useLayoutCore() {
   const [lastBottomHeight, setLastBottomHeight] =
     useState<number>(bottomPanelHeight)
 
+  const storageTimersRef =
+    useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+
+  const debouncedSetItem = useCallback((key: string, val: string) => {
+    if (typeof window === "undefined") return
+    if (storageTimersRef.current[key]) {
+      clearTimeout(storageTimersRef.current[key])
+    }
+    storageTimersRef.current[key] = setTimeout(() => {
+      try {
+        window.localStorage.setItem(key, val)
+      } catch {}
+      delete storageTimersRef.current[key]
+    }, 250)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      Object.values(storageTimersRef.current).forEach((t) => clearTimeout(t))
+    }
+  }, [])
+
   const setSidebarWidth = useCallback(
     (value: number | ((prev: number) => number)) => {
       setSidebarWidthState((prev) => {
         const next = typeof value === "function" ? value(prev) : value
         if (next >= MIN_SIDEBAR_WIDTH) {
           setLastSidebarWidth(next)
-          try {
-            window.localStorage.setItem("aegis_sidebar_width", String(next))
-          } catch {}
+          debouncedSetItem("aegis_sidebar_width", String(next))
         }
         return next
       })
     },
-    [],
+    [debouncedSetItem],
   )
 
   const resetSidebarWidth = useCallback(() => {
@@ -225,15 +245,13 @@ export function useLayoutCore() {
         } else {
           if (next >= MIN_CHAT_WIDTH) {
             setLastNormalChatWidth(next)
-            try {
-              window.localStorage.setItem("aegis_chat_width", String(next))
-            } catch {}
+            debouncedSetItem("aegis_chat_width", String(next))
           }
         }
         return next
       })
     },
-    [chatSessionsOpen],
+    [chatSessionsOpen, debouncedSetItem],
   )
 
   const resetChatDrawerWidth = useCallback(() => {
@@ -258,14 +276,12 @@ export function useLayoutCore() {
         const next = typeof value === "function" ? value(prev) : value
         if (next >= MIN_BOTTOM_HEIGHT) {
           setLastBottomHeight(next)
-          try {
-            window.localStorage.setItem("aegis_bottom_height", String(next))
-          } catch {}
+          debouncedSetItem("aegis_bottom_height", String(next))
         }
         return next
       })
     },
-    [],
+    [debouncedSetItem],
   )
 
   const resetBottomPanelHeight = useCallback(() => {

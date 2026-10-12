@@ -36,10 +36,15 @@ export function isPathExcluded(
       continue
     }
     const cleanPattern = pattern
-      .replace(/\\/g, "")
+      .replace(/\\/g, "/")
+      .replace(/^\*\*\/|\/\*\*$/g, "")
       .replace(/\*\*/g, "")
       .replace(/^\/|\/$/g, "")
-    if (cleanPattern && normalized.includes(cleanPattern)) {
+    if (!cleanPattern) continue
+
+    const escaped = cleanPattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    const segmentRegex = new RegExp(`(^|/)${escaped}(/|$)`)
+    if (segmentRegex.test(normalized)) {
       return true
     }
   }

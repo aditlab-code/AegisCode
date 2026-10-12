@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest"
+import { createElement } from "react"
+import { renderToString } from "react-dom/server"
 import { VirtualWorkspaceEngine } from "../virtualWorkspace"
 import {
   openTabInGroupLogic,
@@ -28,6 +30,7 @@ import {
 import {
   reorderBottomTabsLogic,
   toggleThemeLogic,
+  useLayoutCore,
 } from "@/context/core/layoutCore"
 import {
   DEFAULT_APP_SETTINGS,
@@ -869,6 +872,7 @@ describe("AegisCode Core Test Suite (Frontend Logic Regression Engine)", () => {
       expect(isPathExcluded("app.log")).toBe(true)
       expect(isPathExcluded("package-lock.json")).toBe(false)
       expect(isPathExcluded("src/components/App.tsx")).toBe(false)
+      expect(isPathExcluded("src/utils/distribution.ts")).toBe(false)
     })
 
     it("builds mention context items with default reference mode and full mode", () => {
@@ -1080,6 +1084,15 @@ describe("AegisCode Core Test Suite (Frontend Logic Regression Engine)", () => {
       )
       expect(reply).toContain("[claude · claude-3.7-sonnet]")
       expect(reply).toContain("Specification Draft generated")
+    })
+
+    it("initializes useLayoutCore hook without runtime reference errors", () => {
+      function LayoutTest() {
+        const layout = useLayoutCore()
+        return createElement("div", null, layout.sidebarWidth)
+      }
+      const html = renderToString(createElement(LayoutTest))
+      expect(html).toContain("260")
     })
   })
 })

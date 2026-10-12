@@ -383,3 +383,54 @@ func TestGetFileWithGuard(t *testing.T) {
 	}
 }
 
+func TestGetTreeSymlinkedDirectory(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "aegis-symlink-tree-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	mgr, err := NewManager(tempDir)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	// Create real folder with a file
+	realDir := filepath.Join(tempDir, "real_folder")
+	if err := os.Mkdir(realDir, 0755); err != nil {
+		t.Fatalf("failed to create real folder: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(realDir, "file.txt"), []byte("content"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+
+	// Create symlink pointing to real_folder
+	symlinkPath := filepath.Join(tempDir, "symlinked_folder")
+	if err := os.Symlink(realDir, symlinkPath); err != nil {
+		t.Skip("symlinks not supported on this platform/filesystem")
+	}
+
+	tree, err := mgr.GetTree(4, false)
+	if err != nil {
+		t.Fatalf("GetTree failed: %v", err)
+	}
+
+	var foundSymlink *FileNode
+	for _, node := range tree {
+		if node.Name == "symlinked_folder" {
+			foundSymlink = &node
+			break
+		}
+	}
+
+	if foundSymlink == nil {
+		t.Fatalf("expected symlinked_folder in tree, got: %+v", tree)
+	}
+	if foundSymlink.Type != "folder" {
+		t.Fatalf("expected symlinked_folder to have Type='folder', got: %s", foundSymlink.Type)
+	}
+	if len(foundSymlink.Children) != 1 || foundSymlink.Children[0].Name != "file.txt" {
+		t.Fatalf("expected children of symlinked_folder to contain file.txt, got: %+v", foundSymlink.Children)
+	}
+}
+

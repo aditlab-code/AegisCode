@@ -25,6 +25,7 @@ export interface SearchMatchItem {
   column: number
   lineContent: string
   matchText: string
+  isFilenameMatch?: boolean
 }
 
 export interface BackendSearchResult {

@@ -196,17 +196,17 @@ const time = hasTimestamp ? line.slice(1, 9) : "10:42:08"
 
 ---
 
-### 📋 Rangkuman Tambahan Backlog
+### 📋 Rangkuman Tambahan Backlog & Status Penyelesaian (Batch 1 & 4)
 
-| No | Isu Baru | Level Keparahan | Komponen Terkait |
-| --- | --- | --- | --- |
-| **1** | Loop Pointer Aliasing pada Chat Ledger Reconcile | **Kritis (Data Corruption)** | Backend (`store/index.go`) |
-| **2** | Filename Search Match merusak Baris 1 File | **Kritis (Data Corruption)** | Backend & Frontend (`workspace.go` + `SearchPanel.tsx`) |
-| **3** | Mismatch Arsitektur Test Connection Claude | **Tinggi (Logic Mismatch)** | Backend & Settings (`probe.go` + `SettingsModal.tsx`) |
-| **4** | Provider OpenAI ditolak di Probe Connection | **Tinggi (Missing Case)** | Backend (`probe.go`) |
-| **5** | Tombol Copy & Clear Terminal tidak tersambung ke live xterm | **Sedang (Dead Control)** | Frontend (`BottomPanel.tsx`) |
-| **6** | Side-effect `sendTerminalInputApi` di state updater | **Sedang (React 19 Concurrency)** | Frontend (`terminalCore.ts`) |
-| **7** | Menu File New, Undo, Redo berstatus Mock/Toast | **Sedang (Feature Stub)** | Frontend (`workbenchFacade.ts`) |
-| **8** | Breadcrumbs Hardcoded `src` & duplikasi path | **Rendah (Visual Glitch)** | Frontend (`EditorBreadcrumbs.tsx`) |
-| **9** | Fallback jam mock statis `10:42:08` di Output View | **Rendah (Mock Leftover)** | Frontend (`OutputView.tsx`) |
-| **10** | Symlink direktori tidak diekspansi di Explorer Tree | **Rendah (OS Semantics)** | Backend (`workspace.go`) |
+| No | Isu Baru | Level Keparahan | Komponen Terkait | Status Implementasi |
+| --- | --- | --- | --- | :---: |
+| **1** | Loop Pointer Aliasing pada Chat Ledger Reconcile | **Kritis (Data Corruption)** | Backend (`store/index.go`) | 🟢 **SUDAH DIPERBAIKI (Batch 1)** |
+| **2** | Filename Search Match merusak Baris 1 File | **Kritis (Data Corruption)** | Backend & Frontend (`workspace.go` + `SearchPanel.tsx`) | 🟢 **SUDAH DIPERBAIKI (Batch 1)** |
+| **3** | Mismatch Arsitektur Test Connection Claude | **Tinggi (Logic Mismatch)** | Backend & Settings (`probe.go` + `SettingsModal.tsx`) | 🟢 **SUDAH DIPERBAIKI (Batch 1)** |
+| **4** | Provider OpenAI ditolak di Probe Connection | **Tinggi (Missing Case)** | Backend (`probe.go`) | 🟢 **SUDAH DIPERBAIKI (Batch 1)** |
+| **5** | Tombol Copy & Clear Terminal tidak tersambung ke live xterm | **Sedang (Dead Control)** | Frontend (`BottomPanel.tsx` + `TerminalView.tsx`) | 🟢 **SUDAH DIPERBAIKI (Batch 4)** |
+| **6** | Side-effect `sendTerminalInputApi` di state updater | **Sedang (React 19 Concurrency)** | Frontend (`terminalCore.ts`) | 🟢 **SUDAH DIPERBAIKI (Batch 4)** |
+| **7** | Menu File New, Undo, Redo berstatus Mock/Toast | **Sedang (Feature Stub)** | Frontend (`workbenchFacade.ts` + `CMEditor.tsx`) | 🟢 **SUDAH DIPERBAIKI (Batch 4)** |
+| **8** | Breadcrumbs Hardcoded `src` & duplikasi path | **Rendah (Visual Glitch)** | Frontend (`EditorBreadcrumbs.tsx`) | 🟢 **SUDAH DIPERBAIKI (Batch 4)** |
+| **9** | Fallback jam mock statis `10:42:08` di Output View | **Rendah (Mock Leftover)** | Frontend (`OutputView.tsx`) | 🟢 **SUDAH DIPERBAIKI (Batch 4)** |
+| **10** | Symlink direktori tidak diekspansi di Explorer Tree | **Rendah (OS Semantics)** | Backend (`workspace.go`) | 🟢 **SUDAH DIPERBAIKI (Batch 4)** |
