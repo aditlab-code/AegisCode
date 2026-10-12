@@ -207,12 +207,51 @@ export async function fetchWorkspaceTree(
   }
 }
 
+export function cleanFilePath(path: string): string {
+  if (!path) return ""
+  let clean = path.trim()
+  while (
+    (clean.startsWith('"') && clean.endsWith('"')) ||
+    (clean.startsWith("'") && clean.endsWith("'")) ||
+    (clean.startsWith("`") && clean.endsWith("`")) ||
+    (clean.startsWith('\\"') && clean.endsWith('\\"'))
+  ) {
+    if (clean.startsWith('\\"') && clean.endsWith('\\"')) {
+      clean = clean.slice(2, -2).trim()
+    } else {
+      clean = clean.slice(1, -1).trim()
+    }
+  }
+  return clean.replace(/\\/g, "/")
+}
+
+export function normalizeWorkspacePath(
+  path: string,
+  rootWorkspacePath?: string,
+): string {
+  let clean = cleanFilePath(path)
+  if (!clean) return ""
+
+  if (rootWorkspacePath) {
+    const rootClean = cleanFilePath(rootWorkspacePath).replace(/^\/+|\/+$/g, "")
+    const pathClean = clean.replace(/^\/+/, "")
+    if (pathClean.startsWith(rootClean + "/")) {
+      return pathClean.slice(rootClean.length + 1)
+    } else if (pathClean === rootClean) {
+      return ""
+    }
+  }
+
+  // Remove leading slashes
+  return clean.replace(/^\/+/, "")
+}
+
 export function validateWorkspaceRelativePath(path: string): void {
-  const trimmed = path.trim()
+  const trimmed = cleanFilePath(path)
   if (!trimmed) {
     throw new Error("Workspace file path cannot be empty")
   }
-  const segments = trimmed.replace(/\\/g, "/").split("/")
+  const segments = trimmed.split("/")
   let depth = 0
   for (const seg of segments) {
     if (seg === "..") {
@@ -227,9 +266,10 @@ export function validateWorkspaceRelativePath(path: string): void {
 }
 
 export async function fetchFileContent(path: string): Promise<string> {
-  validateWorkspaceRelativePath(path)
+  const cleanPath = cleanFilePath(path)
+  validateWorkspaceRelativePath(cleanPath)
   const res = await fetch(
-    `${API_BASE}/api/v1/workspace/file?path=${encodeURIComponent(path)}`,
+    `${API_BASE}/api/v1/workspace/file?path=${encodeURIComponent(cleanPath)}`,
   )
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
@@ -244,11 +284,12 @@ export async function saveWorkspaceFile(
   content: string,
   isFolder = false,
 ): Promise<void> {
-  validateWorkspaceRelativePath(path)
+  const cleanPath = cleanFilePath(path)
+  validateWorkspaceRelativePath(cleanPath)
   const res = await fetch(`${API_BASE}/api/v1/workspace/file`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path, content, isFolder }),
+    body: JSON.stringify({ path: cleanPath, content, isFolder }),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))

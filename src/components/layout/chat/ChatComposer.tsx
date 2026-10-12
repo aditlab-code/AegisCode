@@ -2,7 +2,11 @@ import { useRef, useState, useCallback, useEffect } from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { ChatProviderSelect } from "./ChatProviderSelect"
-import { ChatCommandPopover, type PopoverType } from "./ChatCommandPopover"
+import {
+  ChatCommandPopover,
+  type PopoverType,
+  type PopoverItem,
+} from "./ChatCommandPopover"
 import { SKILL_COMMANDS } from "../../../data/chatConstants"
 import { useWorkbench } from "../../../context/WorkbenchContext"
 
@@ -103,11 +107,20 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
   }
 
   const handleSelectToken = useCallback(
-    (insertText: string) => {
+    (insertText: string, popoverItem?: PopoverItem) => {
       const textarea = textareaRef.current
       const cursorPos = textarea ? textarea.selectionStart : value.length
       const textBeforeCursor = value.slice(0, cursorPos)
       const match = textBeforeCursor.match(/(?:^|\s)([/@])([a-zA-Z0-9_\-./]*)$/)
+
+      if (
+        popoverItem &&
+        !popoverItem.isFolder &&
+        popoverType === "mention" &&
+        addMentionContext
+      ) {
+        addMentionContext(popoverItem.path || popoverItem.id)
+      }
 
       if (match) {
         const fullMatch = match[0]
@@ -133,7 +146,7 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
       setPopoverType(null)
       setPopoverQuery("")
     },
-    [value, onChange],
+    [value, onChange, popoverType, addMentionContext],
   )
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -171,10 +184,15 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
           if (matched[selectedIndex]) {
             const item = matched[selectedIndex]
             const isFolder = item.icon === "folder"
-            if (!isFolder && addMentionContext) {
-              addMentionContext(item.path || item.label)
-            }
-            handleSelectToken(`@${item.label}${isFolder ? "/" : ""} `)
+            handleSelectToken(`@${item.label}${isFolder ? "/" : ""} `, {
+              id: item.label,
+              label: `@${item.label}`,
+              detail: isFolder ? "Folder" : "File",
+              icon: isFolder ? "folder" : "file",
+              insertText: `@${item.label} `,
+              path: item.path || item.label,
+              isFolder,
+            })
             return
           }
         }
@@ -245,15 +263,23 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
                 <div key={item.id} className="composer-context-chip">
                   <button
                     type="button"
-                    className="composer-chip-toggle"
+                    className="composer-chip-toggle cursor-pointer"
                     onClick={() => toggleContextItemMode(item.id)}
-                    title={`Click to toggle selection vs full file: ${item.path}`}
+                    title={`Click to switch context mode (Reference -> Snippet -> Full): ${item.path}`}
                   >
                     <Icon name="file" size={11} className="text-muted" />
                     <span className="composer-chip-filename">{basename}</span>
                     {item.lineRange ? (
                       <span className="composer-chip-range">
                         ({item.lineRange})
+                      </span>
+                    ) : item.mode === "reference" ? (
+                      <span className="composer-chip-range font-medium text-accent">
+                        (Ref)
+                      </span>
+                    ) : item.mode === "snippet" ? (
+                      <span className="composer-chip-range font-medium text-accent">
+                        (Snippet)
                       </span>
                     ) : item.mode === "selection" ? (
                       <span className="composer-chip-range">(Selection)</span>

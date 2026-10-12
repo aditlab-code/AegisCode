@@ -209,7 +209,8 @@ export interface ContextItem {
   charCount: number
   estimatedTokens: number
   isTruncated?: boolean
-  mode: "selection" | "full"
+  mode: "selection" | "full" | "reference" | "snippet"
+  rawBuffer?: string
 }
 
 export interface EditorSelectionRange {

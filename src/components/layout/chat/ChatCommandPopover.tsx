@@ -5,18 +5,20 @@ import { Icon } from "../../ui/Icon"
 
 export type PopoverType = "command" | "mention" | null
 
-interface PopoverItem {
+export interface PopoverItem {
   id: string
   label: string
   detail: string
   icon: "code" | "file" | "folder"
   insertText: string
+  path?: string
+  isFolder?: boolean
 }
 
 interface ChatCommandPopoverProps {
   type: PopoverType
   query: string
-  onSelect: (insertText: string) => void
+  onSelect: (insertText: string, item?: PopoverItem) => void
   onClose: () => void
   selectedIndex: number
   setSelectedIndex: React.Dispatch<React.SetStateAction<number>>
@@ -65,6 +67,8 @@ export function ChatCommandPopover({
           detail: isFolder ? "Folder context" : "File context",
           icon: isFolder ? "folder" : "file",
           insertText: `${token} `,
+          path: f.path || f.label,
+          isFolder,
         })
       })
   }
@@ -93,7 +97,7 @@ export function ChatCommandPopover({
             <div
               key={item.id}
               className={`command-popover-item ${isSelected ? "selected" : ""}`}
-              onClick={() => onSelect(item.insertText)}
+              onClick={() => onSelect(item.insertText, item)}
               onMouseEnter={() => setSelectedIndex(idx)}
               role="option"
               aria-selected={isSelected}

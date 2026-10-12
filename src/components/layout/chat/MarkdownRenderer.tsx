@@ -48,7 +48,7 @@ interface ParagraphBlock {
   content: string
 }
 
-type Block = CodeBlock | HeaderBlock | BlockquoteBlock | ListBlock | TableBlock | HrBlock | ParagraphBlock
+export type Block = CodeBlock | HeaderBlock | BlockquoteBlock | ListBlock | TableBlock | HrBlock | ParagraphBlock
 
 export const MarkdownRenderer = memo(function MarkdownRenderer({
   text,
@@ -57,10 +57,21 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   const { openFileInPane, activeTab, applyCodeWithReview, showToast } =
     useWorkbench()
 
-  // Parse raw text into structured markdown blocks
+  // During streaming: skip the expensive O(N) parser entirely.
+  // Parse only once after the stream is done (isStreaming === false).
   const blocks = useMemo(() => {
-    return parseMarkdownBlocks(text, isStreaming)
+    if (isStreaming) return []
+    return parseMarkdownBlocks(text, false)
   }, [text, isStreaming])
+
+  // Fast-path: render plain pre-wrap during streaming — zero parse, zero tokenizeLine cost.
+  if (isStreaming) {
+    return (
+      <div className="markdown-body">
+        <span className="whitespace-pre-wrap leading-relaxed">{text}</span>
+      </div>
+    )
+  }
 
   return (
     <div className="markdown-body">
@@ -300,6 +311,11 @@ function CodeBlockView({
               {targetPath}
             </span>
           )}
+          {unclosed && !isStreaming && (
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider bg-warning/15 text-warning border border-warning/30">
+              interrupted
+            </span>
+          )}
         </div>
         <div className="markdown-code-actions">
           <button
@@ -340,7 +356,10 @@ function CodeBlockView({
   )
 }
 
-function parseMarkdownBlocks(text: string, isStreaming: boolean): Block[] {
+export function parseMarkdownBlocks(
+  text: string,
+  isStreaming: boolean,
+): Block[] {
   const lines = text.split("\n")
   const blocks: Block[] = []
   let i = 0

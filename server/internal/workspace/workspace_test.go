@@ -260,3 +260,49 @@ func TestPathBoundarySecurity(t *testing.T) {
 		}
 	}
 }
+
+func TestQuotedAndAbsolutePathsInRoot(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "ws-quoted-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	mgr, err := NewManager(tempDir)
+	if err != nil {
+		t.Fatalf("failed to initialize manager: %v", err)
+	}
+
+	// 1. Write file with normal path
+	if err := mgr.WriteFile("src/sample.txt", "sample code content"); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+
+	// 2. Read file with quoted path
+	content, err := mgr.GetFile(`"src/sample.txt"`)
+	if err != nil {
+		t.Fatalf("failed to read file with quotes: %v", err)
+	}
+	if content != "sample code content" {
+		t.Fatalf("unexpected content: %s", content)
+	}
+
+	// 3. Read file with absolute path inside root
+	absPath := filepath.Join(tempDir, "src", "sample.txt")
+	contentAbs, err := mgr.GetFile(absPath)
+	if err != nil {
+		t.Fatalf("failed to read file with absolute path in root: %v", err)
+	}
+	if contentAbs != "sample code content" {
+		t.Fatalf("unexpected content from absolute path: %s", contentAbs)
+	}
+
+	// 4. Read file with quoted absolute path
+	contentQuotedAbs, err := mgr.GetFile(`"` + absPath + `"`)
+	if err != nil {
+		t.Fatalf("failed to read file with quoted absolute path: %v", err)
+	}
+	if contentQuotedAbs != "sample code content" {
+		t.Fatalf("unexpected content from quoted absolute path: %s", contentQuotedAbs)
+	}
+}

@@ -81,6 +81,7 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
   - **Explorer Panel**:
     - "OPEN EDITORS" section showing pinned tabs across editor groups.
     - Workspace file tree with folder expansion, tree guides, hidden file visibility toggle, inline CRUD actions (New File, New Folder, Rename, safe Delete confirmation modal), Refresh Explorer, and Collapse Folders in Explorer (`collapse-all`).
+    - **VS Code Standard Git Status Badges**: Fast, non-blocking Git status decorations in the file tree: right-aligned status letter badges (`M` modified in `text-warning`, `U`/`A` untracked/added in `text-success`, `D` deleted in `text-error`, `R` renamed in `text-accent`) on files, and subtle indicator dots (`bg-accent`) on ancestor folders containing modified files computed via `buildExplorerGitDecorations`.
     - Context menu on right-click (Copy Path, Copy Relative Path, Delete, Rename).
   - **Search Panel**:
     - **Compact Input & Modifiers**: Input placeholder shortened to `Search files... (regex)` to preserve readability on narrow 220px widths. Search modifiers (`Aa`, `\b`, `.*`) and clear button (`✕`) are shielded with `flex-shrink: 0`.
@@ -157,23 +158,27 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
     - Replaced mock contextual responses with live Server-Sent Events (`POST /api/v1/ai/chat`) connecting directly to the Antigravity backend engine.
     - Typewriter streaming text updates with pulsing cursor (`.streaming-cursor`) and shimmer loader (`.message-body-streaming-shimmer`).
   - **Rich Agentic Baloon Architecture (`ChatMessageList.tsx` & `MarkdownRenderer.tsx`)**:
-    - **Streaming-Safe Native Markdown Engine (`MarkdownRenderer.tsx`)**: Zero-dependency parser converting streaming AI chunks into styled HTML without bundle overhead. Automatically auto-closes unclosed code blocks and formatting markers during live stream, preventing layout shifts.
+    - **Streaming-Safe Native Markdown Engine (`MarkdownRenderer.tsx`)**: Zero-dependency parser converting streaming AI chunks into styled HTML without bundle overhead. Automatically auto-closes unclosed code blocks and formatting markers during live stream, preventing layout shifts. Unclosed blocks interrupted mid-stream render an inline `[INTERRUPTED]` status badge while preserving all preceding syntax.
     - **Interactive Code Blocks & Git Review Gates (`MarkdownRenderer.tsx`)**: Fenced code blocks with language badge, syntax highlighting (reusing `tokenizeLine` token classes), one-click **Copy Code** button with feedback, and **Apply to Editor** / **Apply to <basename>** review gate button. Supports `lang:filepath` fence headers (e.g. ````ts:src/utils.ts````) to automatically route code to the correct file. Writing triggers path validation, dirty buffer prompt protection, and opens the changes immediately in `DiffEditorPane.tsx` side-by-side view. Omitted `[Insert at Cursor]` to maintain a lean UI and prevent focus-stealing bugs.
-    - **Agent Multi-File Review Banner (`ChatMessageList.tsx`)**: Automatically inspects tool calls modifying workspace files (`write_to_file`, `replace_file_content`, `create_file`, `delete_file`). When files are changed, renders a bottom review banner: *"Modified N files: ..."* with a one-click **Review in Git** button navigating directly to the Source Control panel.
+    - **Agent Multi-File Review Banner (`ChatMessageList.tsx`)**: Inspects both executed tool calls (`write_to_file`, `replace_file_content`, `create_file`, `delete_file`) and `lang:filepath` code blocks. Renders a prominent bottom summary banner displaying touched file counts, individual clickable file chips to open files directly in editor panes, an **Apply All ({N})** batch action for proposed code blocks, and a **Review in Git** button navigating directly to Source Control.
     - **Typography & Structural Elements**: Full support for headers (`#` to `####`), lists (unordered, ordered, task checkboxes `- [ ]` / `- [x]`), blockquotes (`>`), horizontal rules (`---`), and GitHub-Flavored Markdown tables.
     - **AegisCode Special Tokens**: Clickable `@file` / `@folder` mention pills that directly open the referenced file in the editor pane, and stylized `/command` chips for slash skills.
     - **Thinking Process Accordion (`.message-thinking-block`)**: Collapsible reasoning viewer with real-time in-progress pulsing indicator (`animate-pulse text-accent`).
-    - **Interactive Tool Call Action Chips (`.tool-call-chip`)**: Real-time status indicators (spinner during execution, green checkmark on completion, red error badge on failure) with collapsible JSON arguments and tool output viewer (`.tool-call-details`).
-    - **Dedicated In-Chat Error Cards (`.chat-error-card`)**: High-visibility error diagnostics with an actionable `Open Settings` button, preventing blank bubbles or unhandled exceptions.
+    - **Activity Stepper & Tool Call Feed (`ToolCallActivity.tsx`)**: Replaced raw, redundant JSON dumping with an interactive Activity Stepper (`ToolCallStepper`). Multi-tool sequences (2+ actions) are automatically batched into a compact summary card (`Executed 4 actions` with status pill, action breakdown badges `Run (2)`, `Edit (1)`, `Read (1)`), expandable to a vertical step timeline. Sanitizes large `CodeContent` / `ReplacementContent` parameters to prevent DOM bloating and layout lag. Caps execution output blocks to `max-h-40` (~160px) with one-click copy.
+    - **Safe Streaming Batcher & Zero-Lag Rendering (`chatCore.ts`)**: Batches incoming SSE typewriter deltas via RAF micro-buffering (40ms / 25fps) to eliminate $O(N^2)$ re-rendering per character. Implements synchronous immediate flush (`flushDeltasSync()`) on stream completion, errors, or cancellation, guaranteeing zero character loss.
+    - **Preserving Partial Text on Errors (`ChatMessageList.tsx`)**: Places the inline error card (`.chat-error-card`) as a footer below the rendered message body. If generation cuts off or fails, previously streamed text is completely preserved above the alert card rather than being replaced or clipped.
     - **Empty State Guard**: Renders informative fallback (`Sedang menunggu respons...`) if generation concludes with empty text.
   - **In-Flight Control & Stop Generation (`ChatComposer.tsx`)**:
     - Send button dynamically transforms into a red accent **Stop Generation** button (`.composer-stop-btn`) while generation is active.
     - `Escape` key shortcut support to abort the in-flight SSE stream and immediately kill the child process via `AbortController`.
   - **Dynamic Skills & Command Autocomplete (`ChatCommandPopover.tsx`)**:
     - Autocomplete popover for `/` populated dynamically via `GET /api/v1/ai/skills` discovering all local Antigravity builtin skills (`/plan`, `/spec`, `/review`, `/goal`, etc.).
-  - **Context Extractor Chips & Envelope Pre-Injection (`ChatComposer.tsx`)**:
-    - Interactive chips capturing active editor selection or full file buffer, with estimated token counts, truncation guardrails (>50k chars), and dismiss memory.
-    - Attached context files are pre-injected into a structured Markdown `<context>` block preceding the prompt, eliminating extra round-trips for file reading.
+    - Autocomplete popover for `@` supports keyboard and click selection, auto-attaching files without requiring them to be already opened in editor buffers.
+  - **Compact `@file` Manifest & Token Budget Guard (`contextExtractorCore.ts` & `ChatComposer.tsx`)**:
+    - Manual `@file` mentions default to a compact structural outline manifest (`(Ref)`, ~50-200 tokens) detailing file size, line counts, and exported symbols/declarations, preventing prompt overload when multiple files are attached.
+    - Interactive chip allows cycling modes: `(Ref)` (outline manifest) $\rightarrow$ `(Snippet)` (head 50 lines) $\rightarrow$ `(Full)` $\rightarrow$ `(Ref)`.
+    - Asynchronously retrieves unopened file content from Go backend (`fetchFileContent`) upon mention selection.
+    - Enforces a 2,500 token budget cap across all attached context items (`enforceContextTokenBudget`), automatically demoting oversized items to reference mode.
   - **Setup Needed Guard**:
     - Warning badge (`Icon name="warning"`) displayed when active provider lacks credentials, linking directly to Settings Modal.
   - **Multi-line Textarea Composer**: Resilient composer with model badge, attachment triggers, and submit button fitting cleanly at 300px minimum width.

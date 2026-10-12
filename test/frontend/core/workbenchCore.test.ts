@@ -58,6 +58,9 @@ import {
 import {
   extractEditorContext,
   buildMentionContextItem,
+  extractFileOutline,
+  extractSnippet,
+  enforceContextTokenBudget,
   estimateTokens,
   isPathExcluded,
   MAX_CONTEXT_CHARS,
@@ -868,18 +871,108 @@ describe("AegisCode Core Test Suite (Frontend Logic Regression Engine)", () => {
       expect(isPathExcluded("src/components/App.tsx")).toBe(false)
     })
 
-    it("builds mention context items with mode full", () => {
-      const mention = buildMentionContextItem(
+    it("builds mention context items with default reference mode and full mode", () => {
+      // Default: compact reference outline
+      const refMention = buildMentionContextItem(
+        "src/utils.ts",
+        "export const PI = 3.14\nexport function calc() { return 42 }\n",
+      )
+      expect(refMention).not.toBeNull()
+      expect(refMention?.id).toBe("ctx-src/utils.ts-mention")
+      expect(refMention?.mode).toBe("reference")
+      expect(refMention?.content).toContain("[File Reference: src/utils.ts")
+      expect(refMention?.content).toContain("- export const PI")
+      expect(refMention?.content).toContain("- export function calc")
+
+      // Explicit full mode
+      const fullMention = buildMentionContextItem(
         "src/utils.ts",
         "export const PI = 3.14",
+        "full",
       )
-      expect(mention).not.toBeNull()
-      expect(mention?.id).toBe("ctx-src/utils.ts-mention")
-      expect(mention?.mode).toBe("full")
-      expect(mention?.content).toBe("export const PI = 3.14")
-      expect(mention?.estimatedTokens).toBe(
+      expect(fullMention).not.toBeNull()
+      expect(fullMention?.mode).toBe("full")
+      expect(fullMention?.content).toBe("export const PI = 3.14")
+      expect(fullMention?.estimatedTokens).toBe(
         estimateTokens("export const PI = 3.14"),
       )
+
+      // Explicit snippet mode
+      const snippetMention = buildMentionContextItem(
+        "src/utils.ts",
+        "line 1\nline 2\nline 3",
+        "snippet",
+      )
+      expect(snippetMention).not.toBeNull()
+      expect(snippetMention?.mode).toBe("snippet")
+      expect(snippetMention?.content).toContain("line 1")
+    })
+
+    it("extracts file outline for multiple languages and file types", () => {
+      // Go file outline
+      const goCode =
+        "package main\n\nfunc HandleRequest(w http.ResponseWriter, r *http.Request) {}\ntype Server struct {}\n"
+      const goOutline = extractFileOutline("server/main.go", goCode)
+      expect(goOutline).toContain("[File Reference: server/main.go")
+      expect(goOutline).toContain("HandleRequest")
+      expect(goOutline).toContain("Server")
+
+      // JSON file outline
+      const jsonCode = JSON.stringify({
+        name: "aegis",
+        version: "1.0.0",
+        scripts: { build: "vite build" },
+      })
+      const jsonOutline = extractFileOutline("package.json", jsonCode)
+      expect(jsonOutline).toContain("Top keys: name, version, scripts")
+
+      // Markdown file outline
+      const mdCode = "# Overview\nSome intro\n## Architecture\nDetails here\n"
+      const mdOutline = extractFileOutline("README.md", mdCode)
+      expect(mdOutline).toContain("- # Overview")
+      expect(mdOutline).toContain("- ## Architecture")
+    })
+
+    it("extracts snippet capping at 50 lines", () => {
+      const sixtyLines = Array.from(
+        { length: 60 },
+        (_, i) => `Line ${i + 1}`,
+      ).join("\n")
+      const snippet = extractSnippet(sixtyLines, 50)
+      expect(snippet).toContain("Line 50")
+      expect(snippet).toContain("truncated remaining 10 lines")
+      expect(snippet).not.toContain("Line 51\n")
+    })
+
+    it("enforces context token budget by demoting large items to reference mode", () => {
+      const largeContent = Array.from(
+        { length: 500 },
+        (_, i) => `export const val_${i} = ${i}`,
+      ).join("\n")
+      const item1 = buildMentionContextItem(
+        "src/large1.ts",
+        largeContent,
+        "full",
+      )!
+      const item2 = buildMentionContextItem(
+        "src/large2.ts",
+        largeContent,
+        "full",
+      )!
+
+      expect(item1.mode).toBe("full")
+      expect(item2.mode).toBe("full")
+      expect(item1.estimatedTokens + item2.estimatedTokens).toBeGreaterThan(
+        2500,
+      )
+
+      const constrained = enforceContextTokenBudget([item1, item2], 2500)
+      const totalConstrainedTokens = constrained.reduce(
+        (sum, item) => sum + item.estimatedTokens,
+        0,
+      )
+      expect(totalConstrainedTokens).toBeLessThanOrEqual(2500)
+      expect(constrained.some((c) => c.mode === "reference")).toBe(true)
     })
   })
 

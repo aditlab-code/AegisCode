@@ -14,6 +14,10 @@ import type {
   GitCommitNode,
   OutlineSymbol,
 } from "../../../types/workbench"
+import {
+  buildExplorerGitDecorations,
+  normalizePath,
+} from "../../../utils/explorerGitStatus"
 
 function extractSymbols(code?: string): OutlineSymbol[] {
   if (!code) return []
@@ -176,8 +180,15 @@ export function ExplorerPanel() {
     isGitRepo,
     gitCommits,
     openGitDiff,
+    gitChanges,
+    stagedChanges,
     settings,
   } = useWorkbench()
+
+  const { gitStatusMap, dirtyFoldersSet } = useMemo(
+    () => buildExplorerGitDecorations(stagedChanges, gitChanges),
+    [stagedChanges, gitChanges],
+  )
 
   const timelineMaxVisible = settings?.features?.timeline?.maxVisibleItems ?? 30
 
@@ -796,6 +807,16 @@ export function ExplorerPanel() {
               contextMenu?.file != null &&
               (contextMenu.file.path || contextMenu.file.label) === fileKey
 
+            const cleanKey = normalizePath(file.path || file.label || "")
+            const isDirtyFolder =
+              isFolder &&
+              (dirtyFoldersSet.has(cleanKey) ||
+                dirtyFoldersSet.has(normalizePath(file.label)))
+            const statusBadge = !isFolder
+              ? gitStatusMap.get(cleanKey) ||
+                gitStatusMap.get(normalizePath(file.label))
+              : null
+
             return (
               <div
                 className={`file-row ${isCurrent ? "file-active" : ""} ${
@@ -907,7 +928,27 @@ export function ExplorerPanel() {
                     value={renameValue}
                   />
                 ) : (
-                  <span className="file-name-label">{file.label}</span>
+                  <>
+                    <span className="file-name-label flex-1 truncate">
+                      {file.label}
+                    </span>
+                    {isFolder && isDirtyFolder && (
+                      <span
+                        className="w-1.5 h-1.5 rounded-full bg-accent shrink-0 ml-auto mr-1"
+                        title="Folder contains modified files"
+                        aria-label="Folder contains modified files"
+                      />
+                    )}
+                    {!isFolder && statusBadge && (
+                      <span
+                        className={`ml-auto shrink-0 font-mono text-[10px] font-bold px-1 ${statusBadge.colorClass}`}
+                        title={statusBadge.title}
+                        aria-label={`Git status: ${statusBadge.title}`}
+                      >
+                        {statusBadge.code}
+                      </span>
+                    )}
+                  </>
                 )}
               </div>
             )

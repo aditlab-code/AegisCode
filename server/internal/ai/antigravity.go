@@ -284,8 +284,17 @@ func GetSessionTranscript(conversationID string) ([]store.ChatMessage, error) {
 		} else if entry.Type == "PLANNER_RESPONSE" {
 			var toolCalls []store.ToolCallItem
 			for idx, tc := range entry.ToolCalls {
+				cleanArgs := make(map[string]any, len(tc.Args))
+				for k, v := range tc.Args {
+					if strVal, ok := v.(string); ok {
+						cleanArgs[k] = strings.Trim(strings.TrimSpace(strVal), "\"'`")
+					} else {
+						cleanArgs[k] = v
+					}
+				}
+
 				summary := tc.Name
-				if s, ok := tc.Args["toolSummary"].(string); ok && s != "" {
+				if s, ok := cleanArgs["toolSummary"].(string); ok && s != "" {
 					summary = s
 				}
 				toolCalls = append(toolCalls, store.ToolCallItem{
@@ -293,7 +302,7 @@ func GetSessionTranscript(conversationID string) ([]store.ChatMessage, error) {
 					Name:    tc.Name,
 					Summary: summary,
 					Status:  "success",
-					Args:    tc.Args,
+					Args:    cleanArgs,
 				})
 			}
 
@@ -306,6 +315,16 @@ func GetSessionTranscript(conversationID string) ([]store.ChatMessage, error) {
 					ToolCalls: toolCalls,
 					Timestamp: parseTimestamp(entry.CreatedAt),
 				})
+			}
+		} else if (entry.Type == "GENERIC" || entry.Type == "TOOL_OUTPUT") && strings.TrimSpace(entry.Content) != "" {
+			if len(messages) > 0 {
+				lastMsg := &messages[len(messages)-1]
+				if lastMsg.Role == "agent" && len(lastMsg.ToolCalls) > 0 {
+					lastTC := &lastMsg.ToolCalls[len(lastMsg.ToolCalls)-1]
+					if lastTC.Output == "" {
+						lastTC.Output = entry.Content
+					}
+				}
 			}
 		}
 	}
@@ -507,19 +526,79 @@ func StreamChat(ctx context.Context, req StreamChatRequest, sendEvent func(event
 						})
 					}
 					if toolName, ok := step["tool_name"].(string); ok && toolName != "" {
-						args, _ := step["tool_args"].(map[string]any)
+						var args map[string]any
+						var output string
+						if toolInfo, ok := step["tool_info"].(map[string]any); ok {
+							if params, ok := toolInfo["parameters"].(map[string]any); ok {
+								args = params
+							}
+							if out, ok := toolInfo["output"].(string); ok {
+								output = out
+							}
+						}
+						if args == nil {
+							args, _ = step["tool_args"].(map[string]any)
+						}
+
+						cleanArgs := make(map[string]any, len(args))
+						for k, v := range args {
+							if strVal, ok := v.(string); ok {
+								cleanArgs[k] = strings.Trim(strings.TrimSpace(strVal), "\"'`")
+							} else {
+								cleanArgs[k] = v
+							}
+						}
+
 						summary := toolName
-						if s, ok := args["toolSummary"].(string); ok && s != "" {
+						if s, ok := cleanArgs["toolSummary"].(string); ok && s != "" {
+							summary = s
+						} else if s, ok := cleanArgs["toolAction"].(string); ok && s != "" {
 							summary = s
 						}
+
+						status := "running"
+						if state, ok := step["state"].(string); ok && state == "DONE" {
+							status = "success"
+						}
+
+						stepIdxVal := step["step_index"]
+						tcID := fmt.Sprintf("tc-%v", stepIdxVal)
+						if stepIdxVal == nil {
+							tcID = fmt.Sprintf("tc-%d", time.Now().UnixMilli())
+						}
+
 						tcItem := store.ToolCallItem{
-							ID:      fmt.Sprintf("tc-%d", time.Now().UnixMilli()),
+							ID:      tcID,
 							Name:    toolName,
 							Summary: summary,
-							Status:  "running",
-							Args:    args,
+							Status:  status,
+							Args:    cleanArgs,
+							Output:  output,
 						}
-						toolCalls = append(toolCalls, tcItem)
+
+						foundIdx := -1
+						for idx, existing := range toolCalls {
+							if existing.ID == tcID {
+								foundIdx = idx
+								break
+							}
+						}
+						if foundIdx >= 0 {
+							if len(cleanArgs) > 0 {
+								toolCalls[foundIdx].Args = cleanArgs
+							}
+							if output != "" {
+								toolCalls[foundIdx].Output = output
+							}
+							toolCalls[foundIdx].Status = status
+							if summary != "" && summary != toolName {
+								toolCalls[foundIdx].Summary = summary
+							}
+							tcItem = toolCalls[foundIdx]
+						} else {
+							toolCalls = append(toolCalls, tcItem)
+						}
+
 						_ = sendEvent("tool_call", StreamEvent{
 							Type:           "tool_call",
 							ConversationID: convID,
@@ -561,9 +640,17 @@ func StreamChat(ctx context.Context, req StreamChatRequest, sendEvent func(event
 				for tcIdx, r := range rawTCs {
 					if tcMap, ok := r.(map[string]any); ok {
 						name, _ := tcMap["name"].(string)
-						args, _ := tcMap["args"].(map[string]any)
+						rawArgs, _ := tcMap["args"].(map[string]any)
+						cleanArgs := make(map[string]any, len(rawArgs))
+						for k, v := range rawArgs {
+							if strVal, ok := v.(string); ok {
+								cleanArgs[k] = strings.Trim(strings.TrimSpace(strVal), "\"'`")
+							} else {
+								cleanArgs[k] = v
+							}
+						}
 						summary := name
-						if s, ok := args["toolSummary"].(string); ok && s != "" {
+						if s, ok := cleanArgs["toolSummary"].(string); ok && s != "" {
 							summary = s
 						}
 						tcItem := store.ToolCallItem{
@@ -571,7 +658,7 @@ func StreamChat(ctx context.Context, req StreamChatRequest, sendEvent func(event
 							Name:    name,
 							Summary: summary,
 							Status:  "running",
-							Args:    args,
+							Args:    cleanArgs,
 						}
 						toolCalls = append(toolCalls, tcItem)
 						_ = sendEvent("tool_call", StreamEvent{

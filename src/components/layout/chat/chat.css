@@ -1361,6 +1361,19 @@
   white-space: pre;
 }
 
+.tool-stepper-container {
+  overflow: hidden;
+  border-radius: 6px;
+}
+
+.tool-stepper-header:hover {
+  background: var(--color-surface-hover);
+}
+
+.tool-stepper-body {
+  border-top: 1px solid var(--color-line);
+}
+
 /* Streaming Cursor & Shimmer */
 .streaming-cursor {
   display: inline-block;

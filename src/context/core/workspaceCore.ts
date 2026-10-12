@@ -26,6 +26,7 @@ import {
   pickFolderNative,
   renameWorkspaceFile,
   saveWorkspaceFile,
+  normalizeWorkspacePath,
 } from "../../utils/workspaceApi"
 import {
   addBackendRecentProject,
@@ -596,44 +597,48 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
   }, [loadWorkspace, showToast])
 
   // Safe file content fetcher with dirty conflict protection
-  const fetchBufferSafely = useCallback((filename: string) => {
-    if (!filename) return
+  const fetchBufferSafely = useCallback(
+    (filename: string) => {
+      const clean = normalizeWorkspacePath(filename, rootWorkspacePath)
+      if (!clean) return
 
-    fetchFileContent(filename)
-      .then((content) => {
-        setFileBuffers((curr) => {
-          const existing = curr[filename]
-          if (existing?.isDirty) {
+      fetchFileContent(clean)
+        .then((content) => {
+          setFileBuffers((curr) => {
+            const existing = curr[clean]
+            if (existing?.isDirty) {
+              return {
+                ...curr,
+                [clean]: {
+                  ...existing,
+                  hasDiskConflict: true,
+                },
+              }
+            }
             return {
               ...curr,
-              [filename]: {
-                ...existing,
-                hasDiskConflict: true,
+              [clean]: {
+                content,
+                savedContent: content,
+                isDirty: false,
+                hasDiskConflict: false,
+                isDeletedOnDisk: false,
+                language: detectLanguage(clean),
               },
             }
-          }
-          return {
-            ...curr,
-            [filename]: {
-              content,
-              savedContent: content,
-              isDirty: false,
-              hasDiskConflict: false,
-              isDeletedOnDisk: false,
-              language: detectLanguage(filename),
-            },
-          }
+          })
+          const diags = validateSyntax(clean, content, true)
+          setDiagnostics((dPrev) => [
+            ...dPrev.filter((d) => !d.location.startsWith(clean)),
+            ...diags,
+          ])
         })
-        const diags = validateSyntax(filename, content, true)
-        setDiagnostics((dPrev) => [
-          ...dPrev.filter((d) => !d.location.startsWith(filename)),
-          ...diags,
-        ])
-      })
-      .catch((err) => {
-        console.warn(`Failed to fetch file content for ${filename}:`, err)
-      })
-  }, [])
+        .catch((err) => {
+          console.warn(`Failed to fetch file content for ${clean}:`, err)
+        })
+    },
+    [rootWorkspacePath],
+  )
 
   const fileBuffersRef = useRef(fileBuffers)
   fileBuffersRef.current = fileBuffers
@@ -748,23 +753,25 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
 
   const ensureFileBuffer = useCallback(
     (filename: string) => {
+      const clean = normalizeWorkspacePath(filename, rootWorkspacePath)
+      if (!clean) return
       setFileBuffers((prev) => {
-        if (!prev[filename]) {
-          fetchBufferSafely(filename)
+        if (!prev[clean]) {
+          fetchBufferSafely(clean)
           return {
             ...prev,
-            [filename]: {
+            [clean]: {
               content: "",
               savedContent: "",
               isDirty: false,
-              language: detectLanguage(filename),
+              language: detectLanguage(clean),
             },
           }
         }
         return prev
       })
     },
-    [fetchBufferSafely],
+    [fetchBufferSafely, rootWorkspacePath],
   )
 
   const updateFileContent = useCallback(

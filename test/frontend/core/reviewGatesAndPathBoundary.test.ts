@@ -65,3 +65,37 @@ describe("Sub-Phase 6.10: Code Fence Parser lang:filepath Syntax", () => {
     expect(match4![2]).toBeUndefined()
   })
 })
+
+describe("Path Sanitization and Normalization", () => {
+  it("cleanFilePath strips outer single, double, and escaped quotes", async () => {
+    const { cleanFilePath } = await import("../../../src/utils/workspaceApi")
+    expect(cleanFilePath('"src/App.tsx"')).toBe("src/App.tsx")
+    expect(cleanFilePath("'src/App.tsx'")).toBe("src/App.tsx")
+    expect(cleanFilePath('\\"src/App.tsx\\"')).toBe("src/App.tsx")
+    expect(cleanFilePath('   "src/App.tsx"   ')).toBe("src/App.tsx")
+  })
+
+  it("normalizeWorkspacePath strips rootWorkspacePath and leading slashes", async () => {
+    const { normalizeWorkspacePath } = await import(
+      "../../../src/utils/workspaceApi"
+    )
+    const root = "/Users/developer/project"
+    expect(
+      normalizeWorkspacePath("/Users/developer/project/src/App.tsx", root),
+    ).toBe("src/App.tsx")
+    expect(
+      normalizeWorkspacePath('"/Users/developer/project/src/App.tsx"', root),
+    ).toBe("src/App.tsx")
+    expect(normalizeWorkspacePath("/src/App.tsx", root)).toBe("src/App.tsx")
+    expect(normalizeWorkspacePath("src/App.tsx", root)).toBe("src/App.tsx")
+
+    // Symmetric leading slash tolerance (e.g. root without slash vs path with slash)
+    const rootWithoutSlash = "Users/developer/project"
+    expect(
+      normalizeWorkspacePath(
+        "/Users/developer/project/src/utils/workspaceApi.ts",
+        rootWithoutSlash,
+      ),
+    ).toBe("src/utils/workspaceApi.ts")
+  })
+})

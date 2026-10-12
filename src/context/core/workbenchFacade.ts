@@ -9,6 +9,7 @@ import { useSettingsCore } from "./settingsCore"
 import {
   extractEditorContext,
   buildMentionContextItem,
+  enforceContextTokenBudget,
 } from "./contextExtractorCore"
 import { detectLanguage, validateSyntax } from "../../utils/linter"
 import {
@@ -16,7 +17,11 @@ import {
   makeGitDiffTab,
   parseGitDiffTab,
 } from "../../utils/gitDiffTab"
-import { saveWorkspaceFile } from "../../utils/workspaceApi"
+import {
+  saveWorkspaceFile,
+  normalizeWorkspacePath,
+  fetchFileContent,
+} from "../../utils/workspaceApi"
 import type {
   ChatProvider,
   ContextItem,
@@ -94,6 +99,7 @@ export function useWorkbenchFacade() {
 
   const workspaceRef = useRef<{
     ensureFileBuffer: (file: string) => void
+    rootWorkspacePath?: string
   } | null>(null)
 
   const onFileRequested = useCallback((filename: string) => {
@@ -104,7 +110,11 @@ export function useWorkbenchFacade() {
           workspaceRef.current.ensureFileBuffer(diffInfo.file)
         }
       } else {
-        workspaceRef.current.ensureFileBuffer(filename)
+        const clean = normalizeWorkspacePath(
+          filename,
+          workspaceRef.current.rootWorkspacePath,
+        )
+        workspaceRef.current.ensureFileBuffer(clean || filename)
       }
     }
   }, [])
@@ -132,7 +142,15 @@ export function useWorkbenchFacade() {
   }, [])
 
   const openFileInPane = useCallback((filename: string) => {
-    editorRef.current.openFileInPane(filename)
+    if (isGitDiffTab(filename)) {
+      editorRef.current.openFileInPane(filename)
+      return
+    }
+    const clean = normalizeWorkspacePath(
+      filename,
+      workspaceRef.current?.rootWorkspacePath,
+    )
+    editorRef.current.openFileInPane(clean || filename)
   }, [])
 
   const openGitDiff = useCallback(
@@ -179,12 +197,17 @@ export function useWorkbenchFacade() {
     rootWorkspacePath: workspace.rootWorkspacePath,
   })
   gitRef.current = git
+  workspaceRef.current = {
+    ensureFileBuffer: workspace.ensureFileBuffer,
+    rootWorkspacePath: workspace.rootWorkspacePath,
+  }
 
   useEffect(() => {
     workspaceRef.current = {
       ensureFileBuffer: workspace.ensureFileBuffer,
+      rootWorkspacePath: workspace.rootWorkspacePath,
     }
-  }, [workspace.ensureFileBuffer])
+  }, [workspace.ensureFileBuffer, workspace.rootWorkspacePath])
 
   // Cross-domain coordination: Language & Reactive Auto-Linting on focused file change
   const currentFocusedFile = editor.currentFocusedFile
@@ -420,7 +443,7 @@ export function useWorkbenchFacade() {
     const items: ContextItem[] = []
     if (activeContextItem) items.push(activeContextItem)
     items.push(...manualMentions)
-    return items
+    return enforceContextTokenBudget(items)
   }, [activeContextItem, manualMentions])
 
   const dismissContextItem = useCallback(
@@ -442,15 +465,38 @@ export function useWorkbenchFacade() {
           const next = current === "selection" ? "full" : "selection"
           return { ...prev, [activeContextItem.path]: next }
         })
+        return
       }
+      setManualMentions((prev) =>
+        prev.map((item) => {
+          if (item.id !== id) return item
+          const cycle: Record<string, "reference" | "snippet" | "full"> = {
+            reference: "snippet",
+            snippet: "full",
+            full: "reference",
+          }
+          const nextMode = cycle[item.mode] || "reference"
+          const raw = item.rawBuffer || item.content
+          const updated = buildMentionContextItem(item.path, raw, nextMode)
+          return updated || item
+        }),
+      )
     },
     [activeContextItem],
   )
 
   const addMentionContext = useCallback(
-    (path: string) => {
-      const buf = workspace.fileBuffers[path]?.content || ""
-      const item = buildMentionContextItem(path, buf)
+    async (path: string) => {
+      let content = workspace.fileBuffers[path]?.content
+      if (content === undefined) {
+        try {
+          content = await fetchFileContent(path)
+        } catch {
+          content = ""
+        }
+      }
+      if (!content) return
+      const item = buildMentionContextItem(path, content, "reference")
       if (item) {
         setManualMentions((prev) => {
           if (prev.some((p) => p.path === path)) return prev

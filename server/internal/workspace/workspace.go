@@ -203,6 +203,7 @@ func (m *Manager) resolvePath(relPath string) (string, error) {
 	}
 
 	trimmed := strings.TrimSpace(relPath)
+	trimmed = strings.Trim(trimmed, "\"'`")
 	if trimmed == "" {
 		return "", errors.New("empty path provided")
 	}

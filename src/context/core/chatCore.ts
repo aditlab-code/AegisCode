@@ -291,6 +291,7 @@ export function useChatCore() {
   )
 
   const abortControllerRef = useRef<AbortController | null>(null)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Fetch dynamic AI models and skills from backend
   useEffect(() => {
@@ -366,10 +367,16 @@ export function useChatCore() {
             setSessions((prev) =>
               prev.map((s) => {
                 if (s.id !== activeSessionId) return s
-                // If local messages only had user input without thinking/toolCalls, enrich them
+                // If local messages only had user input without thinking/toolCalls, or tool calls lack args, enrich them
+                const hasDetailedTools = s.messages.some((m) =>
+                  m.toolCalls?.some(
+                    (tc) => tc.args && Object.keys(tc.args).length > 0,
+                  ),
+                )
                 if (
                   s.messages.length <= messages.length ||
-                  !s.messages.some((m) => m.thinking || m.toolCalls?.length)
+                  !s.messages.some((m) => m.thinking || m.toolCalls?.length) ||
+                  !hasDetailedTools
                 ) {
                   return { ...s, messages }
                 }
@@ -382,10 +389,16 @@ export function useChatCore() {
     }
   }, [activeSession.conversationId, activeSessionId])
 
-  // Sync active session changes to backend disk storage
+  // Sync active session changes to backend disk storage.
+  // Debounced 3s: prevents HTTP POST spam during streaming (activeSession changes every 40ms).
   useEffect(() => {
-    if (activeSession) {
+    if (!activeSession) return
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => {
       saveBackendChatSession(activeSession).catch(() => {})
+    }, 3000)
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     }
   }, [activeSession])
 
@@ -519,6 +532,51 @@ export function useChatCore() {
           ? "gemini-3.8-flash-high"
           : activeSession.model
 
+      let pendingDelta = ""
+      let pendingThinking = ""
+      let flushRafId: number | null = null
+      let lastFlushTime = 0
+      const BATCH_INTERVAL_MS = 40 // ~25 fps throttle to prevent DOM thrashing and CPU lag
+
+      const flushDeltasSync = () => {
+        if (flushRafId !== null) {
+          cancelAnimationFrame(flushRafId)
+          flushRafId = null
+        }
+        if (!pendingDelta && !pendingThinking) return
+        const deltaToApply = pendingDelta
+        const thinkingToApply = pendingThinking
+        pendingDelta = ""
+        pendingThinking = ""
+        lastFlushTime = performance.now()
+        setSessions((prev) =>
+          updateAgentMessageInSessions(
+            prev,
+            activeSessionId,
+            agentMsgId,
+            (m) => ({
+              ...m,
+              ...(deltaToApply ? { text: m.text + deltaToApply } : {}),
+              ...(thinkingToApply ? { thinking: thinkingToApply } : {}),
+            }),
+          ),
+        )
+      }
+
+      const scheduleFlush = () => {
+        if (flushRafId !== null) return
+        const now = performance.now()
+        const elapsed = now - lastFlushTime
+        if (elapsed >= BATCH_INTERVAL_MS) {
+          flushDeltasSync()
+        } else {
+          flushRafId = requestAnimationFrame(() => {
+            flushRafId = null
+            flushDeltasSync()
+          })
+        }
+      }
+
       streamAIChat(
         {
           conversationId: activeSession.conversationId,
@@ -535,17 +593,10 @@ export function useChatCore() {
               ),
             )
           } else if (event.type === "thinking") {
-            setSessions((prev) =>
-              updateAgentMessageInSessions(
-                prev,
-                activeSessionId,
-                agentMsgId,
-                (m) => ({
-                  ...m,
-                  thinking: event.thinking || m.thinking,
-                }),
-              ),
-            )
+            if (event.thinking) {
+              pendingThinking = event.thinking // replace (thinking is a full replacement, not delta)
+              scheduleFlush()
+            }
           } else if (event.type === "tool_call") {
             if (event.toolCall) {
               setSessions((prev) =>
@@ -571,19 +622,11 @@ export function useChatCore() {
             }
           } else if (event.type === "chunk") {
             if (event.delta) {
-              setSessions((prev) =>
-                updateAgentMessageInSessions(
-                  prev,
-                  activeSessionId,
-                  agentMsgId,
-                  (m) => ({
-                    ...m,
-                    text: m.text + event.delta,
-                  }),
-                ),
-              )
+              pendingDelta += event.delta
+              scheduleFlush()
             }
           } else if (event.type === "done") {
+            flushDeltasSync()
             setSessions((prev) =>
               updateAgentMessageInSessions(
                 prev,
@@ -601,6 +644,7 @@ export function useChatCore() {
             setIsGenerating(false)
             abortControllerRef.current = null
           } else if (event.type === "error") {
+            flushDeltasSync()
             setSessions((prev) =>
               updateAgentMessageInSessions(
                 prev,
@@ -621,6 +665,7 @@ export function useChatCore() {
         },
         controller.signal,
       ).catch((err) => {
+        flushDeltasSync()
         if (controller.signal.aborted) {
           setSessions((prev) =>
             updateAgentMessageInSessions(
