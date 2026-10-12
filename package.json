@@ -19,7 +19,8 @@
     "test:backend": "go -C server test ./... && go -C test/backend test ./...",
     "test": "npm run test:frontend && npm run test:backend",
     "stop": "node scripts/clean-ports.js",
-    "clean:ports": "node scripts/clean-ports.js"
+    "clean:ports": "node scripts/clean-ports.js",
+    "lsp:bundle": "node scripts/install-lsp-bundle.js"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",
