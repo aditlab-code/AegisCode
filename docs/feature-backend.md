@@ -326,15 +326,20 @@ To eliminate race conditions and the common `fatal: Unable to create '.../.git/i
       - Issues lightweight HTTP `GET /models` request with `Authorization: Bearer <key>` header.
       - Confirms HTTP 200 OK and measures live round-trip latency in milliseconds.
 
-### J. AI Agent Execution & Streamed SSE Response (Sub-Phase 6.9)
+### J. AI Agent Execution & Streamed SSE Response (Sub-Phase 6.9: Multi-Provider Engine)
 - `POST /api/v1/ai/chat`
   - Content-Type: `application/json` (Input), `text/event-stream` (Output stream).
-  - Body: `{ "workspaceDir": "/path/to/project", "conversationId": "optional-uuid", "model": "gemini-3.8-flash-high", "prompt": "..." }`
-  - Executes out-of-process Antigravity CLI (`agy`) bound to the user's active workspace (`cmd.Dir = activeWorkspace`) with `--dangerously-skip-permissions` and `--output-format stream-json`.
+  - Body: `{ "workspaceDir": "/path/to/project", "conversationId": "optional-uuid", "provider": "antigravity | opencode | openrouter | claude", "model": "...", "prompt": "...", "apiKey": "optional", "baseUrl": "optional" }`
+  - **Multi-Provider Engine Abstraction (`server/internal/ai/engine.go`)**:
+    - Dispatches chat requests dynamically via `ProviderEngine` interface (`GetEngine(provider)`).
+    - Automatically resolves omitted `Provider`, `Model`, `APIKey`, and `BaseURL` from persistent user preferences in `~/.aegis/config.json` (`s.store.GetConfig()`).
+    - **Antigravity Engine (`server/internal/ai/antigravity.go`)**: Out-of-process CLI invocation (`agy`) bound to active workspace directory with `--dangerously-skip-permissions` and NDJSON parsing.
+    - **OpenAI / OpenCode / OpenRouter Engine (`server/internal/ai/openai.go`)**: Direct HTTP SSE streaming with `OpenAIAggregator` assembling fragmented delta tool call arguments into verified JSON tool items.
+    - **Claude Engine (`server/internal/ai/claude.go`)**: Direct Anthropic Messages SSE streaming with `ClaudeBlockHandler` parsing `content_block_start`, `content_block_delta`, and `content_block_stop` tool blocks.
   - Streams real-time Server-Sent Events (SSE):
-    - `event: start`: Emits initial conversation UUID captured from Antigravity's `init` event:
+    - `event: start`: Emits initial conversation UUID:
       `{ "type": "start", "conversationId": "uuid" }`
-    - `event: thinking`: Emits real-time reasoning deltas (`thinking_delta`) accumulated from the agent's chain-of-thought:
+    - `event: thinking`: Emits real-time reasoning deltas (`thinking_delta`, `reasoning_content`, or `thinking`) accumulated from the agent's chain-of-thought:
       `{ "type": "thinking", "conversationId": "uuid", "thinking": "..." }`
       *(Frontend applies windowing to the trailing 3,000 characters during streaming to keep DOM nodes responsive).*
     - `event: tool_call`: Emits structured tool invocation metadata:

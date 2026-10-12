@@ -1711,6 +1711,27 @@ func (s *Server) handleAIChatStream(w http.ResponseWriter, r *http.Request) {
 		req.WorkspaceDir, _ = s.ws.GetRoot()
 	}
 
+	if s.store != nil {
+		if cfg, err := s.store.GetConfig(); err == nil && cfg != nil {
+			if req.Provider == "" && cfg.DefaultProvider != "" {
+				req.Provider = cfg.DefaultProvider
+			}
+			if req.Model == "" && cfg.DefaultModel != "" {
+				req.Model = cfg.DefaultModel
+			}
+			provKey := strings.ToLower(strings.TrimSpace(req.Provider))
+			if provKey == "" {
+				provKey = "antigravity"
+			}
+			if req.APIKey == "" && cfg.ProviderKeys != nil {
+				req.APIKey = cfg.ProviderKeys[provKey]
+			}
+			if req.BaseURL == "" && cfg.ProviderBaseURLs != nil {
+				req.BaseURL = cfg.ProviderBaseURLs[provKey]
+			}
+		}
+	}
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")

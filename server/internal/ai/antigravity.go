@@ -31,23 +31,11 @@ type SkillItem struct {
 	Description string `json:"description"`
 }
 
-// StreamChatRequest holds parameters for an AI chat execution turn.
-type StreamChatRequest struct {
-	WorkspaceDir   string `json:"workspaceDir,omitempty"`
-	ConversationID string `json:"conversationId,omitempty"`
-	Model          string `json:"model,omitempty"`
-	Prompt         string `json:"prompt"`
-}
+// AntigravityEngine implements ProviderEngine using the out-of-process Antigravity CLI ('agy').
+type AntigravityEngine struct{}
 
-// StreamEvent represents a real-time event sent over SSE.
-type StreamEvent struct {
-	Type           string              `json:"type"` // "start" | "thinking" | "tool_call" | "chunk" | "done" | "error"
-	ConversationID string              `json:"conversationId,omitempty"`
-	Delta          string              `json:"delta,omitempty"`
-	Thinking       string              `json:"thinking,omitempty"`
-	ToolCall       *store.ToolCallItem `json:"toolCall,omitempty"`
-	Message        *store.ChatMessage  `json:"message,omitempty"`
-	Error          string              `json:"error,omitempty"`
+func (e *AntigravityEngine) StreamChat(ctx context.Context, req StreamChatRequest, sendEvent EventSender) error {
+	return StreamChatAntigravity(ctx, req, sendEvent)
 }
 
 // TranscriptEntry represents a single step in Antigravity transcript.jsonl.
@@ -378,8 +366,8 @@ func conversationExists(convID string) bool {
 	return false
 }
 
-// StreamChat executes an Antigravity turn and writes events via sendEvent.
-func StreamChat(ctx context.Context, req StreamChatRequest, sendEvent func(eventType string, data any) error) error {
+// StreamChatAntigravity executes an Antigravity turn and writes events via sendEvent.
+func StreamChatAntigravity(ctx context.Context, req StreamChatRequest, sendEvent EventSender) error {
 	prompt := strings.TrimSpace(req.Prompt)
 	if prompt == "" {
 		return fmt.Errorf("prompt cannot be empty")

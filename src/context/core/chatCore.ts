@@ -461,7 +461,6 @@ export function useChatCore() {
       }
 
       const agentMsgId = `msg-${Date.now() + 1}`
-      const isAntigravity = activeSession.provider === "antigravity"
 
       const initialAgentMsg: ChatMessage = {
         id: agentMsgId,
@@ -469,7 +468,7 @@ export function useChatCore() {
         text: "",
         thinking: "",
         toolCalls: [],
-        isStreaming: isAntigravity,
+        isStreaming: true,
         provider: activeSession.provider,
         model: activeSession.model,
         timestamp: Date.now() + 1,
@@ -496,32 +495,7 @@ export function useChatCore() {
         }),
       )
 
-      if (!isAntigravity) {
-        // Fallback simulation for non-Antigravity providers
-        setTimeout(() => {
-          const reply = generateContextualReply(
-            cleanText,
-            activeSession.provider,
-            activeSession.model,
-            context,
-          )
-          setSessions((prev) =>
-            updateAgentMessageInSessions(
-              prev,
-              activeSessionId,
-              agentMsgId,
-              (m) => ({
-                ...m,
-                isStreaming: false,
-                text: reply,
-              }),
-            ),
-          )
-        }, 300)
-        return
-      }
-
-      // Live 2-way streaming for Antigravity
+      // Live 2-way streaming for all AI providers
       const controller = new AbortController()
       abortControllerRef.current = controller
       setIsGenerating(true)
@@ -580,6 +554,7 @@ export function useChatCore() {
       streamAIChat(
         {
           conversationId: activeSession.conversationId,
+          provider: activeSession.provider,
           model: effectiveModel,
           prompt: fullPrompt,
         },

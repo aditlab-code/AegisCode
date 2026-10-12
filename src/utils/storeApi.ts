@@ -256,8 +256,11 @@ export async function deleteBackendChatSession(id: string): Promise<boolean> {
 export interface StreamChatRequest {
   workspaceDir?: string
   conversationId?: string
+  provider?: string
   model?: string
   prompt: string
+  apiKey?: string
+  baseUrl?: string
 }
 
 export interface StreamEvent {

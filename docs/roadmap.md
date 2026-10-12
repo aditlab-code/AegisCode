@@ -279,9 +279,15 @@
     - Displays `Setup needed` warning badge when the active provider lacks credentials, redirecting users directly to the Settings Modal upon send.
   - **Verification**: 100% verified across Go backend tests (`server/internal/ai/probe_test.go`, `server/internal/store/store_test.go`, `server/internal/api/api_test.go`) and Vitest frontend regression tests (`test/frontend/core/workbenchCore.test.ts`, 45 tests passing).
 
-#### Sub-Phase 6.9: Isolated Engine & SSE Streaming (Backend Provider Go)
+#### Sub-Phase 6.9: Isolated Engine, Multi-Provider Abstraction & SSE Streaming (Backend Provider Go)
 - **Status**: ✅ Completed
 - **Deliverables**:
+  - **Multi-Provider Engine Abstraction (`server/internal/ai/engine.go`)**:
+    - Pluggable `ProviderEngine` architecture supporting dynamic routing to:
+      1. **Antigravity (`server/internal/ai/antigravity.go`)**: Native `agy` subprocess runner with NDJSON parsing and full lifecycle streaming.
+      2. **OpenCode & OpenRouter (`server/internal/ai/openai.go`)**: OpenAI-compatible HTTP SSE streaming with `OpenAIAggregator` grouping streaming delta tool call argument fragments into verified JSON.
+      3. **Claude / Anthropic (`server/internal/ai/claude.go`)**: Anthropic Messages SSE streaming with `ClaudeBlockHandler` parsing `content_block_start`, `content_block_delta`, and `content_block_stop`.
+    - Auto-injection of missing credentials (`Provider`, `Model`, `APIKey`, `BaseURL`) from persistent user configuration in `~/.aegis/config.json` (`s.store.GetConfig()`).
   - **Antigravity CLI Subprocess Runner (`server/internal/ai/antigravity.go`)**:
     - Direct invocation of `agy` with `--conversation <uuid>`, `--model <model>`, `--dangerously-skip-permissions`, and `-p <prompt>` within active workspace bounds.
     - Seamless support for Antigravity NDJSON streams, thinking reasoning loops, tool call payloads, and text deltas.
