@@ -132,5 +132,35 @@ describe("explorerGitStatus Utility", () => {
       const { gitStatusMap } = buildExplorerGitDecorations(staged, unstaged)
       expect(gitStatusMap.get("package.json")?.code).toBe("M")
     })
+
+    it("decorates in-memory dirty file buffers and propagates to ancestor folders", () => {
+      const fileBuffers = {
+        "src/utils/customHelper.ts": {
+          content: "new code",
+          isDirty: true,
+          language: "typescript",
+        },
+        "clean.ts": {
+          content: "clean code",
+          isDirty: false,
+          language: "typescript",
+        },
+      }
+
+      const { gitStatusMap, dirtyFoldersSet } = buildExplorerGitDecorations(
+        [],
+        [],
+        fileBuffers,
+      )
+
+      expect(gitStatusMap.get("src/utils/customHelper.ts")).toEqual({
+        code: "●",
+        colorClass: "text-warning",
+        title: "Unsaved Changes",
+      })
+      expect(gitStatusMap.has("clean.ts")).toBe(false)
+      expect(dirtyFoldersSet.has("src")).toBe(true)
+      expect(dirtyFoldersSet.has("src/utils")).toBe(true)
+    })
   })
 })

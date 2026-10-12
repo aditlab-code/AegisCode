@@ -1,52 +1,55 @@
-import { useEffect, useRef, useCallback } from "react"
+import {
+  useEffect,
+  useRef,
+  useCallback,
+  forwardRef,
+  useImperativeHandle,
+} from "react"
 import { EditorState, Compartment } from "@codemirror/state"
-import {
-  EditorView,
-  keymap,
-  lineNumbers,
-  highlightActiveLine,
-  highlightActiveLineGutter,
-  dropCursor,
-  drawSelection,
-  hoverTooltip,
-} from "@codemirror/view"
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands"
-import {
-  bracketMatching,
-  defaultHighlightStyle,
-  syntaxHighlighting,
-  foldGutter,
-  indentOnInput,
-} from "@codemirror/language"
+import { EditorView, keymap, lineNumbers, hoverTooltip } from "@codemirror/view"
+import { defaultKeymap, historyKeymap } from "@codemirror/commands"
 import {
   autocompletion,
-  closeBrackets,
   closeBracketsKeymap,
   type CompletionContext,
   type CompletionResult,
 } from "@codemirror/autocomplete"
-import { javascript } from "@codemirror/lang-javascript"
-import { go } from "@codemirror/lang-go"
-import { python } from "@codemirror/lang-python"
-import { json } from "@codemirror/lang-json"
-import { markdown } from "@codemirror/lang-markdown"
-import { html } from "@codemirror/lang-html"
-import { css } from "@codemirror/lang-css"
+import {
+  MergeView,
+  unifiedMergeView,
+  goToNextChunk as cmGoToNextChunk,
+  goToPreviousChunk as cmGoToPreviousChunk,
+} from "@codemirror/merge"
 import {
   fetchLspCompletion,
   fetchLspHover,
   notifyLspChange,
   notifyLspOpen,
 } from "../../../utils/lspApi"
+import { getBaseEditorExtensions, resolveLanguage } from "./cmTheme"
 
 export interface ActiveDebugLine {
   file: string
   line: number
 }
 
-interface CMEditorProps {
+export interface CMEditorDiffConfig {
+  original: string
+  renderSideBySide?: boolean
+  originalLabel?: string
+  modifiedLabel?: string
+}
+
+export interface CMEditorHandle {
+  goToNextChunk: () => void
+  goToPrevChunk: () => void
+  focus: () => void
+}
+
+export interface CMEditorProps {
   filename: string
   content: string
+  diff?: CMEditorDiffConfig
   isReadOnly?: boolean
   wordWrap?: "on" | "off" | "wordWrapColumn"
   tabSize?: number
@@ -61,326 +64,502 @@ interface CMEditorProps {
   onFind?: () => void
 }
 
-function resolveLanguage(filename: string) {
-  const ext = filename.split(".").pop()?.toLowerCase() || ""
-  switch (ext) {
-    case "ts":
-      return { ext: javascript({ typescript: true }), id: "typescript" }
-    case "tsx":
-      return {
-        ext: javascript({ typescript: true, jsx: true }),
-        id: "typescriptreact",
-      }
-    case "js":
-      return { ext: javascript(), id: "javascript" }
-    case "jsx":
-      return { ext: javascript({ jsx: true }), id: "javascriptreact" }
-    case "go":
-      return { ext: go(), id: "go" }
-    case "py":
-      return { ext: python(), id: "python" }
-    case "json":
-      return { ext: json(), id: "json" }
-    case "md":
-    case "markdown":
-      return { ext: markdown(), id: "markdown" }
-    case "html":
-    case "htm":
-      return { ext: html(), id: "html" }
-    case "css":
-      return { ext: css(), id: "css" }
-    default:
-      return { ext: null, id: "plaintext" }
-  }
-}
-
-export function CMEditor({
-  filename,
-  content,
-  isReadOnly = false,
-  wordWrap = "off",
-  tabSize = 2,
-  fontSize = 13.5,
-  lineHeight = 22,
-  breakpoints = [],
-  activeDebugLine,
-  onChange,
-  onCursorChange,
-  onToggleBreakpoint,
-  onSave,
-  onFind,
-}: CMEditorProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const viewRef = useRef<EditorView | null>(null)
-  const readOnlyCompartment = useRef(new Compartment())
-  const wrapCompartment = useRef(new Compartment())
-  const contentRef = useRef(content)
-  contentRef.current = content
-
-  const langInfo = resolveLanguage(filename)
-  const lspChangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Notify backend LSP of file open
-  useEffect(() => {
-    notifyLspOpen(filename, content, langInfo.id)
-  }, [filename, langInfo.id])
-
-  // Custom LSP autocomplete source
-  const lspCompletionSource = useCallback(
-    async (context: CompletionContext): Promise<CompletionResult | null> => {
-      const word = context.matchBefore(/\w*/)
-      if (!word && !context.explicit) return null
-
-      const line = context.state.doc.lineAt(context.pos)
-      const lineNum = line.number - 1 // 0-indexed for LSP
-      const charNum = context.pos - line.from
-
-      const items = await fetchLspCompletion(
-        filename,
-        lineNum,
-        charNum,
-        langInfo.id,
-      )
-      if (!items || items.length === 0) return null
-
-      return {
-        from: word ? word.from : context.pos,
-        options: items.map((item) => ({
-          label: item.label,
-          type: item.kind ? "keyword" : "text",
-          detail: item.detail,
-          info:
-            typeof item.documentation === "string"
-              ? item.documentation
-              : undefined,
-          apply: item.insertText || item.label,
-        })),
-      }
+export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
+  function CMEditor(
+    {
+      filename,
+      content,
+      diff,
+      isReadOnly = false,
+      wordWrap = "off",
+      tabSize = 2,
+      fontSize = 13.5,
+      lineHeight = 22,
+      breakpoints: _breakpoints = [],
+      activeDebugLine: _activeDebugLine,
+      onChange,
+      onCursorChange,
+      onToggleBreakpoint,
+      onSave,
+      onFind,
     },
-    [filename, langInfo.id],
-  )
+    ref,
+  ) {
+    const containerRef = useRef<HTMLDivElement>(null)
+    const viewRef = useRef<EditorView | null>(null)
+    const mergeViewRef = useRef<MergeView | null>(null)
+    const unifiedViewRef = useRef<EditorView | null>(null)
 
-  // Custom LSP hover tooltip
-  const lspHoverExtension = useCallback(() => {
-    return hoverTooltip(async (view, pos) => {
-      const line = view.state.doc.lineAt(pos)
-      const lineNum = line.number - 1
-      const charNum = pos - line.from
+    const readOnlyCompartment = useRef(new Compartment())
+    const wrapCompartment = useRef(new Compartment())
+    const contentRef = useRef(content)
+    contentRef.current = content
 
-      const hover = await fetchLspHover(filename, lineNum, charNum, langInfo.id)
-      if (!hover || !hover.contents) return null
+    const langInfo = resolveLanguage(filename)
+    const lspChangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-      let text = ""
-      if (typeof hover.contents === "string") {
-        text = hover.contents
-      } else if (typeof hover.contents === "object") {
-        if ("value" in hover.contents) {
-          text = String(hover.contents.value)
-        } else {
-          text = JSON.stringify(hover.contents)
+    // Expose imperative handle for toolbar controls (e.g. diff chunk navigation)
+    useImperativeHandle(
+      ref,
+      () => ({
+        goToNextChunk() {
+          if (diff?.renderSideBySide && mergeViewRef.current) {
+            cmGoToNextChunk(mergeViewRef.current.b)
+          } else if (unifiedViewRef.current) {
+            cmGoToNextChunk(unifiedViewRef.current)
+          }
+        },
+        goToPrevChunk() {
+          if (diff?.renderSideBySide && mergeViewRef.current) {
+            cmGoToPreviousChunk(mergeViewRef.current.b)
+          } else if (unifiedViewRef.current) {
+            cmGoToPreviousChunk(unifiedViewRef.current)
+          }
+        },
+        focus() {
+          if (viewRef.current) {
+            viewRef.current.focus()
+          } else if (mergeViewRef.current) {
+            mergeViewRef.current.b.focus()
+          } else if (unifiedViewRef.current) {
+            unifiedViewRef.current.focus()
+          }
+        },
+      }),
+      [diff?.renderSideBySide],
+    )
+
+    // Notify backend LSP of file open
+    useEffect(() => {
+      notifyLspOpen(filename, content, langInfo.id)
+    }, [filename, langInfo.id])
+
+    // Custom LSP autocomplete source
+    const lspCompletionSource = useCallback(
+      async (context: CompletionContext): Promise<CompletionResult | null> => {
+        const word = context.matchBefore(/\w*/)
+        if (!word && !context.explicit) return null
+
+        const line = context.state.doc.lineAt(context.pos)
+        const lineNum = line.number - 1 // 0-indexed for LSP
+        const charNum = context.pos - line.from
+
+        const items = await fetchLspCompletion(
+          filename,
+          lineNum,
+          charNum,
+          langInfo.id,
+        )
+        if (!items || items.length === 0) return null
+
+        return {
+          from: word ? word.from : context.pos,
+          options: items.map((item) => ({
+            label: item.label,
+            type: item.kind ? "keyword" : "text",
+            detail: item.detail,
+            info:
+              typeof item.documentation === "string"
+                ? item.documentation
+                : undefined,
+            apply: item.insertText || item.label,
+          })),
         }
-      }
+      },
+      [filename, langInfo.id],
+    )
 
-      if (!text.trim()) return null
+    // Custom LSP hover tooltip
+    const lspHoverExtension = useCallback(() => {
+      return hoverTooltip(async (view, pos) => {
+        const line = view.state.doc.lineAt(pos)
+        const lineNum = line.number - 1
+        const charNum = pos - line.from
 
-      return {
-        pos,
-        above: true,
-        create() {
-          const dom = document.createElement("div")
-          dom.className =
-            "cm-hover-card bg-surface-raised border border-line text-xs font-mono p-2 rounded shadow-lg max-w-sm text-ink whitespace-pre-wrap select-text z-50"
-          dom.textContent = text
-          return { dom }
-        },
-      }
-    })
-  }, [filename, langInfo.id])
+        const hover = await fetchLspHover(
+          filename,
+          lineNum,
+          charNum,
+          langInfo.id,
+        )
+        if (!hover || !hover.contents) return null
 
-  // Mount editor instance
-  useEffect(() => {
-    if (!containerRef.current) return
+        let text = ""
+        if (typeof hover.contents === "string") {
+          text = hover.contents
+        } else if (typeof hover.contents === "object") {
+          if ("value" in hover.contents) {
+            text = String(hover.contents.value)
+          } else {
+            text = JSON.stringify(hover.contents)
+          }
+        }
 
-    const editorTheme = EditorView.theme({
-      "&": {
-        height: "100%",
-        fontSize: `${fontSize}px`,
-        backgroundColor: "transparent",
-        color: "var(--color-ink)",
-        fontFamily:
-          "var(--editor-font-family, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace)",
-      },
-      ".cm-scroller": {
-        overflow: "auto",
-        lineHeight: `${lineHeight}px`,
-      },
-      ".cm-gutters": {
-        backgroundColor: "transparent",
-        color: "var(--color-ink-muted)",
-        borderRight:
-          "1px solid color-mix(in srgb, var(--color-line) 40%, transparent)",
-        minWidth: "48px",
-        userSelect: "none",
-      },
-      ".cm-activeLineGutter": {
-        backgroundColor: "transparent !important",
-        color: "var(--color-ink) !important",
-        fontWeight: "700 !important",
-      },
-      ".cm-activeLine": {
-        backgroundColor:
-          "color-mix(in srgb, var(--color-ink) 5%, transparent) !important",
-      },
-      ".cm-cursor": {
-        borderLeftColor: "var(--color-ink)",
-      },
-      "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection":
+        if (!text.trim()) return null
+
+        return {
+          pos,
+          above: true,
+          create() {
+            const dom = document.createElement("div")
+            dom.className =
+              "cm-hover-card bg-surface-raised border border-line text-xs font-mono p-2 rounded shadow-lg max-w-sm text-ink whitespace-pre-wrap select-text z-50"
+            dom.textContent = text
+            return { dom }
+          },
+        }
+      })
+    }, [filename, langInfo.id])
+
+    // Main CodeMirror lifecycle effect (handles both Normal and Diff mode)
+    useEffect(() => {
+      if (!containerRef.current) return
+
+      const isSideBySide = diff?.renderSideBySide ?? true
+
+      // Common keyboard shortcuts
+      const customKeymaps = keymap.of([
         {
-          backgroundColor:
-            "color-mix(in srgb, var(--color-accent) 25%, transparent) !important",
-        },
-      ".cm-line": {
-        padding: "0 8px",
-      },
-    })
-
-    const customKeymaps = keymap.of([
-      {
-        key: "Mod-s",
-        run: () => {
-          onSave?.()
-          return true
-        },
-      },
-      {
-        key: "Mod-f",
-        run: () => {
-          onFind?.()
-          return true
-        },
-      },
-    ])
-
-    const extensions = [
-      lineNumbers({
-        domEventHandlers: {
-          mousedown(view, block) {
-            const line = view.state.doc.lineAt(block.from)
-            onToggleBreakpoint?.(line.number)
+          key: "Mod-s",
+          run: () => {
+            onSave?.()
             return true
           },
         },
-      }),
-      foldGutter(),
-      highlightActiveLineGutter(),
-      highlightActiveLine(),
-      history(),
-      drawSelection(),
-      dropCursor(),
-      indentOnInput(),
-      bracketMatching(),
-      closeBrackets(),
-      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-      readOnlyCompartment.current.of([
-        EditorState.readOnly.of(isReadOnly),
-        EditorView.editable.of(!isReadOnly),
-      ]),
-      wrapCompartment.current.of(
-        wordWrap === "on" || wordWrap === "wordWrapColumn"
-          ? EditorView.lineWrapping
-          : [],
-      ),
-      EditorState.tabSize.of(tabSize),
-      editorTheme,
-      customKeymaps,
-      keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap]),
-      autocompletion({ override: [lspCompletionSource] }),
-      lspHoverExtension(),
-      EditorView.updateListener.of((update) => {
-        if (update.docChanged) {
-          const val = update.state.doc.toString()
-          onChange(val)
-          if (lspChangeTimerRef.current) {
-            clearTimeout(lspChangeTimerRef.current)
+        {
+          key: "Mod-f",
+          run: () => {
+            onFind?.()
+            return true
+          },
+        },
+      ])
+
+      // Auto-save on blur / focus transition
+      const blurDomHandler = EditorView.domEventHandlers({
+        blur() {
+          if (!isReadOnly) {
+            onSave?.()
           }
-          lspChangeTimerRef.current = setTimeout(() => {
-            notifyLspChange(filename, val, langInfo.id)
-          }, 300)
-        }
-        if (update.selectionSet && onCursorChange) {
-          const mainSel = update.state.selection.main
-          const line = update.state.doc.lineAt(mainSel.head)
-          onCursorChange(line.number, mainSel.head - line.from + 1)
-        }
-      }),
-    ]
-
-    if (langInfo.ext) {
-      extensions.push(langInfo.ext)
-    }
-
-    const startState = EditorState.create({
-      doc: content,
-      extensions,
-    })
-
-    const view = new EditorView({
-      state: startState,
-      parent: containerRef.current,
-    })
-
-    viewRef.current = view
-
-    return () => {
-      if (lspChangeTimerRef.current) {
-        clearTimeout(lspChangeTimerRef.current)
-      }
-      view.destroy()
-      viewRef.current = null
-    }
-  }, [filename])
-
-  // Sync external content updates
-  useEffect(() => {
-    const view = viewRef.current
-    if (!view) return
-    const currentDoc = view.state.doc.toString()
-    if (content !== currentDoc) {
-      view.dispatch({
-        changes: { from: 0, to: currentDoc.length, insert: content },
+          return false
+        },
       })
-    }
-  }, [content])
 
-  // Sync read-only changes
-  useEffect(() => {
-    const view = viewRef.current
-    if (!view) return
-    view.dispatch({
-      effects: readOnlyCompartment.current.reconfigure([
-        EditorState.readOnly.of(isReadOnly),
-        EditorView.editable.of(!isReadOnly),
-      ]),
-    })
-  }, [isReadOnly])
+      // Mode: DIFF MODE
+      if (diff) {
+        const originalContent = diff.original ?? ""
+        const modifiedContent = content
 
-  // Sync word wrap changes
-  useEffect(() => {
-    const view = viewRef.current
-    if (!view) return
-    view.dispatch({
-      effects: wrapCompartment.current.reconfigure(
-        wordWrap === "on" || wordWrap === "wordWrapColumn"
-          ? EditorView.lineWrapping
-          : [],
-      ),
-    })
-  }, [wordWrap])
+        const baseExtensionsA = getBaseEditorExtensions({
+          fontSize,
+          lineHeight,
+          tabSize,
+          wordWrap,
+          showFoldGutter: false,
+          languageExtension: langInfo.ext,
+        })
 
-  return (
-    <div
-      ref={containerRef}
-      className="cm-editor-root flex-1 w-full h-full min-h-0 min-w-0 overflow-hidden relative"
-    />
-  )
-}
+        const baseExtensionsB = getBaseEditorExtensions({
+          fontSize,
+          lineHeight,
+          tabSize,
+          wordWrap,
+          showFoldGutter: false,
+          languageExtension: langInfo.ext,
+        })
+
+        if (isSideBySide) {
+          // Side-by-side MergeView
+          const extensionsA = [
+            ...baseExtensionsA,
+            EditorState.readOnly.of(true),
+            EditorView.editable.of(false),
+          ]
+
+          const extensionsB = [
+            ...baseExtensionsB,
+            EditorState.readOnly.of(isReadOnly),
+            EditorView.editable.of(!isReadOnly),
+            blurDomHandler,
+            customKeymaps,
+            keymap.of([
+              ...closeBracketsKeymap,
+              ...defaultKeymap,
+              ...historyKeymap,
+            ]),
+            autocompletion({ override: [lspCompletionSource] }),
+            lspHoverExtension(),
+            EditorView.updateListener.of((update) => {
+              if (update.docChanged && !isReadOnly) {
+                const val = update.state.doc.toString()
+                onChange(val)
+                if (lspChangeTimerRef.current) {
+                  clearTimeout(lspChangeTimerRef.current)
+                }
+                lspChangeTimerRef.current = setTimeout(() => {
+                  notifyLspChange(filename, val, langInfo.id)
+                }, 300)
+              }
+            }),
+          ]
+
+          const mergeView = new MergeView({
+            a: {
+              doc: originalContent,
+              extensions: extensionsA,
+            },
+            b: {
+              doc: modifiedContent,
+              extensions: extensionsB,
+            },
+            parent: containerRef.current,
+            revertControls: !isReadOnly ? "a-to-b" : undefined,
+            highlightChanges: true,
+            gutter: true,
+          })
+
+          mergeViewRef.current = mergeView
+          unifiedViewRef.current = null
+          viewRef.current = null
+
+          return () => {
+            if (lspChangeTimerRef.current) {
+              clearTimeout(lspChangeTimerRef.current)
+            }
+            mergeView.destroy()
+            mergeViewRef.current = null
+          }
+        } else {
+          // Unified MergeView
+          const unifiedExtensions = [
+            ...baseExtensionsB,
+            EditorState.readOnly.of(isReadOnly),
+            EditorView.editable.of(!isReadOnly),
+            unifiedMergeView({
+              original: originalContent,
+              highlightChanges: true,
+              gutter: true,
+              collapseUnchanged: { margin: 3 },
+            }),
+            blurDomHandler,
+            customKeymaps,
+            keymap.of([
+              ...closeBracketsKeymap,
+              ...defaultKeymap,
+              ...historyKeymap,
+            ]),
+            autocompletion({ override: [lspCompletionSource] }),
+            lspHoverExtension(),
+            EditorView.updateListener.of((update) => {
+              if (update.docChanged && !isReadOnly) {
+                const val = update.state.doc.toString()
+                onChange(val)
+                if (lspChangeTimerRef.current) {
+                  clearTimeout(lspChangeTimerRef.current)
+                }
+                lspChangeTimerRef.current = setTimeout(() => {
+                  notifyLspChange(filename, val, langInfo.id)
+                }, 300)
+              }
+            }),
+          ]
+
+          const unifiedView = new EditorView({
+            state: EditorState.create({
+              doc: modifiedContent,
+              extensions: unifiedExtensions,
+            }),
+            parent: containerRef.current,
+          })
+
+          unifiedViewRef.current = unifiedView
+          mergeViewRef.current = null
+          viewRef.current = null
+
+          return () => {
+            if (lspChangeTimerRef.current) {
+              clearTimeout(lspChangeTimerRef.current)
+            }
+            unifiedView.destroy()
+            unifiedViewRef.current = null
+          }
+        }
+      }
+
+      // Mode: NORMAL CODE EDITING MODE
+      const baseExtensions = getBaseEditorExtensions({
+        fontSize,
+        lineHeight,
+        tabSize,
+        wordWrap,
+        showFoldGutter: true,
+        languageExtension: langInfo.ext,
+      })
+
+      const extensions = [
+        ...baseExtensions,
+        lineNumbers({
+          domEventHandlers: {
+            mousedown(view, block) {
+              const line = view.state.doc.lineAt(block.from)
+              onToggleBreakpoint?.(line.number)
+              return true
+            },
+          },
+        }),
+        readOnlyCompartment.current.of([
+          EditorState.readOnly.of(isReadOnly),
+          EditorView.editable.of(!isReadOnly),
+        ]),
+        wrapCompartment.current.of(
+          wordWrap === "on" || wordWrap === "wordWrapColumn"
+            ? EditorView.lineWrapping
+            : [],
+        ),
+        blurDomHandler,
+        customKeymaps,
+        keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap]),
+        autocompletion({ override: [lspCompletionSource] }),
+        lspHoverExtension(),
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) {
+            const val = update.state.doc.toString()
+            onChange(val)
+            if (lspChangeTimerRef.current) {
+              clearTimeout(lspChangeTimerRef.current)
+            }
+            lspChangeTimerRef.current = setTimeout(() => {
+              notifyLspChange(filename, val, langInfo.id)
+            }, 300)
+          }
+          if (update.selectionSet && onCursorChange) {
+            const mainSel = update.state.selection.main
+            const line = update.state.doc.lineAt(mainSel.head)
+            onCursorChange(line.number, mainSel.head - line.from + 1)
+          }
+        }),
+      ]
+
+      const startState = EditorState.create({
+        doc: content,
+        extensions,
+      })
+
+      const view = new EditorView({
+        state: startState,
+        parent: containerRef.current,
+      })
+
+      viewRef.current = view
+      mergeViewRef.current = null
+      unifiedViewRef.current = null
+
+      return () => {
+        if (lspChangeTimerRef.current) {
+          clearTimeout(lspChangeTimerRef.current)
+        }
+        view.destroy()
+        viewRef.current = null
+      }
+    }, [
+      filename,
+      diff ? diff.original : null,
+      diff ? diff.renderSideBySide : null,
+      isReadOnly,
+      wordWrap,
+      tabSize,
+      fontSize,
+      lineHeight,
+    ])
+
+    // Sync external content updates to the active view
+    useEffect(() => {
+      if (viewRef.current) {
+        const currentDoc = viewRef.current.state.doc.toString()
+        if (content !== currentDoc) {
+          viewRef.current.dispatch({
+            changes: { from: 0, to: currentDoc.length, insert: content },
+          })
+        }
+      } else if (mergeViewRef.current) {
+        const docB = mergeViewRef.current.b.state.doc.toString()
+        if (content !== docB) {
+          mergeViewRef.current.b.dispatch({
+            changes: { from: 0, to: docB.length, insert: content },
+          })
+        }
+      } else if (unifiedViewRef.current) {
+        const doc = unifiedViewRef.current.state.doc.toString()
+        if (content !== doc) {
+          unifiedViewRef.current.dispatch({
+            changes: { from: 0, to: doc.length, insert: content },
+          })
+        }
+      }
+    }, [content])
+
+    // Sync read-only changes in normal mode
+    useEffect(() => {
+      if (!viewRef.current) return
+      viewRef.current.dispatch({
+        effects: readOnlyCompartment.current.reconfigure([
+          EditorState.readOnly.of(isReadOnly),
+          EditorView.editable.of(!isReadOnly),
+        ]),
+      })
+    }, [isReadOnly])
+
+    // Sync word wrap changes in normal mode
+    useEffect(() => {
+      if (!viewRef.current) return
+      viewRef.current.dispatch({
+        effects: wrapCompartment.current.reconfigure(
+          wordWrap === "on" || wordWrap === "wordWrapColumn"
+            ? EditorView.lineWrapping
+            : [],
+        ),
+      })
+    }, [wordWrap])
+
+    const renderSideBySide = diff?.renderSideBySide ?? true
+
+    return (
+      <div className="cm-editor-root flex flex-col flex-1 w-full h-full min-h-0 min-w-0 overflow-hidden relative">
+        {/* Comparison sub-headers in diff mode */}
+        {diff && (
+          <>
+            {renderSideBySide ? (
+              <div className="flex items-center px-3 py-1 bg-surface-raised border-b border-line text-[10px] text-ink-muted font-semibold select-none shrink-0">
+                <div className="flex-1 flex items-center justify-between pr-4 border-r border-line truncate">
+                  <span>{diff.originalLabel || "ORIGINAL (HEAD)"}</span>
+                  <span className="uppercase text-[9px] opacity-75">
+                    READ-ONLY
+                  </span>
+                </div>
+                <div className="flex-1 flex items-center justify-between pl-4 truncate">
+                  <span>{diff.modifiedLabel || "MODIFIED (WORKING TREE)"}</span>
+                  <span className="uppercase text-[9px] opacity-75">
+                    {isReadOnly ? "READ-ONLY" : "EDITABLE (⌘S TO SAVE)"}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between px-3 py-1 bg-surface-raised border-b border-line text-[10px] text-ink-muted font-semibold select-none shrink-0">
+                <span>UNIFIED DIFF ({filename})</span>
+                <span className="uppercase text-[9px] opacity-75">
+                  {isReadOnly ? "READ-ONLY" : "EDITABLE (⌘S TO SAVE)"}
+                </span>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* CodeMirror mount canvas */}
+        <div
+          ref={containerRef}
+          className="relative flex-1 w-full min-h-0 min-w-0 overflow-hidden select-text"
+        />
+      </div>
+    )
+  },
+)

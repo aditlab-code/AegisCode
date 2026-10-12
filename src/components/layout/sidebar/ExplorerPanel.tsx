@@ -186,8 +186,8 @@ export function ExplorerPanel() {
   } = useWorkbench()
 
   const { gitStatusMap, dirtyFoldersSet } = useMemo(
-    () => buildExplorerGitDecorations(stagedChanges, gitChanges),
-    [stagedChanges, gitChanges],
+    () => buildExplorerGitDecorations(stagedChanges, gitChanges, fileBuffers),
+    [stagedChanges, gitChanges, fileBuffers],
   )
 
   const timelineMaxVisible = settings?.features?.timeline?.maxVisibleItems ?? 30

@@ -296,7 +296,10 @@ export function useWorkbenchFacade() {
 
   const saveFile = useCallback(
     async (filenameToSave?: string) => {
-      const target = filenameToSave || editor.activeTab
+      const rawTarget = filenameToSave || editor.activeTab
+      const target = isGitDiffTab(rawTarget)
+        ? parseGitDiffTab(rawTarget)?.file || rawTarget
+        : rawTarget
       const hygiene = {
         trimTrailingWhitespace:
           settingsCore.settings.files.trimTrailingWhitespace,
@@ -305,6 +308,7 @@ export function useWorkbenchFacade() {
       }
       await workspace.saveFile(target, hygiene)
       await gitRef.current?.refreshGit()
+      setGitDiffVersion((v) => v + 1)
     },
     [editor.activeTab, settingsCore.settings.files, workspace],
   )

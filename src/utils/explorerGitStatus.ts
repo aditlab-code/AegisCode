@@ -1,4 +1,4 @@
-import type { GitChange } from "../types/workbench"
+import type { FileBuffer, GitChange } from "../types/workbench"
 
 export interface ExplorerGitBadge {
   code: string
@@ -50,16 +50,17 @@ export function mapGitChangeToBadge(change: GitChange): ExplorerGitBadge {
 
 /**
  * Builds a fast lookup map for file Git status badges and a set of ancestor folders
- * that contain modified, added, deleted, or untracked files.
+ * that contain modified, added, deleted, untracked, or in-memory dirty files.
  */
 export function buildExplorerGitDecorations(
   stagedChanges: GitChange[] = [],
   unstagedChanges: GitChange[] = [],
+  fileBuffers?: Record<string, FileBuffer>,
 ): ExplorerGitDecorations {
   const gitStatusMap = new Map<string, ExplorerGitBadge>()
   const dirtyFoldersSet = new Set<string>()
 
-  // Unstaged changes take precedence over staged in visual representation
+  // 1. Unstaged changes take precedence over staged in visual representation
   const allChanges = [...unstagedChanges, ...stagedChanges]
 
   for (const change of allChanges) {
@@ -78,6 +79,33 @@ export function buildExplorerGitDecorations(
     for (const segment of segments) {
       current = current ? `${current}/${segment}` : segment
       dirtyFoldersSet.add(current)
+    }
+  }
+
+  // 2. In-memory unsaved edits (fileBuffers.isDirty)
+  if (fileBuffers) {
+    for (const [rawFile, buf] of Object.entries(fileBuffers)) {
+      if (buf?.isDirty) {
+        const cleanPath = normalizePath(rawFile)
+        if (!cleanPath) continue
+
+        if (!gitStatusMap.has(cleanPath)) {
+          gitStatusMap.set(cleanPath, {
+            code: "●",
+            colorClass: "text-warning",
+            title: "Unsaved Changes",
+          })
+        }
+
+        // Add ancestor folder paths
+        const segments = cleanPath.split("/")
+        segments.pop() // remove file name
+        let current = ""
+        for (const segment of segments) {
+          current = current ? `${current}/${segment}` : segment
+          dirtyFoldersSet.add(current)
+        }
+      }
     }
   }
 
