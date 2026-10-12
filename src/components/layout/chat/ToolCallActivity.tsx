@@ -81,6 +81,7 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
     name === "read_browser_page"
   ) {
     const rawPath = (
+      tc.targetFile ||
       args.AbsolutePath ||
       args.path ||
       args.Url ||
@@ -137,6 +138,7 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
     name === "edit_file"
   ) {
     const rawPath = (
+      tc.targetFile ||
       args.TargetFile ||
       args.targetFile ||
       args.path ||

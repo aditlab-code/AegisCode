@@ -338,10 +338,11 @@ To eliminate race conditions and the common `fatal: Unable to create '.../.git/i
       `{ "type": "thinking", "conversationId": "uuid", "thinking": "..." }`
       *(Frontend applies windowing to the trailing 3,000 characters during streaming to keep DOM nodes responsive).*
     - `event: tool_call`: Emits structured tool invocation metadata:
-      `{ "type": "tool_call", "conversationId": "uuid", "toolCall": { "id": "tc-<stepIdx>", "name": "view_file", "summary": "Viewing file", "status": "running" | "success", "args": { "AbsolutePath": "..." }, "output": "..." } }`
-      - **Parameters Extraction**: Directly extracted from `step_update.tool_info.parameters` (with fallback to `tool_args`). Strips outer quotation marks (`"`, `'`, `` ` ``) and whitespace.
-      - **Output Extraction**: Directly extracted from `step_update.tool_info.output` when available.
-      - **Action Summary**: Extracted from `toolSummary` or `toolAction` arguments with fallback to `name`.
+      `{ "type": "tool_call", "conversationId": "uuid", "toolCall": { "id": "tc-<stepIdx>", "name": "view_file", "summary": "Viewing file", "status": "running" | "success", "targetFile": "...", "args": { "AbsolutePath": "..." }, "output": "..." } }`
+      - **Parameters Extraction**: Directly extracted from `step_update.tool_info.parameters` (with fallback to `tool_args`). Strips outer quotation marks (`"`, `'`, `` ` ``) and whitespace via `SanitizeString`.
+      - **Target File Resolution & Anti-Ghost Tab**: Detected via `ExtractTargetFile` across candidate keys (`AbsolutePath`, `TargetFile`, `path`, etc.) with strict validation rejecting empty paths or path values matching tool names (`server/internal/ai/normalizer.go`).
+      - **Output Extraction**: Directly extracted from `step_update.tool_info.output` when available, capped at 2,500 characters via `CapOutput` to prevent DOM bloat.
+      - **Action Summary**: Extracted from `toolSummary` or `toolAction` arguments with idiomatic fallback action synthesis via `GenerateSummary`.
       - **Step Deduplication**: Keyed by `tc-<step_index>`. When subsequent updates or completion events arrive for the same step, the backend seamlessly updates the existing tool call card in place.
       - **Lifecycle State**: Maps `step_update.state` (`ACTIVE` -> `"running"`, `DONE` -> `"success"`).
     - `event: chunk`: Emits live response text tokens (`text_delta`):

@@ -38,12 +38,13 @@ type ContextItem struct {
 
 // ToolCallItem represents an action taken by the AI agent during turn execution.
 type ToolCallItem struct {
-	ID      string         `json:"id"`
-	Name    string         `json:"name"`
-	Summary string         `json:"summary,omitempty"`
-	Status  string         `json:"status"` // "running" | "success" | "error"
-	Args    map[string]any `json:"args,omitempty"`
-	Output  string         `json:"output,omitempty"`
+	ID         string         `json:"id"`
+	Name       string         `json:"name"`
+	Summary    string         `json:"summary,omitempty"`
+	Status     string         `json:"status"` // "running" | "success" | "error"
+	TargetFile string         `json:"targetFile,omitempty"`
+	Args       map[string]any `json:"args,omitempty"`
+	Output     string         `json:"output,omitempty"`
 }
 
 // ChatMessage represents a single message in an AI conversation.

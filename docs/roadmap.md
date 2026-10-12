@@ -292,9 +292,9 @@
   - **Safe Agentic Tool Call Streaming & Extraction**:
     - Native `tool_info.parameters` and `tool_info.output` extraction from Antigravity `step_update` events, with fallback to `tool_args`.
     - Real-time tool lifecycle tracking (`ACTIVE` -> running, `DONE` -> success) and step deduplication keyed by `step_index` (`tc-<stepIdx>`).
-    - Outer quote and whitespace normalization for tool argument strings, ensuring clean file paths and command strings.
-    - Dynamic tool summary resolution (`toolSummary` / `toolAction`) providing human-readable activity captions.
-    - Ghost tab prevention guard in `ToolCallActivity.tsx`: verifies that `name !== filePath` and path is non-empty before showing the `[Open]` button, eliminating empty buffer opening.
+    - Outer quote and whitespace normalization via `SanitizeString`, multi-key path resolution via `ExtractTargetFile` with backend anti-ghost tab guards, and human-readable summary synthesis via `GenerateSummary` (`server/internal/ai/normalizer.go`).
+    - Dynamic tool summary resolution (`toolSummary` / `toolAction`) with fallback action synthesis.
+    - Double-layer ghost tab prevention: backend guard in `ExtractTargetFile` ensuring `path !== toolName` and frontend guard in `ToolCallActivity.tsx`.
     - Formatted line range badges (`L<start>-<end>`) on file inspection tools (`view_file`, `Read`).
     - Tool output DOM cap (2,500 characters) preventing DOM bloating on large terminal or file reads.
   - **Streaming Chat Zero-Freeze Performance Overhaul**:

@@ -224,6 +224,7 @@ export interface ToolCallItem {
   name: string
   summary?: string
   status: "running" | "success" | "error"
+  targetFile?: string
   args?: Record<string, any>
   output?: string
 }

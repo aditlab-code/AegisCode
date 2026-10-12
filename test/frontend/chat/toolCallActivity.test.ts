@@ -211,4 +211,30 @@ describe("ToolCallActivity parseToolCall", () => {
     expect(parsedWrite.targetFile).toBeUndefined()
     expect(parsedWrite.fullTarget).toBe("")
   })
+
+  it("prioritizes direct targetFile field on ToolCallItem for read and write tools", () => {
+    const viewWithTarget: ToolCallItem = {
+      id: "tc-14",
+      name: "view_file",
+      status: "success",
+      targetFile: "/root/src/index.ts",
+      args: {},
+    }
+    const parsedView = parseToolCall(viewWithTarget)
+    expect(parsedView.targetFile).toBe("/root/src/index.ts")
+    expect(parsedView.fullTarget).toBe("/root/src/index.ts")
+    expect(parsedView.target).toBe("index.ts")
+
+    const editWithTarget: ToolCallItem = {
+      id: "tc-15",
+      name: "write_to_file",
+      status: "success",
+      targetFile: "server/cmd/server/main.go",
+      args: {},
+    }
+    const parsedEdit = parseToolCall(editWithTarget)
+    expect(parsedEdit.targetFile).toBe("server/cmd/server/main.go")
+    expect(parsedEdit.fullTarget).toBe("server/cmd/server/main.go")
+    expect(parsedEdit.target).toBe("main.go")
+  })
 })

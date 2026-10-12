@@ -287,22 +287,21 @@ func GetSessionTranscript(conversationID string) ([]store.ChatMessage, error) {
 				cleanArgs := make(map[string]any, len(tc.Args))
 				for k, v := range tc.Args {
 					if strVal, ok := v.(string); ok {
-						cleanArgs[k] = strings.Trim(strings.TrimSpace(strVal), "\"'`")
+						cleanArgs[k] = SanitizeString(strVal)
 					} else {
 						cleanArgs[k] = v
 					}
 				}
 
-				summary := tc.Name
-				if s, ok := cleanArgs["toolSummary"].(string); ok && s != "" {
-					summary = s
-				}
+				targetFile := ExtractTargetFile(tc.Name, cleanArgs)
+				summary := GenerateSummary(tc.Name, targetFile, cleanArgs)
 				toolCalls = append(toolCalls, store.ToolCallItem{
-					ID:      fmt.Sprintf("tc-%d-%d", entry.StepIndex, idx),
-					Name:    tc.Name,
-					Summary: summary,
-					Status:  "success",
-					Args:    cleanArgs,
+					ID:         fmt.Sprintf("tc-%d-%d", entry.StepIndex, idx),
+					Name:       tc.Name,
+					Summary:    summary,
+					Status:     "success",
+					TargetFile: targetFile,
+					Args:       cleanArgs,
 				})
 			}
 
@@ -322,7 +321,7 @@ func GetSessionTranscript(conversationID string) ([]store.ChatMessage, error) {
 				if lastMsg.Role == "agent" && len(lastMsg.ToolCalls) > 0 {
 					lastTC := &lastMsg.ToolCalls[len(lastMsg.ToolCalls)-1]
 					if lastTC.Output == "" {
-						lastTC.Output = entry.Content
+						lastTC.Output = CapOutput(entry.Content, 2500)
 					}
 				}
 			}
@@ -543,18 +542,14 @@ func StreamChat(ctx context.Context, req StreamChatRequest, sendEvent func(event
 						cleanArgs := make(map[string]any, len(args))
 						for k, v := range args {
 							if strVal, ok := v.(string); ok {
-								cleanArgs[k] = strings.Trim(strings.TrimSpace(strVal), "\"'`")
+								cleanArgs[k] = SanitizeString(strVal)
 							} else {
 								cleanArgs[k] = v
 							}
 						}
 
-						summary := toolName
-						if s, ok := cleanArgs["toolSummary"].(string); ok && s != "" {
-							summary = s
-						} else if s, ok := cleanArgs["toolAction"].(string); ok && s != "" {
-							summary = s
-						}
+						targetFile := ExtractTargetFile(toolName, cleanArgs)
+						summary := GenerateSummary(toolName, targetFile, cleanArgs)
 
 						status := "running"
 						if state, ok := step["state"].(string); ok && state == "DONE" {
@@ -567,13 +562,16 @@ func StreamChat(ctx context.Context, req StreamChatRequest, sendEvent func(event
 							tcID = fmt.Sprintf("tc-%d", time.Now().UnixMilli())
 						}
 
+						outputPreview := CapOutput(output, 2500)
+
 						tcItem := store.ToolCallItem{
-							ID:      tcID,
-							Name:    toolName,
-							Summary: summary,
-							Status:  status,
-							Args:    cleanArgs,
-							Output:  output,
+							ID:         tcID,
+							Name:       toolName,
+							Summary:    summary,
+							Status:     status,
+							TargetFile: targetFile,
+							Args:       cleanArgs,
+							Output:     outputPreview,
 						}
 
 						foundIdx := -1
@@ -587,8 +585,11 @@ func StreamChat(ctx context.Context, req StreamChatRequest, sendEvent func(event
 							if len(cleanArgs) > 0 {
 								toolCalls[foundIdx].Args = cleanArgs
 							}
-							if output != "" {
-								toolCalls[foundIdx].Output = output
+							if outputPreview != "" {
+								toolCalls[foundIdx].Output = outputPreview
+							}
+							if targetFile != "" {
+								toolCalls[foundIdx].TargetFile = targetFile
 							}
 							toolCalls[foundIdx].Status = status
 							if summary != "" && summary != toolName {
@@ -644,21 +645,20 @@ func StreamChat(ctx context.Context, req StreamChatRequest, sendEvent func(event
 						cleanArgs := make(map[string]any, len(rawArgs))
 						for k, v := range rawArgs {
 							if strVal, ok := v.(string); ok {
-								cleanArgs[k] = strings.Trim(strings.TrimSpace(strVal), "\"'`")
+								cleanArgs[k] = SanitizeString(strVal)
 							} else {
 								cleanArgs[k] = v
 							}
 						}
-						summary := name
-						if s, ok := cleanArgs["toolSummary"].(string); ok && s != "" {
-							summary = s
-						}
+						targetFile := ExtractTargetFile(name, cleanArgs)
+						summary := GenerateSummary(name, targetFile, cleanArgs)
 						tcItem := store.ToolCallItem{
-							ID:      fmt.Sprintf("tc-%d-%d", time.Now().UnixMilli(), tcIdx),
-							Name:    name,
-							Summary: summary,
-							Status:  "running",
-							Args:    cleanArgs,
+							ID:         fmt.Sprintf("tc-%d-%d", time.Now().UnixMilli(), tcIdx),
+							Name:       name,
+							Summary:    summary,
+							Status:     "running",
+							TargetFile: targetFile,
+							Args:       cleanArgs,
 						}
 						toolCalls = append(toolCalls, tcItem)
 						_ = sendEvent("tool_call", StreamEvent{
