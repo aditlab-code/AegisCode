@@ -11,7 +11,8 @@ interface LspStatusPopoverProps {
 }
 
 export function LspStatusPopover({ onClose }: LspStatusPopoverProps) {
-  const { activeLanguage, setSettingsModalOpen, showToast } = useWorkbench()
+  const { activeLanguage, setSettingsModalOpen, openSettingsModal, showToast } =
+    useWorkbench()
   const [servers, setServers] = useState<LanguageServerStatusInfo[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -33,7 +34,11 @@ export function LspStatusPopover({ onClose }: LspStatusPopoverProps) {
   }
 
   function handleOpenSettings() {
-    setSettingsModalOpen(true)
+    if (openSettingsModal) {
+      openSettingsModal("LSP")
+    } else {
+      setSettingsModalOpen(true)
+    }
     onClose?.()
   }
 

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect, useCallback } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbench } from "../../../context/WorkbenchContext"
 import { buildSettingsSchema, type SettingItem } from "./settingsRegistry"
@@ -10,12 +10,18 @@ import {
   testProviderConnection,
   type ProviderTestResponse,
 } from "../../../utils/storeApi"
+import {
+  fetchLspStatus,
+  type LanguageServerStatusInfo,
+} from "../../../utils/lspApi"
 import type { ChatProvider } from "../../../types/workbench"
 
 export function SettingsModal() {
   const {
     settingsModalOpen,
     setSettingsModalOpen,
+    settingsModalCategory,
+    setSettingsModalCategory,
     settings,
     updateEditorSettings,
     updateWorkbenchSettings,
@@ -29,10 +35,40 @@ export function SettingsModal() {
     showToast,
   } = useWorkbench()
 
-  const [activeCategory, setActiveCategory] = useState<string>("Editor")
+  const [activeCategory, setActiveCategory] = useState<string>(
+    settingsModalCategory || "Editor",
+  )
   const [searchQuery, setSearchQuery] = useState("")
   const [isRegex, setIsRegex] = useState(false)
   const [showPassword, setShowPassword] = useState<Record<string, boolean>>({})
+
+  // LSP Tab State
+  const [lspServers, setLspServers] = useState<LanguageServerStatusInfo[]>([])
+  const [lspLoading, setLspLoading] = useState(false)
+
+  const loadLspStatus = useCallback(async () => {
+    setLspLoading(true)
+    try {
+      const list = await fetchLspStatus()
+      setLspServers(list)
+    } catch {
+      // fallback if server unreachable
+    } finally {
+      setLspLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (settingsModalOpen && settingsModalCategory) {
+      setActiveCategory(settingsModalCategory)
+    }
+  }, [settingsModalOpen, settingsModalCategory])
+
+  useEffect(() => {
+    if (settingsModalOpen && activeCategory === "LSP") {
+      void loadLspStatus()
+    }
+  }, [settingsModalOpen, activeCategory, loadLspStatus])
 
   // AI Tab State
   const [modelFilter, setModelFilter] = useState<"all" | ChatProvider>("all")
@@ -252,9 +288,117 @@ export function SettingsModal() {
     { id: "Workbench", label: "Workbench", badge: "" },
     { id: "Window", label: "Window", badge: "Future" },
     { id: "Features", label: "Features", badge: "" },
+    { id: "LSP", label: "Language Servers (LSP)", badge: "" },
     { id: "Companion", label: "Companion (Tablet)", badge: "Future" },
     { id: "AI", label: "AI Agents", badge: "" },
   ]
+
+  function renderSettingCard(setting: SettingItem) {
+    return (
+      <div className="settings-item-card" key={setting.id}>
+        <div className="settings-item-header">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="settings-item-title">{setting.title}</span>
+            {setting.isFutureNotice && (
+              <span className="settings-future-badge">Future Notice</span>
+            )}
+          </div>
+          <span className="settings-item-id">{setting.id}</span>
+        </div>
+        <p className="settings-item-desc">{setting.description}</p>
+
+        <div className="settings-control-row">
+          {setting.type === "boolean" && (
+            <label className="settings-toggle-label">
+              <input
+                checked={Boolean(setting.value)}
+                className="settings-checkbox"
+                onChange={(e) =>
+                  setting.onChange && setting.onChange(e.target.checked)
+                }
+                type="checkbox"
+              />
+              <span>{setting.value ? "Enabled" : "Disabled"}</span>
+            </label>
+          )}
+
+          {setting.type === "select" && (
+            <select
+              aria-label={setting.title}
+              className="settings-select"
+              onChange={(e) =>
+                setting.onChange && setting.onChange(e.target.value)
+              }
+              value={String(setting.value ?? "")}
+            >
+              {setting.options?.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {setting.type === "text" && (
+            <input
+              aria-label={setting.title}
+              className="settings-text-input"
+              onChange={(e) =>
+                setting.onChange && setting.onChange(e.target.value)
+              }
+              value={String(setting.value ?? "")}
+            />
+          )}
+
+          {setting.type === "number" && (
+            <input
+              aria-label={setting.title}
+              className="settings-text-input"
+              onChange={(e) =>
+                setting.onChange && setting.onChange(e.target.value)
+              }
+              type="number"
+              value={Number(setting.value ?? 0)}
+            />
+          )}
+
+          {setting.type === "password" && (
+            <div className="settings-password-wrapper">
+              <input
+                aria-label={setting.title}
+                className="settings-text-input"
+                type={showPassword[setting.id] ? "text" : "password"}
+                onChange={(e) =>
+                  setting.onChange && setting.onChange(e.target.value)
+                }
+                value={String(setting.value ?? "")}
+                placeholder="Enter API key..."
+              />
+              <button
+                type="button"
+                className="settings-show-pwd-btn"
+                onClick={() =>
+                  setShowPassword((prev) => ({
+                    ...prev,
+                    [setting.id]: !prev[setting.id],
+                  }))
+                }
+                title={showPassword[setting.id] ? "Hide" : "Show"}
+              >
+                {showPassword[setting.id] ? "Hide" : "Show"}
+              </button>
+            </div>
+          )}
+
+          {setting.type === "info" && (
+            <div className="text-[11px] text-ink-muted italic">
+              {setting.futureNoticeText || "Coming in upcoming releases."}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -345,6 +489,7 @@ export function SettingsModal() {
                 key={cat.id}
                 onClick={() => {
                   setActiveCategory(cat.id)
+                  setSettingsModalCategory?.(cat.id)
                   setSearchQuery("")
                 }}
                 type="button"
@@ -952,117 +1097,118 @@ export function SettingsModal() {
                   </div>
                 </div>
               </div>
-            ) : filteredSettings.length > 0 ? (
-              filteredSettings.map((setting) => (
-                <div className="settings-item-card" key={setting.id}>
-                  <div className="settings-item-header">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="settings-item-title">
-                        {setting.title}
+            ) : activeCategory === "LSP" && !searchQuery.trim() ? (
+              <div className="lsp-settings-page flex flex-col gap-5">
+                {/* 1. Live Language Server Detection & Health Card */}
+                <div className="bg-surface rounded-lg border border-line p-4 flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-semibold text-ink">
+                        Language Servers Runtime Status
                       </span>
-                      {setting.isFutureNotice && (
-                        <span className="settings-future-badge">
-                          Future Notice
-                        </span>
-                      )}
+                      <p className="text-[11px] text-ink-muted">
+                        Live detection across PATH, Homebrew, toolchains, and custom configured paths.
+                      </p>
                     </div>
-                    <span className="settings-item-id">{setting.id}</span>
+                    <button
+                      type="button"
+                      onClick={() => void loadLspStatus()}
+                      disabled={lspLoading}
+                      className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium bg-canvas border border-line rounded hover:bg-surface-raised cursor-pointer text-ink transition-colors"
+                      title="Re-scan system and custom paths"
+                    >
+                      <Icon
+                        name="refresh"
+                        size={12}
+                        className={lspLoading ? "animate-spin" : ""}
+                      />
+                      <span>{lspLoading ? "Scanning..." : "Rescan"}</span>
+                    </button>
                   </div>
-                  <p className="settings-item-desc">{setting.description}</p>
 
-                  <div className="settings-control-row">
-                    {setting.type === "boolean" && (
-                      <label className="settings-toggle-label">
-                        <input
-                          checked={Boolean(setting.value)}
-                          className="settings-checkbox"
-                          onChange={(e) =>
-                            setting.onChange &&
-                            setting.onChange(e.target.checked)
-                          }
-                          type="checkbox"
-                        />
-                        <span>{setting.value ? "Enabled" : "Disabled"}</span>
-                      </label>
-                    )}
-
-                    {setting.type === "select" && (
-                      <select
-                        aria-label={setting.title}
-                        className="settings-select"
-                        onChange={(e) =>
-                          setting.onChange && setting.onChange(e.target.value)
-                        }
-                        value={String(setting.value ?? "")}
+                  {/* Servers Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-1">
+                    {lspServers.map((s) => (
+                      <div
+                        key={s.language}
+                        className="flex items-center justify-between p-2.5 rounded bg-canvas border border-line text-xs"
                       >
-                        {setting.options?.map((opt) => (
-                          <option key={opt} value={opt}>
-                            {opt}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-
-                    {setting.type === "text" && (
-                      <input
-                        aria-label={setting.title}
-                        className="settings-text-input"
-                        onChange={(e) =>
-                          setting.onChange && setting.onChange(e.target.value)
-                        }
-                        value={String(setting.value ?? "")}
-                      />
-                    )}
-
-                    {setting.type === "number" && (
-                      <input
-                        aria-label={setting.title}
-                        className="settings-text-input"
-                        onChange={(e) =>
-                          setting.onChange && setting.onChange(e.target.value)
-                        }
-                        type="number"
-                        value={Number(setting.value ?? 0)}
-                      />
-                    )}
-
-                    {setting.type === "password" && (
-                      <div className="settings-password-wrapper">
-                        <input
-                          aria-label={setting.title}
-                          className="settings-text-input"
-                          type={showPassword[setting.id] ? "text" : "password"}
-                          onChange={(e) =>
-                            setting.onChange && setting.onChange(e.target.value)
-                          }
-                          value={String(setting.value ?? "")}
-                          placeholder="Enter API key..."
-                        />
-                        <button
-                          type="button"
-                          className="settings-show-pwd-btn"
-                          onClick={() =>
-                            setShowPassword((prev) => ({
-                              ...prev,
-                              [setting.id]: !prev[setting.id],
-                            }))
-                          }
-                          title={showPassword[setting.id] ? "Hide" : "Show"}
-                        >
-                          {showPassword[setting.id] ? "Hide" : "Show"}
-                        </button>
+                        <div className="flex flex-col min-w-0 pr-2">
+                          <span className="font-semibold text-ink capitalize truncate">
+                            {s.language}
+                          </span>
+                          <span className="text-[10px] text-ink-muted font-mono truncate">
+                            {s.path || s.binaryName || "Not configured"}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {s.status === "running" ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-success-soft text-success border border-success/30">
+                              Running (PID {s.activePid})
+                            </span>
+                          ) : s.status === "available" ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-info-soft text-info border border-info/30">
+                              Installed
+                            </span>
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-warning-soft text-warning border border-warning/30">
+                                Missing
+                              </span>
+                              {s.installCommand && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void navigator.clipboard.writeText(
+                                      s.installCommand!,
+                                    )
+                                    showToast(
+                                      `Copied install command: ${s.installCommand}`,
+                                    )
+                                  }}
+                                  className="p-1 hover:text-ink text-ink-muted cursor-pointer"
+                                  title={`Copy: ${s.installCommand}`}
+                                >
+                                  <Icon name="copy" size={11} />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    )}
+                    ))}
+                  </div>
 
-                    {setting.type === "info" && (
-                      <div className="text-[11px] text-ink-muted italic">
-                        {setting.futureNoticeText ||
-                          "Coming in upcoming releases."}
-                      </div>
-                    )}
+                  <div className="flex items-center justify-between pt-2 border-t border-line/50 text-[10px] text-ink-muted">
+                    <span>
+                      Quick command:{" "}
+                      <code className="font-mono text-ink">
+                        npm run lsp:bundle -- --check
+                      </code>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard.writeText("npm run lsp:bundle")
+                        showToast("Copied: npm run lsp:bundle")
+                      }}
+                      className="text-accent hover:underline cursor-pointer flex items-center gap-1"
+                    >
+                      <Icon name="copy" size={10} /> Copy Bundle Installer
+                    </button>
                   </div>
                 </div>
-              ))
+
+                {/* 2. Configuration Settings */}
+                <div className="flex flex-col gap-3">
+                  <div className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider px-1">
+                    LSP Preferences & Custom Binaries
+                  </div>
+                  {filteredSettings.map(renderSettingCard)}
+                </div>
+              </div>
+            ) : filteredSettings.length > 0 ? (
+              filteredSettings.map(renderSettingCard)
             ) : (
               <div className="settings-empty-state">
                 <Icon name="search" size={24} />

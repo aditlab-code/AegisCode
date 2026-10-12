@@ -119,6 +119,14 @@ export function useLayoutCore() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [commandPaletteQuery, setCommandPaletteQuery] = useState("")
   const [settingsModalOpen, setSettingsModalOpen] = useState(false)
+  const [settingsModalCategory, setSettingsModalCategory] = useState<string>("Editor")
+
+  const openSettingsModal = useCallback((category?: string) => {
+    if (category) {
+      setSettingsModalCategory(category)
+    }
+    setSettingsModalOpen(true)
+  }, [])
 
   const toggleSettingsModal = useCallback(() => {
     setSettingsModalOpen((prev) => !prev)
@@ -471,6 +479,9 @@ export function useLayoutCore() {
     setCommandPaletteQuery,
     settingsModalOpen,
     setSettingsModalOpen,
+    settingsModalCategory,
+    setSettingsModalCategory,
+    openSettingsModal,
     toggleSettingsModal,
     theme,
     setTheme,

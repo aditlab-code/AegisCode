@@ -157,5 +157,31 @@ describe("Settings, Explorer Exclude, and Syntax Highlighting", () => {
       expect(tabSizeItems.length).toBe(1)
       expect(tabSizeItems[0].category).toBe("Editor")
     })
+
+    it("verifies LSP settings appear under LSP category", () => {
+      const dummyCallbacks = {
+        settings: DEFAULT_APP_SETTINGS,
+        updateEditorSettings: vi.fn(),
+        updateWorkbenchSettings: vi.fn(),
+        updateFilesSettings: vi.fn(),
+        updateFeaturesSettings: vi.fn(),
+        updateCompanionSettings: vi.fn(),
+        updateAgentSettings: vi.fn(),
+        setThemePalette: vi.fn(),
+        setThemeMode: vi.fn(),
+        showToast: vi.fn(),
+      }
+
+      const schema = buildSettingsSchema(dummyCallbacks)
+      const lspItems = schema.filter((item) => item.category === "LSP")
+      expect(lspItems.length).toBeGreaterThan(0)
+      const lspIds = lspItems.map((item) => item.id)
+      expect(lspIds).toContain("features.lsp.formatOnSave")
+      expect(lspIds).toContain("features.lsp.servers.typescript")
+      expect(lspIds).toContain("features.lsp.servers.python")
+      expect(lspIds).toContain("features.lsp.servers.go")
+      expect(lspIds).toContain("features.lsp.servers.rust")
+      expect(lspIds).toContain("features.lsp.servers.cpp")
+    })
   })
 })

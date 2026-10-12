@@ -18,7 +18,15 @@ import { testProviderConnection } from "../../../utils/storeApi"
 
 export interface SettingItem {
   id: string
-  category: "Editor" | "Files" | "Workbench" | "Window" | "Features" | "Companion" | "AI"
+  category:
+    | "Editor"
+    | "Files"
+    | "Workbench"
+    | "Window"
+    | "Features"
+    | "Companion"
+    | "AI"
+    | "LSP"
   title: string
   description: string
   type: "boolean" | "select" | "text" | "number" | "password" | "custom-models" | "provider-test" | "info"
@@ -730,7 +738,7 @@ export function buildSettingsSchema(
     },
     {
       id: "features.lsp.formatOnSave",
-      category: "Features",
+      category: "LSP",
       title: "LSP: Format on Save",
       description:
         "Automatically format documents with the active language server when pressing Cmd+S / Ctrl+S.",
@@ -750,7 +758,7 @@ export function buildSettingsSchema(
     },
     {
       id: "features.lsp.servers.typescript",
-      category: "Features",
+      category: "LSP",
       title: "LSP: TypeScript/JavaScript Binary Path",
       description:
         "Custom path to vtsls or typescript-language-server executable.",
@@ -771,7 +779,7 @@ export function buildSettingsSchema(
     },
     {
       id: "features.lsp.servers.python",
-      category: "Features",
+      category: "LSP",
       title: "LSP: Python Binary Path",
       description: "Custom path to pyright-langserver or ruff executable.",
       type: "text",
@@ -791,7 +799,7 @@ export function buildSettingsSchema(
     },
     {
       id: "features.lsp.servers.go",
-      category: "Features",
+      category: "LSP",
       title: "LSP: Go Binary Path",
       description: "Custom path to gopls executable.",
       type: "text",
@@ -811,7 +819,7 @@ export function buildSettingsSchema(
     },
     {
       id: "features.lsp.servers.rust",
-      category: "Features",
+      category: "LSP",
       title: "LSP: Rust Binary Path",
       description: "Custom path to rust-analyzer executable.",
       type: "text",
@@ -831,7 +839,7 @@ export function buildSettingsSchema(
     },
     {
       id: "features.lsp.servers.cpp",
-      category: "Features",
+      category: "LSP",
       title: "LSP: C/C++ Binary Path",
       description: "Custom path to clangd executable.",
       type: "text",
@@ -844,6 +852,66 @@ export function buildSettingsSchema(
             servers: {
               ...(prev.lsp?.servers || {}),
               cpp: String(v).trim(),
+            },
+          },
+        }))
+      },
+    },
+    {
+      id: "features.lsp.servers.html",
+      category: "LSP",
+      title: "LSP: HTML Binary Path",
+      description: "Custom path to vscode-html-language-server executable.",
+      type: "text",
+      value: settings?.features?.lsp?.servers?.html ?? "",
+      onChange: (v) => {
+        updateFeaturesSettings((prev) => ({
+          ...prev,
+          lsp: {
+            ...prev.lsp,
+            servers: {
+              ...(prev.lsp?.servers || {}),
+              html: String(v).trim(),
+            },
+          },
+        }))
+      },
+    },
+    {
+      id: "features.lsp.servers.css",
+      category: "LSP",
+      title: "LSP: CSS Binary Path",
+      description: "Custom path to vscode-css-language-server executable.",
+      type: "text",
+      value: settings?.features?.lsp?.servers?.css ?? "",
+      onChange: (v) => {
+        updateFeaturesSettings((prev) => ({
+          ...prev,
+          lsp: {
+            ...prev.lsp,
+            servers: {
+              ...(prev.lsp?.servers || {}),
+              css: String(v).trim(),
+            },
+          },
+        }))
+      },
+    },
+    {
+      id: "features.lsp.servers.json",
+      category: "LSP",
+      title: "LSP: JSON Binary Path",
+      description: "Custom path to vscode-json-language-server executable.",
+      type: "text",
+      value: settings?.features?.lsp?.servers?.json ?? "",
+      onChange: (v) => {
+        updateFeaturesSettings((prev) => ({
+          ...prev,
+          lsp: {
+            ...prev.lsp,
+            servers: {
+              ...(prev.lsp?.servers || {}),
+              json: String(v).trim(),
             },
           },
         }))
