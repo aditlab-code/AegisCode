@@ -1,6 +1,6 @@
 # AegisCode 🛡️⚡
 
-> **Lightweight, High-Performance Web IDE + Local Cross-Platform Go Server + Remote Tablet Companion**
+> **Lightweight, High-Performance Web IDE + Local Cross-Platform Go Server**
 
 [![Release](https://img.shields.io/badge/Release-v1.0.0--beta.1-blue.svg)](RELEASE_NOTES.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -25,7 +25,7 @@ Whether running as a native desktop application on macOS via a lightweight Cocoa
 * **Integrated Multi-Provider AI Studio**: Native streaming chat supporting **Antigravity CLI (`agy`)**, **Anthropic Claude**, and **OpenAI/OpenCode/OpenRouter** via Server-Sent Events (SSE) with automated tool-call visualization and path normalizers.
 * **Full DAP Debugger**: Bundled Debug Adapter Protocol client communicating directly with Go Delve (`dlv`) for breakpoints, step execution, call stacks, and variable scopes.
 * **Real-Time PTY Terminal**: Multi-tabbed terminal sessions powered by `@xterm/xterm` with automatic viewport resizing over WebSockets.
-* **Wireless Tablet Companion (`/?mode=companion`)**: Turn an iPad or Android tablet on your local Wi-Fi into an interactive second screen with a live web preview and a touch-friendly code scratchpad.
+* **Wireless Tablet Companion (`/?mode=companion`)**: Turn an iPad or Android tablet on your local Wi-Fi into an interactive second screen with a live web preview and a touch-friendly code scratchpad. [Future]
 
 ---
 
@@ -126,14 +126,6 @@ npm run package:dmg
   * [INSTALLATION.md](INSTALLATION.md) — Comprehensive installation & setup guide
   * [RELEASE_NOTES.md](RELEASE_NOTES.md) — Community release notes for `v1.0.0-beta.1`
   * [LICENSE](LICENSE) — MIT License
-* **Internal Developer & Technical Specifications**:
-  * [`docs/README.md`](docs/README.md) — Internal documentation index
-  * [`docs/internal/architecture.md`](docs/internal/architecture.md) — Architectural principles and module layout
-  * [`docs/internal/feature-backend.md`](docs/internal/feature-backend.md) — Go backend endpoints, DAP, and supervisors
-  * [`docs/internal/frontend.md`](docs/internal/frontend.md) — UI design tokens and layout modules
-  * [`docs/internal/roadmap.md`](docs/internal/roadmap.md) — Engineering phases and milestone tracker
-  * [`docs/internal/skills.md`](docs/internal/skills.md) — Engineering skills and agent workflows
-  * [`docs/adr/`](docs/adr/) — Architecture Decision Records
 
 ---
 

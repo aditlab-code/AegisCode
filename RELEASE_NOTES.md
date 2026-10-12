@@ -44,7 +44,7 @@ Designed under the core principle of **Zero Over-Engineering**, AegisCode delive
 * **High-Throughput WebSockets**: Real-time pseudo-terminal session manager built on `@xterm/xterm` with automatic viewport resizing (`fitAddon`).
 * **Multi-Tab Sessions**: Seamlessly manage, rename, and terminate multiple terminal shells in parallel.
 
-### 6. Wireless Tablet Companion Pairing
+### 6. Wireless Tablet Companion Pairing **Future**
 * **Second-Screen Workflow**: Open `/?mode=companion` over local Wi-Fi to use your iPad or Android tablet as a responsive companion display.
 * **Dual Modes**:
   - **Live Web Preview**: Test web applications and services directly on physical mobile screens with live reload.
@@ -83,20 +83,6 @@ xattr -cr /Applications/AegisCode.app
 ```bash
 ./bin/aegiscode-darwin-arm64 --open
 ```
-
----
-
-## Documentation Navigation
-
-- **Release & User Guides**:
-  - [README.md](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/README.md) — Project overview & capabilities
-  - [INSTALLATION.md](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/INSTALLATION.md) — Step-by-step installation instructions
-  - [LICENSE](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/LICENSE) — MIT License
-- **Internal Development & Architecture Specifications**:
-  - [`docs/README.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/README.md) — Internal developer index
-  - [`docs/internal/architecture.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/internal/architecture.md) — System architecture
-  - [`docs/internal/feature-backend.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/internal/feature-backend.md) — Backend APIs & DAP debugger
-  - [`docs/internal/frontend.md`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/internal/frontend.md) — UI design & Tailwind token system
 
 ---
 
