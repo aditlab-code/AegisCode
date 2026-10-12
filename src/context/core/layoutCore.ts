@@ -119,7 +119,8 @@ export function useLayoutCore() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [commandPaletteQuery, setCommandPaletteQuery] = useState("")
   const [settingsModalOpen, setSettingsModalOpen] = useState(false)
-  const [settingsModalCategory, setSettingsModalCategory] = useState<string>("Editor")
+  const [settingsModalCategory, setSettingsModalCategory] =
+    useState<string>("Editor")
 
   const openSettingsModal = useCallback((category?: string) => {
     if (category) {

@@ -18,15 +18,7 @@ import { testProviderConnection } from "../../../utils/storeApi"
 
 export interface SettingItem {
   id: string
-  category:
-    | "Editor"
-    | "Files"
-    | "Workbench"
-    | "Window"
-    | "Features"
-    | "Companion"
-    | "AI"
-    | "LSP"
+  category: "Editor" | "Files" | "Workbench" | "Window" | "Features" | "Companion" | "AI" | "LSP"
   title: string
   description: string
   type: "boolean" | "select" | "text" | "number" | "password" | "custom-models" | "provider-test" | "info"

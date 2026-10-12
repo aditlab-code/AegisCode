@@ -1107,7 +1107,8 @@ export function SettingsModal() {
                         Language Servers Runtime Status
                       </span>
                       <p className="text-[11px] text-ink-muted">
-                        Live detection across PATH, Homebrew, toolchains, and custom configured paths.
+                        Live detection across PATH, Homebrew, toolchains, and
+                        custom configured paths.
                       </p>
                     </div>
                     <button
