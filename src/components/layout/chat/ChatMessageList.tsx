@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, memo, useMemo } from "react"
 import { Icon } from "../../ui/Icon"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import { CHAT_PROVIDERS } from "../../../data/chatConstants"
 import { MarkdownRenderer } from "./MarkdownRenderer"
 import { UnifiedActivityTimeline } from "./ToolCallActivity"
@@ -294,7 +294,20 @@ export function ChatMessageList() {
     openFileInPane,
     applyCodeWithReview,
     rootWorkspacePath,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      chatMessages: s.chatMessages,
+      activeProvider: s.activeProvider,
+      activeModel: s.activeModel,
+      showToast: s.showToast,
+      setSettingsModalOpen: s.setSettingsModalOpen,
+      setActiveActivity: s.setActiveActivity,
+      setSidebarOpen: s.setSidebarOpen,
+      openFileInPane: s.openFileInPane,
+      applyCodeWithReview: s.applyCodeWithReview,
+      rootWorkspacePath: s.rootWorkspacePath,
+    })),
+  )
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollRafRef = useRef<number | null>(null)
 

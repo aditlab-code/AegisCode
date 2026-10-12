@@ -27,5 +27,5 @@ For end-user release documentation, please refer to the root release files:
 
 ## Architecture Decision Records & Agents
 
-* **Architecture Decision Records**: [`docs/adr/`](adr/) — Formal ADRs detailing foundational decisions (ADR-0001 through ADR-0008).
+* **Architecture Decision Records**: [`docs/adr/`](adr/) — Formal ADRs detailing foundational decisions (ADR-0001 through ADR-0011).
 * **Agent Guidelines & Triage**: [`docs/agents/`](agents/) — Issue tracker schemas, triage labels, and domain models.

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react"
-import { WorkbenchProvider, useWorkbench } from "./context/WorkbenchContext"
+import { WorkbenchProvider } from "./context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "./store"
 import {
   Header,
   ActivityRail,
@@ -14,6 +15,53 @@ import {
 import { Toast } from "./components/ui/Toast"
 import { syncBrowserAiContext } from "./utils/browserAiSync"
 
+function BrowserAiSyncEffect() {
+  const activeFile = useWorkbenchStore((s) =>
+    s.splitEditor && s.focusedGroup === "group2"
+      ? s.group2.activeTab
+      : s.group1.activeTab,
+  )
+  const activeLanguage = useWorkbenchStore((s) => s.activeLanguage)
+  const cursorPosition = useWorkbenchStore((s) => s.cursorPosition)
+  const isDirty = useWorkbenchStore((s) =>
+    activeFile ? Boolean(s.fileBuffers[activeFile]?.isDirty) : false,
+  )
+  const diagnosticsCount = useWorkbenchStore((s) =>
+    activeFile
+      ? s.diagnostics.filter((d) => d.location.startsWith(activeFile)).length
+      : 0,
+  )
+
+  const prevFileRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const currentFile = activeFile || null
+    const isFileSwitch = prevFileRef.current !== currentFile
+    prevFileRef.current = currentFile
+
+    const doSync = () => {
+      syncBrowserAiContext({
+        activeFile: currentFile,
+        language: activeLanguage,
+        workspace: "AegisCodev2",
+        cursor: cursorPosition,
+        isDirty,
+        diagnosticsCount,
+      })
+    }
+
+    if (isFileSwitch) {
+      doSync()
+      return
+    }
+
+    const timer = setTimeout(doSync, 150)
+    return () => clearTimeout(timer)
+  }, [activeFile, activeLanguage, cursorPosition, isDirty, diagnosticsCount])
+
+  return null
+}
+
 function AppShell() {
   const {
     chatOpen,
@@ -26,57 +74,24 @@ function AppShell() {
     bottomPanelHeight,
     toast,
     clearToast,
-    group1,
-    group2,
-    focusedGroup,
-    splitEditor,
-    activeLanguage,
-    fileBuffers,
-    cursorPosition,
-    diagnostics,
     settings,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      chatOpen: s.chatOpen,
+      chatSessionsOpen: s.chatSessionsOpen,
+      sidebarOpen: s.sidebarOpen,
+      panelOpen: s.panelOpen,
+      panelMaximized: s.panelMaximized,
+      sidebarWidth: s.sidebarWidth,
+      chatDrawerWidth: s.chatDrawerWidth,
+      bottomPanelHeight: s.bottomPanelHeight,
+      toast: s.toast,
+      clearToast: s.clearToast,
+      settings: s.settings,
+    })),
+  )
 
   const sidebarPosition = settings?.workbench?.sidebarPosition ?? "left"
-
-  const activeFile =
-    splitEditor && focusedGroup === "group2"
-      ? group2.activeTab
-      : group1.activeTab
-
-  const prevFileRef = useRef<string | null>(null)
-
-  useEffect(() => {
-    const buffer = activeFile ? fileBuffers[activeFile] : undefined
-    const fileDiags = activeFile
-      ? diagnostics.filter((d) => d.location.startsWith(activeFile))
-      : []
-
-    const currentFile = activeFile || null
-    const isFileSwitch = prevFileRef.current !== currentFile
-    prevFileRef.current = currentFile
-
-    const doSync = () => {
-      syncBrowserAiContext({
-        activeFile: currentFile,
-        language: activeLanguage,
-        workspace: "AegisCodev2",
-        cursor: cursorPosition,
-        isDirty: Boolean(buffer?.isDirty),
-        diagnosticsCount: fileDiags.length,
-      })
-    }
-
-    // Immediately sync on file tab switches so header & titles reflect active tab
-    if (isFileSwitch) {
-      doSync()
-      return
-    }
-
-    // Debounce cursor & typing movements (150ms) to eliminate main-thread DOM churn
-    const timer = setTimeout(doSync, 150)
-    return () => clearTimeout(timer)
-  }, [activeFile, activeLanguage, cursorPosition, fileBuffers, diagnostics])
 
   const gridClass = useMemo(
     () =>
@@ -88,6 +103,7 @@ function AppShell() {
 
   return (
     <div className="app-shell">
+      <BrowserAiSyncEffect />
       <Header />
       <main
         className={`workspace ${gridClass} ${
@@ -113,22 +129,23 @@ function AppShell() {
           }
         >
           <Editor />
-          <BottomPanel />
+          {panelOpen && <BottomPanel />}
         </div>
         {chatOpen && <ChatDrawer />}
       </main>
       <StatusBar />
       <SettingsModal />
       <UnsavedChangesModal />
-      <Toast message={toast} onDismiss={clearToast} />
+      {toast && <Toast message={toast} onClose={clearToast} />}
     </div>
   )
 }
 
-export default function App() {
+export function App() {
   return (
     <WorkbenchProvider>
       <AppShell />
     </WorkbenchProvider>
   )
 }
+export default App

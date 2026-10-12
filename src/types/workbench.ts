@@ -441,4 +441,4 @@ export interface StreamDebugEvent {
   state?: DebugState
 }
 
-export type { WorkbenchContextType } from "../context/core/workbenchFacade"
+export type { WorkbenchContextType } from "../context/WorkbenchContext"

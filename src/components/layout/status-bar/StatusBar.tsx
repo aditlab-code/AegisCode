@@ -1,10 +1,19 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, memo } from "react"
 import { Icon } from "../../ui/Icon"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import { BranchPopover } from "./BranchPopover"
 import { ProblemsPopover } from "./ProblemsPopover"
 import { NotificationsPopover } from "./NotificationsPopover"
 import { LspStatusPopover } from "./LspStatusPopover"
+
+const CursorStatusItem = memo(function CursorStatusItem() {
+  const cursorPosition = useWorkbenchStore((s) => s.cursorPosition)
+  return (
+    <span className="status-item">
+      Ln {cursorPosition.line}, Col {cursorPosition.col}
+    </span>
+  )
+})
 
 export function StatusBar() {
   const {
@@ -18,7 +27,6 @@ export function StatusBar() {
     diagnostics,
     notifications,
     activeLanguage,
-    cursorPosition,
     tabSize,
     toggleTabSize,
     encoding,
@@ -27,7 +35,28 @@ export function StatusBar() {
     showToast,
     setPanelOpen,
     setActiveBottomTab,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      isGitRepo: s.isGitRepo,
+      activeBranch: s.activeBranch,
+      gitChanges: s.gitChanges,
+      stagedChanges: s.stagedChanges,
+      ahead: s.ahead,
+      behind: s.behind,
+      gitSync: s.gitSync,
+      diagnostics: s.diagnostics,
+      notifications: s.notifications,
+      activeLanguage: s.activeLanguage,
+      tabSize: s.tabSize,
+      toggleTabSize: s.toggleTabSize,
+      encoding: s.encoding,
+      serverConnected: s.serverConnected,
+      checkServerConnection: s.checkServerConnection,
+      showToast: s.showToast,
+      setPanelOpen: s.setPanelOpen,
+      setActiveBottomTab: s.setActiveBottomTab,
+    })),
+  )
 
   const [activePanel, setActivePanel] =
     useState<"branch" | "notifications" | "problems" | "lsp" | null>(null)
@@ -132,9 +161,7 @@ export function StatusBar() {
       </div>
 
       <div className="status-group">
-        <span className="status-item">
-          Ln {cursorPosition.line}, Col {cursorPosition.col}
-        </span>
+        <CursorStatusItem />
         <button
           className="status-item cursor-pointer hover:text-[var(--color-ink)]"
           onClick={handleTabSizeClick}

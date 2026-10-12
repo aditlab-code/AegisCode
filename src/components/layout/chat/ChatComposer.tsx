@@ -8,7 +8,7 @@ import {
   type PopoverItem,
 } from "./ChatCommandPopover"
 import { SKILL_COMMANDS } from "../../../data/chatConstants"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 
 interface ChatComposerProps {
   value: string
@@ -30,7 +30,22 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
     isGenerating,
     stopGenerating,
     skills,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      files: s.files,
+      contextItems: s.contextItems,
+      dismissContextItem: s.dismissContextItem,
+      toggleContextItemMode: s.toggleContextItemMode,
+      addMentionContext: s.addMentionContext,
+      activeProvider: s.activeProvider,
+      settings: s.settings,
+      setSettingsModalOpen: s.setSettingsModalOpen,
+      showToast: s.showToast,
+      isGenerating: s.isGenerating,
+      stopGenerating: s.stopGenerating,
+      skills: s.skills,
+    })),
+  )
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const activeSkills = skills && skills.length > 0 ? skills : SKILL_COMMANDS

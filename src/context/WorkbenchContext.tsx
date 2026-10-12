@@ -1,11 +1,12 @@
 import { createContext, useContext, type ReactNode } from "react"
-import type { WorkbenchContextType } from "../types/workbench"
-import { useWorkbenchFacade } from "./core/workbenchFacade"
+import { useWorkbenchStore, type WorkbenchStore } from "../store"
+import { useWorkbenchLifecycle } from "./WorkbenchLifecycle"
 
-export const WorkbenchContext = createContext<WorkbenchContextType | null>(null)
+export const WorkbenchContext = createContext<WorkbenchStore | null>(null)
 
 export function WorkbenchProvider({ children }: { children: ReactNode }) {
-  const value = useWorkbenchFacade()
+  useWorkbenchLifecycle()
+  const value = useWorkbenchStore()
   return (
     <WorkbenchContext.Provider value={value}>
       {children}
@@ -13,12 +14,12 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   )
 }
 
-export function useWorkbench(): WorkbenchContextType {
+export function useWorkbench(): WorkbenchStore {
   const context = useContext(WorkbenchContext)
   if (!context) {
-    throw new Error("useWorkbench must be used within a WorkbenchProvider")
+    return useWorkbenchStore()
   }
   return context
 }
 
-export type { WorkbenchContextType }
+export type { WorkbenchStore as WorkbenchContextType }

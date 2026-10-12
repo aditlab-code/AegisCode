@@ -1,6 +1,5 @@
-import { useContext } from "react"
 import { Icon } from "../../ui/Icon"
-import { WorkbenchContext } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import { isGitDiffTab, parseGitDiffTab } from "../../../utils/gitDiffTab"
 
 interface EditorBreadcrumbsProps {
@@ -8,13 +7,21 @@ interface EditorBreadcrumbsProps {
 }
 
 export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
-  const workbench = useContext(WorkbenchContext)
+  const { focusedPane, splitEditor, secondaryActiveTab, activeTab } =
+    useWorkbenchStore(
+      useShallow((s) => ({
+        focusedPane: s.focusedPane,
+        splitEditor: s.splitEditor,
+        secondaryActiveTab: s.secondaryActiveTab,
+        activeTab: s.activeTab,
+      })),
+    )
 
   const currentFile =
     file ||
-    (workbench?.focusedPane === "secondary" && workbench?.splitEditor
-      ? workbench?.secondaryActiveTab
-      : workbench?.activeTab) ||
+    (focusedPane === "secondary" && splitEditor
+      ? secondaryActiveTab
+      : activeTab) ||
     ""
 
   const isDiff = isGitDiffTab(currentFile)

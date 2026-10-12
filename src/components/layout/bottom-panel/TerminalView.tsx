@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react"
 import { Terminal, type ITheme } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import "@xterm/xterm/css/xterm.css"
-import { useWorkbench } from "../../../context/WorkbenchContext"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import {
   resizeTerminalApi,
   sendTerminalInputApi,
@@ -69,7 +69,16 @@ export function TerminalView() {
     settings,
     theme,
     themePalette,
-  } = useWorkbench()
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      activeTerminalSession: s.activeTerminalSession,
+      setTerminalRunning: s.setTerminalRunning,
+      createTerminalSession: s.createTerminalSession,
+      settings: s.settings,
+      theme: s.theme,
+      themePalette: s.themePalette,
+    })),
+  )
 
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
