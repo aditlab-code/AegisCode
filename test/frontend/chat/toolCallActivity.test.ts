@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest"
-import { parseToolCall } from "@/components/layout/chat/ToolCallActivity"
+import {
+  parseToolCall,
+  UnifiedActivityTimeline,
+} from "@/components/layout/chat/ToolCallActivity"
 import type { ToolCallItem } from "@/types/workbench"
 
 describe("ToolCallActivity parseToolCall", () => {
@@ -236,5 +239,11 @@ describe("ToolCallActivity parseToolCall", () => {
     expect(parsedEdit.targetFile).toBe("server/cmd/server/main.go")
     expect(parsedEdit.fullTarget).toBe("server/cmd/server/main.go")
     expect(parsedEdit.target).toBe("main.go")
+  })
+})
+
+describe("UnifiedActivityTimeline", () => {
+  it("exports UnifiedActivityTimeline as a valid React component", () => {
+    expect(typeof UnifiedActivityTimeline).toBe("object") // memo wrapped component
   })
 })

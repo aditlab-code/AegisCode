@@ -3,7 +3,7 @@ import { Icon } from "../../ui/Icon"
 import { useWorkbench } from "../../../context/WorkbenchContext"
 import { CHAT_PROVIDERS } from "../../../data/chatConstants"
 import { MarkdownRenderer } from "./MarkdownRenderer"
-import { ToolCallActivityCard, ToolCallStepper } from "./ToolCallActivity"
+import { UnifiedActivityTimeline } from "./ToolCallActivity"
 import { normalizeWorkspacePath } from "../../../utils/workspaceApi"
 import type { ChatMessage } from "../../../types/workbench"
 
@@ -86,7 +86,8 @@ const ChatMessageCard = memo(function ChatMessageCard({
           tc.name === "edit_file",
       )
       .map((tc) => {
-        const raw = (tc.args?.TargetFile ||
+        const raw = (tc.targetFile ||
+          tc.args?.TargetFile ||
           tc.args?.targetFile ||
           tc.args?.path ||
           tc.args?.target ||
@@ -111,130 +112,83 @@ const ChatMessageCard = memo(function ChatMessageCard({
     )
   }, [toolModifiedFiles, proposedBlocks])
 
-  return (
-    <div className={`message-card message-${item.role}`}>
-      <div className="message-header">
-        <div className="message-author-info">
-          <span className={`msg-avatar msg-avatar-${item.role}`}>
-            {item.role === "agent" ? (
-              <Icon name="aegis" size={11} />
-            ) : (
-              <span>U</span>
-            )}
-          </span>
-          <strong className="msg-author-name">
-            {item.role === "agent" ? "AEGIS" : "You"}
-          </strong>
-          {item.role === "agent" && (
-            <div className="flex items-center gap-1">
-              <span className={`provider-tag tag-${itemProvider}`}>
-                {itemProviderObj.tag}
-              </span>
-              <span className="msg-model-badge">{itemModel}</span>
+  // 1. User Message: Framed minimal prompt card with inline context pills
+  if (item.role === "user") {
+    return (
+      <div className="message-turn message-turn-user">
+        <div className="user-prompt-card">
+          <div className="user-prompt-text">{item.text}</div>
+
+          {item.context && item.context.length > 0 && (
+            <div className="user-context-pills">
+              {item.context.map((c, cIdx) => (
+                <button
+                  key={cIdx}
+                  type="button"
+                  onClick={() => onOpenFile(c.path)}
+                  className="context-pill"
+                  title={`Open ${c.path}${
+                    c.lineRange ? ` (${c.lineRange})` : ""
+                  }`}
+                >
+                  <Icon name="file" size={10} />
+                  <span className="context-pill-name">
+                    {c.path.split("/").pop()}
+                  </span>
+                  {c.lineRange && (
+                    <span className="context-pill-range">{c.lineRange}</span>
+                  )}
+                  {c.isTruncated && (
+                    <span
+                      className="context-pill-warn"
+                      title="Truncated context"
+                    >
+                      <Icon name="warning" size={9} />
+                    </span>
+                  )}
+                </button>
+              ))}
             </div>
           )}
         </div>
+      </div>
+    )
+  }
 
-        {item.role === "agent" && item.text && (
+  // 2. Agent Message: Flat continuous canvas with unified collapsible timeline
+  return (
+    <div className="message-turn message-turn-agent group relative">
+      {/* Floating hover-only action bar */}
+      {item.text && (
+        <div className="agent-floating-actions">
           <button
             type="button"
-            className="msg-copy-btn"
+            className="agent-action-btn"
             title="Copy message"
             onClick={() => onCopy(item.text)}
           >
-            <Icon name="copy" size={12} />
+            <Icon name="copy" size={11} />
           </button>
-        )}
-      </div>
-
-      {item.context && item.context.length > 0 && (
-        <div className="message-context-banner">
-          <details className="message-context-details">
-            <summary className="message-context-summary">
-              <Icon name="file" size={11} />
-              <span>
-                {item.context.length} Context Item
-                {item.context.length > 1 ? "s" : ""} (
-                {item.context.map((c) => c.path.split("/").pop()).join(", ")})
-              </span>
-              <span className="context-tokens-badge">
-                ~{item.context.reduce((acc, c) => acc + c.estimatedTokens, 0)}{" "}
-                tokens
-              </span>
-            </summary>
-            <div className="message-context-content">
-              {item.context.map((c, cIdx) => (
-                <div key={cIdx} className="message-context-item">
-                  <div className="context-item-header">
-                    <span className="context-item-path">{c.path}</span>
-                    {c.lineRange && (
-                      <span className="context-item-range">{c.lineRange}</span>
-                    )}
-                    {c.isTruncated && (
-                      <span className="context-item-truncated flex items-center gap-1">
-                        <Icon name="warning" size={10} />
-                        <span>Truncated</span>
-                      </span>
-                    )}
-                  </div>
-                  <pre className="context-item-code">
-                    <code>
-                      {c.content.length > 300
-                        ? c.content.slice(0, 300) + "\n..."
-                        : c.content}
-                    </code>
-                  </pre>
-                </div>
-              ))}
-            </div>
-          </details>
         </div>
       )}
 
-      {/* Thinking Process Accordion */}
-      {item.thinking && (
-        <div className="message-thinking-block">
-          <details
-            className="thinking-details"
-            open={Boolean(item.isStreaming && !item.text)}
-          >
-            <summary className="thinking-summary">
-              <Icon
-                name="brain"
-                size={12}
-                className={
-                  item.isStreaming && !item.text
-                    ? "animate-pulse text-accent"
-                    : ""
-                }
-              />
-              <span>Thinking Process</span>
-              {item.isStreaming && !item.text && (
-                <span className="thinking-status-indicator">
-                  In progress...
-                </span>
-              )}
-            </summary>
-            <div className="thinking-body whitespace-pre-wrap">
-              {item.isStreaming && item.thinking.length > 3000
-                ? "... [earlier thinking hidden during stream]\n\n" +
-                  item.thinking.slice(-3000)
-                : item.thinking}
-            </div>
-          </details>
-        </div>
-      )}
-
-      {/* Tool Calls Activity Feed (Single or Stepper) */}
-      {item.toolCalls && item.toolCalls.length > 0 && (
-        <div className="message-tools-list">
-          <ToolCallStepper toolCalls={item.toolCalls} onOpenFile={onOpenFile} />
-        </div>
+      {/* Unified Collapsible Activity Timeline (Thinking + Tool Calls + Error) */}
+      {(item.thinking ||
+        (item.toolCalls && item.toolCalls.length > 0) ||
+        item.error) && (
+        <UnifiedActivityTimeline
+          thinking={item.thinking}
+          toolCalls={item.toolCalls}
+          isStreaming={item.isStreaming}
+          error={item.error}
+          onOpenFile={onOpenFile}
+          onOpenSettings={onOpenSettings}
+        />
       )}
 
       {/* Message Body or Streaming Placeholder */}
       {item.text ? (
-        <div className="message-body">
+        <div className="agent-body">
           <MarkdownRenderer text={item.text} isStreaming={item.isStreaming} />
           {item.isStreaming && <span className="streaming-cursor" />}
         </div>
@@ -244,43 +198,21 @@ const ChatMessageCard = memo(function ChatMessageCard({
           <span className="shimmer-dot" />
           <span className="shimmer-dot" />
         </div>
-      ) : item.role === "agent" &&
-        !item.error &&
+      ) : !item.error &&
         !item.thinking &&
         (!item.toolCalls || item.toolCalls.length === 0) ? (
-        <div className="message-body text-ink-muted text-xs italic">
+        <div className="agent-body text-ink-muted text-xs italic">
           Sedang menunggu respons...
         </div>
       ) : null}
 
-      {/* Error Message Card (Preserves Partial Text Above) */}
-      {item.error && (
-        <div className="chat-error-card">
-          <div className="chat-error-header">
-            <Icon name="warning" size={13} />
-            <span className="font-semibold text-xs">AI Execution Notice</span>
-          </div>
-          <p className="chat-error-message">{item.error}</p>
-          <div className="chat-error-actions">
-            <button
-              type="button"
-              className="chat-error-btn"
-              onClick={onOpenSettings}
-            >
-              <Icon name="settings" size={11} />
-              <span>Open Settings</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Agent Multi-File Review Banner */}
+      {/* Multi-File Review Banner (Compact & Clean) */}
       {allTouchedFiles.length > 0 && (
-        <div className="mt-2.5 p-2.5 rounded bg-surface-raised border border-line flex flex-col gap-2 text-xs">
+        <div className="agent-files-banner">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="text-accent shrink-0">
-                <Icon name="git" size={13} />
+                <Icon name="git" size={12} />
               </span>
               <span className="text-ink text-[11px] font-medium truncate">
                 {toolModifiedFiles.length > 0
@@ -295,7 +227,7 @@ const ChatMessageCard = memo(function ChatMessageCard({
               {proposedBlocks.length > 0 && (
                 <button
                   type="button"
-                  className="flex items-center gap-1 px-2 py-0.5 rounded bg-accent text-accent-fg hover:opacity-90 transition-opacity text-[11px] font-medium cursor-pointer"
+                  className="agent-banner-apply-btn"
                   onClick={() => onApplyAll(proposedBlocks)}
                   title="Apply all proposed file changes to workspace"
                 >
@@ -305,7 +237,7 @@ const ChatMessageCard = memo(function ChatMessageCard({
               )}
               <button
                 type="button"
-                className="flex items-center gap-1 px-2 py-0.5 rounded bg-surface border border-line text-ink hover:bg-surface-hover transition-colors text-[11px] font-medium cursor-pointer"
+                className="agent-banner-review-btn"
                 onClick={onReviewInGit}
                 title="Open Source Control to review side-by-side diffs"
               >
@@ -316,7 +248,7 @@ const ChatMessageCard = memo(function ChatMessageCard({
           </div>
 
           {/* File Pills List */}
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
             {allTouchedFiles.map((file) => {
               const baseName = file.split("/").filter(Boolean).pop() || file
               return (
@@ -324,7 +256,7 @@ const ChatMessageCard = memo(function ChatMessageCard({
                   key={file}
                   type="button"
                   onClick={() => onOpenFile(file)}
-                  className="px-1.5 py-0.5 rounded bg-canvas border border-line text-[10.5px] font-mono text-ink-soft hover:text-ink hover:border-accent transition-colors cursor-pointer"
+                  className="agent-file-pill"
                   title={`Click to open ${file}`}
                 >
                   {baseName}
@@ -332,6 +264,18 @@ const ChatMessageCard = memo(function ChatMessageCard({
               )
             })}
           </div>
+        </div>
+      )}
+
+      {/* Subtle Micro-Metadata Footer */}
+      {item.text && !item.isStreaming && (
+        <div className="agent-meta-footer">
+          <span className="agent-meta-model">{itemModel}</span>
+          {itemProviderObj && (
+            <span className="agent-meta-provider">
+              · {itemProviderObj.name}
+            </span>
+          )}
         </div>
       )}
     </div>

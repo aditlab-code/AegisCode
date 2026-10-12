@@ -576,3 +576,307 @@ export const ToolCallStepper = memo(function ToolCallStepper({
     </div>
   )
 })
+
+export interface UnifiedActivityTimelineProps {
+  thinking?: string
+  toolCalls?: ToolCallItem[]
+  isStreaming?: boolean
+  error?: string
+  onOpenFile?: (path: string) => void
+  onOpenSettings?: () => void
+}
+
+/**
+ * Unified Activity Timeline: Combines thinking process, tool actions, and execution notices
+ * into a single minimalist collapsible timeline stream with auto-collapse.
+ */
+export const UnifiedActivityTimeline = memo(function UnifiedActivityTimeline({
+  thinking,
+  toolCalls = [],
+  isStreaming = false,
+  error,
+  onOpenFile,
+  onOpenSettings,
+}: UnifiedActivityTimelineProps) {
+  if (!thinking && toolCalls.length === 0 && !error) return null
+
+  const isAnyRunning =
+    toolCalls.some((t) => t.status === "running") ||
+    (isStreaming && Boolean(thinking || toolCalls.length > 0))
+  const isAnyError =
+    Boolean(error) || toolCalls.some((t) => t.status === "error")
+
+  // Auto-collapse: Open while actively streaming/running, auto-collapsed when done (unless user manually toggles)
+  const [userOverride, setUserOverride] = useState<boolean | null>(null)
+  const [expandedStepId, setExpandedStepId] = useState<string | null>(null)
+
+  const isOpen =
+    userOverride !== null
+      ? userOverride
+      : Boolean(isStreaming || isAnyRunning || isAnyError)
+
+  const handleToggle = () => {
+    setUserOverride(!isOpen)
+  }
+
+  // Count actions by label
+  const { parsedCalls, actionCounts } = useMemo(() => {
+    const parsed = toolCalls.map(parseToolCall)
+    const counts: Record<string, number> = {}
+    parsed.forEach((p) => {
+      counts[p.actionLabel] = (counts[p.actionLabel] || 0) + 1
+    })
+    return { parsedCalls: parsed, actionCounts: counts }
+  }, [toolCalls])
+
+  // Summary title
+  const summaryTitle = useMemo(() => {
+    if (isAnyRunning) {
+      return toolCalls.length > 0
+        ? `Running ${toolCalls.length} action${
+            toolCalls.length > 1 ? "s" : ""
+          }...`
+        : "Thinking & analyzing..."
+    }
+    if (isAnyError) {
+      return error
+        ? "Execution interrupted"
+        : `Completed with errors (${toolCalls.filter((t) => t.status === "error").length} failed)`
+    }
+    if (toolCalls.length > 0) {
+      return `${toolCalls.length} action${
+        toolCalls.length > 1 ? "s" : ""
+      } taken`
+    }
+    return "Thought process"
+  }, [isAnyRunning, isAnyError, error, toolCalls])
+
+  return (
+    <div
+      className={`unified-timeline-container ${
+        isAnyError ? "timeline-has-error" : ""
+      } ${isAnyRunning ? "timeline-is-running" : ""}`}
+    >
+      {/* 1-Line Compact Summary Bar */}
+      <button
+        type="button"
+        className="unified-timeline-bar"
+        onClick={handleToggle}
+        aria-expanded={isOpen}
+      >
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <span
+            className={`timeline-status-icon ${
+              isAnyRunning
+                ? "status-running"
+                : isAnyError
+                  ? "status-error"
+                  : "status-success"
+            }`}
+          >
+            <Icon
+              name={isAnyRunning ? "refresh" : isAnyError ? "warning" : "check"}
+              size={11}
+              className={isAnyRunning ? "animate-spin" : ""}
+            />
+          </span>
+
+          <span className="timeline-title-text">{summaryTitle}</span>
+
+          {/* Action count badges */}
+          {!isAnyRunning &&
+            !isAnyError &&
+            Object.keys(actionCounts).length > 0 && (
+              <div className="hidden sm:flex items-center gap-1 shrink-0 ml-1">
+                {Object.entries(actionCounts).map(([label, count]) => (
+                  <span key={label} className="timeline-action-badge">
+                    {label} {count}
+                  </span>
+                ))}
+              </div>
+            )}
+        </div>
+
+        <span className={`timeline-chevron ${isOpen ? "rotate-90" : ""}`}>
+          <Icon name="chevron" size={10} />
+        </span>
+      </button>
+
+      {/* Expanded Timeline Tree */}
+      {isOpen && (
+        <div className="unified-timeline-tree">
+          {/* Thinking step */}
+          {thinking && (
+            <div className="timeline-node timeline-node-thinking">
+              <span className="timeline-node-dot dot-thinking">
+                <Icon name="brain" size={10} />
+              </span>
+              <div className="timeline-node-content">
+                <div className="timeline-node-header">
+                  <span className="text-[11px] font-medium text-ink-muted">
+                    Thinking Process
+                  </span>
+                  {isStreaming && (
+                    <span className="text-[9.5px] text-accent animate-pulse">
+                      In progress...
+                    </span>
+                  )}
+                </div>
+                <div className="timeline-thinking-body">
+                  {isStreaming && thinking.length > 3000
+                    ? "... [earlier thinking windowed]\n\n" +
+                      thinking.slice(-3000)
+                    : thinking}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tool Calls */}
+          {parsedCalls.map((parsed, idx) => {
+            const rawTc = toolCalls[idx]
+            const isStepRunning = rawTc.status === "running"
+            const isStepError = rawTc.status === "error"
+            const isStepExpanded = expandedStepId === (rawTc.id || String(idx))
+
+            return (
+              <div key={rawTc.id || idx} className="timeline-node">
+                <span
+                  className={`timeline-node-dot ${
+                    isStepRunning
+                      ? "dot-running"
+                      : isStepError
+                        ? "dot-error"
+                        : "dot-success"
+                  }`}
+                >
+                  <Icon
+                    name={
+                      isStepRunning
+                        ? "refresh"
+                        : isStepError
+                          ? "error"
+                          : "check"
+                    }
+                    size={9}
+                    className={isStepRunning ? "animate-spin" : ""}
+                  />
+                </span>
+
+                <div className="timeline-node-content">
+                  <div
+                    className="timeline-node-row cursor-pointer select-none"
+                    onClick={() =>
+                      setExpandedStepId(
+                        isStepExpanded ? null : rawTc.id || String(idx),
+                      )
+                    }
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      <span className="text-ink-muted shrink-0">
+                        <Icon name={parsed.actionIcon} size={11} />
+                      </span>
+
+                      <span className="text-[11px] font-medium text-ink truncate">
+                        {parsed.actionLabel}{" "}
+                        {parsed.targetFile ? (
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (onOpenFile && parsed.targetFile) {
+                                onOpenFile(parsed.targetFile)
+                              }
+                            }}
+                            className="font-mono text-accent hover:underline cursor-pointer"
+                          >
+                            {parsed.targetFile.split("/").filter(Boolean).pop()}
+                          </span>
+                        ) : (
+                          <span className="font-mono text-ink-soft">
+                            {parsed.target}
+                          </span>
+                        )}
+                      </span>
+
+                      {parsed.secondary && (
+                        <span className="text-[10px] text-ink-muted truncate hidden sm:inline">
+                          · {parsed.secondary}
+                        </span>
+                      )}
+                    </div>
+
+                    {(parsed.output || parsed.rawArgs) && (
+                      <span className="text-[9.5px] text-ink-muted hover:text-ink shrink-0 ml-2">
+                        {isStepExpanded ? "Hide" : "Details"}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Inline on-demand details */}
+                  {isStepExpanded && (
+                    <div className="timeline-node-details">
+                      {parsed.command && (
+                        <div className="timeline-detail-item">
+                          <span className="detail-label">Command:</span>
+                          <code className="detail-code">{parsed.command}</code>
+                        </div>
+                      )}
+                      {parsed.output && (
+                        <div className="timeline-detail-item">
+                          <div className="flex items-center justify-between gap-1 mb-1">
+                            <span className="detail-label">Output:</span>
+                            <button
+                              type="button"
+                              className="detail-copy-btn"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (navigator?.clipboard && parsed.output) {
+                                  navigator.clipboard.writeText(parsed.output)
+                                }
+                              }}
+                            >
+                              <Icon name="copy" size={9} />
+                              <span>Copy</span>
+                            </button>
+                          </div>
+                          <pre className="detail-output">
+                            <code>{parsed.output}</code>
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+
+          {/* Inline Error node */}
+          {error && (
+            <div className="timeline-node timeline-node-error">
+              <span className="timeline-node-dot dot-error">
+                <Icon name="warning" size={10} />
+              </span>
+              <div className="timeline-node-content">
+                <div className="text-[11px] font-medium text-error flex items-center justify-between gap-2">
+                  <span>{error}</span>
+                  {onOpenSettings && (
+                    <button
+                      type="button"
+                      onClick={onOpenSettings}
+                      className="px-1.5 py-0.5 rounded text-[10px] bg-surface-raised border border-line text-ink hover:text-accent cursor-pointer"
+                    >
+                      Settings
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+})
