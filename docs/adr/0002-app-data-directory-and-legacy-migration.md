@@ -1,0 +1,3 @@
+# 0002. App Data Directory and Zero-DB Flat-File Storage Isolation
+
+We decided to eliminate external relational databases (SQLite / CGO) entirely in favor of lightweight, pure-Go standard library JSON flat-files (`os`, `encoding/json`). All system state, persistent user configurations, and chat session histories are strictly isolated inside the OS user profile (`~/.aegis/` on macOS/Linux, `%APPDATA%/AegisCode/` on Windows), completely outside active project repositories. Additionally, a startup Legacy Migration Adapter safely detects and imports existing v1 configurations (`data/settings.json`, `.aegis/auth.json`, and legacy tables) into `~/.aegis/config.json` without altering user workspace folders.

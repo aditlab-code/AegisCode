@@ -47,11 +47,11 @@ __debug_bin*
 .claude-replay.*
 
 # Internal Agent Instructions & Local Specs
-/AGENTS.md
-/CLAUDE.md
-/.scratch/
+#/AGENTS.md
+#/CLAUDE.md
+#/.scratch/
 
 # Internal Developer Documentation
-/docs/
+# /docs/
 
 .DS_Store
