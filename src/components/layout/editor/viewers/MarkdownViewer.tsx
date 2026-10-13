@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Icon } from "../../../ui/Icon"
 import { useWorkbenchStore, useShallow } from "../../../../store"
 import { MarkdownRenderer } from "../../chat/MarkdownRenderer"
 import { CodePane } from "../CodePane"
+import type { CMEditorHandle } from "../CMEditor"
 import "./viewers.css"
 
 interface MarkdownViewerProps {
@@ -16,28 +17,31 @@ export default function MarkdownViewer({
   filename,
   groupId = "group1",
 }: MarkdownViewerProps) {
-  const { buffer, updateFileContent, focusedGroup, settings } =
-    useWorkbenchStore(
-      useShallow((s) => ({
-        buffer: s.fileBuffers[filename],
-        updateFileContent: s.updateFileContent,
-        focusedGroup: s.focusedGroup,
-        settings: s.settings,
-      })),
-    )
+  const { buffer, focusedGroup, settings } = useWorkbenchStore(
+    useShallow((s) => ({
+      buffer: s.fileBuffers[filename],
+      focusedGroup: s.focusedGroup,
+      settings: s.settings,
+    })),
+  )
 
   const [mode, setMode] = useState<MarkdownMode>("split")
   const [syncScroll, setSyncScroll] = useState(true)
   const [splitRatio, setSplitRatio] = useState(50)
   const [isResizing, setIsResizing] = useState(false)
+  const [activeDropdown, setActiveDropdown] =
+    useState<"heading" | "list" | null>(null)
 
   const content = buffer?.content ?? ""
   const [debouncedContent, setDebouncedContent] = useState(content)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const previewScrollRef = useRef<HTMLDivElement>(null)
+  const editorRef = useRef<CMEditorHandle>(null)
+  const dropdownContainerRef = useRef<HTMLDivElement>(null)
   const isSyncingScroll = useRef(false)
   const syncTimeoutRef = useRef<number | null>(null)
+  const lastScrollRatio = useRef<number>(0)
 
   const editorFontSize = settings?.editor?.fontSize ?? 13.5
 
@@ -75,7 +79,7 @@ export default function MarkdownViewer({
     }
   }, [isResizing])
 
-  // Synchronized scrolling engine with anti-Big-O mutex lock
+  // Synchronized scrolling engine with anti-Big-O mutex lock for split mode
   useEffect(() => {
     if (!syncScroll || mode !== "split") return
 
@@ -95,6 +99,7 @@ export default function MarkdownViewer({
       if (eScrollable <= 0) return
 
       const ratio = editorScroller.scrollTop / eScrollable
+      lastScrollRatio.current = ratio
       const pScrollable = previewPane.scrollHeight - previewPane.clientHeight
       const targetTop = ratio * pScrollable
 
@@ -118,6 +123,7 @@ export default function MarkdownViewer({
       if (pScrollable <= 0) return
 
       const ratio = previewPane.scrollTop / pScrollable
+      lastScrollRatio.current = ratio
       const eScrollable =
         editorScroller.scrollHeight - editorScroller.clientHeight
       const targetTop = ratio * eScrollable
@@ -148,135 +154,287 @@ export default function MarkdownViewer({
     }
   }, [syncScroll, mode, debouncedContent])
 
-  // Markdown Enhanced toolbar helper
-  const insertMarkdownSyntax = useCallback(
-    (prefix: string, suffix: string = "", placeholder: string = "") => {
-      const current = buffer?.content ?? ""
-      // Append or insert clean markdown token
-      const addition = `${prefix}${placeholder}${suffix}`
-      const newContent =
-        current.length > 0 ? `${current}\n\n${addition}` : addition
-      updateFileContent(filename, newContent)
-    },
-    [buffer?.content, filename, updateFileContent],
-  )
+  // Track scroll position in editor-only mode
+  useEffect(() => {
+    if (mode !== "editor") return
+    const scroller =
+      containerRef.current?.querySelector<HTMLDivElement>(".cm-scroller")
+    if (!scroller) return
+
+    const handleScroll = () => {
+      const maxScroll = scroller.scrollHeight - scroller.clientHeight
+      if (maxScroll > 0) {
+        lastScrollRatio.current = scroller.scrollTop / maxScroll
+      }
+    }
+
+    scroller.addEventListener("scroll", handleScroll, { passive: true })
+    return () => scroller.removeEventListener("scroll", handleScroll)
+  }, [mode])
+
+  // Track scroll position in preview-only mode
+  useEffect(() => {
+    if (mode !== "preview") return
+    const preview = previewScrollRef.current
+    if (!preview) return
+
+    const handleScroll = () => {
+      const maxScroll = preview.scrollHeight - preview.clientHeight
+      if (maxScroll > 0) {
+        lastScrollRatio.current = preview.scrollTop / maxScroll
+      }
+    }
+
+    preview.addEventListener("scroll", handleScroll, { passive: true })
+    return () => preview.removeEventListener("scroll", handleScroll)
+  }, [mode])
+
+  // Restore scroll position across mode transitions
+  useEffect(() => {
+    const ratio = lastScrollRatio.current
+    if (ratio <= 0) return
+
+    const timer = setTimeout(() => {
+      if (mode === "editor" || mode === "split") {
+        const scroller =
+          containerRef.current?.querySelector<HTMLDivElement>(".cm-scroller")
+        if (scroller) {
+          const maxScroll = scroller.scrollHeight - scroller.clientHeight
+          if (maxScroll > 0) {
+            scroller.scrollTop = ratio * maxScroll
+          }
+        }
+      }
+      if (mode === "preview" || mode === "split") {
+        const preview = previewScrollRef.current
+        if (preview) {
+          const maxScroll = preview.scrollHeight - preview.clientHeight
+          if (maxScroll > 0) {
+            preview.scrollTop = ratio * maxScroll
+          }
+        }
+      }
+    }, 50)
+
+    return () => clearTimeout(timer)
+  }, [mode])
+
+  // Close toolbar dropdowns on outside click or Escape
+  useEffect(() => {
+    if (!activeDropdown) return
+
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        dropdownContainerRef.current &&
+        !dropdownContainerRef.current.contains(e.target as Node)
+      ) {
+        setActiveDropdown(null)
+      }
+    }
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setActiveDropdown(null)
+      }
+    }
+
+    window.addEventListener("mousedown", handleClickOutside)
+    window.addEventListener("keydown", handleKeyDown)
+    return () => {
+      window.removeEventListener("mousedown", handleClickOutside)
+      window.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [activeDropdown])
 
   return (
     <div className="viewer-container" ref={containerRef}>
       {/* Markdown Enhanced Toolbar */}
       <div className="viewer-toolbar">
-        {/* Left Formatting Group */}
-        <div className="viewer-toolbar-group">
-          <button
-            type="button"
-            className="viewer-toolbar-btn font-bold"
-            onClick={() => insertMarkdownSyntax("**", "**", "Bold text")}
-            title="Bold (**text**)"
-          >
-            <Icon name="bold" size={12} />
-          </button>
+        {/* Left Formatting Group - Active in Code and Split modes */}
+        {mode !== "preview" ? (
+          <div className="viewer-toolbar-group" ref={dropdownContainerRef}>
+            <button
+              type="button"
+              className="viewer-toolbar-btn font-bold"
+              onClick={() => editorRef.current?.insertMarkdown("bold")}
+              title="Bold (**text**)"
+            >
+              <Icon name="bold" size={12} />
+            </button>
 
-          <button
-            type="button"
-            className="viewer-toolbar-btn italic font-serif"
-            onClick={() => insertMarkdownSyntax("*", "*", "Italic text")}
-            title="Italic (*text*)"
-          >
-            <Icon name="italic" size={12} />
-          </button>
+            <button
+              type="button"
+              className="viewer-toolbar-btn italic font-serif"
+              onClick={() => editorRef.current?.insertMarkdown("italic")}
+              title="Italic (*text*)"
+            >
+              <Icon name="italic" size={12} />
+            </button>
 
-          <button
-            type="button"
-            className="viewer-toolbar-btn"
-            onClick={() => insertMarkdownSyntax("## ", "", "Heading 2")}
-            title="Heading (## Heading)"
-          >
-            <Icon name="heading" size={12} />
-            <span>H2</span>
-          </button>
+            <div className="viewer-toolbar-divider" />
 
-          <button
-            type="button"
-            className="viewer-toolbar-btn"
-            onClick={() => insertMarkdownSyntax("### ", "", "Heading 3")}
-            title="Heading (### Heading)"
-          >
-            <Icon name="heading" size={12} />
-            <span>H3</span>
-          </button>
+            {/* Headings Dropdown */}
+            <div className="viewer-dropdown">
+              <button
+                type="button"
+                className={`viewer-toolbar-btn ${
+                  activeDropdown === "heading" ? "active" : ""
+                }`}
+                onClick={() =>
+                  setActiveDropdown((prev) =>
+                    prev === "heading" ? null : "heading",
+                  )
+                }
+                title="Headings (H1, H2, H3)"
+              >
+                <Icon name="heading" size={12} />
+                <span>Heading</span>
+                <Icon name="chevron-down" size={10} />
+              </button>
 
-          <button
-            type="button"
-            className="viewer-toolbar-btn"
-            onClick={() => insertMarkdownSyntax("- ", "", "List item")}
-            title="Bullet List (- item)"
-          >
-            <Icon name="list" size={12} />
-          </button>
+              {activeDropdown === "heading" && (
+                <div className="viewer-dropdown-menu" role="menu">
+                  <button
+                    type="button"
+                    className="viewer-dropdown-item"
+                    onClick={() => {
+                      editorRef.current?.insertMarkdown("h1")
+                      setActiveDropdown(null)
+                    }}
+                  >
+                    <span className="font-bold text-xs">H1</span>
+                    <span>Heading 1</span>
+                    <span className="viewer-dropdown-item-badge">#</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="viewer-dropdown-item"
+                    onClick={() => {
+                      editorRef.current?.insertMarkdown("h2")
+                      setActiveDropdown(null)
+                    }}
+                  >
+                    <span className="font-bold text-xs">H2</span>
+                    <span>Heading 2</span>
+                    <span className="viewer-dropdown-item-badge">##</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="viewer-dropdown-item"
+                    onClick={() => {
+                      editorRef.current?.insertMarkdown("h3")
+                      setActiveDropdown(null)
+                    }}
+                  >
+                    <span className="font-bold text-xs">H3</span>
+                    <span>Heading 3</span>
+                    <span className="viewer-dropdown-item-badge">###</span>
+                  </button>
+                </div>
+              )}
+            </div>
 
-          <button
-            type="button"
-            className="viewer-toolbar-btn"
-            onClick={() =>
-              insertMarkdownSyntax("- [ ] ", "", "Task to complete")
-            }
-            title="Task List (- [ ] task)"
-          >
-            <Icon name="check" size={12} />
-            <span>Task</span>
-          </button>
+            {/* Lists Dropdown */}
+            <div className="viewer-dropdown">
+              <button
+                type="button"
+                className={`viewer-toolbar-btn ${
+                  activeDropdown === "list" ? "active" : ""
+                }`}
+                onClick={() =>
+                  setActiveDropdown((prev) => (prev === "list" ? null : "list"))
+                }
+                title="Lists (Bullet, Numbered, Task)"
+              >
+                <Icon name="list" size={12} />
+                <span>List</span>
+                <Icon name="chevron-down" size={10} />
+              </button>
 
-          <button
-            type="button"
-            className="viewer-toolbar-btn"
-            onClick={() =>
-              insertMarkdownSyntax("[", "](https://example.com)", "link title")
-            }
-            title="Hyperlink [title](url)"
-          >
-            <Icon name="link" size={12} />
-          </button>
+              {activeDropdown === "list" && (
+                <div className="viewer-dropdown-menu" role="menu">
+                  <button
+                    type="button"
+                    className="viewer-dropdown-item"
+                    onClick={() => {
+                      editorRef.current?.insertMarkdown("bullet-list")
+                      setActiveDropdown(null)
+                    }}
+                  >
+                    <Icon name="list" size={12} />
+                    <span>Bullet List</span>
+                    <span className="viewer-dropdown-item-badge">-</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="viewer-dropdown-item"
+                    onClick={() => {
+                      editorRef.current?.insertMarkdown("numbered-list")
+                      setActiveDropdown(null)
+                    }}
+                  >
+                    <span className="font-mono text-xs font-semibold">1.</span>
+                    <span>Numbered List</span>
+                    <span className="viewer-dropdown-item-badge">1.</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="viewer-dropdown-item"
+                    onClick={() => {
+                      editorRef.current?.insertMarkdown("task-list")
+                      setActiveDropdown(null)
+                    }}
+                  >
+                    <Icon name="check" size={12} />
+                    <span>Task List</span>
+                    <span className="viewer-dropdown-item-badge">[ ]</span>
+                  </button>
+                </div>
+              )}
+            </div>
 
-          <button
-            type="button"
-            className="viewer-toolbar-btn"
-            onClick={() =>
-              insertMarkdownSyntax(
-                "| Column 1 | Column 2 |\n| :--- | :--- |\n| Data A | Data B |",
-                "",
-                "",
-              )
-            }
-            title="Insert Table"
-          >
-            <Icon name="table" size={12} />
-            <span>Table</span>
-          </button>
+            <div className="viewer-toolbar-divider" />
 
-          <button
-            type="button"
-            className="viewer-toolbar-btn"
-            onClick={() =>
-              insertMarkdownSyntax(
-                "```typescript\n",
-                "\n```",
-                "// Code snippet",
-              )
-            }
-            title="Code Block (```)"
-          >
-            <Icon name="code" size={12} />
-          </button>
+            <button
+              type="button"
+              className="viewer-toolbar-btn"
+              onClick={() => editorRef.current?.insertMarkdown("quote")}
+              title="Quote (> quote)"
+            >
+              <span className="font-bold text-xs leading-none">&gt;</span>
+            </button>
 
-          <button
-            type="button"
-            className="viewer-toolbar-btn"
-            onClick={() => insertMarkdownSyntax("> ", "", "Blockquote text")}
-            title="Quote (> quote)"
-          >
-            <span className="font-bold text-xs">&gt;</span>
-          </button>
-        </div>
+            <button
+              type="button"
+              className="viewer-toolbar-btn"
+              onClick={() => editorRef.current?.insertMarkdown("link")}
+              title="Hyperlink [title](url)"
+            >
+              <Icon name="link" size={12} />
+            </button>
+
+            <button
+              type="button"
+              className="viewer-toolbar-btn"
+              onClick={() => editorRef.current?.insertMarkdown("table")}
+              title="Insert Table"
+            >
+              <Icon name="table" size={12} />
+              <span>Table</span>
+            </button>
+
+            <button
+              type="button"
+              className="viewer-toolbar-btn"
+              onClick={() => editorRef.current?.insertMarkdown("code-block")}
+              title="Code Block (```)"
+            >
+              <Icon name="code" size={12} />
+            </button>
+          </div>
+        ) : (
+          <div />
+        )}
 
         {/* Right View Mode & Sync Controls */}
         <div className="viewer-toolbar-group">
@@ -335,11 +493,12 @@ export default function MarkdownViewer({
 
       {/* Content Area Based on Mode */}
       {mode === "editor" && (
-        <div className="flex-1 h-full overflow-hidden">
+        <div className="markdown-raw-editor">
           <CodePane
             filename={filename}
             isFocused={focusedGroup === groupId}
             paneId={groupId === "group2" ? "secondary" : "primary"}
+            editorRef={editorRef}
           />
         </div>
       )}
@@ -365,6 +524,7 @@ export default function MarkdownViewer({
               filename={filename}
               isFocused={focusedGroup === groupId}
               paneId={groupId === "group2" ? "secondary" : "primary"}
+              editorRef={editorRef}
             />
           </div>
 

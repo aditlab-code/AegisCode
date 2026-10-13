@@ -56,10 +56,13 @@ export interface CMEditorDiffConfig {
   modifiedLabel?: string
 }
 
+export type MarkdownFormatType = "bold" | "italic" | "h1" | "h2" | "h3" | "bullet-list" | "numbered-list" | "task-list" | "quote" | "link" | "table" | "code-block"
+
 export interface CMEditorHandle {
   goToNextChunk: () => void
   goToPrevChunk: () => void
   focus: () => void
+  insertMarkdown: (type: MarkdownFormatType) => void
 }
 
 export interface CMEditorProps {
@@ -87,6 +90,180 @@ export interface CMEditorProps {
   onFind?: () => void
   formatOnSave?: boolean
   insertSpaces?: boolean
+}
+
+export function applyMarkdownFormatToView(
+  view: EditorView,
+  type: MarkdownFormatType,
+) {
+  const { state } = view
+  const sel = state.selection.main
+  const hasSelection = !sel.empty
+  const selectedText = hasSelection ? state.sliceDoc(sel.from, sel.to) : ""
+
+  switch (type) {
+    case "bold": {
+      const text = hasSelection ? selectedText : "Bold text"
+      const insert = `**${text}**`
+      const selFrom = sel.from + 2
+      const selTo = selFrom + text.length
+      view.dispatch({
+        changes: { from: sel.from, to: sel.to, insert },
+        selection: { anchor: selFrom, head: selTo },
+        userEvent: "input",
+      })
+      break
+    }
+    case "italic": {
+      const text = hasSelection ? selectedText : "Italic text"
+      const insert = `*${text}*`
+      const selFrom = sel.from + 1
+      const selTo = selFrom + text.length
+      view.dispatch({
+        changes: { from: sel.from, to: sel.to, insert },
+        selection: { anchor: selFrom, head: selTo },
+        userEvent: "input",
+      })
+      break
+    }
+    case "h1":
+    case "h2":
+    case "h3": {
+      const prefix = type === "h1" ? "# " : type === "h2" ? "## " : "### "
+      const defaultPlaceholder =
+        type === "h1" ? "Heading 1" : type === "h2" ? "Heading 2" : "Heading 3"
+      const line = state.doc.lineAt(sel.from)
+      const lineText = line.text
+      if (!lineText.trim()) {
+        const insert = `${prefix}${defaultPlaceholder}`
+        view.dispatch({
+          changes: { from: line.from, to: line.to, insert },
+          selection: {
+            anchor: line.from + prefix.length,
+            head: line.from + insert.length,
+          },
+          userEvent: "input",
+        })
+      } else {
+        const hashMatch = lineText.match(/^#{1,6}\s*/)
+        if (hashMatch) {
+          view.dispatch({
+            changes: {
+              from: line.from,
+              to: line.from + hashMatch[0].length,
+              insert: prefix,
+            },
+            userEvent: "input",
+          })
+        } else {
+          view.dispatch({
+            changes: { from: line.from, insert: prefix },
+            userEvent: "input",
+          })
+        }
+      }
+      break
+    }
+    case "bullet-list":
+    case "numbered-list":
+    case "task-list": {
+      const prefix =
+        type === "bullet-list"
+          ? "- "
+          : type === "numbered-list"
+            ? "1. "
+            : "- [ ] "
+      const placeholder =
+        type === "bullet-list"
+          ? "List item"
+          : type === "numbered-list"
+            ? "List item"
+            : "Task item"
+      const line = state.doc.lineAt(sel.from)
+      const lineText = line.text
+      if (!lineText.trim()) {
+        const insert = `${prefix}${placeholder}`
+        view.dispatch({
+          changes: { from: line.from, to: line.to, insert },
+          selection: {
+            anchor: line.from + prefix.length,
+            head: line.from + insert.length,
+          },
+          userEvent: "input",
+        })
+      } else {
+        view.dispatch({
+          changes: { from: line.from, insert: prefix },
+          userEvent: "input",
+        })
+      }
+      break
+    }
+    case "quote": {
+      const line = state.doc.lineAt(sel.from)
+      const lineText = line.text
+      if (!lineText.trim()) {
+        const insert = "> Quote text"
+        view.dispatch({
+          changes: { from: line.from, to: line.to, insert },
+          selection: {
+            anchor: line.from + 2,
+            head: line.from + insert.length,
+          },
+          userEvent: "input",
+        })
+      } else {
+        view.dispatch({
+          changes: { from: line.from, insert: "> " },
+          userEvent: "input",
+        })
+      }
+      break
+    }
+    case "link": {
+      const title = hasSelection ? selectedText : "link title"
+      const url = "https://example.com"
+      const insert = `[${title}](${url})`
+      const urlStart = sel.from + title.length + 3
+      const urlEnd = urlStart + url.length
+      view.dispatch({
+        changes: { from: sel.from, to: sel.to, insert },
+        selection: { anchor: urlStart, head: urlEnd },
+        userEvent: "input",
+      })
+      break
+    }
+    case "table": {
+      const tableTmpl =
+        "| Column 1 | Column 2 |\n| :--- | :--- |\n| Item A | Item B |\n| Item C | Item D |"
+      const line = state.doc.lineAt(sel.from)
+      const needPrefixNewline = line.text.trim().length > 0
+      const insert = needPrefixNewline ? `\n\n${tableTmpl}\n` : `${tableTmpl}\n`
+      view.dispatch({
+        changes: { from: sel.from, insert },
+        selection: {
+          anchor: sel.from + insert.length,
+          head: sel.from + insert.length,
+        },
+        userEvent: "input",
+      })
+      break
+    }
+    case "code-block": {
+      const code = hasSelection ? selectedText : "// Code snippet"
+      const insert = `\`\`\`typescript\n${code}\n\`\`\``
+      const codeStart = sel.from + "```typescript\n".length
+      const codeEnd = codeStart + code.length
+      view.dispatch({
+        changes: { from: sel.from, to: sel.to, insert },
+        selection: { anchor: codeStart, head: codeEnd },
+        userEvent: "input",
+      })
+      break
+    }
+  }
+
+  view.focus()
 }
 
 export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
@@ -128,7 +305,7 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
     const langInfo = resolveLanguage(filename)
     const lspChangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-    // Expose imperative handle for toolbar controls (e.g. diff chunk navigation)
+    // Expose imperative handle for toolbar controls (e.g. diff chunk navigation, markdown insertion)
     useImperativeHandle(
       ref,
       () => ({
@@ -153,6 +330,13 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
             mergeViewRef.current.b.focus()
           } else if (unifiedViewRef.current) {
             unifiedViewRef.current.focus()
+          }
+        },
+        insertMarkdown(type: MarkdownFormatType) {
+          const activeView =
+            viewRef.current || mergeViewRef.current?.b || unifiedViewRef.current
+          if (activeView) {
+            applyMarkdownFormatToView(activeView, type)
           }
         },
       }),

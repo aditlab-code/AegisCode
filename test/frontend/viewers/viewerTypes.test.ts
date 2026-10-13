@@ -223,4 +223,11 @@ describe("viewerTypes utility", () => {
       fetchSpy.mockRestore()
     })
   })
+
+  describe("Markdown viewer layout verification", () => {
+    it("verifies viewer classification and file paths for markdown", () => {
+      expect(getViewerTypeForFile("README.md")).toBe("markdown")
+      expect(getViewerTypeForFile("CHANGELOG.markdown")).toBe("markdown")
+    })
+  })
 })

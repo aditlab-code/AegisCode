@@ -9,7 +9,7 @@ import {
   type ConflictRegion,
   type ConflictResolutionChoice,
 } from "../../../utils/gitConflict"
-import { CMEditor } from "./CMEditor"
+import { CMEditor, type CMEditorHandle } from "./CMEditor"
 import { EditorContextMenu } from "./EditorContextMenu"
 
 interface CodePaneProps {
@@ -18,6 +18,7 @@ interface CodePaneProps {
   isFocused: boolean
   secondary?: boolean
   onClose?: () => void
+  editorRef?: React.Ref<CMEditorHandle>
 }
 
 function isSameFile(a?: string, b?: string): boolean {
@@ -40,6 +41,7 @@ export function CodePane({
   isFocused,
   secondary = false,
   onClose,
+  editorRef,
 }: CodePaneProps) {
   const {
     buffer,
@@ -376,6 +378,7 @@ export function CodePane({
       >
         <div className="code-editor-layout">
           <CMEditor
+            ref={editorRef}
             filename={filename}
             content={content}
             isReadOnly={Boolean(buffer?.isLargeFile || buffer?.isBinary)}

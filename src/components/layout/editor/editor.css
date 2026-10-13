@@ -210,6 +210,8 @@
   display: flex;
   min-width: 0;
   min-height: 0;
+  height: 100%;
+  flex: 1;
   flex-direction: column;
   border-right: 1px solid var(--color-line);
   transition: outline 0.15s ease;
