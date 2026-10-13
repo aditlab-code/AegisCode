@@ -1549,6 +1549,48 @@ func TestHandleWorkspaceFilesFind(t *testing.T) {
 	}
 }
 
+func TestCodeGraphAndMCPEndpoints(t *testing.T) {
+	srv, handler, tempDir := setupTestServer(t, "")
+	defer os.RemoveAll(tempDir)
+	defer srv.Codegraph().Close()
+
+	// 1. GET /api/v1/codegraph/status
+	reqStatus := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/status", nil)
+	rrStatus := executeRequest(handler, reqStatus)
+	if rrStatus.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for codegraph status, got %d: %s", rrStatus.Code, rrStatus.Body.String())
+	}
+
+	// 2. POST /api/v1/codegraph/reindex
+	reqReindex := httptest.NewRequest(http.MethodPost, "/api/v1/codegraph/reindex", nil)
+	rrReindex := executeRequest(handler, reqReindex)
+	if rrReindex.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for codegraph reindex, got %d: %s", rrReindex.Code, rrReindex.Body.String())
+	}
+
+	// 3. POST /api/v1/mcp - initialize
+	initBody := `{"jsonrpc":"2.0","id":1,"method":"initialize"}`
+	reqInit := httptest.NewRequest(http.MethodPost, "/api/v1/mcp", strings.NewReader(initBody))
+	rrInit := executeRequest(handler, reqInit)
+	if rrInit.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for mcp initialize, got %d: %s", rrInit.Code, rrInit.Body.String())
+	}
+	if !strings.Contains(rrInit.Body.String(), "2024-11-05") {
+		t.Errorf("expected protocolVersion 2024-11-05 in mcp response: %s", rrInit.Body.String())
+	}
+
+	// 4. POST /api/v1/mcp - tools/list
+	listBody := `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`
+	reqList := httptest.NewRequest(http.MethodPost, "/api/v1/mcp", strings.NewReader(listBody))
+	rrList := executeRequest(handler, reqList)
+	if rrList.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for mcp tools/list, got %d: %s", rrList.Code, rrList.Body.String())
+	}
+	if !strings.Contains(rrList.Body.String(), "get_file_outline") {
+		t.Errorf("expected get_file_outline in tools/list response: %s", rrList.Body.String())
+	}
+}
+
 
 
 

@@ -17,16 +17,17 @@ import (
 	"time"
 
 	"github.com/aditwicaksono/aegiscode/server/internal/ai"
+	"github.com/aditwicaksono/aegiscode/server/internal/codegraph"
 	"github.com/aditwicaksono/aegiscode/server/internal/debug"
 	"github.com/aditwicaksono/aegiscode/server/internal/git"
 	"github.com/aditwicaksono/aegiscode/server/internal/lsp"
+	"github.com/aditwicaksono/aegiscode/server/internal/mcp"
 	"github.com/aditwicaksono/aegiscode/server/internal/platform"
 	"github.com/aditwicaksono/aegiscode/server/internal/store"
 	"github.com/aditwicaksono/aegiscode/server/internal/supervisor"
 	"github.com/aditwicaksono/aegiscode/server/internal/terminal"
 	"github.com/aditwicaksono/aegiscode/server/internal/workspace"
 )
-
 // Server coordinates HTTP transport over Core Server domain modules.
 type Server struct {
 	ws         *workspace.Manager
@@ -37,9 +38,11 @@ type Server struct {
 	store      *store.Store
 	debug      *debug.Manager
 	lsp        *lsp.Manager
-	pairing    *PairingManager
-	logMu      sync.RWMutex
-	logSubs    map[chan LogEvent]struct{}
+	codegraph  *codegraph.Engine
+	mcp        *mcp.Server
+	pairing      *PairingManager
+	logMu        sync.RWMutex
+	logSubs      map[chan LogEvent]struct{}
 	workerMu     sync.RWMutex
 	workerSubs   map[chan supervisor.CrashEvent]struct{}
 	shutdownChan chan struct{}
@@ -83,12 +86,28 @@ func NewServer(ws *workspace.Manager, picker platform.FolderPicker, customStore 
 			s.lsp.SetCustomServers(cfg.LspServers)
 		}
 	}
+	if ws != nil {
+		if cg, err := codegraph.NewEngine(ws, s.lsp); err == nil {
+			s.codegraph = cg
+			s.mcp = mcp.NewServer(cg)
+		}
+	}
 	return s
 }
 
 // Pairing returns the companion pairing and session manager.
 func (s *Server) Pairing() *PairingManager {
 	return s.pairing
+}
+
+// Codegraph returns the active CodeGraph Knowledge Engine.
+func (s *Server) Codegraph() *codegraph.Engine {
+	return s.codegraph
+}
+
+// MCP returns the active native Model Context Protocol server.
+func (s *Server) MCP() *mcp.Server {
+	return s.mcp
 }
 
 // Debug returns the active debugger manager.
@@ -345,6 +364,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/lsp/status", s.handleLSPStatus)
 	mux.HandleFunc("/api/v1/events/lsp", s.handleLSPEvents)
 
+	// Model Context Protocol (MCP) & CodeGraph Endpoints
+	mux.HandleFunc("/api/v1/mcp", s.handleMCP)
+	mux.HandleFunc("/api/v1/codegraph/status", s.handleCodeGraphStatus)
+	mux.HandleFunc("/api/v1/codegraph/reindex", s.handleCodeGraphReindex)
+
 	// System Management
 	mux.HandleFunc("/api/v1/system/shutdown", s.handleSystemShutdown)
 
@@ -418,6 +442,9 @@ func (s *Server) handleWorkspaceOpen(w http.ResponseWriter, r *http.Request) {
 	if s.store != nil {
 		_ = s.store.AddRecentProject(absPath)
 	}
+	if s.codegraph != nil {
+		_ = s.codegraph.SetWorkspace(absPath)
+	}
 	jsonResponse(w, http.StatusOK, OpenWorkspaceResponse{
 		Status:   "ok",
 		RootPath: absPath,
@@ -437,6 +464,9 @@ func (s *Server) handleWorkspaceClose(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.BroadcastLog("Server", "Unmounted active workspace", "info")
+	if s.codegraph != nil {
+		_ = s.codegraph.SetWorkspace("")
+	}
 	jsonResponse(w, http.StatusOK, CloseWorkspaceResponse{
 		Status: "closed",
 	})
@@ -473,6 +503,9 @@ func (s *Server) handleWorkspacePickFolder(w http.ResponseWriter, r *http.Reques
 	}
 
 	_, name := s.ws.GetRoot()
+	if s.codegraph != nil {
+		_ = s.codegraph.SetWorkspace(absPath)
+	}
 	jsonResponse(w, http.StatusOK, PickFolderResponse{
 		Status:   "ok",
 		Path:     absPath,
@@ -2761,6 +2794,70 @@ func (s *Server) handleLSPEvents(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.mcp == nil {
+		jsonError(w, http.StatusServiceUnavailable, "mcp server not initialized")
+		return
+	}
+
+	var req mcp.JSONRPCRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		resp := &mcp.JSONRPCResponse{
+			JSONRPC: "2.0",
+			Error: &mcp.JSONRPCError{
+				Code:    mcp.CodeParseError,
+				Message: "invalid json: " + err.Error(),
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	resp := s.mcp.HandleRequest(r.Context(), &req)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Server) handleCodeGraphStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.codegraph == nil {
+		jsonResponse(w, http.StatusOK, codegraph.GraphStatus{})
+		return
+	}
+
+	st, err := s.codegraph.Status(r.Context())
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	jsonResponse(w, http.StatusOK, st)
+}
+
+func (s *Server) handleCodeGraphReindex(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.codegraph == nil {
+		jsonError(w, http.StatusServiceUnavailable, "codegraph engine not initialized")
+		return
+	}
+
+	if err := s.codegraph.Reindex(r.Context()); err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	jsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 

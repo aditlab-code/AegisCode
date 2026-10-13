@@ -148,6 +148,7 @@ func (e *ClaudeEngine) StreamChat(ctx context.Context, req StreamChatRequest, se
 		},
 		"max_tokens": 4096,
 		"stream":     true,
+		"tools":      GetCodeGraphClaudeTools(),
 	}
 
 	payloadBytes, err := json.Marshal(reqBody)

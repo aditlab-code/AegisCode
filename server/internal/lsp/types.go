@@ -185,3 +185,29 @@ type ClientCapabilities struct {
 	TextDocument any `json:"textDocument,omitempty"`
 	Workspace    any `json:"workspace,omitempty"`
 }
+
+// DocumentSymbolParams represents parameters for textDocument/documentSymbol.
+type DocumentSymbolParams struct {
+	TextDocument TextDocumentIdentifier `json:"textDocument"`
+}
+
+// DocumentSymbol represents programming constructs like variables, functions, and classes.
+type DocumentSymbol struct {
+	Name           string           `json:"name"`
+	Detail         string           `json:"detail,omitempty"`
+	Kind           int              `json:"kind"`
+	Tags           []int            `json:"tags,omitempty"`
+	Deprecated     bool             `json:"deprecated,omitempty"`
+	Range          Range            `json:"range"`
+	SelectionRange Range            `json:"selectionRange"`
+	Children       []DocumentSymbol `json:"children,omitempty"`
+}
+
+// SymbolInformation represents flat information about programming constructs.
+type SymbolInformation struct {
+	Name          string   `json:"name"`
+	Kind          int      `json:"kind"`
+	Deprecated    bool     `json:"deprecated,omitempty"`
+	Location      Location `json:"location"`
+	ContainerName string   `json:"containerName,omitempty"`
+}

@@ -18,12 +18,14 @@ import (
 	"time"
 
 	"github.com/aditwicaksono/aegiscode/server/internal/api"
+	"github.com/aditwicaksono/aegiscode/server/internal/codegraph"
+	"github.com/aditwicaksono/aegiscode/server/internal/lsp"
+	"github.com/aditwicaksono/aegiscode/server/internal/mcp"
 	"github.com/aditwicaksono/aegiscode/server/internal/platform"
 	"github.com/aditwicaksono/aegiscode/server/internal/store"
 	"github.com/aditwicaksono/aegiscode/server/internal/web"
 	"github.com/aditwicaksono/aegiscode/server/internal/workspace"
 )
-
 // Version is optionally injected via -ldflags during release binary compilation.
 var Version = "dev"
 
@@ -75,6 +77,11 @@ func createListener(envPort string) (net.Listener, int, error) {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "mcp" {
+		runMCPServer(os.Args[2:])
+		return
+	}
+
 	shouldOpen := false
 	for _, arg := range os.Args[1:] {
 		if arg == "--version" || arg == "-v" {
@@ -82,7 +89,7 @@ func main() {
 			return
 		}
 		if arg == "--help" || arg == "-h" {
-			fmt.Printf("AegisCode %s\nUsage: aegiscode [options]\n\nOptions:\n  -o, --open       Open default browser on startup\n  -v, --version    Print version and exit\n  -h, --help       Print help and exit\n", Version)
+			fmt.Printf("AegisCode %s\nUsage:\n  aegiscode [options]                Start Web-based IDE Core Server\n  aegiscode mcp [--workspace <path>] Run native MCP server over stdio\n\nOptions:\n  -o, --open       Open default browser on startup\n  -v, --version    Print version and exit\n  -h, --help       Print help and exit\n", Version)
 			return
 		}
 		if arg == "--open" || arg == "-o" {
@@ -201,4 +208,44 @@ func main() {
 
 	_ = st.Close()
 	fmt.Println("AegisCode Go Core Server stopped cleanly.")
+}
+
+func runMCPServer(args []string) {
+	wsPath := "."
+	for i := 0; i < len(args); i++ {
+		if (args[i] == "--workspace" || args[i] == "-w") && i+1 < len(args) {
+			wsPath = args[i+1]
+			i++
+		}
+	}
+	if envWs := os.Getenv("WORKSPACE_ROOT"); envWs != "" && wsPath == "." {
+		wsPath = envWs
+	}
+	absWs, err := filepath.Abs(wsPath)
+	if err != nil {
+		absWs = wsPath
+	}
+
+	ws, err := workspace.NewManager(absWs)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to initialize workspace: %v\n", err)
+		os.Exit(1)
+	}
+	lspMgr := lsp.NewManager(absWs)
+	defer lspMgr.Close()
+
+	eng, err := codegraph.NewEngine(ws, lspMgr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to initialize codegraph engine: %v\n", err)
+		os.Exit(1)
+	}
+	defer eng.Close()
+
+	srv := mcp.NewServer(eng)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	if err := mcp.RunStdio(ctx, srv, os.Stdin, os.Stdout); err != nil && !errors.Is(err, context.Canceled) {
+		fmt.Fprintf(os.Stderr, "mcp server error: %v\n", err)
+	}
 }

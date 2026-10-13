@@ -27,15 +27,33 @@ func ListSkills(ctx context.Context, provider string, workspaceDir string) ([]Sk
 
 	home, _ := os.UserHomeDir()
 
+	var result []SkillItem
 	switch p {
 	case "claude":
-		return listClaudeSkills(home, workspaceDir), nil
+		result = listClaudeSkills(home, workspaceDir)
 	case "opencode":
-		return listOpenCodeSkills(home, workspaceDir), nil
+		result = listOpenCodeSkills(home, workspaceDir)
 	case "openrouter":
-		return listOpenRouterSkills(workspaceDir), nil
+		result = listOpenRouterSkills(workspaceDir)
 	default:
-		return listAntigravitySkills(home, workspaceDir), nil
+		result = listAntigravitySkills(home, workspaceDir)
+	}
+
+	for _, cgSkill := range codeGraphSkills() {
+		if !hasCommand(result, cgSkill.Command) {
+			result = append(result, cgSkill)
+		}
+	}
+	return result, nil
+}
+
+func codeGraphSkills() []SkillItem {
+	return []SkillItem{
+		{Command: "/outline", Name: "Outline File Symbols", Description: "Retrieve compact outline of symbols in a file without bodies (< 150 tokens)", Scope: "system", Source: "CodeGraph · Native"},
+		{Command: "/def", Name: "Symbol Definition", Description: "Look up symbol definition, signature, and docstrings (< 80 tokens)", Scope: "system", Source: "CodeGraph · Native"},
+		{Command: "/callers", Name: "Find Callers", Description: "Find inbound callers across workspace (< 150 tokens)", Scope: "system", Source: "CodeGraph · Native"},
+		{Command: "/subgraph", Name: "Dependency Subgraph", Description: "Explore surgical 2-hop dependency subgraph around a symbol (< 400 tokens)", Scope: "system", Source: "CodeGraph · Native"},
+		{Command: "/impact", Name: "Git Diff Impact", Description: "Analyze git diff hunks and impacted caller topology", Scope: "system", Source: "CodeGraph · Native"},
 	}
 }
 

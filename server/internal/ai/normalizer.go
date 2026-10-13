@@ -82,6 +82,49 @@ func GenerateSummary(name, targetFile string, args map[string]any) string {
 			return "Code search: " + SanitizeString(q)
 		}
 		return "Code search"
+	case "get_file_outline":
+		f := targetFile
+		if f == "" {
+			if fp, ok := args["file_path"].(string); ok {
+				f = fp
+			}
+		}
+		if f != "" {
+			return "Outlining " + SanitizeString(f)
+		}
+		return "Outlining file symbols"
+	case "get_symbol_definition":
+		sym, _ := args["name"].(string)
+		if sym != "" {
+			return "Looking up definition of " + SanitizeString(sym)
+		}
+		return "Looking up symbol definition"
+	case "find_callers":
+		fn, _ := args["function_name"].(string)
+		if fn != "" {
+			return "Finding callers of " + SanitizeString(fn)
+		}
+		return "Finding symbol callers"
+	case "find_callees":
+		fn, _ := args["function_name"].(string)
+		if fn != "" {
+			return "Finding callees of " + SanitizeString(fn)
+		}
+		return "Finding symbol callees"
+	case "query_subgraph":
+		sym, _ := args["root_symbol"].(string)
+		if sym != "" {
+			return "Exploring subgraph for " + SanitizeString(sym)
+		}
+		return "Exploring dependency subgraph"
+	case "read_symbol_body":
+		sym, _ := args["name"].(string)
+		if sym != "" {
+			return "Reading body of " + SanitizeString(sym)
+		}
+		return "Reading symbol body"
+	case "get_diff_impact":
+		return "Analyzing Git diff impact"
 	default:
 		return name
 	}

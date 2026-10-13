@@ -179,6 +179,7 @@ func (e *OpenAIEngine) StreamChat(ctx context.Context, req StreamChatRequest, se
 			{"role": "user", "content": prompt},
 		},
 		"stream": true,
+		"tools":  GetCodeGraphOpenAITools(),
 	}
 
 	payloadBytes, err := json.Marshal(reqBody)

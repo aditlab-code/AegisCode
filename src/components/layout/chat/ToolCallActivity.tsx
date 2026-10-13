@@ -213,6 +213,119 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
       rawArgs: sanitizeRawArgs(tc.args),
     }
   }
+  // 5. CodeGraph Knowledge Engine tools
+  if (
+    name === "get_file_outline" ||
+    name === "get_symbol_definition" ||
+    name === "find_callers" ||
+    name === "find_callees" ||
+    name === "query_subgraph" ||
+    name === "read_symbol_body" ||
+    name === "get_diff_impact"
+  ) {
+    if (name === "get_file_outline") {
+      const filePath = (args.file_path || tc.targetFile || "").toString().trim()
+      const baseName = filePath ? filePath.split("/").pop() || filePath : "File"
+      return {
+        actionLabel: "Outline",
+        actionIcon: "symbol",
+        target: baseName,
+        fullTarget: filePath,
+        secondary: filePath !== baseName ? filePath : "",
+        targetFile: filePath || undefined,
+        output: sanitizeOutput(tc.output, tc.preview),
+        blobRef: tc.blobRef,
+        rawArgs: sanitizeRawArgs(tc.args),
+      }
+    }
+
+    if (name === "get_symbol_definition") {
+      const symName = (args.name || "").toString().trim()
+      const fileHint = (args.file_hint || "").toString().trim()
+      return {
+        actionLabel: "Def",
+        actionIcon: "code",
+        target: symName || "Symbol",
+        fullTarget: symName,
+        secondary: fileHint ? `in ${fileHint}` : "",
+        output: sanitizeOutput(tc.output, tc.preview),
+        blobRef: tc.blobRef,
+        rawArgs: sanitizeRawArgs(tc.args),
+      }
+    }
+
+    if (name === "find_callers") {
+      const fnName = (args.function_name || "").toString().trim()
+      return {
+        actionLabel: "Callers",
+        actionIcon: "branch",
+        target: fnName ? `← ${fnName}` : "Callers",
+        fullTarget: fnName,
+        secondary: args.limit ? `limit ${args.limit}` : "max 15",
+        output: sanitizeOutput(tc.output, tc.preview),
+        blobRef: tc.blobRef,
+        rawArgs: sanitizeRawArgs(tc.args),
+      }
+    }
+
+    if (name === "find_callees") {
+      const fnName = (args.function_name || "").toString().trim()
+      return {
+        actionLabel: "Callees",
+        actionIcon: "branch",
+        target: fnName ? `→ ${fnName}` : "Callees",
+        fullTarget: fnName,
+        secondary: args.file_hint ? `in ${args.file_hint}` : "",
+        output: sanitizeOutput(tc.output, tc.preview),
+        blobRef: tc.blobRef,
+        rawArgs: sanitizeRawArgs(tc.args),
+      }
+    }
+
+    if (name === "query_subgraph") {
+      const rootSym = (args.root_symbol || "").toString().trim()
+      return {
+        actionLabel: "Graph",
+        actionIcon: "zap",
+        target: rootSym ? `Graph · ${rootSym}` : "Subgraph",
+        fullTarget: rootSym,
+        secondary: args.depth ? `${args.depth} hops` : "2 hops",
+        output: sanitizeOutput(tc.output, tc.preview),
+        blobRef: tc.blobRef,
+        rawArgs: sanitizeRawArgs(tc.args),
+      }
+    }
+
+    if (name === "read_symbol_body") {
+      const symName = (args.name || "").toString().trim()
+      const filePath = (args.file_path || "").toString().trim()
+      return {
+        actionLabel: "Body",
+        actionIcon: "file",
+        target: symName || filePath || "Symbol",
+        fullTarget: filePath,
+        secondary: filePath ? filePath : "",
+        targetFile: filePath || undefined,
+        output: sanitizeOutput(tc.output, tc.preview),
+        blobRef: tc.blobRef,
+        rawArgs: sanitizeRawArgs(tc.args),
+      }
+    }
+
+    if (name === "get_diff_impact") {
+      const staged = Boolean(args.staged)
+      return {
+        actionLabel: "Impact",
+        actionIcon: "git",
+        target: staged ? "Staged Git Diff" : "Working Tree Diff",
+        fullTarget: staged ? "git diff --cached" : "git diff",
+        secondary: "Topology Impact",
+        output: sanitizeOutput(tc.output, tc.preview),
+        blobRef: tc.blobRef,
+        rawArgs: sanitizeRawArgs(tc.args),
+      }
+    }
+  }
 
   // 5. Fallback for other tools
   const formattedName = name

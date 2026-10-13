@@ -81,3 +81,162 @@ func StreamChat(ctx context.Context, req StreamChatRequest, sendEvent EventSende
 
 	return engine.StreamChat(ctx, req, sendEvent)
 }
+
+// GetCodeGraphOpenAITools returns CodeGraph tool specifications in OpenAI function calling format.
+func GetCodeGraphOpenAITools() []map[string]any {
+	return []map[string]any{
+		{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "get_file_outline",
+				"description": "Retrieve compact outline of all functions, classes, interfaces, and methods in a file without bodies (< 150 tokens).",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"file_path": map[string]any{
+							"type":        "string",
+							"description": "Relative workspace file path",
+						},
+					},
+					"required": []string{"file_path"},
+				},
+			},
+		},
+		{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "get_symbol_definition",
+				"description": "Retrieve symbol signature, line range, and docstrings (< 80 tokens).",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"name": map[string]any{
+							"type":        "string",
+							"description": "Symbol name",
+						},
+						"file_hint": map[string]any{
+							"type":        "string",
+							"description": "Optional file path substring",
+						},
+					},
+					"required": []string{"name"},
+				},
+			},
+		},
+		{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "find_callers",
+				"description": "Find all inbound callers of a function or method across the workspace (< 150 tokens).",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"function_name": map[string]any{
+							"type":        "string",
+							"description": "Function or method name",
+						},
+						"limit": map[string]any{
+							"type":        "integer",
+							"description": "Max callers to return (default 15)",
+						},
+					},
+					"required": []string{"function_name"},
+				},
+			},
+		},
+		{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "find_callees",
+				"description": "Find all outbound functions called by a function or method.",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"function_name": map[string]any{
+							"type":        "string",
+							"description": "Function name",
+						},
+						"file_hint": map[string]any{
+							"type":        "string",
+							"description": "Optional file path substring",
+						},
+					},
+					"required": []string{"function_name"},
+				},
+			},
+		},
+		{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "query_subgraph",
+				"description": "Execute a surgical 2-hop BFS dependency subgraph exploration around a symbol (< 400 tokens).",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"root_symbol": map[string]any{
+							"type":        "string",
+							"description": "Root symbol name",
+						},
+						"depth": map[string]any{
+							"type":        "integer",
+							"description": "Traversal depth (clamped to max 2 hops)",
+						},
+					},
+					"required": []string{"root_symbol"},
+				},
+			},
+		},
+		{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "read_symbol_body",
+				"description": "Read the exact source implementation body lines of a symbol from disk.",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"name": map[string]any{
+							"type":        "string",
+							"description": "Symbol name",
+						},
+						"file_path": map[string]any{
+							"type":        "string",
+							"description": "Relative file path",
+						},
+					},
+					"required": []string{"name", "file_path"},
+				},
+			},
+		},
+		{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "get_diff_impact",
+				"description": "Graph-augmented Git diff impact analysis: maps modified line hunks to changed symbols and caller topology.",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"staged": map[string]any{
+							"type":        "boolean",
+							"description": "Analyze staged changes if true, unstaged if false",
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// GetCodeGraphClaudeTools returns CodeGraph tool specifications in Anthropic Claude format.
+func GetCodeGraphClaudeTools() []map[string]any {
+	openAITools := GetCodeGraphOpenAITools()
+	claudeTools := make([]map[string]any, 0, len(openAITools))
+	for _, t := range openAITools {
+		fn := t["function"].(map[string]any)
+		claudeTools = append(claudeTools, map[string]any{
+			"name":         fn["name"],
+			"description":  fn["description"],
+			"input_schema": fn["parameters"],
+		})
+	}
+	return claudeTools
+}

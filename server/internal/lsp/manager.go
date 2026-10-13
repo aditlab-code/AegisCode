@@ -711,6 +711,56 @@ func (m *Manager) Formatting(relPath string, tabSize int, insertSpaces bool, lan
 	return edits, nil
 }
 
+// DocumentSymbols queries the language server for symbols in a document via textDocument/documentSymbol.
+func (m *Manager) DocumentSymbols(relPath string, lang string) ([]DocumentSymbol, error) {
+	client, err := m.GetOrStartClient(lang)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	uri := m.filePathToURI(relPath)
+	params := DocumentSymbolParams{
+		TextDocument: TextDocumentIdentifier{URI: uri},
+	}
+
+	resp, err := client.Call(ctx, "textDocument/documentSymbol", params)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(resp.Result) == 0 || string(resp.Result) == "null" {
+		return []DocumentSymbol{}, nil
+	}
+
+	// 1. Try hierarchical DocumentSymbol[]
+	var docSymbols []DocumentSymbol
+	if err := json.Unmarshal(resp.Result, &docSymbols); err == nil && len(docSymbols) > 0 {
+		return docSymbols, nil
+	}
+
+	// 2. Try flat SymbolInformation[]
+	var flatSymbols []SymbolInformation
+	if err := json.Unmarshal(resp.Result, &flatSymbols); err == nil {
+		out := make([]DocumentSymbol, 0, len(flatSymbols))
+		for _, s := range flatSymbols {
+			out = append(out, DocumentSymbol{
+				Name:           s.Name,
+				Detail:         s.ContainerName,
+				Kind:           s.Kind,
+				Deprecated:     s.Deprecated,
+				Range:          s.Location.Range,
+				SelectionRange: s.Location.Range,
+			})
+		}
+		return out, nil
+	}
+
+	return []DocumentSymbol{}, nil
+}
+
 // SubscribeDiagnostics registers an event listener for compiler diagnostics.
 func (m *Manager) SubscribeDiagnostics() (<-chan PublishDiagnosticsParams, func()) {
 	ch := make(chan PublishDiagnosticsParams, 64)
