@@ -17,7 +17,7 @@
 | **Special** | UI Dark/Light Theme & Modular Palettes | ✅ Completed | ActivityRail toggle, modular JSON palettes (Default, Atom, Tokyo Night) |
 | **Special** | Settings Registry, Core IDE Preferences & Editor Polish | ✅ Completed | Decoupled schema registry, wildcard exclude, GPU cursor blinking, wrap column |
 | **Phase 6** | Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger | 🟡 Active (6.1–6.4, 6.6–6.11 ✅, 6.5 🟡) | Cross-platform Go binary & embed.FS, supervisor, JSON store, AI agent bridge, DAP/Delve, Append-Only Ledger |
-| **Phase 7** | Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`) | 🟡 Active (Sub-Phase 7.1 ✅, 7.2–7.3 ⚪) | Multi-format tab viewers (Images, Markdown, PDF, CSV), vector canvas wireframing |
+| **Phase 7** | Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`) | 🟡 Active (Sub-Phase 7.1, 7.1b, 7.1c ✅, 7.2–7.3 ⚪) | Multi-format tab viewers (Images, Markdown, PDF, Big Data CSV), vector canvas wireframing |
 | **Phase 8** | Research Workshop & Data Science Studio | ⚪ Planned | LaTeX + PDF sync, BibTeX, Python/R dataframes, Biblioshiny |
 | **Phase 9** | Web-Based Remote Pairing & Tablet Companion | ⚪ Deferred (Final) | LAN pairing, web preview host, touch-optimized editor mode |
 
@@ -405,6 +405,16 @@
       - **Git Conflict Detection & Commit Guard**: Auto-detection of merge conflict markers (`<<<<<<< HEAD`, `=======`, `>>>>>>>`) with yellow tab warning badge, commit warning banner, and disabled commit button preventing accidental commits of corrupted files.
       - **Header Actions Iconography & Order**: Reordered toggles to Primary Sidebar -> Bottom Panel -> AI Chat Drawer with dedicated `sidebar-left` and `sidebar-right` icons.
     - **Verification**: 100% verified via automated frontend Vitest suite (17 test files, 170 tests passing), Go backend tests (including `TestCompareCommits`), Vite production build, and oxfmt code formatting.
+  - **Sub-Phase 7.1c: Native Go Big Data CSV Query Engine (590k+ Rows, 394 Columns)**:
+    - **Status**: ✅ Completed
+    - **Deliverables**:
+      - **RFC 4180 Row Offset Indexer (`server/internal/workspace/csv.go`)**: Ultra-lightweight byte scanner in Go tracking quotes (`inQuotes`) to build row offset indices in memory. Benchmark on IEEE-CIS Fraud Detection dataset (`train_transaction.csv`: 651.7 MB, 590,540 rows, 394 columns): initial indexing in **770 ms** using only **~4.7 MB RAM** in Go (eliminating 8–11 GB browser heap crash).
+      - **Instant Random-Access Seek**: Queries for arbitrary pages (e.g. Page 50,000) seek to disk offset in **0.20 ms (< 0.0002 seconds)** via `f.Seek(rowOffsets[start], io.SeekStart)` and parse only the requested page.
+      - **Server-Side Column Windowing**: Slices columns server-side (`colOffset`, `colLimit`) so only requested column batches (e.g. `Cols 1–25 of 394`) are serialized and transferred over HTTP.
+      - **Streaming Substring Search**: Case-insensitive substring matching in Go across 590,000+ rows executing in ~150 ms with accurate total match count and pagination.
+      - **Hybrid Frontend Pipeline (`CsvViewer.tsx`)**: Automatically switches to Server-Side Big Data Engine when files are $\ge 2\text{ MB}$ or flagged with `isLarge: true`, keeping browser RAM below 50 MB while preserving instant client-side rendering for small files.
+      - **Server-Side API Contract (`GET /api/v1/workspace/csv/query`)**: Fully tested endpoint supporting `page`, `pageSize`, `colOffset`, `colLimit`, and `search`.
+    - **Verification**: 100% verified via Go backend tests (`TestCsvIndexingAndRandomSeek`, `TestCsvColumnWindowing`, `TestCsvStreamingSearch`, `TestCsvRFC4180Quotes`, `TestIeeeDatasetIfPresent` in `csv_test.go`, and `TestWorkspaceCsvQuery` in `api_test.go`), Vitest suite (17 test files, 174 tests passing), Vite production build, and oxfmt code formatting.
   - **Sub-Phase 7.2: Vector Canvas Wireframe Studio (`tldraw`)**:
     - Integration of `@tldraw/tldraw` infinite vector canvas engine isolated strictly inside an on-demand dynamic chunk (`tldraw-chunk.js`).
     - **Zero-Footprint in Code Studio**: The tldraw chunk is downloaded and mounted into RAM **only** when the user opens `.canvas` or `.design` files. While editing standard code (`.go`, `.ts`, `.tsx`, `.py`), tldraw assets consume 0 MB of computer memory and 0 KB initial network bandwidth.

@@ -1411,6 +1411,81 @@ func TestWorkspaceFileRaw(t *testing.T) {
 	}
 }
 
+func TestWorkspaceCsvQuery(t *testing.T) {
+	wsDir := t.TempDir()
+	csvContent := "id,name,score\n1,Alice,90\n2,Bob,85\n3,Charlie,95\n4,David,88\n"
+	if err := os.WriteFile(filepath.Join(wsDir, "data.csv"), []byte(csvContent), 0644); err != nil {
+		t.Fatalf("failed writing data.csv: %v", err)
+	}
+
+	_, handler, _ := setupTestServer(t, wsDir)
+
+	// 1. Valid query page 1, pageSize 2
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspace/csv/query?path=data.csv&page=1&pageSize=2", nil)
+	rr := executeRequest(handler, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var res CsvQueryResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed unmarshaling response: %v", err)
+	}
+	if res.TotalRows != 4 {
+		t.Errorf("expected 4 total rows, got %d", res.TotalRows)
+	}
+	if len(res.Rows) != 2 {
+		t.Fatalf("expected 2 rows on page 1, got %d", len(res.Rows))
+	}
+	if res.Rows[0][1] != "Alice" {
+		t.Errorf("expected first row to be Alice, got %s", res.Rows[0][1])
+	}
+
+	// 2. Column windowing: colOffset 1, colLimit 1
+	reqCols := httptest.NewRequest(http.MethodGet, "/api/v1/workspace/csv/query?path=data.csv&page=1&pageSize=2&colOffset=1&colLimit=1", nil)
+	rrCols := executeRequest(handler, reqCols)
+	if rrCols.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", rrCols.Code)
+	}
+	var resCols CsvQueryResponse
+	_ = json.Unmarshal(rrCols.Body.Bytes(), &resCols)
+	if len(resCols.Headers) != 1 || resCols.Headers[0] != "name" {
+		t.Errorf("expected sliced header ['name'], got %v", resCols.Headers)
+	}
+	if len(resCols.Rows[0]) != 1 || resCols.Rows[0][0] != "Alice" {
+		t.Errorf("expected sliced row ['Alice'], got %v", resCols.Rows[0])
+	}
+
+	// 3. Search filter: "charlie"
+	reqSearch := httptest.NewRequest(http.MethodGet, "/api/v1/workspace/csv/query?path=data.csv&search=charlie", nil)
+	rrSearch := executeRequest(handler, reqSearch)
+	if rrSearch.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for search, got %d", rrSearch.Code)
+	}
+	var resSearch CsvQueryResponse
+	_ = json.Unmarshal(rrSearch.Body.Bytes(), &resSearch)
+	if resSearch.MatchCount != 1 || len(resSearch.Rows) != 1 {
+		t.Errorf("expected 1 match for charlie, got %d", resSearch.MatchCount)
+	}
+	if resSearch.Rows[0][1] != "Charlie" {
+		t.Errorf("expected matching row Charlie, got %v", resSearch.Rows[0])
+	}
+
+	// 4. Missing path -> 400
+	reqMiss := httptest.NewRequest(http.MethodGet, "/api/v1/workspace/csv/query", nil)
+	rrMiss := executeRequest(handler, reqMiss)
+	if rrMiss.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 Bad Request, got %d", rrMiss.Code)
+	}
+
+	// 5. Method POST -> 405
+	reqPost := httptest.NewRequest(http.MethodPost, "/api/v1/workspace/csv/query?path=data.csv", nil)
+	rrPost := executeRequest(handler, reqPost)
+	if rrPost.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 Method Not Allowed, got %d", rrPost.Code)
+	}
+}
+
 
 
 

@@ -311,6 +311,58 @@ export async function fetchFileContent(path: string): Promise<string> {
   return detail.content
 }
 
+export interface CsvQueryOptions {
+  page?: number
+  pageSize?: number
+  colOffset?: number
+  colLimit?: number
+  search?: string
+}
+
+export interface CsvQueryResponse {
+  headers: string[]
+  allHeaders?: string[]
+  rows: string[][]
+  totalRows: number
+  totalCols: number
+  page: number
+  pageSize: number
+  totalPages: number
+  colOffset: number
+  colLimit: number
+  delimiter: string
+  search?: string
+  matchCount?: number
+  isServerSide: boolean
+  queryTimeMs: number
+}
+
+export async function queryWorkspaceCsv(
+  path: string,
+  options: CsvQueryOptions = {},
+): Promise<CsvQueryResponse> {
+  const cleanPath = cleanFilePath(path)
+  validateWorkspaceRelativePath(cleanPath)
+  const params = new URLSearchParams()
+  params.set("path", cleanPath)
+  if (options.page) params.set("page", String(options.page))
+  if (options.pageSize) params.set("pageSize", String(options.pageSize))
+  if (options.colOffset !== undefined)
+    params.set("colOffset", String(options.colOffset))
+  if (options.colLimit !== undefined)
+    params.set("colLimit", String(options.colLimit))
+  if (options.search) params.set("search", options.search)
+
+  const res = await fetch(
+    `${API_BASE}/api/v1/workspace/csv/query?${params.toString()}`,
+  )
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || `Failed to query CSV: ${res.statusText}`)
+  }
+  return res.json()
+}
+
 export async function saveWorkspaceFile(
   path: string,
   content: string,

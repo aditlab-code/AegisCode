@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import {
   getViewerTypeForFile,
   getFileExtension,
@@ -7,6 +7,7 @@ import {
   detectCsvDelimiter,
   parseCsv,
 } from "../../../src/components/layout/editor/viewers/viewerTypes"
+import { queryWorkspaceCsv } from "../../../src/utils/workspaceApi"
 
 describe("viewerTypes utility", () => {
   describe("getViewerTypeForFile", () => {
@@ -86,6 +87,12 @@ describe("viewerTypes utility", () => {
       const tsv = "col1\tcol2\tcol3\nval1\tval2\tval3"
       expect(detectCsvDelimiter(tsv)).toBe("\t")
     })
+
+    it("detects semicolon delimiter even with decimal commas", () => {
+      const csv =
+        "id;product;price;rating\n1;Monitor;199,99;4,5\n2;Keyboard;49,50;4,8\n3;Mouse;25,00;4,2"
+      expect(detectCsvDelimiter(csv)).toBe(";")
+    })
   })
 
   describe("parseCsv (RFC 4180)", () => {
@@ -137,6 +144,83 @@ describe("viewerTypes utility", () => {
         ["1", "2"],
         ["3", "4"],
       ])
+    })
+
+    it("parses wide table with 100+ columns accurately", () => {
+      const colCount = 120
+      const header = Array.from(
+        { length: colCount },
+        (_, i) => `Col_${i + 1}`,
+      ).join(",")
+      const row1 = Array.from(
+        { length: colCount },
+        (_, i) => `Val_${i + 1}`,
+      ).join(",")
+      const row2 = Array.from(
+        { length: colCount },
+        (_, i) => `Data_${i + 1}`,
+      ).join(",")
+      const csv = `${header}\n${row1}\n${row2}`
+      const rows = parseCsv(csv, ",")
+      expect(rows).toHaveLength(3)
+      expect(rows[0]).toHaveLength(colCount)
+      expect(rows[1]).toHaveLength(colCount)
+      expect(rows[0][0]).toBe("Col_1")
+      expect(rows[0][colCount - 1]).toBe(`Col_${colCount}`)
+    })
+
+    it("parses tall table with 150+ rows accurately", () => {
+      const rowCount = 150
+      const lines = ["id,val"]
+      for (let i = 1; i <= rowCount; i++) {
+        lines.push(`${i},test_${i}`)
+      }
+      const rows = parseCsv(lines.join("\n"), ",")
+      expect(rows).toHaveLength(rowCount + 1)
+      expect(rows[1][0]).toBe("1")
+      expect(rows[rowCount][0]).toBe(String(rowCount))
+    })
+  })
+
+  describe("queryWorkspaceCsv API client", () => {
+    it("constructs proper query URL with pagination and windowing params", async () => {
+      const mockResponse = {
+        headers: ["id", "name"],
+        rows: [["1", "Alice"]],
+        totalRows: 100,
+        totalCols: 2,
+        page: 2,
+        pageSize: 10,
+        totalPages: 10,
+        colOffset: 0,
+        colLimit: 25,
+        delimiter: ",",
+        isServerSide: true,
+        queryTimeMs: 0.5,
+      }
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockResponse,
+      } as Response)
+
+      const result = await queryWorkspaceCsv("dataset.csv", {
+        page: 2,
+        pageSize: 10,
+        colOffset: 0,
+        colLimit: 25,
+        search: "Alice",
+      })
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "/api/v1/workspace/csv/query?path=dataset.csv&page=2&pageSize=10&colOffset=0&colLimit=25&search=Alice",
+        ),
+      )
+      expect(result.totalRows).toBe(100)
+      expect(result.isServerSide).toBe(true)
+      expect(result.rows[0][1]).toBe("Alice")
+
+      fetchSpy.mockRestore()
     })
   })
 })

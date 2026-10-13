@@ -339,4 +339,7 @@ type LSPStatusResponse struct {
 	Servers []lsp.LanguageServerStatus `json:"servers"`
 }
 
+// CsvQueryResponse models the Big Data CSV query response.
+type CsvQueryResponse = workspace.CsvQueryResult
+
 

@@ -268,6 +268,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/workspace/tree", s.handleWorkspaceTree)
 	mux.HandleFunc("/api/v1/workspace/file", s.handleWorkspaceFile)
 	mux.HandleFunc("/api/v1/workspace/file/raw", s.handleWorkspaceFileRaw)
+	mux.HandleFunc("/api/v1/workspace/csv/query", s.handleWorkspaceCsvQuery)
 	mux.HandleFunc("/api/v1/workspace/rename", s.handleWorkspaceRename)
 	mux.HandleFunc("/api/v1/workspace/move", s.handleWorkspaceMove)
 	mux.HandleFunc("/api/v1/workspace/search", s.handleWorkspaceSearch)
@@ -670,6 +671,69 @@ func (s *Server) handleWorkspaceFileRaw(w http.ResponseWriter, r *http.Request) 
 	}
 
 	http.ServeFile(w, r, fullPath)
+}
+
+func (s *Server) handleWorkspaceCsvQuery(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	path := r.URL.Query().Get("path")
+	if strings.TrimSpace(path) == "" {
+		jsonError(w, http.StatusBadRequest, "missing path query parameter")
+		return
+	}
+
+	page := 1
+	if pStr := r.URL.Query().Get("page"); pStr != "" {
+		if p, err := strconv.Atoi(pStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	pageSize := 10
+	if psStr := r.URL.Query().Get("pageSize"); psStr != "" {
+		if ps, err := strconv.Atoi(psStr); err == nil && ps > 0 {
+			pageSize = ps
+		}
+	}
+
+	colOffset := 0
+	if coStr := r.URL.Query().Get("colOffset"); coStr != "" {
+		if co, err := strconv.Atoi(coStr); err == nil && co >= 0 {
+			colOffset = co
+		}
+	}
+
+	colLimit := 25
+	if clStr := r.URL.Query().Get("colLimit"); clStr != "" {
+		if cl, err := strconv.Atoi(clStr); err == nil {
+			colLimit = cl
+		}
+	}
+
+	search := r.URL.Query().Get("search")
+
+	result, err := s.ws.QueryCsv(path, workspace.CsvQueryOptions{
+		Page:      page,
+		PageSize:  pageSize,
+		ColOffset: colOffset,
+		ColLimit:  colLimit,
+		Search:    search,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "escapes root directory") || strings.Contains(err.Error(), "empty path") {
+			jsonError(w, http.StatusBadRequest, err.Error())
+		} else if strings.Contains(err.Error(), "not found") || os.IsNotExist(err) {
+			jsonError(w, http.StatusNotFound, err.Error())
+		} else {
+			jsonError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, result)
 }
 
 func (s *Server) handleWorkspaceRename(w http.ResponseWriter, r *http.Request) {

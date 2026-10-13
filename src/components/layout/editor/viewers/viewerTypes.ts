@@ -52,35 +52,90 @@ export function formatFileSize(bytes?: number): string {
 }
 
 /**
- * Detects CSV delimiter by analyzing character frequency outside of quoted strings.
- * Defaults to comma (',') if counts are equal or no delimiters found.
+ * Detects CSV delimiter (',', ';', or '\t') by evaluating per-line consistency
+ * and frequency outside of quoted strings.
+ * Accurately distinguishes semicolon delimiters from decimal commas (e.g. European/Indonesian format).
  */
 export function detectCsvDelimiter(content: string): "," | ";" | "\t" {
   if (!content) return ","
 
-  const sample = content.slice(0, 10000)
-  let inQuotes = false
-  let commaCount = 0
-  let semicolonCount = 0
-  let tabCount = 0
+  // Analyze first ~25 non-empty lines within sample window
+  const sample = content.slice(0, 15000)
+  const lines = sample
+    .split(/\r?\n/)
+    .filter((l) => l.trim().length > 0)
+    .slice(0, 25)
 
-  for (let i = 0; i < sample.length; i++) {
-    const char = sample[i]
-    if (char === '"') {
-      if (inQuotes && sample[i + 1] === '"') {
-        i++ // escaped quote
-      } else {
-        inQuotes = !inQuotes
+  if (lines.length === 0) return ","
+
+  const delimiters: Array<"," | ";" | "\t"> = [",", ";", "\t"]
+  const scores: Record<"," | ";" | "\t", {
+    total: number
+    consistentLines: number
+    firstLineCount: number
+  }> = {
+    ",": { total: 0, consistentLines: 0, firstLineCount: 0 },
+    ";": { total: 0, consistentLines: 0, firstLineCount: 0 },
+    "\t": { total: 0, consistentLines: 0, firstLineCount: 0 },
+  }
+
+  for (const delim of delimiters) {
+    const countsPerLine: number[] = []
+
+    for (let l = 0; l < lines.length; l++) {
+      const line = lines[l]
+      let count = 0
+      let inQuotes = false
+
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i]
+        if (char === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            i++
+          } else {
+            inQuotes = !inQuotes
+          }
+        } else if (!inQuotes && char === delim) {
+          count++
+        }
       }
-    } else if (!inQuotes) {
-      if (char === ",") commaCount++
-      else if (char === ";") semicolonCount++
-      else if (char === "\t") tabCount++
+
+      countsPerLine.push(count)
+      scores[delim].total += count
+    }
+
+    const first = countsPerLine[0] || 0
+    scores[delim].firstLineCount = first
+
+    if (first > 0) {
+      let matches = 0
+      for (const c of countsPerLine) {
+        if (c === first) matches++
+      }
+      scores[delim].consistentLines = matches
     }
   }
 
-  if (tabCount > commaCount && tabCount > semicolonCount) return "\t"
-  if (semicolonCount > commaCount) return ";"
+  // Prioritize delimiters present in header with regular repetition across rows
+  const candidates = delimiters.filter((d) => scores[d].firstLineCount > 0)
+  if (candidates.length > 0) {
+    candidates.sort((a, b) => {
+      const consistencyDiff =
+        scores[b].consistentLines - scores[a].consistentLines
+      if (consistencyDiff !== 0) return consistencyDiff
+      return scores[b].total - scores[a].total
+    })
+    return candidates[0]
+  }
+
+  // Fallback to total frequency if header delimiter was unparsed
+  if (
+    scores["\t"].total > scores[","].total &&
+    scores["\t"].total > scores[";"].total
+  ) {
+    return "\t"
+  }
+  if (scores[";"].total > scores[","].total) return ";"
   return ","
 }
 

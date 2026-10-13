@@ -58,6 +58,21 @@
   border-color: var(--color-accent);
 }
 
+.viewer-toolbar-btn:disabled,
+.viewer-toolbar-btn[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed !important;
+  color: var(--color-ink-muted);
+  border-color: var(--color-line);
+  background-color: var(--color-surface);
+}
+
+.viewer-toolbar-btn:disabled:hover,
+.viewer-toolbar-btn[disabled]:hover {
+  background-color: var(--color-surface) !important;
+  border-color: var(--color-line) !important;
+}
+
 .viewer-toolbar-badge {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
@@ -170,6 +185,7 @@
 /* Data Table CSV */
 .csv-table-container {
   flex: 1;
+  min-height: 0;
   width: 100%;
   height: 100%;
   overflow: auto;
@@ -249,3 +265,66 @@
   word-break: break-word;
   max-width: 480px;
 }
+
+/* CSV Sticky Bottom Footer & Pagination */
+.csv-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background-color: var(--color-surface);
+  border-top: 1px solid var(--color-line);
+  font-size: 11px;
+  line-height: 1.4;
+  user-select: none;
+  flex-shrink: 0;
+  gap: 8px;
+  z-index: 10;
+  flex-wrap: wrap;
+}
+
+.csv-page-input {
+  width: 46px;
+  text-align: center;
+  background-color: var(--color-canvas);
+  border: 1px solid var(--color-line);
+  border-radius: 4px;
+  color: var(--color-ink);
+  padding: 2px 4px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.csv-page-input:focus {
+  border-color: var(--color-accent);
+}
+
+.csv-col-batch-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background-color: var(--color-surface-raised);
+  border: 1px solid var(--color-line);
+  color: var(--color-ink-soft);
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.csv-server-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background-color: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+  color: var(--color-accent);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+}
+
