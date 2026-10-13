@@ -75,9 +75,9 @@ You can configure any of the following providers under **Settings -> AI Engine**
 | Provider | Gateway Type | Reasoning Traces | Tool Calling |
 | :--- | :--- | :---: | :---: |
 | **Google Gemini** | Direct REST / SSE | Supported | Supported |
-| **Anthropic Claude** | Streaming Messages API | Supported | Supported |
+| **Anthropic Claude** | Streaming Messages API |  Upcoming |  Upcoming |
 | **OpenAI / OpenRouter / DeepSeek** | Chat Completions SSE | Supported | Supported |
-| **Local Ollama** | Localhost Endpoint | Supported | Supported |
+| **Local Ollama** | Localhost Endpoint | Upcoming | Upcoming |
 | **Antigravity CLI (`agy`)** | Local Subprocess Runner | Supported | Supported |
 
 All providers funnel their responses through the same Review Gate pipeline, guaranteeing uniform safety across all models.
