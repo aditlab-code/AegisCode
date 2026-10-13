@@ -24,6 +24,12 @@ interface FocusSymbolDetail {
   name?: string
 }
 
+interface AiTraceDetail {
+  symbolName: string
+  toolName?: string
+  status?: string
+}
+
 export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
   const {
     openFileInGroup,
@@ -54,7 +60,9 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
   )
   const [selectedNode, setSelectedNode] = useState<UIGraphNode | null>(null)
   const [aiTraceSymbol, setAiTraceSymbol] = useState<string | null>(null)
+  const [aiTraceInfo, setAiTraceInfo] = useState<AiTraceDetail | null>(null)
   const [focusedRootId, setFocusedRootId] = useState<number | null>(null)
+  const aiTraceTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   const canvasRef = useRef<GraphCanvasHandle>(null)
 
@@ -102,11 +110,41 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
       }
     }
 
-    function handleAiTrace(e: Event) {
-      const custom = e as CustomEvent<{ symbolName: string }>
-      if (custom.detail?.symbolName) {
-        setAiTraceSymbol(custom.detail.symbolName)
-        canvasRef.current?.pulseAiTrace(custom.detail.symbolName)
+    async function handleAiTrace(e: Event) {
+      const custom = e as CustomEvent<AiTraceDetail>
+      if (!custom.detail) return
+
+      if (custom.detail.status === "done") {
+        clearTimeout(aiTraceTimerRef.current)
+        aiTraceTimerRef.current = setTimeout(() => {
+          setAiTraceSymbol(null)
+          setAiTraceInfo(null)
+        }, 1500)
+        return
+      }
+
+      if (custom.detail.symbolName) {
+        const sym = custom.detail.symbolName
+        setAiTraceSymbol(sym)
+        setAiTraceInfo(custom.detail)
+
+        clearTimeout(aiTraceTimerRef.current)
+        aiTraceTimerRef.current = setTimeout(() => {
+          setAiTraceSymbol(null)
+          setAiTraceInfo(null)
+        }, 2200)
+
+        const pulsed = canvasRef.current?.pulseAiTrace(sym)
+        if (!pulsed) {
+          const matches = await searchGraphSymbols(sym, 1)
+          if (matches.length > 0) {
+            setFocusedRootId(matches[0].id)
+            setSelectedNode(matches[0])
+            setTimeout(() => {
+              canvasRef.current?.pulseAiTrace(sym)
+            }, 350)
+          }
+        }
       }
     }
 
@@ -269,6 +307,36 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
 
       {/* Main Workspace Area: Graph Canvas + Side Inspector */}
       <div className="flex flex-1 min-h-0 min-w-0 overflow-hidden relative">
+        {/* Floating Live AI Reading MCP HUD Banner */}
+        {aiTraceInfo && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-raised border border-pink-500/80 shadow-2xl backdrop-blur-md text-xs text-pink-300">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-pink-500" />
+            </span>
+            <Icon className="text-pink-400" name="zap" size={13} />
+            <span className="font-semibold text-ink">AI Reading MCP:</span>
+            <span className="font-mono bg-pink-500/15 px-1.5 py-0.5 rounded text-pink-300 font-bold border border-pink-500/30">
+              {aiTraceInfo.symbolName}
+            </span>
+            {aiTraceInfo.toolName && (
+              <span className="text-[10px] text-ink-muted">
+                via {aiTraceInfo.toolName}
+              </span>
+            )}
+            <button
+              className="ml-1 text-ink-muted hover:text-ink cursor-pointer"
+              onClick={() => {
+                setAiTraceSymbol(null)
+                setAiTraceInfo(null)
+              }}
+              type="button"
+            >
+              <Icon name="close" size={11} />
+            </button>
+          </div>
+        )}
+
         {loading && !payload ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-2 text-ink-muted text-xs">
             <Icon

@@ -64,10 +64,24 @@ export const getCytoscapeTheme = (
   {
     selector: "node.ai-trace",
     style: {
-      "border-width": "3.5px",
+      "border-width": "4px",
       "border-color": "#EC4899",
       "border-opacity": 1,
-      "background-color": "#EC4899",
+      "background-color": "#BE185D",
+      color: "#FFFFFF",
+      "font-size": "13px",
+      "font-weight": 700,
+    },
+  },
+  {
+    selector: "edge.ai-trace",
+    style: {
+      width: 3.5,
+      "line-color": "#EC4899",
+      "target-arrow-color": "#EC4899",
+      color: "#EC4899",
+      "text-background-color": isDark ? "#1E1B4B" : "#FDF2F8",
+      "font-weight": 700,
     },
   },
   {

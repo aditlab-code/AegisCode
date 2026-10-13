@@ -20,7 +20,7 @@ export interface GraphCanvasHandle {
   zoomIn: () => void
   zoomOut: () => void
   focusNode: (id: number) => void
-  pulseAiTrace: (symbolName: string) => void
+  pulseAiTrace: (symbolName: string) => boolean
 }
 
 interface GraphCanvasProps {
@@ -91,8 +91,8 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
           node.addClass("active")
         }
       },
-      pulseAiTrace: (symbolName: string) => {
-        if (!cyRef.current || !symbolName) return
+      pulseAiTrace: (symbolName: string): boolean => {
+        if (!cyRef.current || !symbolName) return false
         cyRef.current.elements().removeClass("ai-trace")
         const matching = cyRef.current.nodes().filter((n) => {
           const raw = n.data("raw") as UIGraphNode | undefined
@@ -101,12 +101,41 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
         if (matching.length > 0) {
           matching.addClass("ai-trace")
           matching.connectedEdges().addClass("ai-trace")
+
           cyRef.current.animate({
             center: { eles: matching },
-            zoom: 1.2,
-            duration: 350,
+            zoom: 1.35,
+            duration: 400,
+            easing: "ease-out-cubic",
           })
+
+          let step = 0
+          const interval = setInterval(() => {
+            if (!cyRef.current) {
+              clearInterval(interval)
+              return
+            }
+            if (step % 2 === 0) {
+              matching.style({
+                "border-width": "6px",
+                "border-color": "#F472B6",
+              })
+            } else {
+              matching.style({
+                "border-width": "3.5px",
+                "border-color": "#EC4899",
+              })
+            }
+            step++
+            if (step > 6) {
+              clearInterval(interval)
+              matching.removeStyle("border-width border-color")
+            }
+          }, 300)
+
+          return true
         }
+        return false
       },
     }))
 

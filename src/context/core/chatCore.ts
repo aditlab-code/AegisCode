@@ -600,6 +600,36 @@ export function useChatCore() {
             }
           } else if (event.type === "tool_call") {
             if (event.toolCall) {
+              const tc = event.toolCall
+              const tcName = tc.name || ""
+              const isCodeGraph =
+                tcName === "get_file_outline" ||
+                tcName === "get_symbol_definition" ||
+                tcName === "find_callers" ||
+                tcName === "find_callees" ||
+                tcName === "query_subgraph" ||
+                tcName === "read_symbol_body"
+
+              if (isCodeGraph && typeof window !== "undefined") {
+                const targetSym =
+                  tc.args?.symbol_name ||
+                  tc.args?.function_name ||
+                  tc.args?.root_symbol ||
+                  tc.args?.name ||
+                  tc.args?.file_path ||
+                  ""
+                if (targetSym) {
+                  window.dispatchEvent(
+                    new CustomEvent("aegis:ai-trace-path", {
+                      detail: {
+                        symbolName: String(targetSym),
+                        toolName: tcName,
+                        status: tc.status || "running",
+                      },
+                    }),
+                  )
+                }
+              }
               setSessions((prev) =>
                 updateAgentMessageInSessions(
                   prev,
@@ -643,6 +673,16 @@ export function useChatCore() {
               ),
             )
             setIsGenerating(false)
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(
+                new CustomEvent("aegis:ai-trace-path", {
+                  detail: {
+                    symbolName: "",
+                    status: "done",
+                  },
+                }),
+              )
+            }
             abortControllerRef.current = null
           } else if (event.type === "error") {
             flushDeltasSync()

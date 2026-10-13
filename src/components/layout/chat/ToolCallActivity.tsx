@@ -382,6 +382,35 @@ export const ToolCallActivityCard = memo(function ToolCallActivityCard({
     toolCall.name === "query_subgraph" ||
     toolCall.name === "read_symbol_body"
 
+  // Live auto-dispatch AI trace event to CodeGraph studio whenever MCP tool runs
+  useEffect(() => {
+    if (!isCodeGraphTool) return
+    const targetSymbol =
+      toolCall.args?.symbol_name ||
+      toolCall.args?.function_name ||
+      toolCall.args?.root_symbol ||
+      toolCall.args?.name ||
+      parsed.fullTarget ||
+      ""
+    if (targetSymbol) {
+      window.dispatchEvent(
+        new CustomEvent("aegis:ai-trace-path", {
+          detail: {
+            symbolName: targetSymbol,
+            toolName: toolCall.name,
+            status: toolCall.status || "running",
+          },
+        }),
+      )
+    }
+  }, [
+    isCodeGraphTool,
+    toolCall.name,
+    toolCall.status,
+    toolCall.args,
+    parsed.fullTarget,
+  ])
+
   const handleInspectInGraph = (e: React.MouseEvent) => {
     e.stopPropagation()
     const targetSymbol =
