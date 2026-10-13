@@ -106,14 +106,76 @@ export function McpPanelView() {
   async function handleRunTool() {
     setRunning(true)
     setToolOutput(null)
+    let parsedArgs: Record<string, unknown> = {}
     try {
-      let parsedArgs: Record<string, unknown> = {}
       if (argsText.trim()) {
         parsedArgs = JSON.parse(argsText)
       }
+    } catch (err: unknown) {
+      setToolOutput(
+        JSON.stringify(
+          {
+            error: `Invalid JSON arguments: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          },
+          null,
+          2,
+        ),
+      )
+      setRunning(false)
+      return
+    }
+
+    const targetSymbol =
+      parsedArgs.name as string ||
+      parsedArgs.function_name as string ||
+      parsedArgs.root_symbol as string ||
+      parsedArgs.symbol_name as string ||
+      parsedArgs.file_path as string ||
+      parsedArgs.rel_path as string ||
+      parsedArgs.path as string ||
+      ""
+
+    if (targetSymbol && typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("aegis:ai-trace-path", {
+          detail: {
+            symbolName: targetSymbol,
+            toolName: selectedTool,
+            status: "running",
+          },
+        }),
+      )
+    }
+
+    try {
       const result = await callMcpTool(selectedTool, parsedArgs)
       setToolOutput(JSON.stringify(result, null, 2))
+
+      if (targetSymbol && typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("aegis:ai-trace-path", {
+            detail: {
+              symbolName: targetSymbol,
+              toolName: selectedTool,
+              status: "completed",
+            },
+          }),
+        )
+      }
     } catch (err: unknown) {
+      if (targetSymbol && typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("aegis:ai-trace-path", {
+            detail: {
+              symbolName: targetSymbol,
+              toolName: selectedTool,
+              status: "error",
+            },
+          }),
+        )
+      }
       setToolOutput(
         JSON.stringify(
           { error: err instanceof Error ? err.message : String(err) },

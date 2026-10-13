@@ -64,9 +64,9 @@ if (agyCheck.status === 0 && agyCheck.stdout.trim()) {
       fs.rmSync(agyMcpGraphify, { recursive: true, force: true })
     }
 
-    // Register clean portable stdio command
-    execSync("agy mcp add codegraph aegiscode mcp", { stdio: "inherit" })
-    console.log("✓ Antigravity CLI registered: codegraph -> aegiscode mcp")
+    // Register clean portable stdio command with absolute path
+    execSync(`agy mcp add codegraph "${targetBin}" mcp`, { stdio: "inherit" })
+    console.log(`✓ Antigravity CLI registered: codegraph -> ${targetBin} mcp`)
   } catch (err) {
     console.warn("⚠️  Antigravity CLI configuration note:", err.message)
   }

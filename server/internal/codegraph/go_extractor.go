@@ -56,6 +56,23 @@ func (e *GoExtractor) Extract(relPath string, content []byte) (*ExtractedFile, e
 			symIndex := len(res.Symbols)
 			res.Symbols = append(res.Symbols, sym)
 
+			// If method, add reference edge to receiver struct
+			if d.Recv != nil && len(d.Recv.List) > 0 {
+				recvType := e.exprToString(fset, d.Recv.List[0].Type)
+				cleanRecv := strings.TrimPrefix(recvType, "*")
+				cleanRecv = strings.TrimSpace(cleanRecv)
+				if cleanRecv != "" {
+					startPos := fset.Position(d.Pos())
+					res.Edges = append(res.Edges, ExtractedEdge{
+						SourceSymbolIndex: symIndex,
+						TargetRawName:     cleanRecv,
+						Relation:          RelReferences,
+						LineNumber:        startPos.Line,
+						Confidence:        1.0,
+					})
+				}
+			}
+
 			// Extract call edges from function body
 			if d.Body != nil {
 				edges := e.extractFuncEdges(fset, symIndex, d.Body)

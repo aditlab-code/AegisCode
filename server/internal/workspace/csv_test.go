@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -212,50 +213,53 @@ func TestCsvRFC4180Quotes(t *testing.T) {
 	}
 }
 
-func TestIeeeDatasetIfPresent(t *testing.T) {
-	albanianRoot := "/Users/aditwicaksono/Documents/Project-AI/AlbaNian"
-	txPath := filepath.Join(albanianRoot, "apps/fraud-exp/data/ieee-cis/train_transaction.csv")
-	if _, err := os.Stat(txPath); os.IsNotExist(err) {
-		t.Skip("train_transaction.csv not present, skipping")
-	}
-
-	mgr, err := NewManager(albanianRoot)
+func TestLargeCsvPagination(t *testing.T) {
+	tmpDir := t.TempDir()
+	mgr, err := NewManager(tmpDir)
 	if err != nil {
-		t.Fatalf("failed NewManager: %v", err)
+		t.Fatalf("failed creating manager: %v", err)
 	}
 
-	res, err := mgr.QueryCsv("apps/fraud-exp/data/ieee-cis/train_transaction.csv", CsvQueryOptions{
-		Page:      1,
-		PageSize:  10,
-		ColOffset: 0,
-		ColLimit:  25,
+	// Generate synthetic dataset (5,000 rows)
+	filePath := filepath.Join(tmpDir, "large_dataset.csv")
+	f, err := os.Create(filePath)
+	if err != nil {
+		t.Fatalf("failed creating test csv: %v", err)
+	}
+
+	w := bufio.NewWriter(f)
+	_, _ = w.WriteString("id,transaction_id,amount,status,notes\n")
+	for i := 1; i <= 5000; i++ {
+		_, _ = fmt.Fprintf(w, "%d,tx-%06d,%d.50,active,note-%d\n", i, i, i*10, i)
+	}
+	_ = w.Flush()
+	_ = f.Close()
+
+	// Query page 1
+	res, err := mgr.QueryCsv("large_dataset.csv", CsvQueryOptions{
+		Page:     1,
+		PageSize: 10,
 	})
 	if err != nil {
 		t.Fatalf("QueryCsv failed: %v", err)
 	}
 
-	t.Logf("TotalRows=%d, TotalCols=%d, RowsCount=%d, HeadersCount=%d, QueryTime=%.2fms",
-		res.TotalRows, res.TotalCols, len(res.Rows), len(res.Headers), res.QueryTimeMs)
-
-	if res.TotalRows != 590540 {
-		t.Errorf("expected 590540 rows, got %d", res.TotalRows)
+	if res.TotalRows != 5000 {
+		t.Errorf("expected 5000 total rows, got %d", res.TotalRows)
 	}
 	if len(res.Rows) != 10 {
 		t.Errorf("expected 10 rows returned, got %d", len(res.Rows))
 	}
 
-	// Test page 50,000 seek
-	res50k, err := mgr.QueryCsv("apps/fraud-exp/data/ieee-cis/train_transaction.csv", CsvQueryOptions{
-		Page:      50000,
-		PageSize:  10,
-		ColOffset: 0,
-		ColLimit:  25,
+	// Test deep seek page (page 400)
+	resPage400, err := mgr.QueryCsv("large_dataset.csv", CsvQueryOptions{
+		Page:     400,
+		PageSize: 10,
 	})
 	if err != nil {
-		t.Fatalf("QueryCsv page 50,000 failed: %v", err)
+		t.Fatalf("QueryCsv page 400 failed: %v", err)
 	}
-	t.Logf("Page 50,000 seek: RowsCount=%d, QueryTime=%.2fms", len(res50k.Rows), res50k.QueryTimeMs)
-	if len(res50k.Rows) != 10 {
-		t.Errorf("expected 10 rows on page 50,000, got %d", len(res50k.Rows))
+	if len(resPage400.Rows) != 10 {
+		t.Errorf("expected 10 rows on page 400, got %d", len(resPage400.Rows))
 	}
 }

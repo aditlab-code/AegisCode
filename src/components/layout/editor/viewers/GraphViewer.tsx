@@ -1,8 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { Icon } from "../../../ui/Icon"
 import { useWorkbenchStore, useShallow } from "../../../../store"
-import { parseGraphTab } from "./viewerTypes"
-import { GraphToolbar, type LayoutMode } from "./codegraph/GraphToolbar"
+import { parseGraphTab, isGraphTab } from "./viewerTypes"
+import {
+  GraphToolbar,
+  type LayoutMode,
+  type ScopeMode,
+} from "./codegraph/GraphToolbar"
 import { GraphCanvas, type GraphCanvasHandle } from "./codegraph/GraphCanvas"
 import { NodeInspector } from "./codegraph/NodeInspector"
 import {
@@ -10,6 +14,7 @@ import {
   fetchActiveFileGraph,
   fetchSymbolNeighborhood,
   triggerCodeGraphReindex,
+  searchGraphSymbols,
   type UIGraphPayload,
   type UIGraphNode,
 } from "../../../../utils/codegraphApi"
@@ -37,6 +42,8 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
     splitEditor,
     toggleSplitEditor,
     showToast,
+    group1ActiveTab,
+    group2ActiveTab,
   } = useWorkbenchStore(
     useShallow((s) => ({
       openFileInGroup: s.openFileInGroup,
@@ -44,16 +51,22 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
       splitEditor: s.splitEditor,
       toggleSplitEditor: s.toggleSplitEditor,
       showToast: s.showToast,
+      group1ActiveTab: s.group1.activeTab,
+      group2ActiveTab: s.group2.activeTab,
     })),
   )
 
   const parsed = parseGraphTab(filename)
-  const isWorkspace = parsed.isWorkspace
-  const targetPath = parsed.target
 
+  const [scope, setScope] = useState<ScopeMode>(
+    parsed.isWorkspace ? "macro" : "micro",
+  )
+  const [macroLimit, setMacroLimit] = useState<number>(50)
+  const [microPath, setMicroPath] = useState<string | null>(
+    parsed.target || null,
+  )
   const [payload, setPayload] = useState<UIGraphPayload | null>(null)
   const [loading, setLoading] = useState(true)
-  const [depth, setDepth] = useState(1)
   const [layout, setLayout] = useState<LayoutMode>("dagre")
   const [activeKinds, setActiveKinds] = useState<Set<string>>(
     () => new Set(["function", "interface", "class"]),
@@ -66,19 +79,31 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
 
   const canvasRef = useRef<GraphCanvasHandle>(null)
 
+  // Sync tab navigation if filename prop changes
+  useEffect(() => {
+    const nextParsed = parseGraphTab(filename)
+    if (nextParsed.isWorkspace) {
+      setScope("macro")
+    } else if (nextParsed.target) {
+      setScope("micro")
+      setMicroPath(nextParsed.target)
+    }
+    setFocusedRootId(null)
+  }, [filename])
+
   // Load Graph Data
   const loadGraph = useCallback(async () => {
     setLoading(true)
     let res: UIGraphPayload | null = null
 
     if (focusedRootId != null) {
-      res = await fetchSymbolNeighborhood(focusedRootId, depth, 60)
-    } else if (isWorkspace) {
-      res = await fetchWorkspaceGraph(50)
-    } else if (targetPath) {
-      res = await fetchActiveFileGraph(targetPath)
+      res = await fetchSymbolNeighborhood(focusedRootId, 1, 60)
+    } else if (scope === "macro") {
+      res = await fetchWorkspaceGraph(macroLimit)
+    } else if (microPath) {
+      res = await fetchActiveFileGraph(microPath)
     } else {
-      res = await fetchWorkspaceGraph(50)
+      res = await fetchWorkspaceGraph(macroLimit)
     }
 
     setPayload(res)
@@ -89,7 +114,7 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
       const active = res.nodes.find((n) => n.isActive) || res.nodes[0]
       setSelectedNode(active)
     }
-  }, [focusedRootId, isWorkspace, targetPath, depth])
+  }, [focusedRootId, scope, macroLimit, microPath])
 
   useEffect(() => {
     loadGraph()
@@ -114,35 +139,77 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
       const custom = e as CustomEvent<AiTraceDetail>
       if (!custom.detail) return
 
-      if (custom.detail.status === "done") {
+      const detail = custom.detail
+
+      if (detail.status === "done" || detail.status === "completed") {
+        setAiTraceInfo((prev) =>
+          prev ? { ...prev, status: "completed" } : null,
+        )
         clearTimeout(aiTraceTimerRef.current)
+        // Keep completed visual state visible for 4 seconds before fade-out
         aiTraceTimerRef.current = setTimeout(() => {
           setAiTraceSymbol(null)
           setAiTraceInfo(null)
-        }, 1500)
+        }, 4000)
         return
       }
 
-      if (custom.detail.symbolName) {
-        const sym = custom.detail.symbolName
+      if (detail.symbolName) {
+        const sym = detail.symbolName
         setAiTraceSymbol(sym)
-        setAiTraceInfo(custom.detail)
+        setAiTraceInfo(detail)
 
         clearTimeout(aiTraceTimerRef.current)
-        aiTraceTimerRef.current = setTimeout(() => {
-          setAiTraceSymbol(null)
-          setAiTraceInfo(null)
-        }, 2200)
 
+        // 1. First attempt to pulse matching node directly in canvas
         const pulsed = canvasRef.current?.pulseAiTrace(sym)
         if (!pulsed) {
-          const matches = await searchGraphSymbols(sym, 1)
+          // 2. Fetch symbol from workspace index asynchronously
+          let matches = await searchGraphSymbols(sym, 5)
+
+          // 2b. If search by full string yielded nothing, try base name if sym is a path
+          if (
+            matches.length === 0 &&
+            (sym.includes("/") || sym.includes("\\"))
+          ) {
+            const base =
+              sym
+                .split(/[/\\]/)
+                .pop()
+                ?.replace(/\.[^/.]+$/, "") || ""
+            if (base) {
+              matches = await searchGraphSymbols(base, 5)
+            }
+          }
+
           if (matches.length > 0) {
-            setFocusedRootId(matches[0].id)
-            setSelectedNode(matches[0])
-            setTimeout(() => {
-              canvasRef.current?.pulseAiTrace(sym)
-            }, 350)
+            const target = matches[0]
+            setFocusedRootId(target.id)
+            setSelectedNode(target)
+
+            // Direct deterministic fetch without relying on timers
+            const res = await fetchSymbolNeighborhood(target.id, 1, 60)
+            if (res && res.nodes.length > 0) {
+              setPayload(res)
+            }
+          } else {
+            // 2c. If symbol search returned empty, attempt file graph fetch if sym represents a file
+            const fileRes = await fetchActiveFileGraph(sym)
+            if (fileRes && fileRes.nodes.length > 0) {
+              setPayload(fileRes)
+              const first =
+                fileRes.nodes.find((n) => n.isActive) || fileRes.nodes[0]
+              setSelectedNode(first)
+            } else {
+              // Explicit error feedback without silent pass or dummy mocks
+              setAiTraceInfo({
+                ...detail,
+                status: "error",
+              })
+              showToast(
+                `CodeGraph: Symbol "${sym}" not found in workspace index`,
+              )
+            }
           }
         }
       }
@@ -155,7 +222,7 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
       window.removeEventListener("aegis:focus-symbol", handleCursorFocus)
       window.removeEventListener("aegis:ai-trace-path", handleAiTrace)
     }
-  }, [payload])
+  }, [payload, showToast])
 
   function handleToggleKind(kind: string) {
     setActiveKinds((prev) => {
@@ -190,13 +257,40 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
     setFocusedRootId(node.id)
     showToast(`Focused subgraph on ${node.name}`)
   }
-  function handleDepthChange(newDepth: number) {
-    setDepth(newDepth)
-    const targetId =
-      focusedRootId ?? selectedNode?.id ?? payload?.rootId ?? null
-    if (targetId != null) {
-      setFocusedRootId(targetId)
+
+  function handleScopeChange(nextScope: ScopeMode) {
+    setFocusedRootId(null)
+    setScope(nextScope)
+    if (nextScope === "micro" && !microPath) {
+      // Auto-detect candidate file from selected node or active editor tab
+      const candidate =
+        selectedNode?.filePath ||
+        (group1ActiveTab && !isGraphTab(group1ActiveTab)
+          ? group1ActiveTab
+          : null) ||
+        (group2ActiveTab && !isGraphTab(group2ActiveTab)
+          ? group2ActiveTab
+          : null)
+      if (candidate) {
+        setMicroPath(candidate)
+      }
     }
+  }
+
+  function handleMacroLimitChange(limit: number) {
+    setMacroLimit(limit)
+    if (scope === "macro") {
+      setFocusedRootId(null)
+    }
+  }
+
+  function handleDrillToFile(filePath: string) {
+    setMicroPath(filePath)
+    setScope("micro")
+    setFocusedRootId(null)
+    showToast(
+      `Switched to Micro View: ${filePath.split("/").pop() || filePath}`,
+    )
   }
 
   function handleSelectSymbolFromSearch(symbol: UIGraphNode) {
@@ -233,18 +327,21 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
       {/* Top Toolbar */}
       <GraphToolbar
         activeKinds={activeKinds}
-        depth={depth}
         layout={layout}
         loading={loading}
-        onDepthChange={handleDepthChange}
+        macroLimit={macroLimit}
+        microPath={microPath}
         onFit={() => canvasRef.current?.fit()}
         onLayoutChange={setLayout}
+        onMacroLimitChange={handleMacroLimitChange}
         onRefresh={loadGraph}
+        onScopeChange={handleScopeChange}
         onSelectSymbol={handleSelectSymbolFromSearch}
         onSplitSideBySide={handleSplitSideBySide}
         onToggleKind={handleToggleKind}
         onZoomIn={() => canvasRef.current?.zoomIn()}
         onZoomOut={() => canvasRef.current?.zoomOut()}
+        scope={scope}
       />
 
       {/* Animated Loading Bar */}
@@ -254,89 +351,202 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
         </div>
       )}
 
-      {/* Scope & Focus Subgraph Status Bar */}
-      {focusedRootId != null && (
-        <div className="flex items-center justify-between px-3 py-1 bg-surface border-b border-line text-[11px] text-ink-muted">
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-accent" />
-            <span>
-              Neighborhood Scope:{" "}
-              <strong className="text-ink font-mono">
-                {selectedNode?.name}
-              </strong>{" "}
-              ({depth} {depth === 1 ? "Hop" : "Hops"})
-            </span>
-            {payload && payload.nodes.length <= 1 && !loading && (
-              <span className="text-warning text-[10px] ml-1">
-                (Standalone symbol: 0 callers & 0 calls in visible graph)
+      {/* Scope & Breadcrumb Status Bar */}
+      <div
+        className={`flex items-center justify-between px-3 py-1 border-b text-[11px] transition-colors duration-200 select-none ${
+          aiTraceInfo
+            ? aiTraceInfo.status === "completed" ||
+              aiTraceInfo.status === "done"
+              ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-300"
+              : aiTraceInfo.status === "error"
+                ? "bg-red-950/40 border-red-500/30 text-red-300"
+                : "bg-pink-950/40 border-pink-500/30 text-pink-300"
+            : "bg-surface border-line text-ink-muted"
+        }`}
+      >
+        <div className="flex items-center gap-2 overflow-hidden">
+          {aiTraceInfo ? (
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="relative flex h-2 w-2">
+                {aiTraceInfo.status === "completed" ||
+                aiTraceInfo.status === "done" ? (
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                ) : aiTraceInfo.status === "error" ? (
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                ) : (
+                  <>
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-pink-500" />
+                  </>
+                )}
               </span>
-            )}
-          </div>
-          <button
-            className="flex items-center gap-1 text-accent hover:underline cursor-pointer font-medium"
-            onClick={() => setFocusedRootId(null)}
-            type="button"
-          >
-            <Icon name="maximize" size={11} />
-            <span>View Full Workspace</span>
-          </button>
+              <Icon
+                className={
+                  aiTraceInfo.status === "completed" ||
+                  aiTraceInfo.status === "done"
+                    ? "text-emerald-400"
+                    : aiTraceInfo.status === "error"
+                      ? "text-red-400"
+                      : "text-pink-400"
+                }
+                name={
+                  aiTraceInfo.status === "completed" ||
+                  aiTraceInfo.status === "done"
+                    ? "check"
+                    : aiTraceInfo.status === "error"
+                      ? "warning"
+                      : "zap"
+                }
+                size={12}
+              />
+              <span className="font-semibold text-ink">
+                {aiTraceInfo.status === "completed" ||
+                aiTraceInfo.status === "done"
+                  ? "AI Read Success:"
+                  : aiTraceInfo.status === "error"
+                    ? "Symbol Unindexed:"
+                    : "AI Reading MCP:"}
+              </span>
+              <span className="font-mono px-1.5 py-0.2 rounded font-bold bg-canvas border border-line text-ink">
+                {aiTraceInfo.symbolName}
+              </span>
+              {aiTraceInfo.toolName && (
+                <span className="text-[10px] text-ink-muted">
+                  via {aiTraceInfo.toolName}
+                </span>
+              )}
+              {aiTraceInfo.status === "error" && (
+                <button
+                  className="ml-1 px-1.5 py-0.2 rounded bg-accent text-accent-contrast text-[10px] font-medium hover:opacity-90 cursor-pointer"
+                  onClick={handleReindexWorkspace}
+                  type="button"
+                >
+                  Re-index
+                </button>
+              )}
+              <button
+                className="ml-1 text-ink-muted hover:text-ink cursor-pointer p-0.5"
+                onClick={() => {
+                  setAiTraceSymbol(null)
+                  setAiTraceInfo(null)
+                }}
+                title="Dismiss AI status"
+                type="button"
+              >
+                <Icon name="close" size={10} />
+              </button>
+            </div>
+          ) : focusedRootId != null ? (
+            <>
+              <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+              <span>
+                Neighborhood Scope:{" "}
+                <strong className="text-ink font-mono">
+                  {selectedNode?.name}
+                </strong>
+              </span>
+              {payload && payload.nodes.length <= 1 && !loading && (
+                <span className="text-warning text-[10px] ml-1">
+                  (Standalone symbol: 0 callers & 0 calls in visible graph)
+                </span>
+              )}
+            </>
+          ) : scope === "micro" ? (
+            <>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              <span>
+                Micro AST Scope:{" "}
+                <strong className="text-ink font-mono">
+                  {microPath || "Active File"}
+                </strong>
+              </span>
+              <span className="text-[10px] text-ink-muted">
+                ({payload?.nodes.length || 0} symbols in file)
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+              <span>
+                Macro Workspace Scope:{" "}
+                <strong className="text-ink font-mono">
+                  {payload?.nodes.length || 0}
+                </strong>{" "}
+                of{" "}
+                <strong className="text-ink font-mono">
+                  {payload?.total || payload?.nodes.length || 0}
+                </strong>{" "}
+                nodes
+              </span>
+              {payload?.truncated && (
+                <span className="text-accent text-[10px] ml-1 font-medium">
+                  (Capped at {macroLimit} for visual clarity)
+                </span>
+              )}
+            </>
+          )}
         </div>
-      )}
 
-      {/* Truncation / Info Banner */}
-      {payload?.truncated && (
-        <div className="flex items-center justify-between px-3 py-1 bg-accent/10 border-b border-accent/20 text-accent text-[11px]">
-          <div className="flex items-center gap-1.5">
-            <Icon name="warning" size={12} />
-            <span>
-              Graph capped to 50 nodes for visual clarity ({payload.total} total
-              nodes discovered). Filter kinds or focus a node to inspect deeper.
-            </span>
-          </div>
-          {focusedRootId != null && (
+        {/* Right side navigation & density shortcuts */}
+        <div className="flex items-center gap-2">
+          {focusedRootId != null ? (
             <button
-              className="underline font-medium hover:opacity-80 cursor-pointer"
+              className="flex items-center gap-1 text-accent hover:underline cursor-pointer font-medium"
               onClick={() => setFocusedRootId(null)}
               type="button"
             >
-              Reset to Root Scope
+              <Icon name="maximize" size={11} />
+              <span>Reset Focus</span>
             </button>
-          )}
-        </div>
-      )}
-
-      {/* Main Workspace Area: Graph Canvas + Side Inspector */}
-      <div className="flex flex-1 min-h-0 min-w-0 overflow-hidden relative">
-        {/* Floating Live AI Reading MCP HUD Banner */}
-        {aiTraceInfo && (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-raised border border-pink-500/80 shadow-2xl backdrop-blur-md text-xs text-pink-300">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-pink-500" />
-            </span>
-            <Icon className="text-pink-400" name="zap" size={13} />
-            <span className="font-semibold text-ink">AI Reading MCP:</span>
-            <span className="font-mono bg-pink-500/15 px-1.5 py-0.5 rounded text-pink-300 font-bold border border-pink-500/30">
-              {aiTraceInfo.symbolName}
-            </span>
-            {aiTraceInfo.toolName && (
-              <span className="text-[10px] text-ink-muted">
-                via {aiTraceInfo.toolName}
-              </span>
-            )}
+          ) : scope === "micro" ? (
             <button
-              className="ml-1 text-ink-muted hover:text-ink cursor-pointer"
+              className="flex items-center gap-1 text-accent hover:underline cursor-pointer font-medium"
               onClick={() => {
-                setAiTraceSymbol(null)
-                setAiTraceInfo(null)
+                setScope("macro")
+                setFocusedRootId(null)
               }}
               type="button"
             >
-              <Icon name="close" size={11} />
+              <Icon name="folder" size={11} />
+              <span>Back to Macro Workspace</span>
             </button>
-          </div>
-        )}
+          ) : (
+            payload?.truncated && (
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-ink-muted">Expand:</span>
+                {macroLimit < 100 && payload.total >= 100 && (
+                  <button
+                    className="px-1.5 py-0.2 rounded bg-accent/10 border border-accent/20 text-accent hover:bg-accent hover:text-accent-contrast transition-colors cursor-pointer text-[10px]"
+                    onClick={() => handleMacroLimitChange(100)}
+                    type="button"
+                  >
+                    100
+                  </button>
+                )}
+                {macroLimit < 250 && payload.total >= 250 && (
+                  <button
+                    className="px-1.5 py-0.2 rounded bg-accent/10 border border-accent/20 text-accent hover:bg-accent hover:text-accent-contrast transition-colors cursor-pointer text-[10px]"
+                    onClick={() => handleMacroLimitChange(250)}
+                    type="button"
+                  >
+                    250
+                  </button>
+                )}
+                <button
+                  className="px-1.5 py-0.2 rounded bg-accent/10 border border-accent/20 text-accent hover:bg-accent hover:text-accent-contrast transition-colors cursor-pointer text-[10px]"
+                  onClick={() => handleMacroLimitChange(1000)}
+                  type="button"
+                >
+                  All ({payload.total})
+                </button>
+              </div>
+            )
+          )}
+        </div>
+      </div>
 
+      {/* Main Workspace Area: Graph Canvas + Side Inspector */}
+      <div className="flex flex-1 min-h-0 min-w-0 overflow-hidden relative">
         {loading && !payload ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-2 text-ink-muted text-xs">
             <Icon
@@ -371,6 +581,7 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
         ) : (
           <GraphCanvas
             activeKinds={activeKinds}
+            aiTraceInfo={aiTraceInfo}
             aiTraceSymbol={aiTraceSymbol}
             edges={payload.edges}
             layout={layout}
@@ -390,6 +601,7 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
             allNodes={payload.nodes}
             node={selectedNode}
             onClose={() => setSelectedNode(null)}
+            onDrillToFile={handleDrillToFile}
             onFocusNeighborhood={handleFocusNeighborhood}
             onJumpToSource={handleJumpToSource}
             onSelectNode={(node) => {

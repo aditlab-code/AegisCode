@@ -16,6 +16,8 @@ func ExtractTargetFile(toolName string, args map[string]any) string {
 		"TargetFile",
 		"AbsolutePath",
 		"filePath",
+		"file_path",
+		"rel_path",
 		"path",
 		"filename",
 		"target",

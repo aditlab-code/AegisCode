@@ -608,7 +608,10 @@ export function useChatCore() {
                 tcName === "find_callers" ||
                 tcName === "find_callees" ||
                 tcName === "query_subgraph" ||
-                tcName === "read_symbol_body"
+                tcName === "read_symbol_body" ||
+                tcName === "get_diff_impact" ||
+                tcName === "view_file" ||
+                tcName === "read_file"
 
               if (isCodeGraph && typeof window !== "undefined") {
                 const targetSym =
@@ -617,6 +620,9 @@ export function useChatCore() {
                   tc.args?.root_symbol ||
                   tc.args?.name ||
                   tc.args?.file_path ||
+                  tc.args?.path ||
+                  tc.args?.AbsolutePath ||
+                  tc.targetFile ||
                   ""
                 if (targetSym) {
                   window.dispatchEvent(

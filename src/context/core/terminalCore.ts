@@ -69,6 +69,7 @@ export function closeTerminalSessionLogic(
 export function processTerminalCommandLogic(
   session: TerminalSession,
   commandText: string,
+  cwd?: string,
 ): TerminalSession {
   const value = commandText.trim()
   if (!value) return session
@@ -88,10 +89,7 @@ export function processTerminalCommandLogic(
   } else if (value.startsWith("echo ")) {
     extraLines = [`$ ${value}`, value.slice(5)]
   } else if (value === "pwd") {
-    extraLines = [
-      `$ ${value}`,
-      "/Users/aditwicaksono/Documents/Project-AI/AegisCodev2",
-    ]
+    extraLines = [`$ ${value}`, cwd || "/workspace"]
   } else if (value === "ls") {
     extraLines = [
       `$ ${value}`,

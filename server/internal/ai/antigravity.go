@@ -360,6 +360,37 @@ func StreamChatAntigravity(ctx context.Context, req StreamChatRequest, sendEvent
 	args = append(args, "-p", prompt)
 
 	cmd := exec.CommandContext(ctx, binary, args...)
+
+	// Ensure user's local bin directory is present in PATH for MCP tools (cross-platform)
+	home, _ := os.UserHomeDir()
+	env := os.Environ()
+	sep := string(os.PathListSeparator)
+	var localBins []string
+	if home != "" {
+		localBins = append(localBins, filepath.Join(home, ".local", "bin"))
+	}
+	pathUpdated := false
+	for i, e := range env {
+		if strings.HasPrefix(strings.ToUpper(e), "PATH=") {
+			currentPath := e[5:]
+			var toPrepend []string
+			for _, lb := range localBins {
+				if !strings.Contains(currentPath, lb) {
+					toPrepend = append(toPrepend, lb)
+				}
+			}
+			if len(toPrepend) > 0 {
+				env[i] = "PATH=" + strings.Join(toPrepend, sep) + sep + currentPath
+			}
+			pathUpdated = true
+			break
+		}
+	}
+	if !pathUpdated && len(localBins) > 0 {
+		env = append(env, "PATH="+strings.Join(localBins, sep))
+	}
+	cmd.Env = env
+
 	if req.WorkspaceDir != "" {
 		if fi, err := os.Stat(req.WorkspaceDir); err == nil && fi.IsDir() {
 			cmd.Dir = req.WorkspaceDir

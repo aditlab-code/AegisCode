@@ -104,14 +104,14 @@ describe("ToolCallActivity parseToolCall", () => {
       name: "view_file",
       status: "success",
       args: {
-        AbsolutePath: '"/Users/user/project/src/components/App.tsx"',
+        AbsolutePath: '"/workspace/project/src/components/App.tsx"',
       },
     }
 
     const parsed = parseToolCall(item)
     expect(parsed.actionLabel).toBe("Read")
     expect(parsed.target).toBe("App.tsx")
-    expect(parsed.fullTarget).toBe("/Users/user/project/src/components/App.tsx")
+    expect(parsed.fullTarget).toBe("/workspace/project/src/components/App.tsx")
   })
 
   it("sanitizes massive CodeContent and calculates linesCount for write_to_file", () => {

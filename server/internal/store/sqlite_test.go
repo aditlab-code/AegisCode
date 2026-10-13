@@ -434,8 +434,8 @@ func TestSQLiteWorkspaceScopedSessions(t *testing.T) {
 	}
 	defer st.Close()
 
-	wsA := "/Users/developer/projects/repo-alpha"
-	wsB := "/Users/developer/projects/repo-beta"
+	wsA := filepath.Join(tempDir, "repo-alpha")
+	wsB := filepath.Join(tempDir, "repo-beta")
 
 	sessA := &ChatSession{
 		ID:            "ses-alpha",

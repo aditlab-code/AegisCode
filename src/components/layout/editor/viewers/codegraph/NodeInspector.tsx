@@ -12,6 +12,7 @@ interface NodeInspectorProps {
   onJumpToSource: (node: UIGraphNode) => void
   onSelectNode: (node: UIGraphNode) => void
   onFocusNeighborhood: (node: UIGraphNode) => void
+  onDrillToFile?: (filePath: string) => void
 }
 
 interface NodeConnection {
@@ -28,6 +29,7 @@ export function NodeInspector({
   onJumpToSource,
   onSelectNode,
   onFocusNeighborhood,
+  onDrillToFile,
 }: NodeInspectorProps) {
   if (!node) return null
 
@@ -90,9 +92,21 @@ export function NodeInspector({
               {node.name}
             </span>
           </div>
-          <div className="text-[11px] text-ink-muted truncate font-mono">
-            {node.filePath}:{node.lineStart}
-            {node.lineEnd > node.lineStart ? `-${node.lineEnd}` : ""}
+          <div className="flex items-center gap-1 text-[11px] text-ink-muted font-mono">
+            <span className="truncate">
+              {node.filePath}:{node.lineStart}
+              {node.lineEnd > node.lineStart ? `-${node.lineEnd}` : ""}
+            </span>
+            {node.filePath && onDrillToFile && (
+              <button
+                className="text-accent hover:underline text-[10px] shrink-0 cursor-pointer ml-1"
+                onClick={() => onDrillToFile(node.filePath)}
+                title="Open Micro View for this file"
+                type="button"
+              >
+                (View File)
+              </button>
+            )}
           </div>
         </div>
         <button
@@ -126,6 +140,17 @@ export function NodeInspector({
             <Icon name="zap" size={12} />
             <span>Focus</span>
           </button>
+          {node.filePath && onDrillToFile && (
+            <button
+              className="flex items-center justify-center gap-1 py-1.5 px-2.5 rounded bg-canvas border border-line hover:border-accent text-ink hover:text-accent transition-colors cursor-pointer text-[11px]"
+              onClick={() => onDrillToFile(node.filePath)}
+              title={`Drill down into Micro AST graph for ${node.filePath}`}
+              type="button"
+            >
+              <Icon name="file" size={12} />
+              <span>File Graph</span>
+            </button>
+          )}
         </div>
 
         {/* Signature Preview */}

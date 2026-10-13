@@ -18,7 +18,7 @@ export interface SearchMatch {
  */
 export class VirtualWorkspaceEngine {
   private files: Map<string, VirtualFileEntry> = new Map()
-  private rootPath = "/Users/developer/project"
+  private rootPath = "/workspace/project"
   private rootName = "project"
 
   constructor(initialFiles?: Record<string, string>) {

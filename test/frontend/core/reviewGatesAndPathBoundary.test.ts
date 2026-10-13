@@ -79,21 +79,21 @@ describe("Path Sanitization and Normalization", () => {
     const { normalizeWorkspacePath } = await import(
       "../../../src/utils/workspaceApi"
     )
-    const root = "/Users/developer/project"
+    const root = "/workspace/project"
+    expect(normalizeWorkspacePath("/workspace/project/src/App.tsx", root)).toBe(
+      "src/App.tsx",
+    )
     expect(
-      normalizeWorkspacePath("/Users/developer/project/src/App.tsx", root),
-    ).toBe("src/App.tsx")
-    expect(
-      normalizeWorkspacePath('"/Users/developer/project/src/App.tsx"', root),
+      normalizeWorkspacePath('"/workspace/project/src/App.tsx"', root),
     ).toBe("src/App.tsx")
     expect(normalizeWorkspacePath("/src/App.tsx", root)).toBe("src/App.tsx")
     expect(normalizeWorkspacePath("src/App.tsx", root)).toBe("src/App.tsx")
 
     // Symmetric leading slash tolerance (e.g. root without slash vs path with slash)
-    const rootWithoutSlash = "Users/developer/project"
+    const rootWithoutSlash = "workspace/project"
     expect(
       normalizeWorkspacePath(
-        "/Users/developer/project/src/utils/workspaceApi.ts",
+        "/workspace/project/src/utils/workspaceApi.ts",
         rootWithoutSlash,
       ),
     ).toBe("src/utils/workspaceApi.ts")

@@ -16,7 +16,7 @@
 | **Phase 5** | AppDrawer AEGIS AI Agent & Session Hub | ✅ Completed | Multi-session chat, slash autocomplete, provider selector |
 | **Special** | UI Dark/Light Theme & Modular Palettes | ✅ Completed | ActivityRail toggle, modular JSON palettes (Default, Atom, Tokyo Night) |
 | **Special** | Settings Registry, Core IDE Preferences & Editor Polish | ✅ Completed | Decoupled schema registry, wildcard exclude, GPU cursor blinking, wrap column |
-| **Phase 6** | Go Core Server, Pure-Go SQLite, AI Agent Bridge, DAP Debugger & CodeGraph MCP | ✅ Completed (6.1–6.14 ✅) | Cross-platform Go binary & embed.FS, supervisor, Pure-Go SQLite, AI agent bridge, DAP/Delve, Zero-Freeze Offloading, FTS5 Search, CodeGraph MCP Engine |
+| **Phase 6** | Go Core Server, Pure-Go SQLite, AI Agent Bridge, DAP Debugger & CodeGraph MCP | ✅ Completed (6.1–6.15 ✅) | Cross-platform Go binary & embed.FS, supervisor, Pure-Go SQLite, AI agent bridge, DAP/Delve, Zero-Freeze Offloading, FTS5 Search, CodeGraph MCP Engine & Interactive Graph Studio |
 | **Phase 7** | Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`) | 🟡 Active (Sub-Phase 7.1, 7.1b, 7.1c ✅, 7.2–7.3 ⚪) | Multi-format tab viewers (Images, Markdown, PDF, Big Data CSV), vector canvas wireframing |
 | **Phase 8** | Research Workshop & Data Science Studio | ⚪ Planned | LaTeX + PDF sync, BibTeX, Python/R dataframes, Biblioshiny |
 | **Phase 9** | Web-Based Remote Pairing & Tablet Companion | ⚪ Deferred (Final) | LAN pairing, web preview host, touch-optimized editor mode |
@@ -125,7 +125,7 @@
 ---
 
 ### Phase 6: Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger
-- **Status**: ✅ Completed (Sub-Phases 6.1–6.14 Completed ✅)
+- **Status**: ✅ Completed (Sub-Phases 6.1–6.15 Completed ✅)
 
 #### Sub-Phase 6.1: Live Workspace Engine & File Operations
 - **Status**: ✅ Completed
@@ -479,6 +479,45 @@
     - Ringkasan aksi di `normalizer.go` dan rendering timeline badges dengan SVG icon di `ToolCallActivity.tsx`.
 - **Verification**: 100% lolos verifikasi Go backend tests (36 unit tests di `codegraph`, `mcp`, dan `api`), full backend suite (169 tests passing across 14 packages), Vitest frontend suite (210 tests passing across 19 files), Vite production build (0 errors), dan oxfmt formatting.
 
+
+#### Sub-Phase 6.15: Graph MCP UI Studio & Interactive Knowledge Graph View
+- **Status**: ✅ Completed
+- **Architecture Reference**: [ADR 0013: Embedded Pure-Go SQLite Engine and FTS5 Search](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0013-embedded-pure-go-sqlite-and-fts5-search.md)
+- **Objective**: Menyediakan antarmuka visual on-demand untuk subsistem CodeGraph Knowledge Engine: editor tab view (`GraphViewer.tsx` via `ViewerPane.tsx`) yang mendukung split-screen side-by-side editing bersama buffer kode, status bar MCP popover (`McpStatusPopover.tsx`), tab diagnosa MCP di Bottom Panel (`McpPanelView.tsx`), serta sinkronisasi bidirectional real-time antara eksekusi tool AI agent dan node graf Cytoscape.js.
+- **Deliverables**:
+  - **Backend SQLite UI Service & REST Endpoints (`ui_service.go`, `ui_types.go`, `api.go`)**:
+    - `UIGraphNode`, `UIGraphEdge`, dan `UIGraphPayload` terformat siap render untuk Cytoscape.js.
+    - `GetSymbolNeighborhood`: Kueri recursive CTE untuk penelusuran graf 1-hop dan 2-hop dengan pembatasan kedalaman dan guardrail limit.
+    - `GetActiveFileGraph`: Pengambilan simbol instan dan relasi keterhubungan internal/eksternal untuk berkas yang sedang aktif.
+    - `GetWorkspaceGraph`: Simbol struktural teratas workspace berdasarkan derajat koneksi edge dengan filter pembersihan virtual environment.
+    - `SearchSymbols`: Pencarian FTS5 dan fallback LIKE untuk autocomplete simbol di toolbar graf.
+    - REST endpoints di `api.go`: `/api/v1/codegraph/neighborhood`, `/file`, `/workspace`, dan `/symbols/search`.
+  - **Integrasi LSP Bawaan & Ekstraktor Python Mandiri (`lsp_extractor.go`, `py_extractor.go`)**:
+    - Memanggil `s.lsp.SetWorkspace(absPath)` pada lifecycle workspace agar server bahasa bawaan (`gopls`, `pyright`/`pylsp`, `vtsls`) terikat ke root proyek.
+    - Ekstraktor leksikal Python mandiri untuk mengekstrak fungsi, method, class, docstrings, dan call edges (`calls`) tanpa ketergantungan subprocess eksternal.
+    - Auto-purge direktori virtual environment (`.venv`, `venv`, `site-packages`, `__pycache__`, `node_modules`) saat inisialisasi dan reindex.
+  - **Universal On-Demand Code Splitting & Tab System (`viewerTypes.ts`, `ViewerPane.tsx`, `EditorTabs.tsx`, `EditorBreadcrumbs.tsx`)**:
+    - Tipe `"graph"` pada `ViewerType`, `isGraphTab()`, dan `parseGraphTab()`.
+    - Tab graf di `EditorTabs` menggunakan ikon `"zap"` dan label nama target yang rapi.
+    - Breadcrumb root `codegraph` pada `EditorBreadcrumbs`.
+    - `GraphViewer` diimpor strictly on-demand via `React.lazy()` di `ViewerPane.tsx` (nol overhead Cytoscape pada initial bundle).
+  - **Integrasi Status Bar & Bottom Panel (`McpStatusPopover.tsx`, `McpPanelView.tsx`)**:
+    - MCP status pill dan popover di Status Bar menampilkan database SQLite aktif, metrik indeks (files, symbols, edges), aksi reindex, tombol peluncur kanvas, dan daftar tool terdaftar.
+    - Tab `"MCP"` di Bottom Panel dengan informasi protokol `2024-11-05`, DB status, quick action side-by-side split, dan interactive JSON tool tester.
+  - **Interactive Cytoscape.js Studio (`GraphCanvas.tsx`, `GraphToolbar.tsx`, `NodeInspector.tsx`, `graphTheme.ts`)**:
+    - Layout 2D Card Grid seimbang untuk node standalone/terisolasi, dan Dagre hierarchical tree untuk node berelasi.
+    - Dimensi node konsisten bergaya kartu IDE (`160px` x `40px`) dengan warna semantik (Functions: `#3B82F6`, Interfaces: `#10B981`, Classes/Types: `#8B5CF6`, Active: `#F59E0B`, AI Trace: `#EC4899`, AI Node: `#8B5CF6`).
+    - Toolbar ringkas satu baris (*single-row responsive*): Autocomplete search, filter chip jenis simbol, layout switcher (Hierarchical Flow vs Network Graph), Zoom, Fit, dan Split Screen (toggle Hop 1/2 dieliminasi demi kedalaman direct neighborhood otomatis).
+    - Slide-in `NodeInspector` drawer: badge jenis simbol, path dan nomor baris, "Jump to Source", "Focus Subgraph", preview signature, docstrings, dan daftar pemanggil/panggilan.
+  - **Sinkronisasi Bidirectional Real-Time & Live AI Trace**:
+    - **Graph ➔ Editor**: Double-click node membuka file dan langsung melakukan scroll serta positioning kursor ke baris kode target.
+    - **Editor ➔ Graph**: Navigasi definition di `CodePane.tsx` memancarkan `aegis:focus-symbol` untuk memusatkan kamera kanvas.
+    - **AI ➔ Graph**: Listener SSE real-time di `chatCore.ts` mendeteksi event `tool_call` CodeGraph/MCP dan inspeksi file secara langsung. Di kanvas graf, entitas **AI Assistant** dinamis diinjeksikan secara real-time dengan laser flow beam beranimasi menuju target kode, disusul transisi status sukses (4 detik delay) dan pelaporan error eksplisit tanpa pass silent atau mock dummy.
+  - **Pembersihan Bloat & Universal CLI Installer (`scripts/install-mcp.js`)**:
+    - Eliminasi entri zombie (`graphify`, `agent-lsp`) dari konfigurasi Antigravity CLI.
+    - CLI binary global di `~/.local/bin/aegiscode` (`aegiscode mcp`).
+    - Skrip otomatis `npm run mcp:install` untuk pendaftaran mandiri ke Antigravity, Claude Desktop, dan Cursor.
+- **Verification**: 100% lolos verifikasi Go backend tests (13 unit tests di `codegraph`), frontend Vitest suite (19 test files, 213 unit tests passing), Vite production build (0 error, chunk `GraphViewer` terpisah), dan formatting `oxfmt`.
 ---
 
 ### Phase 7: Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`)

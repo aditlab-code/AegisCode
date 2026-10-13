@@ -77,9 +77,11 @@ func TestLSPClientTypes(t *testing.T) {
 		t.Fatalf("unexpected position values")
 	}
 
-	mgr := NewManager("/tmp")
+	tmpDir := t.TempDir()
+	mgr := NewManager(tmpDir)
 	uri := mgr.filePathToURI("src/main.go")
-	if uri != "file:///tmp/src/main.go" {
-		t.Fatalf("unexpected uri conversion: %s", uri)
+	expected := "file://" + filepath.ToSlash(filepath.Join(tmpDir, "src/main.go"))
+	if uri != expected {
+		t.Fatalf("unexpected uri conversion: got %s, want %s", uri, expected)
 	}
 }

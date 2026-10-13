@@ -20,20 +20,35 @@ var (
 	reFuncDecl = regexp.MustCompile(`(?m)^[ \t]*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*([a-zA-Z0-9_$]+)\s*(<[^>]*>)?\s*\(([^)]*)\)`)
 
 	// regex for const/let/var arrow or function expressions: (export )?const name = (async )?(<...>)?(...) =>
-	reArrowFunc = regexp.MustCompile(`(?m)^[ \t]*(?:export\s+)?(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*(?::\s*[^=]+)?\s*=\s*(?:async\s*)?(?:<[^>]*>)?\s*(?:\(([^)]*)\)|([a-zA-Z0-9_$]+))\s*=>`)
+	reArrowFunc = regexp.MustCompile(`(?m)^[ \t]*(?:export\s+)?(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*(?::\s*([^=]+))?\s*=\s*(?:async\s*)?(?:<[^>]*>)?\s*(?:\(([^)]*)\)|([a-zA-Z0-9_$]+))\s*=>`)
 
-	// regex for class declarations: (export )?class name( extends X)?
-	reClassDecl = regexp.MustCompile(`(?m)^[ \t]*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([a-zA-Z0-9_$]+)`)
+	// regex for class declarations: (export )?class name( extends X)?( implements Y)?
+	reClassDecl = regexp.MustCompile(`(?m)^[ \t]*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([a-zA-Z0-9_$]+)(?:\s+extends\s+([a-zA-Z0-9_$]+))?(?:\s+implements\s+([^{]+))?`)
 
-	// regex for interfaces: (export )?interface name
-	reInterfaceDecl = regexp.MustCompile(`(?m)^[ \t]*(?:export\s+)?interface\s+([a-zA-Z0-9_$]+)`)
+	// regex for interfaces: (export )?interface name( extends X)?
+	reInterfaceDecl = regexp.MustCompile(`(?m)^[ \t]*(?:export\s+)?interface\s+([a-zA-Z0-9_$]+)(?:\s+extends\s+([^{]+))?`)
 
 	// regex for type aliases: (export )?type name =
 	reTypeDecl = regexp.MustCompile(`(?m)^[ \t]*(?:export\s+)?type\s+([a-zA-Z0-9_$]+)\s*(?:<[^>]*>)?\s*=`)
 
 	// regex for function calls inside bodies: identifier(...) or object.method(...)
 	reCallExpr = regexp.MustCompile(`\b([a-zA-Z0-9_$]+)(?:\.([a-zA-Z0-9_$]+))?\s*\(`)
+
+	// regex for referenced types in signatures
+	reTypeRef = regexp.MustCompile(`[:<]\s*([A-Z][a-zA-Z0-9_$]+)`)
 )
+
+func isPrimitiveType(s string) bool {
+	switch s {
+	case "String", "Number", "Boolean", "Object", "Array", "Function", "Symbol",
+		"Promise", "Record", "Partial", "Required", "Readonly", "Pick", "Omit",
+		"Exclude", "Extract", "NonNullable", "Parameters", "ConstructorParameters",
+		"ReturnType", "InstanceType", "React", "FC", "VFC", "Set", "Map", "Error":
+		return true
+	default:
+		return false
+	}
+}
 
 // Extract parses TS/JS source code and extracts symbols and relation edges.
 func (e *TSExtractor) Extract(relPath string, content []byte) (*ExtractedFile, error) {
@@ -204,6 +219,23 @@ func (e *TSExtractor) Extract(relPath string, content []byte) (*ExtractedFile, e
 			ColEnd:     colEnd,
 		})
 
+		// Extract parameter type references in function declaration
+		if m[6] != -1 && m[7] != -1 {
+			paramStr := src[m[6]:m[7]]
+			for _, refMatch := range reTypeRef.FindAllStringSubmatch(paramStr, -1) {
+				tName := refMatch[1]
+				if !isPrimitiveType(tName) {
+					res.Edges = append(res.Edges, ExtractedEdge{
+						SourceSymbolIndex: symIdx,
+						TargetRawName:     tName,
+						Relation:          RelReferences,
+						LineNumber:        lineStart,
+						Confidence:        0.9,
+					})
+				}
+			}
+		}
+
 		// Extract calls in function body
 		if bodyContent != "" {
 			edges := e.extractCallsFromBody(symIdx, bodyContent, lineStart)
@@ -254,6 +286,38 @@ func (e *TSExtractor) Extract(relPath string, content []byte) (*ExtractedFile, e
 			ColEnd:     colEnd,
 		})
 
+		// Extract type references from arrow function annotation (: FC<Props>) or params
+		if m[4] != -1 && m[5] != -1 {
+			annotStr := src[m[4]:m[5]]
+			for _, refMatch := range reTypeRef.FindAllStringSubmatch(annotStr, -1) {
+				tName := refMatch[1]
+				if !isPrimitiveType(tName) {
+					res.Edges = append(res.Edges, ExtractedEdge{
+						SourceSymbolIndex: symIdx,
+						TargetRawName:     tName,
+						Relation:          RelReferences,
+						LineNumber:        lineStart,
+						Confidence:        0.9,
+					})
+				}
+			}
+		}
+		if m[6] != -1 && m[7] != -1 {
+			paramStr := src[m[6]:m[7]]
+			for _, refMatch := range reTypeRef.FindAllStringSubmatch(paramStr, -1) {
+				tName := refMatch[1]
+				if !isPrimitiveType(tName) {
+					res.Edges = append(res.Edges, ExtractedEdge{
+						SourceSymbolIndex: symIdx,
+						TargetRawName:     tName,
+						Relation:          RelReferences,
+						LineNumber:        lineStart,
+						Confidence:        0.9,
+					})
+				}
+			}
+		}
+
 		if bodyContent != "" {
 			edges := e.extractCallsFromBody(symIdx, bodyContent, lineStart)
 			res.Edges = append(res.Edges, edges...)
@@ -280,6 +344,7 @@ func (e *TSExtractor) Extract(relPath string, content []byte) (*ExtractedFile, e
 		sig := strings.TrimSpace(src[fullMatchStart:m[1]])
 		doc := extractPrecedingDoc(fullMatchStart)
 
+		symIdx := len(res.Symbols)
 		res.Symbols = append(res.Symbols, ExtractedSymbol{
 			Name:       name,
 			Kind:       KindClass,
@@ -290,6 +355,36 @@ func (e *TSExtractor) Extract(relPath string, content []byte) (*ExtractedFile, e
 			ColStart:   colStart,
 			ColEnd:     colEnd,
 		})
+
+		// Extract extends
+		if m[4] != -1 && m[5] != -1 {
+			baseClass := strings.TrimSpace(src[m[4]:m[5]])
+			if baseClass != "" {
+				res.Edges = append(res.Edges, ExtractedEdge{
+					SourceSymbolIndex: symIdx,
+					TargetRawName:     baseClass,
+					Relation:          RelExtends,
+					LineNumber:        lineStart,
+					Confidence:        1.0,
+				})
+			}
+		}
+		// Extract implements
+		if m[6] != -1 && m[7] != -1 {
+			implementsList := src[m[6]:m[7]]
+			for _, item := range strings.Split(implementsList, ",") {
+				iface := strings.TrimSpace(item)
+				if iface != "" {
+					res.Edges = append(res.Edges, ExtractedEdge{
+						SourceSymbolIndex: symIdx,
+						TargetRawName:     iface,
+						Relation:          RelImplements,
+						LineNumber:        lineStart,
+						Confidence:        1.0,
+					})
+				}
+			}
+		}
 	}
 
 	// 4. Interfaces
@@ -311,6 +406,7 @@ func (e *TSExtractor) Extract(relPath string, content []byte) (*ExtractedFile, e
 		sig := strings.TrimSpace(src[fullMatchStart:m[1]])
 		doc := extractPrecedingDoc(fullMatchStart)
 
+		symIdx := len(res.Symbols)
 		res.Symbols = append(res.Symbols, ExtractedSymbol{
 			Name:       name,
 			Kind:       KindInterface,
@@ -321,6 +417,23 @@ func (e *TSExtractor) Extract(relPath string, content []byte) (*ExtractedFile, e
 			ColStart:   colStart,
 			ColEnd:     colEnd,
 		})
+
+		// Extract interface inheritance (extends)
+		if m[4] != -1 && m[5] != -1 {
+			extendsList := src[m[4]:m[5]]
+			for _, item := range strings.Split(extendsList, ",") {
+				base := strings.TrimSpace(item)
+				if base != "" {
+					res.Edges = append(res.Edges, ExtractedEdge{
+						SourceSymbolIndex: symIdx,
+						TargetRawName:     base,
+						Relation:          RelExtends,
+						LineNumber:        lineStart,
+						Confidence:        1.0,
+					})
+				}
+			}
+		}
 	}
 
 	// 5. Types

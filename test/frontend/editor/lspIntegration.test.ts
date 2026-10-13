@@ -69,7 +69,7 @@ describe("LSP Integration & Language Resolution", () => {
     const currentFile = "src/components/layout/editor/CMEditor.tsx"
 
     const sameFileLoc: LspLocation = {
-      uri: "file:///Users/dev/project/src/components/layout/editor/CMEditor.tsx",
+      uri: "file:///workspace/project/src/components/layout/editor/CMEditor.tsx",
       range: {
         start: { line: 42, character: 10 },
         end: { line: 42, character: 25 },
@@ -81,7 +81,7 @@ describe("LSP Integration & Language Resolution", () => {
     expect(isSame).toBe(true)
 
     const crossFileLoc: LspLocation = {
-      uri: "file:///Users/dev/project/src/utils/lspApi.ts",
+      uri: "file:///workspace/project/src/utils/lspApi.ts",
       range: {
         start: { line: 15, character: 4 },
         end: { line: 15, character: 18 },

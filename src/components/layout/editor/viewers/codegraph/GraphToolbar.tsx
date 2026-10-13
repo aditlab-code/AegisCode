@@ -7,10 +7,9 @@ import {
 } from "../../../../../utils/codegraphApi"
 
 export type LayoutMode = "dagre" | "cose"
+export type ScopeMode = "macro" | "micro"
 
 interface GraphToolbarProps {
-  depth: number
-  onDepthChange: (depth: number) => void
   layout: LayoutMode
   onLayoutChange: (layout: LayoutMode) => void
   activeKinds: Set<string>
@@ -22,6 +21,11 @@ interface GraphToolbarProps {
   onSplitSideBySide?: () => void
   onRefresh: () => void
   loading?: boolean
+  scope: ScopeMode
+  onScopeChange: (scope: ScopeMode) => void
+  macroLimit: number
+  onMacroLimitChange: (limit: number) => void
+  microPath?: string | null
 }
 
 const AVAILABLE_KINDS = [
@@ -43,8 +47,6 @@ const AVAILABLE_KINDS = [
 ]
 
 export function GraphToolbar({
-  depth,
-  onDepthChange,
   layout,
   onLayoutChange,
   activeKinds,
@@ -56,6 +58,11 @@ export function GraphToolbar({
   onSplitSideBySide,
   onRefresh,
   loading = false,
+  scope,
+  onScopeChange,
+  macroLimit,
+  onMacroLimitChange,
+  microPath,
 }: GraphToolbarProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<UIGraphNode[]>([])
@@ -101,12 +108,91 @@ export function GraphToolbar({
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-line bg-canvas/60 text-xs select-none">
-      {/* Left: Search & Filters */}
-      <div className="flex items-center gap-2 flex-wrap">
+    <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-line bg-surface/40 text-xs select-none overflow-x-auto no-scrollbar whitespace-nowrap min-w-0">
+      {/* Left: Scope Mode Switcher, Density, Search & Filters */}
+      <div className="flex items-center gap-2 shrink-0">
+        {/* Scope Mode Switcher (Macro vs Micro) */}
+        <div className="flex items-center rounded bg-surface border border-line p-0.5 shadow-xs">
+          <button
+            className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold transition-colors cursor-pointer ${
+              scope === "macro"
+                ? "bg-accent text-accent-contrast shadow-xs"
+                : "text-ink-muted hover:text-ink hover:bg-canvas/50"
+            }`}
+            onClick={() => onScopeChange("macro")}
+            title="Macro View: Workspace-wide structural architecture"
+            type="button"
+          >
+            <Icon name="folder" size={11} />
+            <span>Macro</span>
+          </button>
+          <button
+            className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold transition-colors cursor-pointer ${
+              scope === "micro"
+                ? "bg-accent text-accent-contrast shadow-xs"
+                : "text-ink-muted hover:text-ink hover:bg-canvas/50"
+            }`}
+            onClick={() => onScopeChange("micro")}
+            title={
+              microPath
+                ? `Micro View: Deep AST symbols for ${microPath}`
+                : "Micro View: Active file AST symbols"
+            }
+            type="button"
+          >
+            <Icon name="file" size={11} />
+            <span>Micro</span>
+          </button>
+        </div>
+
+        {/* If Macro: Density Limit Selector */}
+        {scope === "macro" && (
+          <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface border border-line text-[10px] text-ink-muted">
+            <span className="text-[9px] uppercase font-bold tracking-wider text-ink-muted/80">
+              Nodes:
+            </span>
+            {[
+              { val: 50, label: "50" },
+              { val: 100, label: "100" },
+              { val: 250, label: "250" },
+              { val: 1000, label: "All" },
+            ].map(({ val, label }) => (
+              <button
+                className={`px-1.5 py-0.2 rounded transition-colors cursor-pointer font-mono font-medium ${
+                  macroLimit === val
+                    ? "bg-accent text-accent-contrast font-bold"
+                    : "hover:text-ink hover:bg-canvas"
+                }`}
+                key={val}
+                onClick={() => onMacroLimitChange(val)}
+                title={`Render up to ${label} symbols in workspace graph`}
+                type="button"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* If Micro: Active File Badge */}
+        {scope === "micro" && microPath && (
+          <div
+            className="flex items-center gap-1 px-2 py-0.5 rounded bg-accent/10 border border-accent/20 text-accent font-mono text-[10px] max-w-[170px] truncate"
+            title={microPath}
+          >
+            <Icon name="file" size={10} />
+            <span className="truncate">
+              {microPath.split(/[/\\]/).pop() || microPath}
+            </span>
+          </div>
+        )}
+
+        {/* Divider */}
+        <div className="h-4 w-px bg-line/80 mx-0.5" />
+
         {/* Symbol Search Bar */}
         <div className="relative" ref={dropdownRef}>
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-surface border border-line focus-within:border-accent w-48 transition-colors">
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-surface border border-line focus-within:border-accent w-44 focus-within:w-56 transition-all duration-150">
             <Icon
               className={
                 isSearching ? "animate-spin text-ink-muted" : "text-ink-muted"
@@ -181,42 +267,8 @@ export function GraphToolbar({
         </div>
       </div>
 
-      {/* Right: Layout Switcher, Depth, Zoom & Split */}
-      <div className="flex items-center gap-2">
-        {/* MCP Status Indicator */}
-        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-accent/10 border border-accent/20 text-accent font-medium text-[10px]">
-          <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-          <span>MCP CodeGraph</span>
-        </div>
-
-        {/* Depth Toggle (1 Hop vs 2 Hops) */}
-        <div className="flex items-center rounded bg-surface border border-line p-0.5">
-          <button
-            className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer ${
-              depth === 1
-                ? "bg-accent text-accent-contrast"
-                : "text-ink-muted hover:text-ink"
-            }`}
-            onClick={() => onDepthChange(1)}
-            title="1 Hop Neighborhood"
-            type="button"
-          >
-            1 Hop
-          </button>
-          <button
-            className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer ${
-              depth === 2
-                ? "bg-accent text-accent-contrast"
-                : "text-ink-muted hover:text-ink"
-            }`}
-            onClick={() => onDepthChange(2)}
-            title="2 Hops Neighborhood"
-            type="button"
-          >
-            2 Hops
-          </button>
-        </div>
-
+      {/* Right: Layout Switcher, Zoom, Actions & MCP Status */}
+      <div className="flex items-center gap-2 shrink-0">
         {/* Layout Switcher (Dagre vs CoSE) */}
         <div className="flex items-center rounded bg-surface border border-line p-0.5">
           <button
@@ -226,7 +278,7 @@ export function GraphToolbar({
                 : "text-ink-muted hover:text-ink"
             }`}
             onClick={() => onLayoutChange("dagre")}
-            title="Hierarchical Dagre Layout"
+            title="Hierarchical Flow Layout"
             type="button"
           >
             Hierarchical
@@ -238,11 +290,17 @@ export function GraphToolbar({
                 : "text-ink-muted hover:text-ink"
             }`}
             onClick={() => onLayoutChange("cose")}
-            title="Force-Directed CoSE Layout"
+            title="Force Network Layout"
             type="button"
           >
             Network
           </button>
+        </div>
+
+        {/* MCP Status Indicator */}
+        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-accent/10 border border-accent/20 text-accent font-medium text-[10px]">
+          <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+          <span>MCP Active</span>
         </div>
 
         {/* Action Controls */}

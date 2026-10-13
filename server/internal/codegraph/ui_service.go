@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -142,14 +143,17 @@ func (s *UIService) GetActiveFileGraph(ctx context.Context, relPath string) (*UI
 		}, nil
 	}
 
+	cleanRel := filepath.ToSlash(filepath.Clean(relPath))
+	baseName := filepath.Base(cleanRel)
+
 	// 1. Fetch all symbols in this file
 	fileRows, err := s.db.QueryContext(ctx, `
 		SELECT s.id, s.name, s.kind, coalesce(s.signature, ''), f.path, s.line_start, s.line_end, coalesce(s.doc_comment, '')
 		FROM code_symbols s
 		JOIN graph_files f ON s.file_id = f.id
-		WHERE f.path = ?
+		WHERE (f.path = ? OR f.path = ? OR f.path LIKE ? OR ? LIKE '%' || f.path OR f.path LIKE ?)
 		ORDER BY s.line_start ASC
-	`, relPath)
+	`, relPath, cleanRel, "%"+cleanRel, cleanRel, "%"+baseName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query file symbols: %w", err)
 	}
@@ -278,8 +282,8 @@ func (s *UIService) GetWorkspaceGraph(ctx context.Context, limit int) (*UIGraphP
 
 	if limit <= 0 {
 		limit = 50
-	} else if limit > 100 {
-		limit = 100
+	} else if limit > 1000 {
+		limit = 1000
 	}
 
 	var totalSymbols int
@@ -292,20 +296,43 @@ func (s *UIService) GetWorkspaceGraph(ctx context.Context, limit int) (*UIGraphP
 		}, nil
 	}
 
-	// Query top symbols by edge degree, prioritizing well-connected structural symbols
+	// Allocate balanced quota between functions and structural types (interfaces, classes, structs, types)
+	// to prevent function calls from starving out key architectural types in the macro view.
+	var structTotal int
+	_ = s.db.QueryRowContext(ctx, `SELECT count(*) FROM code_symbols WHERE kind IN ('class', 'interface', 'struct', 'type')`).Scan(&structTotal)
+
+	funcLimit := (limit * 3) / 5
+	structLimit := limit - funcLimit
+	if structTotal < structLimit {
+		structLimit = structTotal
+		funcLimit = limit - structLimit
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT s.id
-		FROM code_symbols s
-		JOIN graph_files f ON s.file_id = f.id
-		LEFT JOIN code_edges e ON (e.source_symbol_id = s.id OR e.target_symbol_id = s.id)
-		WHERE f.path NOT LIKE '%.venv%'
-		  AND f.path NOT LIKE '%/venv/%'
-		  AND f.path NOT LIKE '%/site-packages/%'
-		  AND f.path NOT LIKE '%/__pycache__/%'
-		GROUP BY s.id
-		ORDER BY count(e.id) DESC, s.id ASC
-		LIMIT ?
-	`, limit)
+		SELECT id FROM (
+			SELECT s.id, count(e.id) as deg
+			FROM code_symbols s
+			JOIN graph_files f ON s.file_id = f.id
+			LEFT JOIN code_edges e ON (e.source_symbol_id = s.id OR e.target_symbol_id = s.id)
+			WHERE s.kind IN ('function', 'method')
+			  AND f.path NOT LIKE '%.venv%' AND f.path NOT LIKE '%/venv/%' AND f.path NOT LIKE '%/site-packages/%' AND f.path NOT LIKE '%/__pycache__/%'
+			GROUP BY s.id
+			ORDER BY count(e.id) DESC, s.id ASC
+			LIMIT ?
+		)
+		UNION ALL
+		SELECT id FROM (
+			SELECT s.id, count(e.id) as deg
+			FROM code_symbols s
+			JOIN graph_files f ON s.file_id = f.id
+			LEFT JOIN code_edges e ON (e.source_symbol_id = s.id OR e.target_symbol_id = s.id)
+			WHERE s.kind IN ('class', 'interface', 'struct', 'type')
+			  AND f.path NOT LIKE '%.venv%' AND f.path NOT LIKE '%/venv/%' AND f.path NOT LIKE '%/site-packages/%' AND f.path NOT LIKE '%/__pycache__/%'
+			GROUP BY s.id
+			ORDER BY count(e.id) DESC, s.id ASC
+			LIMIT ?
+		)
+	`, funcLimit, structLimit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query workspace top symbols: %w", err)
 	}
@@ -380,21 +407,29 @@ func (s *UIService) SearchSymbols(ctx context.Context, query string, limit int) 
 		rows.Close()
 	}
 
-	// 2. If FTS yielded nothing or failed, fallback to LIKE on code_symbols
+	// 2. If FTS yielded nothing or failed, fallback to LIKE on code_symbols & graph_files
 	if len(matchIDs) == 0 {
+		cleanQ := filepath.ToSlash(filepath.Clean(query))
+		baseQ := filepath.Base(cleanQ)
+		baseNoExt := strings.TrimSuffix(baseQ, filepath.Ext(baseQ))
+
 		likePattern := "%" + query + "%"
+		likeClean := "%" + cleanQ + "%"
+		likeBase := "%" + baseNoExt + "%"
+		likeBaseFile := "%" + baseQ + "%"
+
 		likeRows, err := s.db.QueryContext(ctx, `
 			SELECT s.id
 			FROM code_symbols s
 			JOIN graph_files f ON s.file_id = f.id
-			WHERE s.name LIKE ?
+			WHERE (s.name LIKE ? OR s.name LIKE ? OR f.path LIKE ? OR f.path LIKE ? OR ? LIKE '%' || f.path)
 			  AND f.path NOT LIKE '%.venv%'
 			  AND f.path NOT LIKE '%/venv/%'
 			  AND f.path NOT LIKE '%/site-packages/%'
 			  AND f.path NOT LIKE '%/__pycache__/%'
 			ORDER BY s.line_start ASC
 			LIMIT ?
-		`, likePattern, limit)
+		`, likePattern, likeBase, likeClean, likeBaseFile, cleanQ, limit)
 		if err == nil {
 			for likeRows.Next() {
 				var id int64

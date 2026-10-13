@@ -380,36 +380,11 @@ export const ToolCallActivityCard = memo(function ToolCallActivityCard({
     toolCall.name === "find_callers" ||
     toolCall.name === "find_callees" ||
     toolCall.name === "query_subgraph" ||
-    toolCall.name === "read_symbol_body"
+    toolCall.name === "read_symbol_body" ||
+    toolCall.name === "get_diff_impact"
 
-  // Live auto-dispatch AI trace event to CodeGraph studio whenever MCP tool runs
-  useEffect(() => {
-    if (!isCodeGraphTool) return
-    const targetSymbol =
-      toolCall.args?.symbol_name ||
-      toolCall.args?.function_name ||
-      toolCall.args?.root_symbol ||
-      toolCall.args?.name ||
-      parsed.fullTarget ||
-      ""
-    if (targetSymbol) {
-      window.dispatchEvent(
-        new CustomEvent("aegis:ai-trace-path", {
-          detail: {
-            symbolName: targetSymbol,
-            toolName: toolCall.name,
-            status: toolCall.status || "running",
-          },
-        }),
-      )
-    }
-  }, [
-    isCodeGraphTool,
-    toolCall.name,
-    toolCall.status,
-    toolCall.args,
-    parsed.fullTarget,
-  ])
+  // NOTE: Automatic AI trace dispatch is handled upstream by chatCore.ts SSE handler.
+  // Only the manual "Inspect in Graph" button (handleInspectInGraph below) dispatches from here.
 
   const handleInspectInGraph = (e: React.MouseEvent) => {
     e.stopPropagation()
