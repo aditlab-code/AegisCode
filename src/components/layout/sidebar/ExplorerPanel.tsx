@@ -18,6 +18,7 @@ import {
   buildExplorerGitDecorations,
   normalizePath,
 } from "../../../utils/explorerGitStatus"
+import { sortFileTree } from "../../../utils/workspaceApi"
 
 function extractSymbols(code?: string): OutlineSymbol[] {
   if (!code) return []
@@ -368,37 +369,45 @@ export function ExplorerPanel() {
     }
   }, [workspaceOpen])
 
-  // Collapsed folders state
-  const [collapsedFolders, setCollapsedFolders] =
-    useState<Record<string, boolean>>(() => {
-      const initial: Record<string, boolean> = {}
-      files.forEach((f) => {
-        if ((f.icon === "folder" || f.type === "folder") && f.open === false) {
-          const key = f.path || f.label
-          initial[key] = true
-          initial[f.label] = true
-        }
-      })
-      return initial
-    })
+  // Expanded folders state: empty by default, so all folders at all levels start collapsed
+  const [expandedFolders, setExpandedFolders] =
+    useState<Record<string, boolean>>({})
+
+  // Reset all folders to collapsed when root workspace changes
+  useEffect(() => {
+    setExpandedFolders({})
+  }, [rootWorkspacePath])
+
+  const expandParents = useCallback((path: string) => {
+    const cleanPath = path.replace(/\\/g, "/")
+    if (!cleanPath.includes("/")) return
+    const parts = cleanPath.split("/").slice(0, -1)
+    const toExpand: Record<string, boolean> = {}
+    let currentPath = ""
+    for (const part of parts) {
+      currentPath = currentPath ? `${currentPath}/${part}` : part
+      toExpand[currentPath] = true
+    }
+    setExpandedFolders((prev) => ({ ...prev, ...toExpand }))
+  }, [])
+
+  // Auto-expand parent folders of active editor file when opened
+  useEffect(() => {
+    if (activeEditorFile) {
+      expandParents(activeEditorFile)
+    }
+  }, [activeEditorFile, expandParents])
 
   function toggleFolder(folderKey: string) {
-    setCollapsedFolders((prev) => ({
+    setExpandedFolders((prev) => ({
       ...prev,
       [folderKey]: !prev[folderKey],
     }))
   }
 
   const handleCollapseAllFolders = useCallback(() => {
-    const allCollapsed: Record<string, boolean> = {}
-    files.forEach((f) => {
-      if (f.icon === "folder" || f.type === "folder") {
-        allCollapsed[f.path || f.label] = true
-        allCollapsed[f.label] = true
-      }
-    })
-    setCollapsedFolders(allCollapsed)
-  }, [files])
+    setExpandedFolders({})
+  }, [])
 
   const excludePatterns = settings?.files?.exclude ?? []
 
@@ -415,12 +424,14 @@ export function ExplorerPanel() {
     [excludePatterns],
   )
 
+  const sortedFiles = useMemo(() => sortFileTree(files), [files])
+
   // Visible files with hierarchical folder collapse pruning
   const visibleFiles = useMemo(() => {
     const result: FileItem[] = []
     let skipUntilDepth: number | null = null
 
-    for (const file of files) {
+    for (const file of sortedFiles) {
       if (skipUntilDepth !== null) {
         if (file.depth > skipUntilDepth) {
           continue
@@ -438,16 +449,19 @@ export function ExplorerPanel() {
       result.push(file)
 
       const key = file.path || file.label
-      if (
-        (file.icon === "folder" || file.type === "folder") &&
-        (collapsedFolders[key] ?? collapsedFolders[file.label])
-      ) {
-        skipUntilDepth = file.depth
+      const isFolder = file.icon === "folder" || file.type === "folder"
+      if (isFolder) {
+        const isExpanded = Boolean(
+          expandedFolders[key] ?? expandedFolders[file.label],
+        )
+        if (!isExpanded) {
+          skipUntilDepth = file.depth
+        }
       }
     }
 
     return result
-  }, [files, collapsedFolders, isExcluded])
+  }, [sortedFiles, expandedFolders, isExcluded])
 
   // Virtualized file list calculation to keep DOM tree lean on large repositories (1000+ files)
   const { virtualFiles, topSpacerHeight, bottomSpacerHeight } = useMemo(() => {
@@ -495,6 +509,7 @@ export function ExplorerPanel() {
     const name = createName.trim()
     if (name && creatingType) {
       createFile(name, creatingType === "folder")
+      expandParents(name)
     }
     setCreatingType(null)
     setCreateName("")
@@ -971,8 +986,8 @@ export function ExplorerPanel() {
             const isHidden = file.label.startsWith(".") || file.muted
             const isRenaming = renamingFile === fileKey
             const isFolder = file.icon === "folder" || file.type === "folder"
-            const isCollapsed = Boolean(
-              collapsedFolders[fileKey] ?? collapsedFolders[file.label],
+            const isExpanded = Boolean(
+              expandedFolders[fileKey] ?? expandedFolders[file.label],
             )
             const isDropTarget = dragTarget === fileKey
             const isContextTarget =
@@ -1068,7 +1083,7 @@ export function ExplorerPanel() {
                 {isFolder ? (
                   <span
                     className={`folder-chevron ${
-                      !isCollapsed ? "chevron-open" : "chevron-closed"
+                      isExpanded ? "chevron-open" : "chevron-closed"
                     }`}
                     onClick={(e) => {
                       e.stopPropagation()

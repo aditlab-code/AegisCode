@@ -147,6 +147,40 @@ export async function createWorkspaceFolder(
   return res.json()
 }
 
+export function compareFileTreeItems(a: FileItem, b: FileItem): number {
+  const pathA = (a.path || a.name || a.label)
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter(Boolean)
+  const pathB = (b.path || b.name || b.label)
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter(Boolean)
+  const minLen = Math.min(pathA.length, pathB.length)
+
+  for (let i = 0; i < minLen; i++) {
+    if (pathA[i] !== pathB[i]) {
+      const aIsFolder =
+        i < pathA.length - 1 || a.type === "folder" || a.icon === "folder"
+      const bIsFolder =
+        i < pathB.length - 1 || b.type === "folder" || b.icon === "folder"
+      if (aIsFolder !== bIsFolder) {
+        return aIsFolder ? -1 : 1
+      }
+      return pathA[i].localeCompare(pathB[i], undefined, {
+        sensitivity: "base",
+        numeric: true,
+      })
+    }
+  }
+
+  return pathA.length - pathB.length
+}
+
+export function sortFileTree(files: FileItem[]): FileItem[] {
+  return [...files].sort(compareFileTreeItems)
+}
+
 export function flattenBackendTree(nodes: BackendFileNode[]): FileItem[] {
   const result: FileItem[] = []
 
@@ -171,7 +205,7 @@ export function flattenBackendTree(nodes: BackendFileNode[]): FileItem[] {
         name: node.name,
         path: node.path,
         type: node.type,
-        open: depth === 0,
+        open: false,
         children: node.children
           ? node.children.map((c) => ({
               depth: depth + 1,
@@ -180,6 +214,7 @@ export function flattenBackendTree(nodes: BackendFileNode[]): FileItem[] {
               name: c.name,
               path: c.path,
               type: c.type,
+              open: false,
             }))
           : undefined,
       }

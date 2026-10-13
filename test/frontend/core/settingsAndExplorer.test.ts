@@ -3,6 +3,8 @@ import { DEFAULT_APP_SETTINGS } from "@/context/core/settingsCore"
 import { matchesExcludePattern } from "@/components/layout/sidebar/ExplorerPanel"
 import { buildSettingsSchema } from "@/components/layout/settings/settingsRegistry"
 import { tokenizeLine, buildTodoRegex } from "@/utils/syntax"
+import { sortFileTree, flattenBackendTree } from "@/utils/workspaceApi"
+import { addFileToTreeLogic } from "@/store/slices/createWorkspaceSlice"
 
 describe("Settings, Explorer Exclude, and Syntax Highlighting", () => {
   describe("AppSettings and Defaults", () => {
@@ -58,6 +60,144 @@ describe("Settings, Explorer Exclude, and Syntax Highlighting", () => {
         matchesExcludePattern("src/index.ts", "index.ts", "**/dist/**"),
       ).toBe(false)
       expect(matchesExcludePattern("", "", "")).toBe(false)
+    })
+  })
+
+  describe("Explorer Tree Sorting and Default Collapse Behavior", () => {
+    it("sorts root folders first, followed by root files alphabetically", () => {
+      const unsorted = [
+        {
+          id: "1",
+          name: "vite.config.ts",
+          label: "vite.config.ts",
+          type: "file" as const,
+          icon: "file",
+          depth: 0,
+          path: "vite.config.ts",
+        },
+        {
+          id: "2",
+          name: "src",
+          label: "src",
+          type: "folder" as const,
+          icon: "folder",
+          depth: 0,
+          path: "src",
+        },
+        {
+          id: "3",
+          name: "package.json",
+          label: "package.json",
+          type: "file" as const,
+          icon: "file",
+          depth: 0,
+          path: "package.json",
+        },
+        {
+          id: "4",
+          name: "docs",
+          label: "docs",
+          type: "folder" as const,
+          icon: "folder",
+          depth: 0,
+          path: "docs",
+        },
+        {
+          id: "5",
+          name: "App.tsx",
+          label: "App.tsx",
+          type: "file" as const,
+          icon: "file",
+          depth: 1,
+          path: "src/App.tsx",
+        },
+        {
+          id: "6",
+          name: "components",
+          label: "components",
+          type: "folder" as const,
+          icon: "folder",
+          depth: 1,
+          path: "src/components",
+        },
+      ]
+
+      const sorted = sortFileTree(unsorted)
+      const names = sorted.map((f) => f.name)
+
+      expect(names).toEqual([
+        "docs",
+        "src",
+        "components",
+        "App.tsx",
+        "package.json",
+        "vite.config.ts",
+      ])
+    })
+
+    it("ensures flattenBackendTree initializes all nodes with open: false", () => {
+      const mockRawTree = [
+        {
+          name: "src",
+          path: "src",
+          type: "folder" as const,
+          children: [
+            { name: "index.ts", path: "src/index.ts", type: "file" as const },
+          ],
+        },
+        {
+          name: "README.md",
+          path: "README.md",
+          type: "file" as const,
+        },
+      ]
+
+      const flat = flattenBackendTree(mockRawTree)
+      expect(flat.every((node) => node.open === false)).toBe(true)
+    })
+
+    it("inserts new files in sorted order with addFileToTreeLogic", () => {
+      const initial = [
+        {
+          id: "1",
+          name: "src",
+          label: "src",
+          type: "folder" as const,
+          icon: "folder",
+          depth: 0,
+          path: "src",
+          open: false,
+        },
+        {
+          id: "2",
+          name: "package.json",
+          label: "package.json",
+          type: "file" as const,
+          icon: "file",
+          depth: 0,
+          path: "package.json",
+          open: false,
+        },
+      ]
+
+      const withNewFolder = addFileToTreeLogic(initial, "build", true)
+      expect(withNewFolder.map((f) => f.name)).toEqual([
+        "build",
+        "src",
+        "package.json",
+      ])
+
+      const withNewFile = addFileToTreeLogic(
+        withNewFolder,
+        "a-config.json",
+        false,
+      )
+      expect(withNewFile.map((f) => f.name)).toEqual([
+        "build",
+        "src",
+        "a-config.json",
+        "package.json",
+      ])
     })
   })
 

@@ -100,6 +100,7 @@ import {
   renameWorkspaceFile,
   saveWorkspaceFile,
   normalizeWorkspacePath,
+  sortFileTree,
 } from "../../utils/workspaceApi"
 import {
   addBackendRecentProject,
@@ -130,9 +131,10 @@ export function addFileToTreeLogic(
     icon: isFolder ? "folder" : "file",
     depth: Math.max(0, parts.length - 1),
     path,
+    open: false,
   }
 
-  return [...files, newItem]
+  return sortFileTree([...files, newItem])
 }
 
 export function removeFileFromTreeLogic(
@@ -151,7 +153,7 @@ export function renameFileInTreeLogic(
   newPath: string,
 ): FileItem[] {
   const newName = newPath.split("/").pop() || newPath
-  return files.map((f) => {
+  const updated = files.map((f) => {
     if (f.path === oldPath || f.name === oldPath) {
       return {
         ...f,
@@ -168,6 +170,7 @@ export function renameFileInTreeLogic(
     }
     return f
   })
+  return sortFileTree(updated)
 }
 
 export function updateBufferContentLogic(
