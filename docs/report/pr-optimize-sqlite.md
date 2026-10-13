@@ -174,24 +174,24 @@ FROM chat_fts WHERE chat_fts MATCH ? ORDER BY rank LIMIT 30;
 
 ### 5. Milestone Execution Checklist
 
-* [ ] **Step 1: Driver Integration**
+* [x] **Step 1: Driver Integration**
 * Pasang dependensi `modernc.org/sqlite` di `server/go.mod`.
 * Verifikasi bahwa `go -C server build` tetap berhasil dengan `CGO_ENABLED=0`.
 
 
-* [ ] **Step 2: Database Layer (`server/internal/store/db.go`)**
-* Implementasikan inisialisasi koneksi dengan WAL PRAGMAs dan pool koneksi (`SetMaxOpenConns(1)` untuk writer, atau shared connection).
+* [x] **Step 2: Database Layer (`server/internal/store/db.go`)**
+* Implementasikan inisialisasi koneksi dengan WAL PRAGMAs dan pool koneksi (`SetMaxOpenConns(25)`, connection pooling, busy timeout).
 * Buat automigrasi DDL schema di atas.
 
-* [ ] **Step 3: Refactor Store Interface (`store.go`)**
+* [x] **Step 3: Refactor Store Interface (`store.go`)**
 * Ganti pembacaan/penulisan file JSON pada method `GetConfig`, `SaveConfig`, `GetState`, `SaveState`, `ListChats`, `GetChat`, `AppendEventNode` menjadi query SQL.
 * Pertahankan signature fungsi 100% sama agar `server/internal/api/api.go` tidak mengalami breaking change.
 
-* [ ] **Step 4: Legacy Shadow Migrator (`migrate_flatfile.go`)**
-* Buat modul pembaca flat-file lama ke SQLite saat pertama kali booting.
+* [x] **Step 4: Legacy Shadow Migrator (`migrate_sqlite.go`)**
+* Buat modul pembaca flat-file lama ke SQLite saat pertama kali booting dan backup aman ke `legacy_backup/`.
 
-* [ ] **Step 5: FTS API Endpoint**
-* Tambahkan route `GET /api/v1/ai/chats/search` di handler API.
+* [x] **Step 5: FTS API Endpoint**
+* Tambahkan route `GET /api/v1/chats/search` di handler API.
 
-* [ ] **Step 6: Unit & Integration Tests**
+* [x] **Step 6: Unit & Integration Tests**
 * Buat `sqlite_test.go` untuk memverifikasi konkurensi, ACID rollback, FTS matching, dan migrasi tanpa data korup.

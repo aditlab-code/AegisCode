@@ -314,7 +314,7 @@ export function useChatCore() {
       .catch(() => {})
   }, [])
 
-  // Hydrate chat sessions from backend flat-file storage (~/.aegis/chats/*.json)
+  // Hydrate chat sessions from backend SQLite storage (~/.aegis/aegis.db)
   useEffect(() => {
     fetchBackendChatSummaries()
       .then(async (summaries) => {

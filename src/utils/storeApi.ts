@@ -43,6 +43,7 @@ export interface BackendChatSummary {
   provider: string
   model: string
   messageCount: number
+  workspacePath?: string
   createdAt: number
   updatedAt: number
 }
@@ -196,9 +197,14 @@ export async function clearBackendRecentProjects(): Promise<boolean> {
   }
 }
 
-export async function fetchBackendChatSummaries(): Promise<BackendChatSummary[]> {
+export async function fetchBackendChatSummaries(
+  workspace?: string,
+): Promise<BackendChatSummary[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/v1/chats`)
+    const url = workspace
+      ? `${API_BASE}/api/v1/chats?workspace=${encodeURIComponent(workspace)}`
+      : `${API_BASE}/api/v1/chats`
+    const res = await fetch(url)
     if (!res.ok) return []
     const data = await res.json()
     return data.chats || []
@@ -252,6 +258,41 @@ export async function deleteBackendChatSession(id: string): Promise<boolean> {
     return res.ok
   } catch {
     return false
+  }
+}
+
+export interface BackendSearchResult {
+  sessionId: string
+  sessionTitle: string
+  eventId: string
+  snippet: string
+  role: string
+  workspacePath?: string
+  createdAt: number
+}
+
+export interface ChatSearchResponse {
+  query: string
+  total: number
+  results: BackendSearchResult[]
+}
+
+export async function searchBackendChats(
+  query: string,
+  limit = 30,
+  workspace?: string,
+): Promise<ChatSearchResponse> {
+  try {
+    const wsParam = workspace
+      ? `&workspace=${encodeURIComponent(workspace)}`
+      : ""
+    const res = await fetch(
+      `${API_BASE}/api/v1/chats/search?q=${encodeURIComponent(query)}&limit=${limit}${wsParam}`,
+    )
+    if (!res.ok) return { query, total: 0, results: [] }
+    return await res.json()
+  } catch {
+    return { query, total: 0, results: [] }
   }
 }
 

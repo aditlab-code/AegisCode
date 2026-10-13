@@ -108,6 +108,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize store: %v", err)
 	}
+	defer func() { _ = st.Close() }()
 
 	picker := platform.NewNativeFolderPicker()
 	server := api.NewServer(ws, picker, st)
@@ -197,5 +198,7 @@ func main() {
 	if err := httpServer.Shutdown(ctx); err != nil {
 		log.Printf("HTTP server shutdown error: %v", err)
 	}
+
+	_ = st.Close()
 	fmt.Println("AegisCode Go Core Server stopped cleanly.")
 }

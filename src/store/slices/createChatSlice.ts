@@ -306,6 +306,13 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
           : undefined)
 
       const res = createSessionLogic(state.sessions, p, m)
+      const currentWorkspace = state.rootWorkspacePath || ""
+      res.newSession.workspacePath = currentWorkspace
+      res.sessions = res.sessions.map((s) =>
+        s.id === res.newSession.id
+          ? { ...s, workspacePath: currentWorkspace }
+          : s,
+      )
       persistSessions(res.sessions, res.newSession.id)
       set({
         ...getActiveChatState(res.sessions, res.newSession.id),
@@ -408,11 +415,14 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
             (fallbackTitle.length > 26 ? "..." : "")
           : activeSession.title
 
+      const currentWorkspace = state.rootWorkspacePath || ""
       const nextSessions = state.sessions.map((s) => {
         if (s.id !== activeSessionId) return s
+        const ws = s.workspacePath || currentWorkspace
         return {
           ...s,
           title: newTitle,
+          workspacePath: ws,
           messages: [...s.messages, userMsg, initialAgentMsg],
         }
       })

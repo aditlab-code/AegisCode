@@ -39,6 +39,7 @@ export function CommandPalette() {
     tabs,
     openFileInPane,
     setCursorPosition,
+    serverConnected,
   } = useWorkbenchStore(
     useShallow((s) => ({
       commandPaletteOpen: s.commandPaletteOpen,

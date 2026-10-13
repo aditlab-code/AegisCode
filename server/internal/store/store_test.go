@@ -17,9 +17,9 @@ func TestStoreInitialization(t *testing.T) {
 		t.Errorf("expected baseDir %s, got %s", tempDir, st.BaseDir())
 	}
 
-	chatsDir := filepath.Join(tempDir, "chats")
-	if info, err := os.Stat(chatsDir); err != nil || !info.IsDir() {
-		t.Errorf("chats directory was not properly initialized: %v", err)
+	dbPath := filepath.Join(tempDir, "aegis.db")
+	if info, err := os.Stat(dbPath); err != nil || info.IsDir() {
+		t.Errorf("aegis.db was not properly initialized: %v", err)
 	}
 }
 

@@ -798,6 +798,132 @@
   border: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
 }
 
+.sessions-sidebar-workspace-filter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-line);
+  background: var(--color-canvas);
+}
+
+.workspace-filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--color-line);
+  background: var(--color-surface);
+  color: var(--color-ink-muted);
+  font-size: 9.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-filter-toggle:hover {
+  color: var(--color-ink);
+  background: var(--color-surface-hover);
+  border-color: var(--color-line-bright);
+}
+
+.workspace-filter-toggle.active {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  font-weight: 600;
+}
+
+.sessions-sidebar-search-container {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.sessions-sidebar-search-box {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 4px;
+  padding: 4px 6px;
+  transition: border-color 0.15s ease;
+}
+
+.sessions-sidebar-search-box:focus-within {
+  border-color: var(--color-accent);
+}
+
+.sessions-search-icon {
+  color: var(--color-ink-muted);
+  flex-shrink: 0;
+}
+
+.sessions-search-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  font-size: 11px;
+  color: var(--color-ink);
+  line-height: 1.2;
+}
+
+.sessions-search-input::placeholder {
+  color: var(--color-ink-muted);
+  opacity: 0.8;
+}
+
+.sessions-search-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.sessions-search-clear-btn:hover {
+  color: var(--color-ink);
+}
+
+.sessions-search-empty {
+  font-size: 11px;
+  color: var(--color-ink-muted);
+  text-align: center;
+  padding: 18px 8px;
+}
+
+.session-search-card {
+  align-items: flex-start;
+}
+
+.session-search-snippet {
+  font-size: 10px;
+  color: var(--color-ink-soft);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+}
+
+.session-search-highlight {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
 .sessions-sidebar-list {
   flex: 1;
   overflow-y: auto;
@@ -872,6 +998,44 @@
   gap: 5px;
   font-size: 9.5px;
   color: var(--color-ink-muted);
+}
+
+.session-card-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 8.5px;
+  font-weight: 600;
+  line-height: 1.1;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.session-card-tag.tag-user {
+  background: var(--color-surface);
+  color: var(--color-ink-muted);
+  border: 1px solid var(--color-line);
+}
+
+.session-card-tag.tag-antigravity,
+.session-card-tag.tag-claude,
+.session-card-tag.tag-opencode,
+.session-card-tag.tag-openrouter {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.session-card-tag.tag-workspace {
+  background: var(--color-surface-hover);
+  color: var(--color-ink-soft);
+  border: 1px solid var(--color-line);
+  text-transform: none;
+  max-width: 70px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .session-sidebar-delete-btn {

@@ -1,47 +1,51 @@
 package store
 
 import (
-	"bufio"
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
-	"sort"
-	"strings"
 	"time"
 )
 
-// GetSessionsIndex reads ~/.aegis/sessions.json or returns a fresh index if it doesn't exist.
+// GetSessionsIndex reads all session descriptors from the SQLite chat_sessions table.
 func (s *Store) GetSessionsIndex() (*SessionsIndex, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	indexPath := filepath.Join(s.baseDir, "sessions.json")
-	data, err := os.ReadFile(indexPath)
+	rows, err := s.db.Query(`
+		SELECT id, title, provider, model, coalesce(root_node_id, ''), coalesce(active_leaf_id, ''),
+		       node_count, created_at, updated_at
+		FROM chat_sessions
+		ORDER BY updated_at DESC
+	`)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return &SessionsIndex{
-				Version:   2,
-				UpdatedAt: time.Now().UnixMilli(),
-				Sessions:  []SessionDescriptor{},
-			}, nil
+		return nil, fmt.Errorf("failed to query sessions index: %w", err)
+	}
+	defer rows.Close()
+
+	var sessions []SessionDescriptor
+	for rows.Next() {
+		var desc SessionDescriptor
+		if err := rows.Scan(
+			&desc.ID, &desc.Title, &desc.Provider, &desc.Model,
+			&desc.RootNodeID, &desc.ActiveLeafID, &desc.NodeCount,
+			&desc.CreatedAt, &desc.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan session descriptor: %w", err)
 		}
-		return nil, fmt.Errorf("failed to read sessions index: %w", err)
+		sessions = append(sessions, desc)
 	}
 
-	var idx SessionsIndex
-	if err := json.Unmarshal(data, &idx); err != nil {
-		return nil, fmt.Errorf("failed to parse sessions index: %w", err)
+	if sessions == nil {
+		sessions = []SessionDescriptor{}
 	}
 
-	if idx.Sessions == nil {
-		idx.Sessions = []SessionDescriptor{}
-	}
-
-	return &idx, nil
+	return &SessionsIndex{
+		Version:   2,
+		UpdatedAt: time.Now().UnixMilli(),
+		Sessions:  sessions,
+	}, nil
 }
 
-// SaveSessionsIndex atomically writes ~/.aegis/sessions.json.
+// SaveSessionsIndex persists session descriptors into the SQLite chat_sessions table.
 func (s *Store) SaveSessionsIndex(idx *SessionsIndex) error {
 	if idx == nil {
 		return fmt.Errorf("cannot save nil sessions index")
@@ -50,21 +54,51 @@ func (s *Store) SaveSessionsIndex(idx *SessionsIndex) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	idx.UpdatedAt = time.Now().UnixMilli()
-	if idx.Sessions == nil {
-		idx.Sessions = []SessionDescriptor{}
-	}
-
-	data, err := json.MarshalIndent(idx, "", "  ")
+	tx, err := s.db.Begin()
 	if err != nil {
-		return fmt.Errorf("failed to serialize sessions index: %w", err)
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	stmt, err := tx.Prepare(`
+		INSERT INTO chat_sessions (
+			id, title, provider, model, root_node_id, active_leaf_id, node_count, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			title=excluded.title,
+			provider=excluded.provider,
+			model=excluded.model,
+			root_node_id=excluded.root_node_id,
+			active_leaf_id=excluded.active_leaf_id,
+			node_count=excluded.node_count,
+			updated_at=excluded.updated_at
+	`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, d := range idx.Sessions {
+		cleanID, sErr := sanitizeID(d.ID)
+		if sErr != nil {
+			continue
+		}
+		_, err := stmt.Exec(
+			cleanID, d.Title, d.Provider, d.Model,
+			d.RootNodeID, d.ActiveLeafID, d.NodeCount,
+			d.CreatedAt, d.UpdatedAt,
+		)
+		if err != nil {
+			return err
+		}
 	}
 
-	indexPath := filepath.Join(s.baseDir, "sessions.json")
-	return atomicWrite(indexPath, data)
+	return tx.Commit()
 }
 
-// UpdateSessionDescriptor updates an existing session entry or inserts a new one in ~/.aegis/sessions.json.
+// UpdateSessionDescriptor updates an existing session entry or inserts a new one in SQLite.
 func (s *Store) UpdateSessionDescriptor(desc SessionDescriptor) error {
 	cleanID, err := sanitizeID(desc.ID)
 	if err != nil {
@@ -75,70 +109,36 @@ func (s *Store) UpdateSessionDescriptor(desc SessionDescriptor) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	indexPath := filepath.Join(s.baseDir, "sessions.json")
-	idx := &SessionsIndex{
-		Version:   2,
-		UpdatedAt: time.Now().UnixMilli(),
-		Sessions:  []SessionDescriptor{},
+	if desc.CreatedAt == 0 {
+		desc.CreatedAt = time.Now().UnixMilli()
+	}
+	if desc.UpdatedAt == 0 {
+		desc.UpdatedAt = time.Now().UnixMilli()
 	}
 
-	if data, err := os.ReadFile(indexPath); err == nil {
-		_ = json.Unmarshal(data, idx)
-	}
-
-	found := false
-	for i, existing := range idx.Sessions {
-		if existing.ID == desc.ID {
-			if desc.CreatedAt == 0 {
-				desc.CreatedAt = existing.CreatedAt
-			}
-			if desc.Title == "" {
-				desc.Title = existing.Title
-			}
-			if desc.Provider == "" {
-				desc.Provider = existing.Provider
-			}
-			if desc.Model == "" {
-				desc.Model = existing.Model
-			}
-			if desc.RootNodeID == "" {
-				desc.RootNodeID = existing.RootNodeID
-			}
-			if desc.NodeCount == 0 && existing.NodeCount > 0 {
-				desc.NodeCount = existing.NodeCount
-			}
-			idx.Sessions[i] = desc
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		if desc.CreatedAt == 0 {
-			desc.CreatedAt = time.Now().UnixMilli()
-		}
-		if desc.UpdatedAt == 0 {
-			desc.UpdatedAt = time.Now().UnixMilli()
-		}
-		idx.Sessions = append(idx.Sessions, desc)
-	}
-
-	idx.UpdatedAt = time.Now().UnixMilli()
-
-	// Sort sessions by UpdatedAt desc
-	sort.Slice(idx.Sessions, func(i, j int) bool {
-		return idx.Sessions[i].UpdatedAt > idx.Sessions[j].UpdatedAt
-	})
-
-	data, err := json.MarshalIndent(idx, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to serialize sessions index: %w", err)
-	}
-
-	return atomicWrite(indexPath, data)
+	query := `
+		INSERT INTO chat_sessions (
+			id, title, provider, model, root_node_id, active_leaf_id, node_count, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			title=CASE WHEN excluded.title != '' THEN excluded.title ELSE chat_sessions.title END,
+			provider=CASE WHEN excluded.provider != '' THEN excluded.provider ELSE chat_sessions.provider END,
+			model=CASE WHEN excluded.model != '' THEN excluded.model ELSE chat_sessions.model END,
+			root_node_id=CASE WHEN excluded.root_node_id != '' THEN excluded.root_node_id ELSE chat_sessions.root_node_id END,
+			active_leaf_id=CASE WHEN excluded.active_leaf_id != '' THEN excluded.active_leaf_id ELSE chat_sessions.active_leaf_id END,
+			node_count=CASE WHEN excluded.node_count > 0 THEN excluded.node_count ELSE chat_sessions.node_count END,
+			updated_at=excluded.updated_at
+	`
+	_, err = s.db.Exec(
+		query,
+		desc.ID, desc.Title, desc.Provider, desc.Model,
+		desc.RootNodeID, desc.ActiveLeafID, desc.NodeCount,
+		desc.CreatedAt, desc.UpdatedAt,
+	)
+	return err
 }
 
-// RemoveSessionDescriptor removes a session entry from ~/.aegis/sessions.json.
+// RemoveSessionDescriptor removes a session entry from SQLite.
 func (s *Store) RemoveSessionDescriptor(sessionID string) error {
 	cleanID, err := sanitizeID(sessionID)
 	if err != nil {
@@ -148,249 +148,18 @@ func (s *Store) RemoveSessionDescriptor(sessionID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	indexPath := filepath.Join(s.baseDir, "sessions.json")
-	data, err := os.ReadFile(indexPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-
-	var idx SessionsIndex
-	if err := json.Unmarshal(data, &idx); err != nil {
-		return err
-	}
-
-	var filtered []SessionDescriptor
-	for _, sess := range idx.Sessions {
-		if sess.ID != cleanID {
-			filtered = append(filtered, sess)
-		}
-	}
-
-	idx.Sessions = filtered
-	idx.UpdatedAt = time.Now().UnixMilli()
-
-	out, err := json.MarshalIndent(&idx, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	return atomicWrite(indexPath, out)
+	_, err = s.db.Exec(`DELETE FROM chat_sessions WHERE id = ?`, cleanID)
+	return err
 }
 
-// ReconcileSessionsOnBoot scans for .jsonl ledger files that are missing from sessions.json or have newer modifications.
+// ReconcileSessionsOnBoot triggers shadow migration if any flat-files remain.
 func (s *Store) ReconcileSessionsOnBoot() error {
-	entries, err := os.ReadDir(s.chatsDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-
-	idx, err := s.GetSessionsIndex()
-	if err != nil {
-		idx = &SessionsIndex{
-			Version:   2,
-			UpdatedAt: time.Now().UnixMilli(),
-			Sessions:  []SessionDescriptor{},
-		}
-	}
-
-	sessionMap := make(map[string]*SessionDescriptor)
-	for i := range idx.Sessions {
-		sessionMap[idx.Sessions[i].ID] = &idx.Sessions[i]
-	}
-
-	dirty := false
-
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") || strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-
-		sessionID := strings.TrimSuffix(entry.Name(), ".jsonl")
-		filePath := filepath.Join(s.chatsDir, entry.Name())
-		fi, err := entry.Info()
-		if err != nil {
-			continue
-		}
-
-		desc, exists := sessionMap[sessionID]
-		// If missing or if file mod time is newer than recorded index
-		if !exists || (fi.ModTime().UnixMilli() > desc.UpdatedAt) {
-			firstNode, lastNode, count, err := readFirstAndLastNodes(filePath)
-			if err != nil || firstNode == nil {
-				continue
-			}
-
-			title := "New Session"
-			if firstNode.Text != "" {
-				title = strings.TrimSpace(firstNode.Text)
-				if len(title) > 30 {
-					title = title[:30] + "..."
-				}
-			}
-
-			activeLeaf := firstNode.ID
-			lastTs := fi.ModTime().UnixMilli()
-			if lastNode != nil {
-				activeLeaf = lastNode.ID
-				if lastNode.Ts > 0 {
-					lastTs = lastNode.Ts
-				}
-			}
-
-			provider := "antigravity"
-			model := "gemini-3.8-flash"
-			if firstNode.Meta != nil {
-				if p, ok := firstNode.Meta["provider"].(string); ok && p != "" {
-					provider = p
-				}
-				if m, ok := firstNode.Meta["model"].(string); ok && m != "" {
-					model = m
-				}
-			}
-
-			newDesc := SessionDescriptor{
-				ID:           sessionID,
-				Title:        title,
-				Provider:     provider,
-				Model:        model,
-				CreatedAt:    firstNode.Ts,
-				UpdatedAt:    lastTs,
-				RootNodeID:   firstNode.ID,
-				ActiveLeafID: activeLeaf,
-				NodeCount:    count,
-			}
-
-			if exists {
-				*desc = newDesc
-			} else {
-				idx.Sessions = append(idx.Sessions, newDesc)
-				sessionMap[sessionID] = &newDesc
-			}
-			dirty = true
-		}
-	}
-
-	if dirty {
-		sort.Slice(idx.Sessions, func(i, j int) bool {
-			return idx.Sessions[i].UpdatedAt > idx.Sessions[j].UpdatedAt
-		})
-		return s.SaveSessionsIndex(idx)
-	}
-
-	return nil
+	return MigrateFlatFilesToSQLite(s.baseDir, s.db)
 }
 
-// readFirstAndLastNodes quickly inspects the first node and trailing node in a .jsonl file.
-func readFirstAndLastNodes(filePath string) (*GraphNode, *GraphNode, int, error) {
-	f, err := os.Open(filePath)
-	if err != nil {
-		return nil, nil, 0, err
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	var first *GraphNode
-	var last *GraphNode
-	count := 0
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		var node GraphNode
-		if err := json.Unmarshal([]byte(line), &node); err != nil {
-			continue
-		}
-		count++
-		if first == nil {
-			first = &node
-		}
-		last = &node
-	}
-
-	return first, last, count, nil
-}
-
-// MigrateLegacyJSONChats performs non-destructive shadow migration from legacy chats/*.json to .jsonl and sessions.json.
+// MigrateLegacyJSONChats is preserved for contract backwards compatibility.
 func (s *Store) MigrateLegacyJSONChats() error {
-	entries, err := os.ReadDir(s.chatsDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-
-		sessionID := strings.TrimSuffix(entry.Name(), ".json")
-		jsonlPath := filepath.Join(s.chatsDir, sessionID+".jsonl")
-		if _, err := os.Stat(jsonlPath); err == nil {
-			// Already migrated to .jsonl
-			continue
-		}
-
-		jsonPath := filepath.Join(s.chatsDir, entry.Name())
-		data, err := os.ReadFile(jsonPath)
-		if err != nil {
-			continue
-		}
-
-		var legacy ChatSession
-		if err := json.Unmarshal(data, &legacy); err != nil {
-			continue
-		}
-
-		// Convert linear messages to sequential graph nodes
-		nodes := ConvertMessagesToGraphNodes(legacy.ID, legacy.Provider, legacy.Model, legacy.Messages)
-		if len(nodes) == 0 {
-			continue
-		}
-
-		// Write to .jsonl
-		f, err := os.OpenFile(jsonlPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-		if err != nil {
-			continue
-		}
-
-		writer := bufio.NewWriter(f)
-		for _, node := range nodes {
-			line, mErr := json.Marshal(node)
-			if mErr == nil {
-				_, _ = writer.Write(line)
-				_, _ = writer.WriteString("\n")
-			}
-		}
-		_ = writer.Flush()
-		_ = f.Close()
-
-		// Update sessions.json
-		rootID := nodes[0].ID
-		leafID := nodes[len(nodes)-1].ID
-		_ = s.UpdateSessionDescriptor(SessionDescriptor{
-			ID:           legacy.ID,
-			Title:        legacy.Title,
-			Provider:     legacy.Provider,
-			Model:        legacy.Model,
-			CreatedAt:    legacy.CreatedAt,
-			UpdatedAt:    legacy.UpdatedAt,
-			RootNodeID:   rootID,
-			ActiveLeafID: leafID,
-			NodeCount:    len(nodes),
-		})
-	}
-
-	return nil
+	return MigrateFlatFilesToSQLite(s.baseDir, s.db)
 }
 
 // ConvertMessagesToGraphNodes converts a linear slice of ChatMessages into a parent-linked GraphNode chain.
@@ -425,7 +194,7 @@ func ConvertMessagesToGraphNodes(sessionID, provider, model string, messages []C
 			lastNodeID = &idCopy
 		} else if msg.Role == "agent" {
 			// Thought node if reasoning exists
-			if strings.TrimSpace(msg.Thinking) != "" {
+			if msg.Thinking != "" {
 				thID := fmt.Sprintf("n-%s-th%d", sessionID, idx)
 				thNode := GraphNode{
 					ID:      thID,

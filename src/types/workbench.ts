@@ -121,6 +121,7 @@ export interface ChatSession {
   model: string
   messages: ChatMessage[]
   createdAt: number
+  workspacePath?: string
   conversationId?: string
 }
 

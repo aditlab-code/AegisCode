@@ -972,7 +972,28 @@ func TestStorageEndpoints(t *testing.T) {
 		t.Errorf("expected 1 graph node n-api-1, got %+v", graphRes)
 	}
 
-	// 13. Test automatic AddRecentProject via /api/v1/workspace/open
+	// 13. Test GET /api/v1/chats/search?q=Ledger
+	resp, err = http.Get(ts.URL + "/api/v1/chats/search?q=Ledger")
+	if err != nil {
+		t.Fatalf("failed to search chats via API: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for chat search, got %d", resp.StatusCode)
+	}
+	var searchRes struct {
+		Query   string               `json:"query"`
+		Total   int                  `json:"total"`
+		Results []store.SearchResult `json:"results"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&searchRes)
+	resp.Body.Close()
+	if searchRes.Total == 0 || len(searchRes.Results) == 0 {
+		t.Errorf("expected at least 1 search result for 'Ledger', got %d", searchRes.Total)
+	} else if searchRes.Results[0].SessionID != "session-ledger" {
+		t.Errorf("expected session-ledger match, got %s", searchRes.Results[0].SessionID)
+	}
+
+	// 14. Test automatic AddRecentProject via /api/v1/workspace/open
 	openReq := map[string]string{"path": tempDir}
 	openBytes, _ := json.Marshal(openReq)
 	resp, err = http.Post(ts.URL+"/api/v1/workspace/open", "application/json", bytes.NewReader(openBytes))

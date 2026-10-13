@@ -16,7 +16,7 @@
 | **Phase 5** | AppDrawer AEGIS AI Agent & Session Hub | ✅ Completed | Multi-session chat, slash autocomplete, provider selector |
 | **Special** | UI Dark/Light Theme & Modular Palettes | ✅ Completed | ActivityRail toggle, modular JSON palettes (Default, Atom, Tokyo Night) |
 | **Special** | Settings Registry, Core IDE Preferences & Editor Polish | ✅ Completed | Decoupled schema registry, wildcard exclude, GPU cursor blinking, wrap column |
-| **Phase 6** | Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger | ✅ Completed (6.1–6.12 ✅) | Cross-platform Go binary & embed.FS, supervisor, JSON store, AI agent bridge, DAP/Delve, Zero-Freeze Offloading |
+| **Phase 6** | Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger | ✅ Completed (6.1–6.13 ✅) | Cross-platform Go binary & embed.FS, supervisor, Pure-Go SQLite, AI agent bridge, DAP/Delve, Zero-Freeze Offloading, FTS5 Search |
 | **Phase 7** | Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`) | 🟡 Active (Sub-Phase 7.1, 7.1b, 7.1c ✅, 7.2–7.3 ⚪) | Multi-format tab viewers (Images, Markdown, PDF, Big Data CSV), vector canvas wireframing |
 | **Phase 8** | Research Workshop & Data Science Studio | ⚪ Planned | LaTeX + PDF sync, BibTeX, Python/R dataframes, Biblioshiny |
 | **Phase 9** | Web-Based Remote Pairing & Tablet Companion | ⚪ Deferred (Final) | LAN pairing, web preview host, touch-optimized editor mode |
@@ -404,6 +404,36 @@
     - `CMEditor.tsx`: Memperbaiki `ReferenceError: handleDefinition is not defined` dengan mengaitkan event `aegis:editor-definition` secara tepat ke `handleGoToDefinition`.
     - `ImageViewer.tsx`: Menghilangkan browser warning `Unable to preventDefault inside passive event listener invocation` dengan memasang native wheel listener `{ passive: false }` untuk zoom & pan yang mulus.
 - **Verification**: 100% lolos verifikasi Go backend tests (`index_test.go`, `api_test.go`), 50k benchmark (1.16 ms), Vitest suite (18 test files, 180 tests passing, termasuk `offloadService.test.ts`), Vite production build (367 ms), dan oxfmt code formatting.
+
+#### Sub-Phase 6.13: Embedded Pure-Go SQLite Engine & FTS5 Search ([ADR 0013](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0013-embedded-pure-go-sqlite-and-fts5-search.md))
+- **Status**: ✅ Completed
+- **Architecture Reference**: [ADR 0013: Embedded Pure-Go SQLite Engine and FTS5 Search](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0013-embedded-pure-go-sqlite-and-fts5-search.md)
+- **Objective**: Menggantikan persistensi flat-file terfragmentasi (`config.json`, `state.json`, `sessions.json`, `chats/*.jsonl`, dan `blobs/`) dengan engine database tertanam berbasis pure-Go SQLite (`modernc.org/sqlite`). Menjamin transaksi ACID, konkurensi aman multi-klien (persiapan Tablet Companion Phase 9), integrasi Full-Text Search (FTS5) riwayat percakapan AI berkecepatan tinggi (< 3 ms), dan mempertahankan prinsip Zero-CGO (`CGO_ENABLED=0`).
+- **Deliverables**:
+  - **Zero-CGO Driver Integration (`modernc.org/sqlite`)**:
+    - Kompilasi murni Go tanpa GCC/Clang eksternal menjaga portabilitas cross-compile macOS, Linux, dan Windows.
+    - Konfigurasi High-Concurrency PRAGMA via DSN URI parameters (WAL Mode, `busy_timeout = 5000`, `foreign_keys = ON`, `synchronous = NORMAL`, `cache_size = -2000`).
+  - **Unified Graph-First Schema (`server/internal/store/db.go`)**:
+    - Tabel `app_config`, `app_state`, `chat_sessions`, `chat_events`, dan `blobs`.
+    - Preservasi 100% fidelitas atribut `GraphNode` (`type`, `parent_id`, `text`, `reasoning`, `tool_name`, `meta_json`) untuk mendukung forking, branching, dan traversal tanpa kehilangan data.
+  - **Full In-Database CAS Blob Storage**:
+    - Payload biner besar (> 4 KB) dari output tool dan terminal dumps disimpan langsung di tabel `blobs` (tipe BLOB) dengan skema composite primary key `(session_id, hash)` untuk menghasilkan database tunggal mandiri `~/.aegis/aegis.db` (*Zero Repo Pollution*).
+  - **High-Speed FTS5 Search Engine & API Endpoint**:
+    - Virtual table `chat_fts USING fts5` dengan trigger sinkronisasi otomatis (`AFTER INSERT`, `AFTER DELETE`, `AFTER UPDATE`).
+    - Endpoint REST `GET /api/v1/chats/search?q=<query>&limit=<n>&workspace=<path>` mengembalikan hasil terperingkat dengan snippet teks ter-highlight (`<b>...</b>`) dalam latensi < 3 ms.
+    - Sanitasi token query dengan wildcard suffix `*` (`"%s"*`) untuk mendukung prefix search instan saat mengetik.
+  - **Project-Scoped AI Chat Sessions (Option 2: Per-Workspace)**:
+    - Kolom `workspace_path TEXT NOT NULL DEFAULT ''` dan indeks `idx_chat_sessions_workspace` pada tabel `chat_sessions`.
+    - Migrasi skema self-healing pre-DDL otomatis via `pragma_table_info('chat_sessions')` untuk database eksisting.
+    - Filtering terintegrasi pada endpoint backend (`GET /api/v1/chats?workspace=...` dan `GET /api/v1/chats/search?workspace=...`).
+    - UI toggle pill interaktif `[ 📁 <Project> ]` vs `[ 🏷️ All ]` di sidebar chat (`ChatSessionSidebar.tsx`) dengan badge workspace (`tag-workspace`).
+  - **Penyelesaian 8 Gap Bugs & Self-Healing Migration**:
+    - Menyelesaikan 8 gap bugs (DSN URI pragmas, composite primary key blobs, parameterized `root_node_id`, Windows `os.Remove`, graceful `Close`, CAS offload di `SaveChat`, FTS5 prefix matching, dan dual-engine search integration).
+  - **Pembersihan Total Legacy Orphans**:
+    - Deteksi otomatis saat boot; mengimpor seluruh berkas flat-file lama (termasuk remnant dari `legacy_backup/chats`) ke SQLite dalam transaksi ACID.
+    - Mengeliminasi pembuatan folder orphan `chats/` dan `blobs/` saat boot.
+    - Purge total `~/.aegis/legacy_backup/` dan folder kosong, menghasilkan direktori `~/.aegis/` murni berisi `aegis.db` (+ WAL/SHM).
+- **Verification**: 100% lolos verifikasi Go backend tests (20/20 store tests, 12 Go packages), Vitest frontend suite (18 test files, 183 tests), Vite production build (0 errors), dan oxfmt code formatting.
 
 ---
 

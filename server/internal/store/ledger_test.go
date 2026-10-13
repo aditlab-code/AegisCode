@@ -256,6 +256,7 @@ func TestReconcileSessionsOnBoot(t *testing.T) {
 
 	// Simulate an unindexed .jsonl file created externally or during a crash
 	orphanID := "ses-unindexed"
+	_ = os.MkdirAll(st.chatsDir, 0755)
 	orphanPath := filepath.Join(st.chatsDir, orphanID+".jsonl")
 
 	line1 := `{"id":"n-1","type":"user","text":"Unindexed session prompt","ts":1773000000,"meta":{"provider":"claude","model":"claude-3-7-sonnet"}}` + "\n"

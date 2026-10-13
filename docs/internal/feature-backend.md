@@ -25,7 +25,7 @@ flowchart LR
         DAPRunner["Bundled DAP / Delve Engine"]
         Supervisor["Process Supervisor"]
         Workspace["Workspace Engine"]
-        Store["Flat-File Store (~/.aegis/)"]
+        Store["Pure-Go SQLite Engine (~/.aegis/aegis.db)"]
     end
 
     subgraph Workers["Supervised Subprocesses"]
@@ -47,7 +47,7 @@ flowchart LR
 
 ### Core Characteristics
 1. **Lightweight Footprint**: Memory usage <30MB at baseline, sub-30ms startup latency.
-2. **Immutable Runtime & Zero-DB Flat-File Isolation**: The server executable is read-only. Runtime configuration is parsed into immutable Go structs. Dynamic user preferences, session history, and recent workspaces live strictly in atomic JSON flat-files (`~/.aegis/config.json`, `~/.aegis/state.json`, `~/.aegis/chats/`).
+2. **Immutable Runtime & Pure-Go Embedded SQLite Storage**: The server executable is read-only. Runtime configuration is parsed into immutable Go structs. Dynamic user preferences, application state, AI chat conversations, full-text search indexes, and content-addressed blobs live in a single self-contained SQLite database (`~/.aegis/aegis.db`) with zero external C dependencies (`modernc.org/sqlite`, Zero-CGO).
 3. **Cross-Platform**: Compiles natively for macOS (`darwin/arm64`, `darwin/amd64`), Linux (`linux/amd64`, `linux/arm64`), and Windows (`windows/amd64`).
 
 ---
@@ -346,64 +346,89 @@ To eliminate race conditions and the common `fatal: Unable to create '.../.git/i
 - `DELETE /api/v1/state/recent`
   - Query parameters: `?path=<path>` to remove a specific project, or `?all=true` to clear the list.
 - `GET /api/v1/chats`
-  - Retrieves session metadata summaries from `~/.aegis/sessions.json` in $O(1)$ without scanning individual chat files or directory walking.
-  - Response: `{ "sessions": [ { "id": "uuid", "title": "string", "createdAt": 177..., "updatedAt": 177..., "model": "string", "provider": "string", "messageCount": 10 } ] }`
+  - Retrieves session metadata summaries from SQLite `chat_sessions` in $O(1)$ without directory walking or file parsing.
+  - Query parameters: `?workspace=<path>` (optional filter to list sessions scoped to a specific project).
+  - Response: `{ "chats": [ { "id": "uuid", "title": "string", "provider": "string", "model": "string", "workspacePath": "string", "messageCount": 10, "createdAt": 177..., "updatedAt": 177... } ] }`
+- `GET /api/v1/chats/search`
+  - High-Speed Hybrid Search Engine (Session Title LIKE matching + SQLite FTS5 Event Deep Search).
+  - Query parameters:
+    - `?q=<query>`: Search keyword string (automatically sanitized with wildcard token suffixes `*` for prefix search).
+    - `?limit=<n>`: Maximum result limit (default 30, clamped 1–100).
+    - `?workspace=<path>`: Optional workspace filter for project-scoped searches.
+  - Response: Sub-3ms response returning ranked matching events with highlighted snippets:
+    ```json
+    {
+      "query": "compiler",
+      "total": 1,
+      "results": [
+        {
+          "sessionId": "ses-1",
+          "sessionTitle": "Go Development",
+          "eventId": "evt-1",
+          "snippet": "Building an AST <b>compiler</b> pipeline in Go",
+          "role": "user",
+          "workspacePath": "/Users/.../AegisCodev2",
+          "createdAt": 1773000000000
+        }
+      ]
+    }
+    ```
 - `GET /api/v1/chats/:id`
   - Supports dual formats via query parameters:
-    - **Default Mode (Linear Path Reconstructed)**: Backtracks from active head pointer through parent lineage pointers (`parentId`) to reconstruct a linear conversational thread matching standard `ChatSession` struct (`{ "id": "uuid", "title": "string", "createdAt": 177..., "updatedAt": 177..., "messages": [...] }`).
-    - **Graph Format Mode (`?format=graph&tail=N`)**: Retrieves raw event nodes slice: `{ "id": "uuid", "nodes": [ { "id": "node-...", "parentId": "node-...", "type": "message", "role": "user" | "agent", "content": "...", "blobRef": "...", "timestamp": 177... } ] }`. When `tail=N` is specified ($N > 0$), executes block-buffered reverse-seek tail reader (`ReverseSeekTail`) to read only the last $N$ lines from `~/.aegis/chats/<id>.jsonl` in sub-millisecond latency.
-  - **Non-Destructive Shadow Fallback**: Lazily reads legacy `~/.aegis/chats/<id>.json` if `.jsonl` has not yet been populated.
-- `POST /api/v1/chats/:id` `[DEPRECATED — Legacy Shadow Fallback]`
-  - Legacy atomic session save endpoint. Kept strictly for backward compatibility and as an emergency shadow fallback during browser unload events (`beforeunload` / `pagehide`).
-  - **Preferred Active Protocol**: All chat operations and message turns MUST use `POST /api/v1/chats/:id/events` (Append-Only Event Ledger & Content-Addressed Storage CAS architecture), ensuring $O(1)$ disk appends without monolithic session rewrites.
+    - **Default Mode (Linear Path Reconstructed)**: Backtracks from active head pointer through parent lineage pointers (`parent_id`) in `chat_events` to reconstruct a linear conversational thread matching standard `ChatSession` struct (`{ "id": "uuid", "title": "string", "provider": "string", "model": "string", "workspacePath": "string", "createdAt": 177..., "updatedAt": 177..., "messages": [...] }`).
+    - **Graph Format Mode (`?format=graph&tail=N`)**: Retrieves raw event nodes slice directly from SQLite: `{ "id": "uuid", "nodes": [ { "id": "node-...", "parent": "node-...", "type": "message", "role": "user" | "agent", "content": "...", "blobRef": "...", "ts": 177... } ] }`. When `tail=N` is specified ($N > 0$), queries `LIMIT N` ordered by `created_at DESC` with sub-millisecond latency.
+- `POST /api/v1/chats/:id` `[Atomic Session Save / Upsert]`
+  - Saves full session and converts messages to graph nodes inside an atomic SQLite transaction (`BEGIN IMMEDIATE`).
 - `POST /api/v1/chats/:id/events`
   - Body: `GraphNode` JSON object:
     ```json
     {
       "id": "node-1773000000000",
-      "parentId": "node-root",
-      "type": "message",
+      "parent": "node-root",
+      "type": "user",
       "role": "user",
-      "content": "Hello AI",
-      "thinking": "",
-      "toolCalls": [],
-      "diff": "",
-      "timestamp": 1773000000000
+      "text": "Hello AI",
+      "content": "",
+      "tool": "",
+      "args": {},
+      "output": "",
+      "ts": 1773000000000
     }
     ```
-  - Appends an atomic event node directly to `~/.aegis/chats/<id>.jsonl` in $O(1)$ (`os.O_APPEND | os.O_CREATE | os.O_WRONLY`).
-  - **Content-Addressed Storage (CAS) Offloading**: If payload size exceeds 4 KB (4,096 bytes), calculates SHA-256 hash, offloads raw payload to `~/.aegis/blobs/<session_id>_<hash>.raw`, clears inline content, and records `blobRef: "<hash>"`.
-  - **Index Synchronization**: Updates `updatedAt`, `messageCount`, and session metadata in `~/.aegis/sessions.json`.
+  - Appends an atomic event node directly into SQLite `chat_events` table in $O(1)$. Triggers (`trg_chat_events_ai`) automatically sync content into `chat_fts`.
+  - **Content-Addressed Storage (CAS) Offloading**: If payload size exceeds 4 KB (4,096 bytes), calculates SHA-256 hash, offloads raw payload to SQLite `blobs` table (`PRIMARY KEY (session_id, hash)`), clears inline content, and records `blobRef: "<hash>"` with short preview text.
+  - **Index Synchronization**: Updates `updated_at`, `node_count`, and active leaf pointers in `chat_sessions`.
   - Response: `{ "status": "ok", "nodeId": "string", "node": { ... } }`.
 - `GET /api/v1/blobs/:hash`
-  - Content-Addressed Storage (CAS) stream endpoint. Locates and streams raw bytes of an offloaded tool output or message payload from `~/.aegis/blobs/<session_id>_<hash>.raw`.
+  - Content-Addressed Storage (CAS) stream endpoint. Locates and streams raw bytes directly from the SQLite `blobs` table.
   - Response: `200 OK` with `Content-Type: text/plain; charset=utf-8` and raw payload body. Returns `404 Not Found` if blob has been removed.
 - `DELETE /api/v1/chats/:id`
-  - Removes session entry from `~/.aegis/sessions.json` in $O(1)$.
-  - Deletes event ledger file `~/.aegis/chats/<id>.jsonl` (and legacy shadow `~/.aegis/chats/<id>.json`).
-  - **Instant CAS Blob Teardown**: Scans and unlinks all associated content-addressed raw blobs via `filepath.Glob("~/.aegis/blobs/" + id + "_*.raw")`.
+  - Removes session entry from `chat_sessions` in $O(1)$.
+  - Cascades deletion to `chat_events` and automatic cleanup in `chat_fts`.
+  - **Instant CAS Blob Teardown**: Deletes associated content-addressed raw payloads from `blobs` via `DELETE FROM blobs WHERE session_id = ?`.
   - Response: `{ "status": "ok", "id": "uuid" }`.
 
-#### Append-Only Event Ledger & Content-Addressed Blob Storage Architecture (Sub-Phase 6.11)
-To ensure unbounded scalability, zero file corruption during unexpected crashes, and instant drawer hydration:
-1. **$O(1)$ Indexing & Lazy Boot Healing (`sessions.json`)**:
-   - `~/.aegis/sessions.json` maintains an atomic descriptor map `{ "version": 1, "sessions": { [id]: SessionDescriptor } }`.
-   - Listing chat sessions (`ListChats`) reads this single small index file in $O(1)$ without scanning directory entries or parsing chat history files.
-   - **Boot Lazy Healing**: On server startup (`store.NewStore`), if `sessions.json` is missing or out of sync with existing `.jsonl` files in `~/.aegis/chats/`, the backend executes an automatic reconciliation pass that extracts titles and timestamps to reconstruct the index non-destructively.
-2. **Append-Only Sequential Ledger (`.jsonl`)**:
-   - Sequential writes via `os.OpenFile(..., os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)` completely eliminate file rewrites and truncation race conditions.
-   - Each turn, message, or tool execution is an immutable `GraphNode` with a `parentId` pointer, providing native DAG branching support for exploratory AI workflows.
-3. **Content-Addressed Storage (CAS) Offloading**:
-   - Payloads larger than 4 KB (e.g. bulky terminal command outputs, multi-file diffs, large file views) are SHA-256 hashed and stored separately as `~/.aegis/blobs/<session_id>_<hash>.raw`.
-   - The ledger entry records only the cryptographic `blobRef`, keeping `.jsonl` lines compact and ensuring parse operations finish in sub-millisecond time.
-   - The frontend (`ToolCallActivity.tsx`) retrieves these large payloads on-demand via `fetchChatBlob`.
-4. **Reverse-Seek Block-Buffered Tail Hydration**:
-   - `ReverseSeekTail(path, tail)` performs backwards seeks from EOF in 8 KB chunk buffers.
-   - Reads only the trailing $N$ events from disk, allowing the UI chat drawer to render instantly even on conversations with thousands of messages.
-5. **Branching Lineage & Linear Path Backtracking**:
-   - Linear conversation history is reconstructed via backwards parent-pointer traversal (`ReconstructChat`), navigating from head to root in $O(K)$ where $K$ is the thread length, while preserving alternate branches in the underlying ledger.
-6. **Instant Session & Blob Teardown**:
-   - Deleting a chat cleans up the ledger, updates `sessions.json`, and sweeps all session-scoped CAS blobs via glob pattern in one synchronous step, preventing disk leaks.
+#### Embedded Pure-Go SQLite Engine & FTS5 Search Architecture (Sub-Phase 6.13)
+To ensure ACID transactional reliability, sub-3ms full-text search, and project-scoped isolation with Zero Repo Pollution:
+1. **Single-Database Storage Boundary (`~/.aegis/aegis.db`)**:
+   - Eliminates fragmented flat-files (`config.json`, `state.json`, `sessions.json`, `chats/*.jsonl`, `blobs/*.raw`).
+   - Pure-Go zero-CGO driver (`modernc.org/sqlite`) preserves cross-platform compilation without GCC/Clang dependencies.
+2. **High-Concurrency WAL Mode**:
+   - Initial connection string sets DSN URI pragmas: `?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=cache_size(-2000)`.
+   - Allows concurrent non-blocking readers alongside serialized background writers.
+3. **Project-Scoped AI Chat Sessions**:
+   - `chat_sessions` stores `workspace_path TEXT NOT NULL DEFAULT ''` with index `idx_chat_sessions_workspace`.
+   - Pre-DDL self-healing auto-migration (`migrateSchema`) safely alters legacy tables without downtime.
+   - Frontend provides interactive workspace filtering pill (`[ Current Project ]` vs `[ All ]`).
+4. **Full-Text Search (FTS5) Virtual Table**:
+   - `chat_fts USING fts5(session_id UNINDEXED, id UNINDEXED, text, reasoning, content='chat_events', content_rowid='rowid')`
+   - Insert, update, and delete triggers automatically keep FTS indexes perfectly synchronized with `chat_events`.
+   - Hybrid query engine searches session titles and event text concurrently in < 3 ms.
+5. **In-Database CAS Blob Storage**:
+   - Bulky tool outputs (> 4 KB) are hashed (SHA-256) and stored directly in the `blobs` table as raw binary BLOBs with composite primary key `(session_id, hash)`, ensuring complete isolation across sessions.
+6. **Total Legacy Orphans Cleanup**:
+   - Automatic boot migration imports any legacy flat-files into SQLite.
+   - Re-creation of empty legacy folders (`chats/`, `blobs/`) is eliminated, and `legacy_backup/` is purged, leaving a pure single-database directory.
 
 ### I. AI Provider Testing, Probing & Auto-Discovery (Sub-Phase 6.8)
 - `POST /api/v1/ai/test`

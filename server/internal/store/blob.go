@@ -2,14 +2,17 @@ package store
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
-// SaveBlob computes the SHA-256 hash of a payload and writes it to ~/.aegis/blobs/<sessionID>_<hash>.raw.
+// SaveBlob computes the SHA-256 hash of a payload and persists it to the SQLite blobs table.
 func (s *Store) SaveBlob(sessionID string, payload []byte) (string, error) {
 	if len(payload) == 0 {
 		return "", nil
@@ -24,40 +27,55 @@ func (s *Store) SaveBlob(sessionID string, payload []byte) (string, error) {
 	hasher.Write(payload)
 	hash := hex.EncodeToString(hasher.Sum(nil))
 
-	if err := os.MkdirAll(s.blobsDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create blobs directory: %w", err)
-	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	blobPath := filepath.Join(s.blobsDir, fmt.Sprintf("%s_%s.raw", cleanID, hash))
-	// If file already exists, it is content-addressed identical, no need to overwrite
-	if _, err := os.Stat(blobPath); err == nil {
-		return hash, nil
-	}
-
-	if err := atomicWrite(blobPath, payload); err != nil {
-		return "", fmt.Errorf("failed to write blob %s: %w", hash, err)
+	query := `INSERT INTO blobs (hash, session_id, data, size, created_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(session_id, hash) DO NOTHING;`
+	_, err = s.db.Exec(query, hash, cleanID, payload, len(payload), time.Now().UnixMilli())
+	if err != nil {
+		return "", fmt.Errorf("failed to save blob %s: %w", hash, err)
 	}
 
 	return hash, nil
 }
 
-// GetBlob reads a content-addressed raw payload by its SHA-256 hash.
+// GetBlob reads a content-addressed raw payload by its SHA-256 hash from SQLite,
+// with graceful fallback to disk if legacy files exist.
 func (s *Store) GetBlob(hash string) ([]byte, error) {
 	cleanHash := strings.TrimSpace(hash)
 	if cleanHash == "" || strings.Contains(cleanHash, "..") || strings.Contains(cleanHash, "/") || strings.Contains(cleanHash, "\\") {
 		return nil, fmt.Errorf("invalid blob hash: %q", hash)
 	}
 
-	// 1. Direct match: <sessionID>_<cleanHash>.raw
-	matches, err := filepath.Glob(filepath.Join(s.blobsDir, "*_"+cleanHash+".raw"))
-	if err == nil && len(matches) > 0 {
-		return os.ReadFile(matches[0])
+	s.mu.RLock()
+	var data []byte
+	err := s.db.QueryRow(`SELECT data FROM blobs WHERE hash = ? LIMIT 1`, cleanHash).Scan(&data)
+	s.mu.RUnlock()
+
+	if err == nil {
+		return data, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("failed to query blob: %w", err)
 	}
 
-	// 2. Fallback direct hash filename: <cleanHash>.raw
-	directPath := filepath.Join(s.blobsDir, cleanHash+".raw")
-	if data, err := os.ReadFile(directPath); err == nil {
-		return data, nil
+	// Fallback to legacy filesystem locations
+	searchDirs := []string{
+		filepath.Join(s.baseDir, "blobs"),
+		filepath.Join(s.baseDir, "legacy_backup", "blobs"),
+	}
+
+	for _, dir := range searchDirs {
+		matches, gErr := filepath.Glob(filepath.Join(dir, "*_"+cleanHash+".raw"))
+		if gErr == nil && len(matches) > 0 {
+			return os.ReadFile(matches[0])
+		}
+		directPath := filepath.Join(dir, cleanHash+".raw")
+		if d, rErr := os.ReadFile(directPath); rErr == nil {
+			return d, nil
+		}
 	}
 
 	return nil, os.ErrNotExist
@@ -70,13 +88,26 @@ func (s *Store) DeleteSessionBlobs(sessionID string) error {
 		return err
 	}
 
-	matches, err := filepath.Glob(filepath.Join(s.blobsDir, cleanID+"_*.raw"))
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, err = s.db.Exec(`DELETE FROM blobs WHERE session_id = ?`, cleanID)
 	if err != nil {
-		return fmt.Errorf("failed to glob session blobs: %w", err)
+		return fmt.Errorf("failed to delete session blobs: %w", err)
 	}
 
-	for _, match := range matches {
-		_ = os.Remove(match)
+	// Also clean up any lingering legacy files
+	legacyDirs := []string{
+		filepath.Join(s.baseDir, "blobs"),
+		filepath.Join(s.baseDir, "legacy_backup", "blobs"),
+	}
+	for _, dir := range legacyDirs {
+		matches, gErr := filepath.Glob(filepath.Join(dir, cleanID+"_*.raw"))
+		if gErr == nil {
+			for _, match := range matches {
+				_ = os.Remove(match)
+			}
+		}
 	}
 
 	return nil

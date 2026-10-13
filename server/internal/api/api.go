@@ -315,6 +315,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/config", s.handleConfig)
 	mux.HandleFunc("/api/v1/state", s.handleState)
 	mux.HandleFunc("/api/v1/state/recent", s.handleStateRecent)
+	mux.HandleFunc("/api/v1/chats/search", s.handleChatSearch)
 	mux.HandleFunc("/api/v1/chats", s.handleChatsList)
 	mux.HandleFunc("/api/v1/chats/", s.handleChatOperations)
 	mux.HandleFunc("/api/v1/blobs/", s.handleBlob)
@@ -1877,7 +1878,8 @@ func (s *Server) handleChatsList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	chats, err := s.store.ListChats()
+	ws := r.URL.Query().Get("workspace")
+	chats, err := s.store.ListChats(ws)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "failed to list chats: "+err.Error())
 		return
@@ -1885,6 +1887,50 @@ func (s *Server) handleChatsList(w http.ResponseWriter, r *http.Request) {
 
 	jsonResponse(w, http.StatusOK, map[string]any{
 		"chats": chats,
+	})
+}
+
+func (s *Server) handleChatSearch(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		jsonError(w, http.StatusServiceUnavailable, "store unavailable")
+		return
+	}
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		jsonResponse(w, http.StatusOK, map[string]any{
+			"query":   "",
+			"total":   0,
+			"results": []store.SearchResult{},
+		})
+		return
+	}
+
+	limit := 30
+	if lStr := r.URL.Query().Get("limit"); lStr != "" {
+		if parsed, err := strconv.Atoi(lStr); err == nil && parsed > 0 {
+			if parsed > 100 {
+				parsed = 100
+			}
+			limit = parsed
+		}
+	}
+
+	ws := r.URL.Query().Get("workspace")
+	results, err := s.store.SearchChats(q, limit, ws)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "search failed: "+err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"query":   q,
+		"total":   len(results),
+		"results": results,
 	})
 }
 
@@ -1898,6 +1944,11 @@ func (s *Server) handleChatOperations(w http.ResponseWriter, r *http.Request) {
 	subPath = strings.TrimSpace(subPath)
 	if subPath == "" {
 		jsonError(w, http.StatusBadRequest, "chat session id is required")
+		return
+	}
+
+	if subPath == "search" {
+		s.handleChatSearch(w, r)
 		return
 	}
 

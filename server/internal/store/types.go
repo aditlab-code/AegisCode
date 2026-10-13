@@ -71,32 +71,35 @@ type ChatSession struct {
 	Messages       []ChatMessage `json:"messages"`
 	CreatedAt      int64         `json:"createdAt"`
 	UpdatedAt      int64         `json:"updatedAt"`
+	WorkspacePath  string        `json:"workspacePath,omitempty"`
 	ConversationID string        `json:"conversationId,omitempty"`
 }
 
 // ChatSummary represents metadata of a session for quick listing without loading full message histories.
 type ChatSummary struct {
-	ID           string `json:"id"`
-	Title        string `json:"title"`
-	Provider     string `json:"provider"`
-	Model        string `json:"model"`
-	MessageCount int    `json:"messageCount"`
-	CreatedAt    int64  `json:"createdAt"`
-	UpdatedAt    int64  `json:"updatedAt"`
+	ID            string `json:"id"`
+	Title         string `json:"title"`
+	Provider      string `json:"provider"`
+	Model         string `json:"model"`
+	MessageCount  int    `json:"messageCount"`
+	WorkspacePath string `json:"workspacePath,omitempty"`
+	CreatedAt     int64  `json:"createdAt"`
+	UpdatedAt     int64  `json:"updatedAt"`
 }
 
 // SessionDescriptor represents high-performance session metadata stored in ~/.aegis/sessions.json.
 type SessionDescriptor struct {
-	ID           string `json:"id"`
-	Title        string `json:"title"`
-	Provider     string `json:"provider"`
-	Model        string `json:"model"`
-	CreatedAt    int64  `json:"createdAt"`
-	UpdatedAt    int64  `json:"updatedAt"`
-	RootNodeID   string `json:"rootNodeId,omitempty"`
-	ActiveLeafID string `json:"activeLeafId,omitempty"`
-	NodeCount    int    `json:"nodeCount"`
-	TotalTokens  int    `json:"totalTokens,omitempty"`
+	ID            string `json:"id"`
+	Title         string `json:"title"`
+	Provider      string `json:"provider"`
+	Model         string `json:"model"`
+	WorkspacePath string `json:"workspacePath,omitempty"`
+	CreatedAt     int64  `json:"createdAt"`
+	UpdatedAt     int64  `json:"updatedAt"`
+	RootNodeID    string `json:"rootNodeId,omitempty"`
+	ActiveLeafID  string `json:"activeLeafId,omitempty"`
+	NodeCount     int    `json:"nodeCount"`
+	TotalTokens   int    `json:"totalTokens,omitempty"`
 }
 
 // SessionsIndex represents the global session metadata index in ~/.aegis/sessions.json.
@@ -120,5 +123,16 @@ type GraphNode struct {
 	Preview string         `json:"preview,omitempty"`
 	Ts      int64          `json:"ts"`
 	Meta    map[string]any `json:"meta,omitempty"`
+}
+
+// SearchResult represents a matching snippet found via SQLite FTS5 search across chat history.
+type SearchResult struct {
+	SessionID     string `json:"sessionId"`
+	SessionTitle  string `json:"sessionTitle"`
+	EventID       string `json:"eventId"`
+	Snippet       string `json:"snippet"`
+	Role          string `json:"role"`
+	WorkspacePath string `json:"workspacePath,omitempty"`
+	CreatedAt     int64  `json:"createdAt"`
 }
 

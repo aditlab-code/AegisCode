@@ -1,17 +1,17 @@
 package store
 
 import (
-	"bufio"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
 
-// AppendEventNode appends a single atomic interaction event to ~/.aegis/chats/<sessionID>.jsonl in O(1) time.
+// AppendEventNode appends a single atomic interaction event into SQLite chat_events and updates chat_sessions.
 func (s *Store) AppendEventNode(sessionID string, node GraphNode) (*GraphNode, error) {
 	cleanID, err := sanitizeID(sessionID)
 	if err != nil {
@@ -40,52 +40,63 @@ func (s *Store) AppendEventNode(sessionID string, node GraphNode) (*GraphNode, e
 		}
 	}
 
-	lineBytes, err := json.Marshal(node)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode graph node: %w", err)
-	}
-
-	s.mu.Lock()
-
-	jsonlPath := filepath.Join(s.chatsDir, cleanID+".jsonl")
-	f, err := os.OpenFile(jsonlPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
-	if err != nil {
-		s.mu.Unlock()
-		return nil, fmt.Errorf("failed to open chat ledger %s: %w", cleanID, err)
-	}
-
-	if _, err := f.Write(append(lineBytes, '\n')); err != nil {
-		_ = f.Close()
-		s.mu.Unlock()
-		return nil, fmt.Errorf("failed to append graph node: %w", err)
-	}
-	_ = f.Close()
-
-	// Update sessions.json descriptor
-	indexPath := filepath.Join(s.baseDir, "sessions.json")
-	var idx SessionsIndex
-	if data, err := os.ReadFile(indexPath); err == nil {
-		_ = json.Unmarshal(data, &idx)
-	}
-	if idx.Sessions == nil {
-		idx.Sessions = []SessionDescriptor{}
-	}
-
-	found := false
-	for i := range idx.Sessions {
-		if idx.Sessions[i].ID == cleanID {
-			idx.Sessions[i].UpdatedAt = node.Ts
-			idx.Sessions[i].ActiveLeafID = node.ID
-			idx.Sessions[i].NodeCount++
-			if idx.Sessions[i].RootNodeID == "" && node.Parent == nil {
-				idx.Sessions[i].RootNodeID = node.ID
-			}
-			found = true
-			break
+	argsJSON := "{}"
+	if node.Args != nil {
+		if ab, mErr := json.Marshal(node.Args); mErr == nil {
+			argsJSON = string(ab)
 		}
 	}
 
-	if !found {
+	metaJSON := "{}"
+	if node.Meta != nil {
+		if mb, mErr := json.Marshal(node.Meta); mErr == nil {
+			metaJSON = string(mb)
+		}
+	}
+
+	role := node.Type
+	if role == "thought" || role == "tool_call" || role == "tool_result" {
+		role = "agent"
+	}
+
+	reasoning := ""
+	if node.Type == "thought" {
+		reasoning = node.Content
+	}
+
+	provider := "antigravity"
+	model := "gemini-3.8-flash"
+	if node.Meta != nil {
+		if p, ok := node.Meta["provider"].(string); ok && p != "" {
+			provider = p
+		}
+		if m, ok := node.Meta["model"].(string); ok && m != "" {
+			model = m
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	wsPath := ""
+	if node.Meta != nil {
+		if w, ok := node.Meta["workspacePath"].(string); ok && w != "" {
+			wsPath = w
+		}
+	}
+
+	// 1. Ensure master chat_sessions record exists first (to satisfy FOREIGN KEY constraint)
+	var existingRoot string
+	qErr := tx.QueryRow(`SELECT coalesce(root_node_id, '') FROM chat_sessions WHERE id = ?`, cleanID).Scan(&existingRoot)
+	if errors.Is(qErr, sql.ErrNoRows) {
 		title := "New Session"
 		if node.Type == "user" && node.Text != "" {
 			t := strings.TrimSpace(node.Text)
@@ -94,42 +105,64 @@ func (s *Store) AppendEventNode(sessionID string, node GraphNode) (*GraphNode, e
 			}
 			title = t
 		}
-		newDesc := SessionDescriptor{
-			ID:           cleanID,
-			Title:        title,
-			Provider:     "antigravity",
-			Model:        "gemini-3.8-flash",
-			CreatedAt:    node.Ts,
-			UpdatedAt:    node.Ts,
-			RootNodeID:   node.ID,
-			ActiveLeafID: node.ID,
-			NodeCount:    1,
+		_, err = tx.Exec(`
+			INSERT INTO chat_sessions (
+				id, title, provider, model, workspace_path, root_node_id, active_leaf_id, node_count, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+		`, cleanID, title, provider, model, wsPath, node.ID, node.ID, node.Ts, node.Ts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to insert chat session: %w", err)
 		}
-		if node.Meta != nil {
-			if p, ok := node.Meta["provider"].(string); ok && p != "" {
-				newDesc.Provider = p
-			}
-			if m, ok := node.Meta["model"].(string); ok && m != "" {
-				newDesc.Model = m
-			}
+	} else if qErr == nil {
+		var newRoot *string
+		if existingRoot == "" && node.Parent == nil {
+			nodeIDCopy := node.ID
+			newRoot = &nodeIDCopy
 		}
-		idx.Sessions = append(idx.Sessions, newDesc)
+		_, err = tx.Exec(`
+			UPDATE chat_sessions
+			SET updated_at = ?, active_leaf_id = ?, node_count = node_count + 1,
+			    root_node_id = CASE WHEN ? IS NOT NULL THEN ? ELSE root_node_id END,
+			    workspace_path = CASE WHEN workspace_path = '' AND ? != '' THEN ? ELSE workspace_path END
+			WHERE id = ?
+		`, node.Ts, node.ID, newRoot, newRoot, wsPath, wsPath, cleanID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update chat session: %w", err)
+		}
+	} else {
+		return nil, fmt.Errorf("failed to query chat session: %w", qErr)
 	}
 
-	idx.UpdatedAt = time.Now().UnixMilli()
-	out, mErr := json.MarshalIndent(&idx, "", "  ")
-	s.mu.Unlock()
+	// 2. Now insert into chat_events with FOREIGN KEY satisfied
+	var parentID *string
+	if node.Parent != nil && *node.Parent != "" {
+		parentID = node.Parent
+	}
 
-	// Execute atomicWrite (which invokes hardware flush f.Sync()) outside mutex lock
-	if mErr == nil {
-		_ = atomicWrite(indexPath, out)
+	_, err = tx.Exec(`
+		INSERT INTO chat_events (
+			id, session_id, parent_id, type, role, text, content, reasoning,
+			tool_name, tool_args_json, tool_output, blob_ref, preview,
+			provider, model, meta_json, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		node.ID, cleanID, parentID, node.Type, role, node.Text, node.Content, reasoning,
+		node.Tool, argsJSON, node.Output, node.BlobRef, node.Preview,
+		provider, model, metaJSON, node.Ts,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert chat event: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit event node transaction: %w", err)
 	}
 
 	return &node, nil
 }
 
-// GetChatNodes reads event nodes from ~/.aegis/chats/<sessionID>.jsonl.
-// If tail > 0, reads only the trailing `tail` nodes via reverse seek.
+// GetChatNodes reads event nodes from SQLite chat_events for sessionID.
+// If tail > 0, returns only the trailing `tail` nodes in chronological order.
 func (s *Store) GetChatNodes(sessionID string, tail int) ([]GraphNode, error) {
 	cleanID, err := sanitizeID(sessionID)
 	if err != nil {
@@ -139,32 +172,59 @@ func (s *Store) GetChatNodes(sessionID string, tail int) ([]GraphNode, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	jsonlPath := filepath.Join(s.chatsDir, cleanID+".jsonl")
-	f, err := os.Open(jsonlPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []GraphNode{}, nil
-		}
-		return nil, fmt.Errorf("failed to open chat ledger: %w", err)
-	}
-	defer f.Close()
-
+	var rows *sql.Rows
 	if tail > 0 {
-		return ReverseSeekTail(f, tail)
+		rows, err = s.db.Query(`
+			SELECT id, parent_id, type, text, content, tool_name, tool_args_json,
+			       tool_output, blob_ref, preview, meta_json, created_at
+			FROM chat_events
+			WHERE session_id = ?
+			ORDER BY created_at DESC
+			LIMIT ?
+		`, cleanID, tail)
+	} else {
+		rows, err = s.db.Query(`
+			SELECT id, parent_id, type, text, content, tool_name, tool_args_json,
+			       tool_output, blob_ref, preview, meta_json, created_at
+			FROM chat_events
+			WHERE session_id = ?
+			ORDER BY created_at ASC
+		`, cleanID)
 	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query chat nodes: %w", err)
+	}
+	defer rows.Close()
 
 	var nodes []GraphNode
-	scanner := bufio.NewScanner(f)
-	buf := make([]byte, 1024*1024)
-	scanner.Buffer(buf, 10*1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
+	for rows.Next() {
+		var n GraphNode
+		var parentID sql.NullString
+		var argsJSON, metaJSON string
+		if err := rows.Scan(
+			&n.ID, &parentID, &n.Type, &n.Text, &n.Content, &n.Tool,
+			&argsJSON, &n.Output, &n.BlobRef, &n.Preview, &metaJSON, &n.Ts,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan chat node: %w", err)
 		}
-		var node GraphNode
-		if err := json.Unmarshal([]byte(line), &node); err == nil {
-			nodes = append(nodes, node)
+		if parentID.Valid && parentID.String != "" {
+			val := parentID.String
+			n.Parent = &val
+		}
+		if argsJSON != "" && argsJSON != "{}" {
+			_ = json.Unmarshal([]byte(argsJSON), &n.Args)
+		}
+		if metaJSON != "" && metaJSON != "{}" {
+			_ = json.Unmarshal([]byte(metaJSON), &n.Meta)
+		}
+		nodes = append(nodes, n)
+	}
+
+	// Reverse if tail > 0 because query was ordered by created_at DESC
+	if tail > 0 && len(nodes) > 1 {
+		for i, j := 0, len(nodes)-1; i < j; i, j = i+1, j-1 {
+			nodes[i], nodes[j] = nodes[j], nodes[i]
 		}
 	}
 
@@ -175,6 +235,7 @@ func (s *Store) GetChatNodes(sessionID string, tail int) ([]GraphNode, error) {
 }
 
 // ReverseSeekTail reads up to `count` lines from the end of the file backwards.
+// Maintained for backward compatibility with existing tests.
 func ReverseSeekTail(f *os.File, count int) ([]GraphNode, error) {
 	stat, err := f.Stat()
 	if err != nil {
@@ -190,7 +251,6 @@ func ReverseSeekTail(f *os.File, count int) ([]GraphNode, error) {
 	var buffer []byte
 	chunkSize := int64(4096)
 	cursor := fileSize
-
 	leftover := ""
 
 	for cursor > 0 && len(rawLines) < count {
@@ -260,13 +320,39 @@ func (s *Store) ReconstructChat(sessionID string, leafID string) (*ChatSession, 
 		return nil, err
 	}
 
+	s.mu.RLock()
+	var title, provider, model, workspacePath string
+	var createdAt, updatedAt int64
+	var activeLeafID string
+	err = s.db.QueryRow(`
+		SELECT title, provider, model, coalesce(active_leaf_id, ''), coalesce(workspace_path, ''), created_at, updated_at
+		FROM chat_sessions
+		WHERE id = ?
+	`, cleanID).Scan(&title, &provider, &model, &activeLeafID, &workspacePath, &createdAt, &updatedAt)
+	s.mu.RUnlock()
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, os.ErrNotExist
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to query session: %w", err)
+	}
+
 	allNodes, err := s.GetChatNodes(cleanID, 0)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(allNodes) == 0 {
-		return nil, os.ErrNotExist
+		return &ChatSession{
+			ID:            cleanID,
+			Title:         title,
+			Provider:      provider,
+			Model:         model,
+			WorkspacePath: workspacePath,
+			Messages:      []ChatMessage{},
+			CreatedAt:     createdAt,
+			UpdatedAt:     updatedAt,
+		}, nil
 	}
 
 	nodeMap := make(map[string]GraphNode, len(allNodes))
@@ -276,8 +362,11 @@ func (s *Store) ReconstructChat(sessionID string, leafID string) (*ChatSession, 
 
 	targetLeaf := leafID
 	if targetLeaf == "" {
-		// Use the last recorded node as active leaf
-		targetLeaf = allNodes[len(allNodes)-1].ID
+		if activeLeafID != "" && nodeMap[activeLeafID].ID != "" {
+			targetLeaf = activeLeafID
+		} else {
+			targetLeaf = allNodes[len(allNodes)-1].ID
+		}
 	}
 
 	// Backtracking traversal from targetLeaf -> root
@@ -301,35 +390,6 @@ func (s *Store) ReconstructChat(sessionID string, leafID string) (*ChatSession, 
 	// Linearize path into ChatMessage slice
 	var messages []ChatMessage
 	var currentAgentMsg *ChatMessage
-
-	title := "New Session"
-	provider := "antigravity"
-	model := "gemini-3.8-flash"
-	createdAt := allNodes[0].Ts
-	updatedAt := allNodes[len(allNodes)-1].Ts
-
-	if idx, err := s.GetSessionsIndex(); err == nil {
-		for _, desc := range idx.Sessions {
-			if desc.ID == cleanID {
-				if desc.Title != "" {
-					title = desc.Title
-				}
-				if desc.Provider != "" {
-					provider = desc.Provider
-				}
-				if desc.Model != "" {
-					model = desc.Model
-				}
-				if desc.CreatedAt > 0 {
-					createdAt = desc.CreatedAt
-				}
-				if desc.UpdatedAt > 0 {
-					updatedAt = desc.UpdatedAt
-				}
-				break
-			}
-		}
-	}
 
 	for _, n := range path {
 		switch n.Type {
@@ -438,12 +498,13 @@ func (s *Store) ReconstructChat(sessionID string, leafID string) (*ChatSession, 
 	}
 
 	return &ChatSession{
-		ID:        cleanID,
-		Title:     title,
-		Provider:  provider,
-		Model:     model,
-		Messages:  messages,
-		CreatedAt: createdAt,
-		UpdatedAt: updatedAt,
+		ID:            cleanID,
+		Title:         title,
+		Provider:      provider,
+		Model:         model,
+		WorkspacePath: workspacePath,
+		Messages:      messages,
+		CreatedAt:     createdAt,
+		UpdatedAt:     updatedAt,
 	}, nil
 }
