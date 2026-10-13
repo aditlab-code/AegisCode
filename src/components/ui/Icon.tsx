@@ -42,6 +42,13 @@ export function Icon({ name, size = 16, className = "" }: IconProps) {
       </>
     ),
     close: <path d="m7 7 10 10M17 7 7 17" />,
+    "close-all": (
+      <>
+        <path d="M7 4h12a2 2 0 0 1 2 2v10" />
+        <rect x="3" y="8" width="14" height="12" rx="1.5" />
+        <path d="m7 12 6 6m0-6-6 6" />
+      </>
+    ),
     code: <path d="m8 9-3 3 3 3m8-6 3 3-3 3m-3-8-2 10" />,
     copy: (
       <>
@@ -284,6 +291,18 @@ export function Icon({ name, size = 16, className = "" }: IconProps) {
     "wrap-text": (
       <>
         <path d="M3 6h18M3 12h15a3 3 0 0 1 0 6h-4m0 0 2-2m-2 2 2 2M3 18h7" />
+      </>
+    ),
+    "sidebar-left": (
+      <>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M9 4v16" />
+      </>
+    ),
+    "sidebar-right": (
+      <>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M15 4v16" />
       </>
     ),
   }

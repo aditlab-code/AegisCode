@@ -333,3 +333,41 @@ func TestGitService_Unlock(t *testing.T) {
 	}
 }
 
+func TestCompareCommits(t *testing.T) {
+	tempDir, _, svc := setupTestGitRepo(t)
+	ctx := context.Background()
+
+	fileA := filepath.Join(tempDir, "fileA.txt")
+	_ = os.WriteFile(fileA, []byte("version 1"), 0644)
+	_ = svc.Stage(ctx, nil, true)
+	c1, err := svc.Commit(ctx, "commit 1", false)
+	if err != nil {
+		t.Fatalf("commit 1 failed: %v", err)
+	}
+
+	_ = os.WriteFile(fileA, []byte("version 2"), 0644)
+	fileB := filepath.Join(tempDir, "fileB.txt")
+	_ = os.WriteFile(fileB, []byte("new file B"), 0644)
+	_ = svc.Stage(ctx, nil, true)
+	c2, err := svc.Commit(ctx, "commit 2", false)
+	if err != nil {
+		t.Fatalf("commit 2 failed: %v", err)
+	}
+
+	cmp, err := svc.CompareCommits(ctx, c1.Hash, c2.Hash)
+	if err != nil {
+		t.Fatalf("CompareCommits failed: %v", err)
+	}
+	if cmp.TotalChanges != 2 {
+		t.Fatalf("expected 2 changes, got %d", cmp.TotalChanges)
+	}
+
+	diffRes, err := svc.GetDiff(ctx, "fileA.txt", false, c2.Hash, c1.Hash)
+	if err != nil {
+		t.Fatalf("GetDiff between commits failed: %v", err)
+	}
+	if diffRes.Original != "version 1" || diffRes.Modified != "version 2" {
+		t.Fatalf("expected diff original 'version 1' and modified 'version 2', got %q and %q", diffRes.Original, diffRes.Modified)
+	}
+}
+

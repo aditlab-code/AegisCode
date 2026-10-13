@@ -62,6 +62,7 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
   const file = diffInfo?.file || ""
   const staged = Boolean(diffInfo?.staged)
   const commit = diffInfo?.commit || ""
+  const base = diffInfo?.base || ""
 
   const [diffData, setDiffData] = useState<GitDiffResult | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -71,7 +72,7 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
 
   // Working copy live buffer
   const buffer = fileBuffers[file]
-  const isWorkingCopyEditable = !staged && !commit
+  const isWorkingCopyEditable = !staged && !commit && !base
 
   // Fetch diff from backend
   useEffect(() => {
@@ -79,7 +80,7 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
     setIsLoading(true)
     setLoadError(null)
 
-    fetchDiff(file, staged, commit)
+    fetchDiff(file, staged, commit, base)
       .then((res) => {
         if (!isCancelled) {
           setDiffData(res)
@@ -97,7 +98,7 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
     return () => {
       isCancelled = true
     }
-  }, [file, staged, commit, fetchDiff, gitDiffVersion])
+  }, [file, staged, commit, base, fetchDiff, gitDiffVersion])
 
   // Parse diff stats from diffText
   const additions = useMemo(() => {

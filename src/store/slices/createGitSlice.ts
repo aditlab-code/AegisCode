@@ -3,6 +3,7 @@ import type {
   GitChange,
   GitCommitNode,
   GitDiffResult,
+  GitCompareResult,
   GitRepo,
   GitUser,
 } from "../../types/workbench"
@@ -15,6 +16,7 @@ import {
   discardGitFiles,
   fetchGitBranches,
   fetchGitDiff,
+  fetchGitCompare,
   fetchGitLog,
   fetchGitStatus,
   fetchGitTags,
@@ -109,6 +111,10 @@ export const createGitSlice: SliceCreator<GitSlice> = (set, get) => {
     isRepoLocked: false,
     isOperatingGit: false,
     gitDiffVersion: 0,
+    compareBaseCommit: null,
+    compareTargetCommit: null,
+    compareResult: null,
+    isLoadingCompare: false,
 
     refreshGit: async () => {
       if (isRefreshing) {
@@ -242,6 +248,61 @@ export const createGitSlice: SliceCreator<GitSlice> = (set, get) => {
         const msg = err instanceof Error ? err.message : String(err)
         get().showToast?.(`Checkout failed: ${msg}`)
         return false
+      }
+    },
+
+    checkoutCommit: async (hash: string) => {
+      set({ isOperatingGit: true })
+      try {
+        await checkoutGitBranch(hash)
+        get().showToast?.(
+          `Checked out commit [${hash.slice(0, 7)}] (detached HEAD)`,
+        )
+        await get().refreshGit()
+        if (typeof get().refreshWorkspace === "function") {
+          await get().refreshWorkspace()
+        }
+        return true
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        get().showToast?.(`Checkout failed: ${msg}`)
+        return false
+      } finally {
+        set({ isOperatingGit: false })
+      }
+    },
+
+    setCompareBaseCommit: (hash: string | null) => {
+      set({ compareBaseCommit: hash })
+    },
+
+    clearCompare: () => {
+      set({
+        compareBaseCommit: null,
+        compareTargetCommit: null,
+        compareResult: null,
+        isLoadingCompare: false,
+      })
+    },
+
+    compareCommits: async (base: string, target: string) => {
+      set({
+        isLoadingCompare: true,
+        compareBaseCommit: base,
+        compareTargetCommit: target,
+      })
+      try {
+        const res = await fetchGitCompare(base, target)
+        set({ compareResult: res })
+        get().showToast?.(
+          `Compared ${base.slice(0, 7)} ↔ ${target.slice(0, 7)} (${res.totalChanges} files changed)`,
+        )
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        get().showToast?.(`Compare failed: ${msg}`)
+        set({ compareResult: null })
+      } finally {
+        set({ isLoadingCompare: false })
       }
     },
 
@@ -448,9 +509,10 @@ export const createGitSlice: SliceCreator<GitSlice> = (set, get) => {
       file: string,
       staged = false,
       commit = "",
+      base = "",
     ): Promise<GitDiffResult | null> => {
       try {
-        return await fetchGitDiff(file, staged, commit)
+        return await fetchGitDiff(file, staged, commit, base)
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err)
         get().showToast?.(`Failed to fetch diff: ${msg}`)
@@ -466,8 +528,8 @@ export const createGitSlice: SliceCreator<GitSlice> = (set, get) => {
       }
     },
 
-    openGitDiff: (file: string, staged = false, commit = "") => {
-      const tabId = makeGitDiffTab(file, staged, commit)
+    openGitDiff: (file: string, staged = false, commit = "", base = "") => {
+      const tabId = makeGitDiffTab(file, staged, commit, base)
       get().openFileInPane(tabId)
     },
   }

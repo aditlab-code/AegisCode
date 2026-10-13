@@ -42,6 +42,14 @@ export function SourceControlPanel() {
     isOperatingGit,
     unlockRepo,
     isLoadingGit,
+    checkoutCommit,
+    compareBaseCommit,
+    compareTargetCommit,
+    compareResult,
+    isLoadingCompare,
+    setCompareBaseCommit,
+    compareCommits,
+    clearCompare,
   } = useWorkbenchStore(
     useShallow((s) => ({
       isGitRepo: s.isGitRepo,
@@ -82,6 +90,14 @@ export function SourceControlPanel() {
       isOperatingGit: s.isOperatingGit,
       unlockRepo: s.unlockRepo,
       isLoadingGit: s.isLoadingGit,
+      checkoutCommit: s.checkoutCommit,
+      compareBaseCommit: s.compareBaseCommit,
+      compareTargetCommit: s.compareTargetCommit,
+      compareResult: s.compareResult,
+      isLoadingCompare: s.isLoadingCompare,
+      setCompareBaseCommit: s.setCompareBaseCommit,
+      compareCommits: s.compareCommits,
+      clearCompare: s.clearCompare,
     })),
   )
 
@@ -888,6 +904,87 @@ export function SourceControlPanel() {
 
         {graphOpen && (
           <div className="flex-1 overflow-y-auto px-2 py-2">
+            {/* Active Commit Comparison Box */}
+            {(compareBaseCommit || compareResult) && (
+              <div className="mb-2 p-2 rounded bg-[var(--color-surface-raised)] border border-[var(--color-line)] text-xs">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-1.5 font-semibold text-[10px] text-[var(--color-ink)]">
+                    <Icon name="split" size={12} />
+                    <span>COMPARE COMMITS</span>
+                  </div>
+                  <button
+                    className="text-[10px] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer"
+                    onClick={clearCompare}
+                    title="Clear comparison"
+                    type="button"
+                  >
+                    <Icon name="close" size={11} />
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1 text-[10px] font-mono text-[var(--color-ink-soft)] mb-1.5">
+                  <span className="px-1.5 py-0.5 rounded bg-[var(--color-canvas)] border border-[var(--color-line)]">
+                    {compareBaseCommit?.slice(0, 7) || "None"}
+                  </span>
+                  <span>↔</span>
+                  <span className="px-1.5 py-0.5 rounded bg-[var(--color-canvas)] border border-[var(--color-line)]">
+                    {compareResult?.targetCommit?.slice(0, 7) ||
+                      "Select target..."}
+                  </span>
+                </div>
+
+                {isLoadingCompare ? (
+                  <div className="flex items-center gap-1.5 text-[10px] text-[var(--color-ink-muted)] py-1">
+                    <span className="animate-spin">
+                      <Icon name="refresh" size={11} />
+                    </span>
+                    <span>Comparing commits...</span>
+                  </div>
+                ) : compareResult ? (
+                  <div className="space-y-1 mt-1 border-t border-[var(--color-line)] pt-1.5 max-h-40 overflow-y-auto">
+                    <div className="text-[10px] text-[var(--color-ink-muted)] mb-1">
+                      {compareResult.totalChanges} changed file
+                      {compareResult.totalChanges !== 1 ? "s" : ""}:
+                    </div>
+                    {compareResult.files.map((cf) => (
+                      <div
+                        className="flex items-center gap-1.5 px-1.5 py-0.5 rounded hover:bg-[var(--color-surface-hover)] cursor-pointer text-[11px]"
+                        key={cf.file}
+                        onClick={() =>
+                          openGitDiff(
+                            cf.file,
+                            false,
+                            compareResult.targetCommit,
+                            compareResult.baseCommit,
+                          )
+                        }
+                        title={`View diff for ${cf.file}`}
+                      >
+                        <span
+                          className={`w-3.5 h-3.5 flex items-center justify-center rounded text-[9px] font-bold ${
+                            cf.status === "A"
+                              ? "text-[var(--color-success)] bg-[var(--color-success-soft)]"
+                              : cf.status === "D"
+                                ? "text-[var(--color-error)] bg-[var(--color-error-soft)]"
+                                : "text-[var(--color-accent)] bg-[var(--color-surface)]"
+                          }`}
+                        >
+                          {cf.status}
+                        </span>
+                        <span className="truncate flex-1 font-mono text-[10px] text-[var(--color-ink)]">
+                          {cf.file}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-[var(--color-ink-muted)]">
+                    Select a second commit below to view differences.
+                  </p>
+                )}
+              </div>
+            )}
+
             {gitCommits.length > 0 ? (
               <div className="space-y-0.5">
                 {gitCommits
@@ -1010,7 +1107,63 @@ export function SourceControlPanel() {
                                 </span>
                               ))}
 
-                            <span className="text-[10px] text-[var(--color-ink-muted)] ml-auto shrink-0">
+                            {/* Hover Actions: Checkout Commit & Compare */}
+                            <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                className="p-0.5 rounded hover:bg-[var(--color-surface-raised)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  checkoutCommit(commit.hash)
+                                }}
+                                title="Checkout this commit (detached HEAD)"
+                                type="button"
+                              >
+                                <Icon name="branch" size={11} />
+                              </button>
+
+                              {compareBaseCommit === commit.hash ? (
+                                <button
+                                  className="px-1.5 py-0.2 rounded text-[9px] bg-[var(--color-accent)] text-white font-semibold cursor-pointer"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setCompareBaseCommit(null)
+                                  }}
+                                  title="Base commit selected. Click to deselect"
+                                  type="button"
+                                >
+                                  Base
+                                </button>
+                              ) : compareBaseCommit ? (
+                                <button
+                                  className="px-1.5 py-0.2 rounded text-[9px] bg-[var(--color-accent)] text-white font-medium hover:opacity-90 cursor-pointer"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    compareCommits(
+                                      compareBaseCommit,
+                                      commit.hash,
+                                    )
+                                  }}
+                                  title={`Compare with ${compareBaseCommit.slice(0, 7)}`}
+                                  type="button"
+                                >
+                                  Compare
+                                </button>
+                              ) : (
+                                <button
+                                  className="p-0.5 rounded hover:bg-[var(--color-surface-raised)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setCompareBaseCommit(commit.hash)
+                                  }}
+                                  title="Select as base commit for comparison"
+                                  type="button"
+                                >
+                                  <Icon name="split" size={11} />
+                                </button>
+                              )}
+                            </div>
+
+                            <span className="text-[10px] text-[var(--color-ink-muted)] shrink-0 ml-1">
                               {commit.timestamp}
                             </span>
                           </div>

@@ -3,6 +3,7 @@ import type {
   GitBranch,
   GitCommitNode,
   GitDiffResult,
+  GitCompareResult,
   GitRepo,
   GitStatusData,
 } from "../types/workbench"
@@ -150,7 +151,17 @@ export function flattenBackendTree(nodes: BackendFileNode[]): FileItem[] {
   const result: FileItem[] = []
 
   function traverse(list: BackendFileNode[], depth: number) {
-    for (const node of list) {
+    const sorted = [...list].sort((a, b) => {
+      const aDir = a.type === "folder"
+      const bDir = b.type === "folder"
+      if (aDir !== bDir) return aDir ? -1 : 1
+      return a.name.localeCompare(b.name, undefined, {
+        sensitivity: "base",
+        numeric: true,
+      })
+    })
+
+    for (const node of sorted) {
       const isFolder = node.type === "folder"
       const item: FileItem = {
         id: node.path,
@@ -684,15 +695,32 @@ export async function fetchGitDiff(
   file: string,
   staged = false,
   commit = "",
+  base = "",
 ): Promise<GitDiffResult> {
   const params = new URLSearchParams()
   params.set("file", file)
   if (staged) params.set("staged", "true")
   if (commit) params.set("commit", commit)
+  if (base) params.set("base", base)
 
   const res = await fetch(`${API_BASE}/api/v1/git/diff?${params.toString()}`)
   if (!res.ok) {
     throw new Error(await parseResponseError(res, "Failed to fetch diff"))
+  }
+  return res.json()
+}
+
+export async function fetchGitCompare(
+  base: string,
+  target: string,
+): Promise<GitCompareResult> {
+  const params = new URLSearchParams()
+  params.set("base", base)
+  params.set("target", target)
+
+  const res = await fetch(`${API_BASE}/api/v1/git/compare?${params.toString()}`)
+  if (!res.ok) {
+    throw new Error(await parseResponseError(res, "Failed to compare commits"))
   }
   return res.json()
 }

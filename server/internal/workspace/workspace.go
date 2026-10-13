@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -360,6 +361,16 @@ func (m *Manager) buildSubTree(dirPath string, currentDepth int, maxDepth int, s
 
 		nodes = append(nodes, node)
 	}
+
+	// Sort nodes: folders first, then alphabetical (case-insensitive)
+	sort.SliceStable(nodes, func(i, j int) bool {
+		iFolder := nodes[i].Type == "folder"
+		jFolder := nodes[j].Type == "folder"
+		if iFolder != jFolder {
+			return iFolder
+		}
+		return strings.ToLower(nodes[i].Name) < strings.ToLower(nodes[j].Name)
+	})
 
 	return nodes, nil
 }

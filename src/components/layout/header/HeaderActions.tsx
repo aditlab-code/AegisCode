@@ -24,6 +24,13 @@ export function HeaderActions() {
   return (
     <div className="header-actions">
       <IconButton
+        active={sidebarOpen}
+        label="Toggle primary sidebar (Ctrl+B)"
+        onClick={toggleSidebar}
+      >
+        <Icon name="sidebar-left" />
+      </IconButton>
+      <IconButton
         active={panelOpen}
         label="Toggle bottom panel (Ctrl+J)"
         onClick={togglePanel}
@@ -31,18 +38,11 @@ export function HeaderActions() {
         <Icon name="panel" />
       </IconButton>
       <IconButton
-        active={sidebarOpen}
-        label="Toggle primary sidebar (Ctrl+B)"
-        onClick={toggleSidebar}
-      >
-        <Icon name="layout" />
-      </IconButton>
-      <IconButton
         active={chatOpen}
-        label="Toggle AEGIS chat"
+        label="Toggle AEGIS chat drawer"
         onClick={toggleChat}
       >
-        <Icon name="aegis" />
+        <Icon name="sidebar-right" />
       </IconButton>
     </div>
   )

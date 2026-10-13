@@ -215,7 +215,7 @@ export default function PdfViewer({ filename }: PdfViewerProps) {
             <Icon name="zoom-out" size={12} />
           </button>
 
-          <span className="viewer-toolbar-badge font-mono min-w-[44px] text-center">
+          <span className="viewer-toolbar-badge font-mono min-w-11 text-center">
             {Math.round(scale * 100)}%
           </span>
 
@@ -308,7 +308,7 @@ export default function PdfViewer({ filename }: PdfViewerProps) {
         )}
 
         {engine === "native" && (
-          <div className="w-full h-full flex-1 min-h-[500px]">
+          <div className="w-full h-full flex-1 min-h-125">
             <iframe
               src={rawUrl}
               title={filename}

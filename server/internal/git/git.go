@@ -925,8 +925,61 @@ type DiffResult struct {
 	Modified  string `json:"modified"`
 }
 
+type GitFileChange struct {
+	Status string `json:"status"` // "M", "A", "D", etc.
+	File   string `json:"file"`
+}
+
+type CompareResult struct {
+	BaseCommit   string          `json:"baseCommit"`
+	TargetCommit string          `json:"targetCommit"`
+	Files        []GitFileChange `json:"files"`
+	TotalChanges int             `json:"totalChanges"`
+}
+
+// CompareCommits retrieves changed files between two commit hashes.
+func (s *Service) CompareCommits(ctx context.Context, baseHash string, targetHash string) (*CompareResult, error) {
+	baseHash = strings.TrimSpace(baseHash)
+	targetHash = strings.TrimSpace(targetHash)
+	if baseHash == "" || targetHash == "" {
+		return nil, errors.New("both base and target commit hashes are required")
+	}
+
+	out, err := s.runGit(ctx, "diff", "--name-status", fmt.Sprintf("%s..%s", baseHash, targetHash))
+	if err != nil {
+		return nil, fmt.Errorf("failed to compare commits: %w", err)
+	}
+
+	var files []GitFileChange
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, "\t")
+		if len(parts) >= 2 {
+			files = append(files, GitFileChange{
+				Status: strings.TrimSpace(parts[0]),
+				File:   strings.TrimSpace(parts[len(parts)-1]),
+			})
+		}
+	}
+
+	if files == nil {
+		files = []GitFileChange{}
+	}
+
+	return &CompareResult{
+		BaseCommit:   baseHash,
+		TargetCommit: targetHash,
+		Files:        files,
+		TotalChanges: len(files),
+	}, nil
+}
+
 // GetDiff retrieves unified diff and original/modified file content for the diff viewer.
-func (s *Service) GetDiff(ctx context.Context, relPath string, staged bool, commitHash string) (*DiffResult, error) {
+func (s *Service) GetDiff(ctx context.Context, relPath string, staged bool, commitHash string, baseHash string) (*DiffResult, error) {
 	relPath = strings.TrimSpace(relPath)
 	if relPath == "" {
 		return nil, errors.New("file path cannot be empty")
@@ -941,8 +994,15 @@ func (s *Service) GetDiff(ctx context.Context, relPath string, staged bool, comm
 	var origContent string
 	var modContent string
 
+	commitHash = strings.TrimSpace(commitHash)
+	baseHash = strings.TrimSpace(baseHash)
+
 	// 1. Get diff text
-	if commitHash != "" {
+	if baseHash != "" && commitHash != "" {
+		diffText, _ = s.runGit(ctx, "diff", fmt.Sprintf("%s..%s", baseHash, commitHash), "--", relPath)
+		origContent, _ = s.runGit(ctx, "show", fmt.Sprintf("%s:%s", baseHash, relPath))
+		modContent, _ = s.runGit(ctx, "show", fmt.Sprintf("%s:%s", commitHash, relPath))
+	} else if commitHash != "" {
 		diffText, _ = s.runGit(ctx, "diff", fmt.Sprintf("%s^!", commitHash), "--", relPath)
 		origContent, _ = s.runGit(ctx, "show", fmt.Sprintf("%s^:%s", commitHash, relPath))
 		modContent, _ = s.runGit(ctx, "show", fmt.Sprintf("%s:%s", commitHash, relPath))

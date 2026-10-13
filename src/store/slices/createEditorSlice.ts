@@ -510,6 +510,72 @@ export const createEditorSlice: SliceCreator<EditorSlice> = (set, get) => ({
     if (!target) return
     get().closeTabInGroup(get().focusedGroup, target)
   },
+  closeAllTabs: (targetGroup?: "group1" | "group2") => {
+    const groupsToCheck: ("group1" | "group2")[] = targetGroup
+      ? [targetGroup]
+      : get().splitEditor
+        ? ["group1", "group2"]
+        : ["group1"]
+
+    // Check for dirty tabs in targeted groups first
+    for (const grp of groupsToCheck) {
+      const gState = grp === "group1" ? get().group1 : get().group2
+      for (const tab of gState.tabs) {
+        if (get().fileBuffers?.[tab]?.isDirty) {
+          set({ confirmCloseFile: { group: grp, filename: tab } })
+          return
+        }
+      }
+    }
+
+    // No dirty tabs, clear tabs
+    if (!targetGroup) {
+      const g1Empty: EditorGroupState = {
+        ...get().group1,
+        tabs: [],
+        activeTab: "",
+      }
+      const g2Empty: EditorGroupState = {
+        ...get().group2,
+        tabs: [],
+        activeTab: "",
+      }
+      set({
+        group1: g1Empty,
+        group2: g2Empty,
+        splitEditor: false,
+        focusedGroup: "group1",
+        ...getDerivedEditorState(g1Empty, g2Empty, "group1", false),
+      })
+    } else if (targetGroup === "group1") {
+      const g1Empty: EditorGroupState = {
+        ...get().group1,
+        tabs: [],
+        activeTab: "",
+      }
+      set({
+        group1: g1Empty,
+        ...getDerivedEditorState(
+          g1Empty,
+          get().group2,
+          get().focusedGroup,
+          get().splitEditor,
+        ),
+      })
+    } else {
+      const g2Empty: EditorGroupState = {
+        ...get().group2,
+        tabs: [],
+        activeTab: "",
+      }
+      set({
+        group2: g2Empty,
+        splitEditor: false,
+        focusedGroup: "group1",
+        ...getDerivedEditorState(get().group1, g2Empty, "group1", false),
+      })
+    }
+  },
 
   minimapEnabled: loadStoredMinimapEnabled(),
   setMinimapEnabled: (val) => {

@@ -23,6 +23,7 @@ import type {
   GitChange,
   GitCommitNode,
   GitDiffResult,
+  GitCompareResult,
   GitRepo,
   GitUser,
   LinterSettings,
@@ -156,6 +157,7 @@ export interface EditorSlice {
   setActiveTab: (t: string) => void
   tabs: string[]
   closeTab: (tabToClose?: string) => void
+  closeAllTabs: (group?: "group1" | "group2") => void
   minimapEnabled: boolean
   setMinimapEnabled: (val: boolean | ((prev: boolean) => boolean)) => void
   toggleMinimap: () => void
@@ -316,6 +318,14 @@ export interface GitSlice {
   discardChange: (file: string) => Promise<void>
   discardAllChanges: () => Promise<boolean>
   commitChanges: (msg: string) => Promise<boolean>
+  checkoutCommit: (hash: string) => Promise<boolean>
+  compareBaseCommit: string | null
+  compareTargetCommit: string | null
+  compareResult: GitCompareResult | null
+  isLoadingCompare: boolean
+  setCompareBaseCommit: (hash: string | null) => void
+  compareCommits: (base: string, target: string) => Promise<void>
+  clearCompare: () => void
   gitPull: () => Promise<boolean>
   gitPush: () => Promise<boolean>
   gitSync: () => Promise<boolean>
@@ -326,9 +336,15 @@ export interface GitSlice {
     file: string,
     staged?: boolean,
     commit?: string,
+    base?: string,
   ) => Promise<GitDiffResult | null>
   fetchTimeline: (file?: string, limit?: number) => Promise<GitCommitNode[]>
-  openGitDiff: (file: string, staged?: boolean, commit?: string) => void
+  openGitDiff: (
+    file: string,
+    staged?: boolean,
+    commit?: string,
+    base?: string,
+  ) => void
 }
 
 export interface TerminalSlice {

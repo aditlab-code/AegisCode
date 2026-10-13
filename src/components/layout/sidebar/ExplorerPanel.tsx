@@ -170,6 +170,7 @@ export function ExplorerPanel() {
     openFileInGroup,
     setActiveTabInGroup,
     closeTabInGroup,
+    closeAllTabs,
     fileBuffers,
     setCursorPosition,
     showToast,
@@ -202,6 +203,7 @@ export function ExplorerPanel() {
       openFileInGroup: s.openFileInGroup,
       setActiveTabInGroup: s.setActiveTabInGroup,
       closeTabInGroup: s.closeTabInGroup,
+      closeAllTabs: s.closeAllTabs,
       fileBuffers: s.fileBuffers,
       setCursorPosition: s.setCursorPosition,
       showToast: s.showToast,
@@ -474,20 +476,39 @@ export function ExplorerPanel() {
   }
 
   return (
-    <>
+    <div className="explorer-panel">
       {/* OPEN EDITORS Section */}
-      <button
-        className="section-title section-title-clickable"
-        onClick={() => setOpenEditorsOpen((v) => !v)}
-        type="button"
-      >
-        <span
-          className={`chevron-arrow ${openEditorsOpen ? "chevron-open" : ""}`}
+      <div className="section-title-bar">
+        <button
+          className="section-title section-title-clickable min-w-0 flex-1"
+          onClick={() => setOpenEditorsOpen((v) => !v)}
+          title={
+            openEditorsOpen ? "Collapse Open Editors" : "Expand Open Editors"
+          }
+          type="button"
         >
-          <Icon name="chevron" size={12} />
-        </span>
-        <span>OPEN EDITORS</span>
-      </button>
+          <span
+            className={`chevron-arrow ${openEditorsOpen ? "chevron-open" : ""}`}
+          >
+            <Icon name="chevron" size={12} />
+          </span>
+          <span>OPEN EDITORS</span>
+        </button>
+
+        {openEditorsOpen &&
+          (group1.tabs.length > 0 || group2.tabs.length > 0) && (
+            <div className="section-actions">
+              <button
+                className="action-icon-btn"
+                onClick={() => closeAllTabs()}
+                title="Close All Editors"
+                type="button"
+              >
+                <Icon name="close-all" size={13} />
+              </button>
+            </div>
+          )}
+      </div>
 
       {openEditorsOpen && (
         <div className="open-editors-list">
@@ -500,7 +521,22 @@ export function ExplorerPanel() {
                 }`}
               >
                 <span>GROUP 1</span>
-                <small>{group1.tabs.length}</small>
+                <div className="flex items-center gap-1.5 ml-auto">
+                  <small>{group1.tabs.length}</small>
+                  {group1.tabs.length > 0 && (
+                    <button
+                      className="action-icon-btn p-0.5 opacity-60 hover:opacity-100"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        closeAllTabs("group1")
+                      }}
+                      title="Close All in Group 1"
+                      type="button"
+                    >
+                      <Icon name="close" size={10} />
+                    </button>
+                  )}
+                </div>
               </div>
               {group1.tabs.map((tab) => {
                 const isActive =
@@ -547,7 +583,22 @@ export function ExplorerPanel() {
                 }`}
               >
                 <span>GROUP 2</span>
-                <small>{group2.tabs.length}</small>
+                <div className="flex items-center gap-1.5 ml-auto">
+                  <small>{group2.tabs.length}</small>
+                  {group2.tabs.length > 0 && (
+                    <button
+                      className="action-icon-btn p-0.5 opacity-60 hover:opacity-100"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        closeAllTabs("group2")
+                      }}
+                      title="Close All in Group 2"
+                      type="button"
+                    >
+                      <Icon name="close" size={10} />
+                    </button>
+                  )}
+                </div>
               </div>
               {group2.tabs.map((tab) => {
                 const isActive =
@@ -1154,85 +1205,89 @@ export function ExplorerPanel() {
       </div>
 
       {/* TIMELINE Section */}
-      <button
-        className="collapsed-section section-title-clickable"
-        onClick={() => setTimelineOpen((v) => !v)}
-        type="button"
-      >
-        <span className={`chevron-arrow ${timelineOpen ? "chevron-open" : ""}`}>
-          <Icon name="chevron" size={12} />
-        </span>
-        <span>TIMELINE</span>
-        {activeEditorFile && (
-          <span className="ml-auto text-[10px] text-[var(--color-ink-muted)] truncate max-w-[120px] font-normal">
-            {activeEditorFile}
+      <div className="timeline-section">
+        <button
+          className="collapsed-section section-title-clickable"
+          onClick={() => setTimelineOpen((v) => !v)}
+          type="button"
+        >
+          <span
+            className={`chevron-arrow ${timelineOpen ? "chevron-open" : ""}`}
+          >
+            <Icon name="chevron" size={12} />
           </span>
-        )}
-      </button>
-      {timelineOpen && (
-        <div className="timeline-content p-2">
-          {!isGitRepo ? (
-            <div className="p-3 text-center text-[11px] text-[var(--color-ink-muted)]">
-              No Git repository detected.
-            </div>
-          ) : timelineLoading ? (
-            <div className="flex items-center justify-center p-3 text-[11px] text-[var(--color-ink-muted)]">
-              <span className="animate-spin mr-2">
-                <Icon name="refresh" size={12} />
-              </span>
-              Loading history...
-            </div>
-          ) : timelineCommits.length === 0 ? (
-            <div className="p-3 text-center text-[11px] text-[var(--color-ink-muted)]">
-              {activeEditorFile
-                ? `No commits found for ${activeEditorFile}`
-                : "Open a file to view commit timeline."}
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {timelineCommits.map((item) => (
-                <div
-                  className="group flex items-start gap-2 p-1.5 rounded hover:bg-[var(--color-surface-hover)] cursor-pointer transition-colors"
-                  key={item.hash}
-                  onClick={() => {
-                    if (activeEditorFile) {
-                      openGitDiff(activeEditorFile, false, item.hash)
-                    } else {
-                      navigator.clipboard?.writeText(item.hash)
-                      showToast(
-                        `Copied commit hash [${item.shortHash || item.hash.slice(0, 7)}]`,
-                      )
-                    }
-                  }}
-                  title={
-                    activeEditorFile
-                      ? "Click to open comparison in editor"
-                      : "Click to copy hash"
-                  }
-                >
-                  <span className="mt-1 w-2 h-2 rounded-full bg-[var(--color-accent)] shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="font-mono text-[10px] text-[var(--color-ink-muted)]">
-                        {item.shortHash || item.hash.slice(0, 7)}
-                      </span>
-                      <span className="text-[10px] text-[var(--color-ink-muted)]">
-                        {item.timestamp}
-                      </span>
-                    </div>
-                    <p className="text-[11px] font-medium text-[var(--color-ink)] truncate mt-0.5">
-                      {item.message}
-                    </p>
-                    <p className="text-[10px] text-[var(--color-ink-soft)] truncate">
-                      {item.author}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
+          <span>TIMELINE</span>
+          {activeEditorFile && (
+            <span className="ml-auto text-[10px] text-[var(--color-ink-muted)] truncate max-w-[120px] font-normal">
+              {activeEditorFile}
+            </span>
           )}
-        </div>
-      )}
-    </>
+        </button>
+        {timelineOpen && (
+          <div className="timeline-content p-2">
+            {!isGitRepo ? (
+              <div className="p-3 text-center text-[11px] text-[var(--color-ink-muted)]">
+                No Git repository detected.
+              </div>
+            ) : timelineLoading ? (
+              <div className="flex items-center justify-center p-3 text-[11px] text-[var(--color-ink-muted)]">
+                <span className="animate-spin mr-2">
+                  <Icon name="refresh" size={12} />
+                </span>
+                Loading history...
+              </div>
+            ) : timelineCommits.length === 0 ? (
+              <div className="p-3 text-center text-[11px] text-[var(--color-ink-muted)]">
+                {activeEditorFile
+                  ? `No commits found for ${activeEditorFile}`
+                  : "Open a file to view commit timeline."}
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {timelineCommits.map((item) => (
+                  <div
+                    className="group flex items-start gap-2 p-1.5 rounded hover:bg-[var(--color-surface-hover)] cursor-pointer transition-colors"
+                    key={item.hash}
+                    onClick={() => {
+                      if (activeEditorFile) {
+                        openGitDiff(activeEditorFile, false, item.hash)
+                      } else {
+                        navigator.clipboard?.writeText(item.hash)
+                        showToast(
+                          `Copied commit hash [${item.shortHash || item.hash.slice(0, 7)}]`,
+                        )
+                      }
+                    }}
+                    title={
+                      activeEditorFile
+                        ? "Click to open comparison in editor"
+                        : "Click to copy hash"
+                    }
+                  >
+                    <span className="mt-1 w-2 h-2 rounded-full bg-[var(--color-accent)] shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="font-mono text-[10px] text-[var(--color-ink-muted)]">
+                          {item.shortHash || item.hash.slice(0, 7)}
+                        </span>
+                        <span className="text-[10px] text-[var(--color-ink-muted)]">
+                          {item.timestamp}
+                        </span>
+                      </div>
+                      <p className="text-[11px] font-medium text-[var(--color-ink)] truncate mt-0.5">
+                        {item.message}
+                      </p>
+                      <p className="text-[10px] text-[var(--color-ink-soft)] truncate">
+                        {item.author}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }

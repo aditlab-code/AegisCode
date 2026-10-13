@@ -190,7 +190,7 @@ export default function ImageViewer({
             <Icon name="zoom-out" size={12} />
           </button>
 
-          <span className="viewer-toolbar-badge font-mono min-w-[44px] text-center">
+          <span className="viewer-toolbar-badge font-mono min-w-11 text-center">
             {Math.round(scale * 100)}%
           </span>
 

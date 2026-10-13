@@ -294,6 +294,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/git/tag/push", s.handleGitTagPush)
 	mux.HandleFunc("/api/v1/git/remote/add", s.handleGitAddRemote)
 	mux.HandleFunc("/api/v1/git/diff", s.handleGitDiff)
+	mux.HandleFunc("/api/v1/git/compare", s.handleGitCompare)
 
 	// Terminal API endpoints
 	mux.HandleFunc("/api/v1/terminal/create", s.handleTerminalCreate)
@@ -1104,8 +1105,27 @@ func (s *Server) handleGitDiff(w http.ResponseWriter, r *http.Request) {
 	file := r.URL.Query().Get("file")
 	staged := r.URL.Query().Get("staged") == "true"
 	commit := r.URL.Query().Get("commit")
+	base := r.URL.Query().Get("base")
 
-	res, err := s.git.GetDiff(r.Context(), file, staged, commit)
+	res, err := s.git.GetDiff(r.Context(), file, staged, commit, base)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, res)
+}
+
+func (s *Server) handleGitCompare(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	base := r.URL.Query().Get("base")
+	target := r.URL.Query().Get("target")
+
+	res, err := s.git.CompareCommits(r.Context(), base, target)
 	if err != nil {
 		jsonError(w, http.StatusBadRequest, err.Error())
 		return

@@ -26,6 +26,8 @@ import {
   normalizeWorkspacePath,
   AsyncSequenceGuard,
 } from "@/store/slices/createWorkspaceSlice"
+import { flattenBackendTree } from "@/utils/workspaceApi"
+import { makeGitDiffTab, parseGitDiffTab } from "@/utils/gitDiffTab"
 import type { WorkbenchStore } from "@/store/types"
 
 describe("createEditorSlice", () => {
@@ -122,6 +124,56 @@ describe("createEditorSlice", () => {
     expect(useTestStore.getState().breakpoints["App.tsx"]).toEqual([15])
     store.clearBreakpoints("App.tsx")
     expect(useTestStore.getState().breakpoints["App.tsx"]).toBeUndefined()
+  })
+
+  it("closes all tabs cleanly and safeguards dirty buffers", () => {
+    const editorCreator = createEditorSlice as any
+    const workspaceCreator = createWorkspaceSlice as any
+    const useTestStore = create<WorkbenchStore>()((set, get, store) => ({
+      ...editorCreator(set, get, store),
+      ...workspaceCreator(set, get, store),
+    }))
+
+    const store = useTestStore.getState()
+    store.openFileInGroup("file1.ts")
+    store.openFileInGroup("file2.ts")
+    expect(useTestStore.getState().group1.tabs.length).toBeGreaterThanOrEqual(2)
+
+    // Close all clean tabs
+    store.closeAllTabs()
+    expect(useTestStore.getState().group1.tabs).toEqual([])
+    expect(useTestStore.getState().activeTab).toBe("")
+
+    // Dirty buffer safeguard
+    store.openFileInGroup("dirty.ts")
+    useTestStore.setState((s) => ({
+      fileBuffers: {
+        ...s.fileBuffers,
+        "dirty.ts": { content: "modified", isDirty: true },
+      },
+    }))
+
+    store.closeAllTabs()
+    // Should trigger confirmCloseFile instead of forcefully discarding
+    expect(useTestStore.getState().confirmCloseFile).toEqual({
+      group: "group1",
+      filename: "dirty.ts",
+    })
+    expect(useTestStore.getState().group1.tabs).toContain("dirty.ts")
+  })
+})
+
+describe("gitDiffTab utilities", () => {
+  it("creates and parses git diff tab strings with base commit comparison", () => {
+    const tab = makeGitDiffTab("src/main.ts", false, "commit2222", "commit1111")
+    expect(tab).toBe("git-diff:src/main.ts?commit=commit2222&base=commit1111")
+
+    const info = parseGitDiffTab(tab)
+    expect(info).not.toBeNull()
+    expect(info?.file).toBe("src/main.ts")
+    expect(info?.commit).toBe("commit2222")
+    expect(info?.base).toBe("commit1111")
+    expect(info?.displayName).toBe("main.ts (commit1 ↔ commit2)")
   })
 })
 
@@ -233,5 +285,22 @@ describe("createWorkspaceSlice", () => {
       },
     ])
     expect(useTestStore.getState().diagnostics.length).toBe(1)
+  })
+
+  it("sorts directory nodes with folders first, then alphabetical", () => {
+    const rawNodes = [
+      { path: "zebra.txt", name: "zebra.txt", type: "file" as const, depth: 0 },
+      { path: "docs", name: "docs", type: "folder" as const, depth: 0 },
+      { path: "apple.txt", name: "apple.txt", type: "file" as const, depth: 0 },
+      { path: "src", name: "src", type: "folder" as const, depth: 0 },
+    ]
+
+    const flat = flattenBackendTree(rawNodes)
+    expect(flat.map((f) => f.name)).toEqual([
+      "docs",
+      "src",
+      "apple.txt",
+      "zebra.txt",
+    ])
   })
 })

@@ -1,10 +1,22 @@
 .side-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   min-width: 0;
   background: var(--color-surface);
   border: 1px solid var(--color-line);
   border-radius: 11px;
   box-shadow: var(--shadow-elevation);
   backdrop-filter: blur(22px) saturate(135%);
+  overflow: hidden;
+}
+
+.explorer-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -71,8 +83,12 @@
 }
 
 .open-editors-list {
+  max-height: 220px;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--color-line);
+  flex-shrink: 0;
 }
 
 .open-editors-group-header {
@@ -129,6 +145,10 @@
 }
 
 .file-tree {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding-bottom: 8px;
 }
 
@@ -579,9 +599,16 @@
   background: var(--color-line);
 }
 
-/* Outline Symbol Tree */
-.outline-section {
+/* Outline Symbol Tree & Timeline */
+.outline-section,
+.timeline-section {
   border-top: 1px solid var(--color-line);
+  flex-shrink: 0;
+}
+
+.timeline-content {
+  max-height: 180px;
+  overflow-y: auto;
 }
 
 .outline-tab-label {
