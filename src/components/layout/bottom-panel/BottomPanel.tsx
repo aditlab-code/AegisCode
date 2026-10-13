@@ -1,8 +1,12 @@
-import { useState, useEffect, type DragEvent } from "react"
+import { useState, useEffect, useRef, useCallback, type DragEvent } from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { ResizeSash } from "../../ui/ResizeSash"
 import { useWorkbenchStore, useShallow } from "../../../store"
+import {
+  MIN_BOTTOM_HEIGHT,
+  DEFAULT_BOTTOM_HEIGHT,
+} from "../../../store/slices/createLayoutSlice"
 import type { BottomTab, OutputChannel } from "../../../types/workbench"
 import { TerminalView } from "./TerminalView"
 import { ProblemsView } from "./ProblemsView"
@@ -63,6 +67,46 @@ export function BottomPanel() {
       showToast: s.showToast,
     })),
   )
+
+  // Tracks live height during drag — no React state → zero re-renders during mousemove
+  const heightRef = useRef(useWorkbenchStore.getState().bottomPanelHeight)
+
+  // Mutate CSS var directly on .workbench DOM node (bypass React/Zustand during drag)
+  const handleSashResize = useCallback((delta: number) => {
+    const workbench = document.querySelector<HTMLElement>(".workbench")
+    if (!workbench) return
+    const next = heightRef.current - delta // upward drag = negative delta = bigger panel
+    const maxHeight = Math.floor(window.innerHeight * 0.75)
+    const clamped = Math.max(80, Math.min(maxHeight, next))
+    heightRef.current = clamped
+    workbench.style.setProperty("--bottom-height", `${clamped}px`)
+  }, [])
+
+  // On mouseup: single Zustand commit → one React reconciliation
+  const handleSashResizeEnd = useCallback(() => {
+    const h = heightRef.current
+    if (h < MIN_BOTTOM_HEIGHT) {
+      heightRef.current = DEFAULT_BOTTOM_HEIGHT
+      const workbench = document.querySelector<HTMLElement>(".workbench")
+      workbench?.style.setProperty(
+        "--bottom-height",
+        `${DEFAULT_BOTTOM_HEIGHT}px`,
+      )
+      setPanelOpen(false)
+    } else {
+      setBottomPanelHeight(h)
+    }
+  }, [setBottomPanelHeight, setPanelOpen])
+
+  const handleSashDoubleClick = useCallback(() => {
+    heightRef.current = DEFAULT_BOTTOM_HEIGHT
+    const workbench = document.querySelector<HTMLElement>(".workbench")
+    workbench?.style.setProperty(
+      "--bottom-height",
+      `${DEFAULT_BOTTOM_HEIGHT}px`,
+    )
+    resetBottomPanelHeight()
+  }, [resetBottomPanelHeight])
 
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [newShell, setNewShell] = useState<string>("zsh")
@@ -177,22 +221,9 @@ export function BottomPanel() {
         <ResizeSash
           className="sash-bottom"
           direction="horizontal"
-          onDoubleClick={resetBottomPanelHeight}
-          onResize={(delta) => {
-            setBottomPanelHeight((prev) => {
-              // Dragging upwards (negative delta) increases panel height
-              const next = prev - delta
-              if (next < 80) {
-                setPanelOpen(false)
-                return 180
-              }
-              const maxHeight =
-                typeof window !== "undefined"
-                  ? Math.floor(window.innerHeight * 0.75)
-                  : 600
-              return Math.max(100, Math.min(maxHeight, next))
-            })
-          }}
+          onDoubleClick={handleSashDoubleClick}
+          onResize={handleSashResize}
+          onResizeEnd={handleSashResizeEnd}
           title="Drag to resize bottom panel (Double-click to reset)"
         />
       )}

@@ -1,4 +1,4 @@
-import { useRef } from "react"
+import { useCallback, useRef } from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { ResizeSash } from "../../ui/ResizeSash"
@@ -34,7 +34,54 @@ export function Sidebar() {
     })),
   )
 
+  // Tracks live width during drag — no React state → zero re-renders during mousemove
   const dragWidthRef = useRef<number>(sidebarWidth)
+
+  const handleSashResizeStart = useCallback(() => {
+    dragWidthRef.current = useWorkbenchStore.getState().sidebarWidth
+  }, [])
+
+  // Mutate CSS var directly on .workspace DOM node (bypass React/Zustand during drag)
+  const handleSashResize = useCallback(
+    (delta: number) => {
+      dragWidthRef.current += delta
+      const workspace = document.querySelector<HTMLElement>(".workspace")
+      if (!workspace) return
+      if (dragWidthRef.current < COLLAPSE_SIDEBAR_THRESHOLD) {
+        return // will collapse on mouseup
+      }
+      const winWidth = window.innerWidth
+      const currentChat = chatOpen ? chatDrawerWidth : 0
+      const maxPossible = Math.min(
+        MAX_SIDEBAR_WIDTH,
+        winWidth - currentChat - 44 - 320,
+      )
+      const clamped = Math.max(
+        MIN_SIDEBAR_WIDTH,
+        Math.min(maxPossible, dragWidthRef.current),
+      )
+      dragWidthRef.current = clamped
+      workspace.style.setProperty("--sidebar-width", `${clamped}px`)
+    },
+    [chatOpen, chatDrawerWidth],
+  )
+
+  // On mouseup: single Zustand commit → one React reconciliation
+  const handleSashResizeEnd = useCallback(() => {
+    const w = dragWidthRef.current
+    if (w < COLLAPSE_SIDEBAR_THRESHOLD) {
+      const workspace = document.querySelector<HTMLElement>(".workspace")
+      workspace?.style.setProperty(
+        "--sidebar-width",
+        `${DEFAULT_SIDEBAR_WIDTH}px`,
+      )
+      dragWidthRef.current = DEFAULT_SIDEBAR_WIDTH
+      setSidebarOpen(false)
+      setSidebarWidth(DEFAULT_SIDEBAR_WIDTH)
+    } else {
+      setSidebarWidth(w)
+    }
+  }, [setSidebarOpen, setSidebarWidth])
 
   return (
     <aside className="side-panel">
@@ -53,29 +100,9 @@ export function Sidebar() {
         className="sash-sidebar"
         direction="vertical"
         onDoubleClick={resetSidebarWidth}
-        onResizeStart={() => {
-          dragWidthRef.current = sidebarWidth
-        }}
-        onResize={(delta) => {
-          dragWidthRef.current += delta
-          if (dragWidthRef.current < COLLAPSE_SIDEBAR_THRESHOLD) {
-            setSidebarOpen(false)
-            setSidebarWidth(DEFAULT_SIDEBAR_WIDTH)
-            return
-          }
-          const winWidth =
-            typeof window !== "undefined" ? window.innerWidth : 1280
-          const currentChat = chatOpen ? chatDrawerWidth : 0
-          const maxPossible = Math.min(
-            MAX_SIDEBAR_WIDTH,
-            winWidth - currentChat - 44 - 320,
-          )
-          const clamped = Math.max(
-            MIN_SIDEBAR_WIDTH,
-            Math.min(maxPossible, dragWidthRef.current),
-          )
-          setSidebarWidth(clamped)
-        }}
+        onResizeStart={handleSashResizeStart}
+        onResize={handleSashResize}
+        onResizeEnd={handleSashResizeEnd}
         title="Drag to resize sidebar (Double-click to reset)"
       />
     </aside>

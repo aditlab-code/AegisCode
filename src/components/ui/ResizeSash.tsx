@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useRef } from "react"
 
 export interface ResizeSashProps {
   direction: "vertical" | "horizontal"
@@ -10,6 +10,15 @@ export interface ResizeSashProps {
   title?: string
 }
 
+/**
+ * ResizeSash — zero-state drag handle, VSCode-style.
+ *
+ * During drag: all work is done via refs + raw DOM events.
+ * No React state mutations → no re-renders during mouse move.
+ * `onResize(delta)` is called on every mousemove; callee
+ * should mutate the DOM directly (e.g. CSS var on workbench el)
+ * and only commit to Zustand on mouseup.
+ */
 export function ResizeSash({
   direction,
   onResize,
@@ -19,38 +28,44 @@ export function ResizeSash({
   className = "",
   title,
 }: ResizeSashProps) {
-  const [isDragging, setIsDragging] = useState(false)
-  const posRef = useRef<number>(0)
+  const sashRef = useRef<HTMLDivElement>(null)
+  const posRef = useRef(0)
+  const dragging = useRef(false)
 
-  useEffect(() => {
-    if (!isDragging) return
+  const cursor = direction === "vertical" ? "col-resize" : "row-resize"
 
-    function handleMouseMove(e: MouseEvent) {
-      const currentPos = direction === "vertical" ? e.clientX : e.clientY
-      const delta = currentPos - posRef.current
-      posRef.current = currentPos
+  function handleMouseDown(e: React.MouseEvent) {
+    if (e.button !== 0) return
+    e.preventDefault()
+
+    dragging.current = true
+    posRef.current = direction === "vertical" ? e.clientX : e.clientY
+    document.body.style.cursor = cursor
+    document.body.style.userSelect = "none"
+    sashRef.current?.classList.add("resize-sash-active")
+    onResizeStart?.()
+
+    function onMouseMove(ev: MouseEvent) {
+      if (!dragging.current) return
+      const cur = direction === "vertical" ? ev.clientX : ev.clientY
+      const delta = cur - posRef.current
+      posRef.current = cur
       onResize(delta)
     }
 
-    function handleMouseUp() {
-      setIsDragging(false)
+    function onMouseUp() {
+      if (!dragging.current) return
+      dragging.current = false
+      document.body.style.cursor = ""
+      document.body.style.userSelect = ""
+      sashRef.current?.classList.remove("resize-sash-active")
+      window.removeEventListener("mousemove", onMouseMove)
+      window.removeEventListener("mouseup", onMouseUp)
       onResizeEnd?.()
     }
 
-    window.addEventListener("mousemove", handleMouseMove)
-    window.addEventListener("mouseup", handleMouseUp)
-
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove)
-      window.removeEventListener("mouseup", handleMouseUp)
-    }
-  }, [isDragging, direction, onResize, onResizeEnd])
-
-  function handleMouseDown(e: React.MouseEvent) {
-    e.preventDefault()
-    setIsDragging(true)
-    posRef.current = direction === "vertical" ? e.clientX : e.clientY
-    onResizeStart?.()
+    window.addEventListener("mousemove", onMouseMove)
+    window.addEventListener("mouseup", onMouseUp)
   }
 
   const defaultTitle =
@@ -59,27 +74,16 @@ export function ResizeSash({
       : "Drag vertically to resize (Double-click to reset)"
 
   return (
-    <>
-      {isDragging && (
-        <div
-          className={`resize-overlay-active resize-overlay-${direction}`}
-          style={{
-            cursor: direction === "vertical" ? "col-resize" : "row-resize",
-          }}
-        />
-      )}
-      <div
-        className={`resize-sash resize-sash-${direction} ${
-          isDragging ? "resize-sash-active" : ""
-        } ${className}`}
-        onDoubleClick={onDoubleClick}
-        onMouseDown={handleMouseDown}
-        role="separator"
-        tabIndex={-1}
-        title={title || defaultTitle}
-      >
-        <div className="resize-sash-line" />
-      </div>
-    </>
+    <div
+      ref={sashRef}
+      className={`resize-sash resize-sash-${direction} ${className}`}
+      onDoubleClick={onDoubleClick}
+      onMouseDown={handleMouseDown}
+      role="separator"
+      tabIndex={-1}
+      title={title || defaultTitle}
+    >
+      <div className="resize-sash-line" />
+    </div>
   )
 }
