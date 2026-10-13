@@ -385,9 +385,9 @@ export const coreRegressionScenarios: RegressionScenario[] = [
     verify: (h) => {
       const activeSession = h.chatSessions.find((s) => s.id === h.activeChatId)!
       expect(activeSession).toBeDefined()
-      expect(activeSession.messages.length).toBe(3) // initial + user + agent
-      expect(activeSession.messages[1].text).toBe("/plan build core test suite")
-      expect(activeSession.messages[2].text).toContain(
+      expect(activeSession.messages.length).toBe(2) // user + agent (clean session start)
+      expect(activeSession.messages[0].text).toBe("/plan build core test suite")
+      expect(activeSession.messages[1].text).toContain(
         "Implementation Plan generated",
       )
     },

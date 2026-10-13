@@ -137,13 +137,11 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
       const textBeforeCursor = value.slice(0, cursorPos)
       const match = textBeforeCursor.match(/(?:^|\s)([/@])([a-zA-Z0-9_\-./]*)$/)
 
-      if (
-        popoverItem &&
-        !popoverItem.isFolder &&
-        popoverType === "mention" &&
-        addMentionContext
-      ) {
-        addMentionContext(popoverItem.path || popoverItem.id)
+      if (popoverItem && popoverType === "mention" && addMentionContext) {
+        addMentionContext(
+          popoverItem.path || popoverItem.id,
+          popoverItem.isFolder,
+        )
       }
 
       if (match) {
@@ -283,44 +281,52 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
           >
             {contextItems.map((item) => {
               const basename = item.path.split("/").pop() || item.path
+              const isFolder = item.type === "folder"
               return (
                 <div key={item.id} className="composer-context-chip">
-                  <button
-                    type="button"
-                    className="composer-chip-toggle cursor-pointer"
-                    onClick={() => toggleContextItemMode(item.id)}
-                    title={`Click to switch context mode (Reference -> Snippet -> Full): ${item.path}`}
-                  >
-                    <Icon name="file" size={11} className="text-muted" />
-                    <span className="composer-chip-filename">{basename}</span>
-                    {item.lineRange ? (
-                      <span className="composer-chip-range">
-                        ({item.lineRange})
-                      </span>
-                    ) : item.mode === "reference" ? (
+                  {isFolder ? (
+                    <div
+                      className="composer-chip-toggle flex items-center gap-1.5"
+                      title={`Directory context (path only): ${item.path}`}
+                    >
+                      <Icon name="folder" size={11} className="text-orange" />
+                      <span className="composer-chip-filename">{basename}</span>
                       <span className="composer-chip-range font-medium text-accent">
-                        (Ref)
+                        (Dir)
                       </span>
-                    ) : item.mode === "snippet" ? (
-                      <span className="composer-chip-range font-medium text-accent">
-                        (Snippet)
-                      </span>
-                    ) : item.mode === "selection" ? (
-                      <span className="composer-chip-range">(Selection)</span>
-                    ) : (
-                      <span className="composer-chip-range">(Full)</span>
-                    )}
-                  </button>
-                  <span
-                    className="composer-chip-tokens"
-                    title={`${item.charCount} characters`}
-                  >
-                    ~{item.estimatedTokens} tokens
-                  </span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="composer-chip-toggle cursor-pointer"
+                      onClick={() => toggleContextItemMode(item.id)}
+                      title={`Click to switch context mode (Reference -> Snippet -> Full): ${item.path}`}
+                    >
+                      <Icon name="file" size={11} className="text-muted" />
+                      <span className="composer-chip-filename">{basename}</span>
+                      {item.lineRange ? (
+                        <span className="composer-chip-range">
+                          ({item.lineRange})
+                        </span>
+                      ) : item.mode === "reference" ? (
+                        <span className="composer-chip-range font-medium text-accent">
+                          (Ref)
+                        </span>
+                      ) : item.mode === "snippet" ? (
+                        <span className="composer-chip-range font-medium text-accent">
+                          (Snippet)
+                        </span>
+                      ) : item.mode === "selection" ? (
+                        <span className="composer-chip-range">(Selection)</span>
+                      ) : (
+                        <span className="composer-chip-range">(Full)</span>
+                      )}
+                    </button>
+                  )}
                   {item.isTruncated && (
                     <span
                       className="composer-chip-truncated flex items-center gap-1"
-                      title="File exceeded 50,000 characters and was truncated to protect token limits"
+                      title="File exceeded 50,000 characters and was truncated to protect limits"
                     >
                       <Icon name="warning" size={10} />
                       <span>Truncated</span>

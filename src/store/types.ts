@@ -378,7 +378,7 @@ export interface ChatSlice {
   createSession: (provider?: ChatProvider, model?: string) => ChatSession
   switchSession: (id: string) => void
   deleteSession: (id: string) => void
-  setSessionModel: (model: string) => void
+  setSessionModel: (providerOrModel: string, optionalModel?: string) => void
   sendChatMessage: (text: string, customContext?: ContextItem[]) => void
   appendChatChunk: (sessionId: string, chunk: string) => void
   contextItems: ContextItem[]
@@ -387,8 +387,9 @@ export interface ChatSlice {
   contextModeOverrides: Record<string, "selection" | "full">
   dismissContextItem: (id: string) => void
   toggleContextItemMode: (id: string) => void
-  addMentionContext: (path: string) => Promise<void>
+  addMentionContext: (path: string, isFolder?: boolean) => Promise<void>
   clearManualMentions: () => void
+  refreshAISkills: (provider?: string, workspacePath?: string) => Promise<void>
 }
 
 export interface DebugSlice {

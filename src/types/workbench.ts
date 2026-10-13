@@ -129,6 +129,8 @@ export interface SkillCommand {
   command: string
   name: string
   description: string
+  scope?: "workspace" | "system"
+  source?: string
 }
 
 export type ActivityType = "Explorer" | "Search" | "Source Control" | "Debug" | "Settings"
@@ -210,7 +212,7 @@ export interface NotificationItem {
 
 export interface ContextItem {
   id: string
-  type: "file" | "selection"
+  type: "file" | "folder" | "selection"
   path: string
   lineRange?: string
   content: string

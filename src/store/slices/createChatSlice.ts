@@ -156,7 +156,7 @@ function computeContextItems(
     }
   }
   items.push(...manualMentions)
-  return enforceContextTokenBudget(items)
+  return items
 }
 
 function recomputeContext(
@@ -229,7 +229,7 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
         console.warn("Failed to hydrate AI models:", err)
       })
 
-    fetchAISkills()
+    fetchAISkills(initialActiveSession.provider)
       .then((skills) => {
         if (Array.isArray(skills) && skills.length > 0) {
           set({ skills })
@@ -320,6 +320,7 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
       saveBackendChatSession(res.newSession).catch((err) => {
         console.warn("Failed to persist new chat session to backend:", err)
       })
+      void get().refreshAISkills(p, currentWorkspace)
       return res.newSession
     },
 
@@ -331,6 +332,12 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
       set({
         ...getActiveChatState(state.sessions, id),
       })
+      if (target.provider !== state.activeProvider) {
+        void get().refreshAISkills(
+          target.provider,
+          target.workspacePath || state.rootWorkspacePath,
+        )
+      }
     },
 
     deleteSession: (id: string) => {
@@ -365,6 +372,9 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
       const active = nextSessions.find((s) => s.id === state.activeSessionId)
       if (active) {
         debouncedSaveBackendSession(active)
+      }
+      if (provider !== currentProvider) {
+        void get().refreshAISkills(provider, state.rootWorkspacePath)
       }
     },
 
@@ -739,9 +749,41 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
       })
     },
 
-    addMentionContext: async (path: string) => {
-      const state = get()
-      let content = state.fileBuffers?.[path]?.content
+    addMentionContext: async (path: string, isFolder?: boolean) => {
+      const curMentions = get().manualMentions
+      if (curMentions.some((p) => p.path === path)) return
+
+      const isDir =
+        isFolder ??
+        get().files?.some(
+          (f) =>
+            (f.path === path || f.label === path) &&
+            (f.icon === "folder" || f.type === "folder"),
+        )
+
+      if (isDir) {
+        const folderItem: ContextItem = {
+          id: `ctx-${path}-folder`,
+          type: "folder",
+          path,
+          content: `Directory: ${path}`,
+          charCount: `Directory: ${path}`.length,
+          estimatedTokens: 0,
+          mode: "reference",
+        }
+        const nextMentions = [...curMentions, folderItem]
+        const curState = get()
+        const items = recomputeContext(curState, {
+          manualMentions: nextMentions,
+        })
+        set({
+          manualMentions: nextMentions,
+          contextItems: items,
+        })
+        return
+      }
+
+      let content = get().fileBuffers?.[path]?.content
       if (content === undefined) {
         try {
           content = await fetchFileContent(path)
@@ -753,10 +795,7 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
       const item = buildMentionContextItem(path, content, "reference")
       if (!item) return
 
-      const curMentions = get().manualMentions
-      if (curMentions.some((p) => p.path === path)) return
-
-      const nextMentions = [...curMentions, item]
+      const nextMentions = [...get().manualMentions, item]
       const curState = get()
       const items = recomputeContext(curState, { manualMentions: nextMentions })
       set({
@@ -772,6 +811,25 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
         manualMentions: [],
         contextItems: items,
       })
+    },
+
+    refreshAISkills: async (provider?: string, workspacePath?: string) => {
+      const state = get()
+      const prov = provider || state.activeProvider || DEFAULT_PROVIDER
+      const ws =
+        workspacePath !== undefined
+          ? workspacePath
+          : state.rootWorkspacePath || ""
+      try {
+        const skills = await fetchAISkills(prov, ws)
+        if (Array.isArray(skills) && skills.length > 0) {
+          set({ skills })
+        } else {
+          set({ skills: SKILL_COMMANDS })
+        }
+      } catch (err) {
+        console.warn("Failed to refresh AI skills:", err)
+      }
     },
   }
 }

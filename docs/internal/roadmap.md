@@ -249,7 +249,8 @@
   - **Token Exclude Filter (`isPathExcluded`)**:
     - Seamless filtering against exclusion patterns (`node_modules/`, `.git/`, `dist/`, `target/`, `*.log`, `*.lock`, `.DS_Store`) preventing unwanted file and artifact context bloat.
   - **Interactive Context Chip Badges in `ChatComposer.tsx`**:
-    - Dismissible chip badges in composer showing active file, line range (e.g. `(Ln 12–45)`), token estimates (`~180 tokens`), and truncation alerts.
+    - Dismissible chip badges in composer showing active file, line range (e.g. `(Ln 12–45)`), and truncation alerts.
+    - `[DEPRECATED — Token Estimates Badge in Composer]`: The `~180 tokens` estimation chip badge has been deprecated and eliminated to reduce UI rendering and regex computation overhead during active typing.
     - One-click toggle between active Selection and Full File mode.
     - Dismiss memory state: dismissed file context remains hidden until tab switch or new active selection.
     - Multi-context support: seamlessly merges active editor context with manual `@mentions`.
@@ -280,8 +281,8 @@
     - Unified multi-provider menu listing all 4 providers and all their available models simultaneously, grouped by provider.
     - Filter tabs (`[Semua]`, `[AGY]`, `[CLD]`, `[OC]`, `[OR]`) with color-coded status dots for instant single-provider filtering.
     - Simultaneous selection: choosing any model updates both active provider and model in the current session.
-  - **Dual Provider & Model Badges in Assistant Message Header (`ChatMessageList.tsx`)**:
-    - Assistant headers display distinct colored provider tags (`[AGY]`, `[CLD]`, `[OC]`, `[OR]`) alongside the model identifier pill (`[gemini-3.8-flash]`).
+  - **Assistant Message Provider Badge (`ChatMessageList.tsx`)**:
+    - `[DEPRECATED — Assistant Header Dual Model Identifier Pill]`: Displaying repetitive model identifier pills in every assistant card header (`[gemini-3.8-flash]`) is deprecated to prevent visual clutter. Assistant response cards render distinct colored provider tags (`[AGY]`, `[CLD]`, `[OC]`, `[OR]`), while active model selection is maintained in the composer toolbar and session sidebar.
   - **Backend AI Test Probe Engine (`POST /api/v1/ai/test` & `server/internal/ai/probe.go`)**:
     - Fast, zero-token cost HTTP GET `/models` probes for OpenCode & OpenRouter.
     - Safe `exec.LookPath` CLI path verification and `--version` probe with 5-second timeout for Claude.
@@ -324,23 +325,29 @@
     - **Debounced Flat-File Session Persistence**: Replaces per-token disk writes with a 3-second debounced `saveBackendChatSession` synchronization and guaranteed final flush upon stream completion, reducing disk I/O by 98%.
     - **Thinking Windowing**: Reasoning preview windowed to trailing 3,000 characters while streaming, keeping DOM tree light during deep CoT thinking loops.
     - **Deferred Code Block Extraction**: Postpones proposed code block regex scans until stream completion.
-  - **Dynamic Model & Skill Discovery Endpoints**:
+  - **Dynamic Model & Multi-Provider Skill Discovery Endpoints**:
     - `GET /api/v1/ai/models`: In-memory 5-minute cached discovery of available Antigravity models (`agy models`).
-    - `GET /api/v1/ai/skills`: Discovers built-in Antigravity skills (`~/.gemini/antigravity-cli/builtin/skills`) and standard slash commands for autocomplete.
+    - `[DEPRECATED — Static Antigravity-Only Skill Discovery & Dummy Chat Messages]`: Static single-provider Antigravity discovery and hardcoded initial dummy chat messages in `chatCore.ts` are deprecated.
+    - `GET /api/v1/ai/skills?provider=...&workspace=...`: Dynamically discovers native skills per provider (`antigravity`, `claude`, `opencode`, `openrouter`) across both System (`~/.gemini`, `~/.claude`, `~/.opencode`) and Workspace (`<ws>/.gemini/skills`, `<ws>/.claude/commands`, `<ws>/.opencode/skills`, `<ws>/.skills`) hierarchies (`server/internal/ai/skills.go`).
+    - **Popover Pointer Auto-Scroll (`ChatCommandPopover.tsx`)**: Attaches item DOM references and automatically executes `scrollIntoView({ block: "nearest", inline: "nearest" })` whenever `selectedIndex` updates to keep active items visible.
     - `GET /api/v1/ai/transcript/{id}`: Full-fidelity session rehydration from native JSON brain logs (`transcript.jsonl`), parsing user turns, thinking traces, and tool call histories.
-  - **Rich Agentic Balloon & UI Components (`src/components/layout/chat/`)**:
+  - **Messenger-Style Chat Architecture & Welcome Banner (`src/components/layout/chat/`)**:
+    - **Interactive Welcome Empty State Banner**: Replaces legacy dummy messages with an active workspace pill and quick hint badges.
+    - **Messenger-Style Chat Turns**: Right-aligned user prompts (`max-width: 85%`) with accent tint; left-aligned assistant response cards (`max-width: 95%`) on neutral surface.
     - **Thinking Process Accordion**: Collapsible reasoning view with pulsing in-progress indicator.
     - **Interactive Tool Call Chips**: Real-time status badges, collapsible JSON args, and tool execution outputs.
     - **Stop Generation Control**: Replaces Send button in `ChatComposer.tsx` with dedicated Stop button while generation is active.
-    - **Pre-injected `<context>` Envelope**: Automatically formats `@file` mention chips into clean markdown blocks preceding the prompt.
+    - **Pre-injected `<context>` Envelope**: Automatically formats context chips into clean markdown blocks preceding the prompt.
     - **Dedicated Error Message Cards**: Clean UI cards with diagnostic info and direct Settings link on CLI or auth errors.
   - **Verification**: 100% verified across Go backend tests (66 tests passing) and Vitest frontend tests (79 tests passing).
 
 #### Sub-Phase 6.10: Git-Driven Review Gates (Apply & Code Manipulation)
 - **Status**: ✅ Completed
 - **Deliverables**:
-  - **Compact `@file` Context Extraction Budget (`MAX_CONTEXT_BUDGET_TOKENS = 2500`)**:
-    - Heuristic context budget enforcement in `contextExtractorCore.ts` supporting three progressive density modes: Full Content, Compact Snippet (first 40 + last 20 lines), and Reference Only.
+  - **Context Mentions & Lightweight Folder Support**:
+    - `[DEPRECATED — Context Token Budgeting Demotion Loop & UI Token Badge]`: The `MAX_CONTEXT_BUDGET_TOKENS = 2500` token calculation and demotion loop in `contextExtractorCore.ts` and composer token badge are deprecated and eliminated to reduce client computational overhead.
+    - **Folder / Directory Mentions (`@folder/`)**: Popover `@` allows selecting directories as well as files, displaying a folder icon and `(Dir)` badge. Context is packaged strictly as `Directory: <path>` without recursive filesystem traversal or memory dumps.
+    - Progressive density modes for file mentions: Reference Only `(Ref)`, Snippet `(Snippet)`, and Full Content `(Full)`.
   - **Path Boundary Verification**: Strict path validation enforcing that all AI code generation targets reside within the active `rootPath` before disk writes (preventing directory traversal attacks).
   - **Git-Backed Side-by-Side Review**:
     - User clicks "Apply to Editor" on markdown code blocks (`ChatMessageList.tsx`), writing changes via `/api/v1/workspace/file`.

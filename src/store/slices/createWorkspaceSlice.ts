@@ -420,6 +420,9 @@ export async function loadWorkspaceInternal(
     if (typeof get().refreshGit === "function") {
       void get().refreshGit()
     }
+    if (typeof (get() as any).refreshAISkills === "function") {
+      void (get() as any).refreshAISkills(undefined, normalizedRoot)
+    }
   } catch (err: any) {
     if (workspaceGuard.isCurrent(requestId)) {
       console.warn("Workspace backend not reachable yet or error:", err)

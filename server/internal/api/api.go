@@ -2125,12 +2125,17 @@ func (s *Server) handleAISkills(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	provider := r.URL.Query().Get("provider")
+	wsParam := r.URL.Query().Get("workspace")
+
 	var rootPath string
-	if s.ws != nil {
+	if wsParam != "" {
+		rootPath = wsParam
+	} else if s.ws != nil {
 		rootPath, _ = s.ws.GetRoot()
 	}
 
-	skills, err := ai.ListSkills(r.Context(), rootPath)
+	skills, err := ai.ListSkills(r.Context(), provider, rootPath)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, "failed to list skills: "+err.Error())
 		return

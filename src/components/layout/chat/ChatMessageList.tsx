@@ -51,7 +51,6 @@ export function extractProposedCodeBlocks(text: string): ProposedFileChange[] {
 interface ChatMessageCardProps {
   item: ChatMessage
   activeProvider: string
-  activeModel: string
   onCopy: (text: string) => void
   onOpenSettings: () => void
   onReviewInGit: () => void
@@ -62,7 +61,6 @@ interface ChatMessageCardProps {
 const ChatMessageCard = memo(function ChatMessageCard({
   item,
   activeProvider,
-  activeModel,
   onCopy,
   onOpenSettings,
   onReviewInGit,
@@ -70,7 +68,6 @@ const ChatMessageCard = memo(function ChatMessageCard({
   onOpenFile,
 }: ChatMessageCardProps) {
   const itemProvider = item.provider || activeProvider
-  const itemModel = item.model || activeModel
   const itemProviderObj =
     CHAT_PROVIDERS.find((p) => p.id === itemProvider) || CHAT_PROVIDERS[0]
 
@@ -121,33 +118,46 @@ const ChatMessageCard = memo(function ChatMessageCard({
 
           {item.context && item.context.length > 0 && (
             <div className="user-context-pills">
-              {item.context.map((c, cIdx) => (
-                <button
-                  key={cIdx}
-                  type="button"
-                  onClick={() => onOpenFile(c.path)}
-                  className="context-pill"
-                  title={`Open ${c.path}${
-                    c.lineRange ? ` (${c.lineRange})` : ""
-                  }`}
-                >
-                  <Icon name="file" size={10} />
-                  <span className="context-pill-name">
-                    {c.path.split("/").pop()}
-                  </span>
-                  {c.lineRange && (
-                    <span className="context-pill-range">{c.lineRange}</span>
-                  )}
-                  {c.isTruncated && (
-                    <span
-                      className="context-pill-warn"
-                      title="Truncated context"
-                    >
-                      <Icon name="warning" size={9} />
+              {item.context.map((c, cIdx) => {
+                const isFolder = c.type === "folder"
+                return (
+                  <button
+                    key={cIdx}
+                    type="button"
+                    onClick={() => onOpenFile(c.path)}
+                    className="context-pill"
+                    title={
+                      isFolder
+                        ? `Directory: ${c.path}`
+                        : `Open ${c.path}${
+                            c.lineRange ? ` (${c.lineRange})` : ""
+                          }`
+                    }
+                  >
+                    <Icon name={isFolder ? "folder" : "file"} size={10} />
+                    <span className="context-pill-name">
+                      {c.path.split("/").pop()}
                     </span>
-                  )}
-                </button>
-              ))}
+                    {isFolder ? (
+                      <span className="context-pill-range">(Dir)</span>
+                    ) : (
+                      c.lineRange && (
+                        <span className="context-pill-range">
+                          {c.lineRange}
+                        </span>
+                      )
+                    )}
+                    {c.isTruncated && (
+                      <span
+                        className="context-pill-warn"
+                        title="Truncated context"
+                      >
+                        <Icon name="warning" size={9} />
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
@@ -155,129 +165,131 @@ const ChatMessageCard = memo(function ChatMessageCard({
     )
   }
 
-  // 2. Agent Message: Flat continuous canvas with unified collapsible timeline
+  // 2. Agent Message: Box style balloon card with unified collapsible timeline
   return (
     <div className="message-turn message-turn-agent group relative">
-      {/* Floating hover-only action bar */}
-      {item.text && (
-        <div className="agent-floating-actions">
-          <button
-            type="button"
-            className="agent-action-btn"
-            title="Copy message"
-            onClick={() => onCopy(item.text)}
-          >
-            <Icon name="copy" size={11} />
-          </button>
-        </div>
-      )}
+      <div className="agent-response-card">
+        {/* Floating hover-only action bar */}
+        {item.text && (
+          <div className="agent-floating-actions">
+            <button
+              type="button"
+              className="agent-action-btn"
+              title="Copy message"
+              onClick={() => onCopy(item.text)}
+            >
+              <Icon name="copy" size={11} />
+            </button>
+          </div>
+        )}
 
-      {/* Unified Collapsible Activity Timeline (Thinking + Tool Calls + Error) */}
-      {(item.thinking ||
-        (item.toolCalls && item.toolCalls.length > 0) ||
-        item.error) && (
-        <UnifiedActivityTimeline
-          thinking={item.thinking}
-          toolCalls={item.toolCalls}
-          isStreaming={item.isStreaming}
-          error={item.error}
-          onOpenFile={onOpenFile}
-          onOpenSettings={onOpenSettings}
-        />
-      )}
+        {/* Unified Collapsible Activity Timeline (Thinking + Tool Calls + Error) */}
+        {(item.thinking ||
+          (item.toolCalls && item.toolCalls.length > 0) ||
+          item.error) && (
+          <UnifiedActivityTimeline
+            thinking={item.thinking}
+            toolCalls={item.toolCalls}
+            isStreaming={item.isStreaming}
+            error={item.error}
+            onOpenFile={onOpenFile}
+            onOpenSettings={onOpenSettings}
+          />
+        )}
 
-      {/* Message Body or Streaming Placeholder */}
-      {item.text ? (
-        <div className="agent-body">
-          <MarkdownRenderer text={item.text} isStreaming={item.isStreaming} />
-          {item.isStreaming && <span className="streaming-cursor" />}
-        </div>
-      ) : item.isStreaming ? (
-        <div className="message-body-streaming-shimmer">
-          <span className="shimmer-dot" />
-          <span className="shimmer-dot" />
-          <span className="shimmer-dot" />
-        </div>
-      ) : !item.error &&
-        !item.thinking &&
-        (!item.toolCalls || item.toolCalls.length === 0) ? (
-        <div className="agent-body text-ink-muted text-xs italic">
-          Waiting for response...
-        </div>
-      ) : null}
+        {/* Message Body or Streaming Placeholder */}
+        {item.text ? (
+          <div className="agent-body">
+            <MarkdownRenderer text={item.text} isStreaming={item.isStreaming} />
+            {item.isStreaming && <span className="streaming-cursor" />}
+          </div>
+        ) : item.isStreaming ? (
+          <div className="message-body-streaming-shimmer">
+            <span className="shimmer-dot" />
+            <span className="shimmer-dot" />
+            <span className="shimmer-dot" />
+          </div>
+        ) : !item.error &&
+          !item.thinking &&
+          (!item.toolCalls || item.toolCalls.length === 0) ? (
+          <div className="agent-body text-ink-muted text-xs italic">
+            Waiting for response...
+          </div>
+        ) : null}
 
-      {/* Multi-File Review Banner (Compact & Clean) */}
-      {allTouchedFiles.length > 0 && (
-        <div className="agent-files-banner">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span className="text-accent shrink-0">
-                <Icon name="git" size={12} />
-              </span>
-              <span className="text-ink text-[11px] font-medium truncate">
-                {toolModifiedFiles.length > 0
-                  ? "Modified"
-                  : "Proposed changes to"}{" "}
-                {allTouchedFiles.length} file
-                {allTouchedFiles.length > 1 ? "s" : ""}:
-              </span>
-            </div>
+        {/* Multi-File Review Banner (Compact & Clean) */}
+        {allTouchedFiles.length > 0 && (
+          <div className="agent-files-banner">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-accent shrink-0">
+                  <Icon name="git" size={12} />
+                </span>
+                <span className="text-ink text-[11px] font-medium truncate">
+                  {toolModifiedFiles.length > 0
+                    ? "Modified"
+                    : "Proposed changes to"}{" "}
+                  {allTouchedFiles.length} file
+                  {allTouchedFiles.length > 1 ? "s" : ""}:
+                </span>
+              </div>
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              {proposedBlocks.length > 0 && (
+              <div className="flex items-center gap-1.5 shrink-0">
+                {proposedBlocks.length > 0 && (
+                  <button
+                    type="button"
+                    className="agent-banner-apply-btn"
+                    onClick={() => onApplyAll(proposedBlocks)}
+                    title="Apply all proposed file changes to workspace"
+                  >
+                    <Icon name="check" size={10} />
+                    <span>Apply All ({proposedBlocks.length})</span>
+                  </button>
+                )}
                 <button
                   type="button"
-                  className="agent-banner-apply-btn"
-                  onClick={() => onApplyAll(proposedBlocks)}
-                  title="Apply all proposed file changes to workspace"
+                  className="agent-banner-review-btn"
+                  onClick={onReviewInGit}
+                  title="Open Source Control to review side-by-side diffs"
                 >
-                  <Icon name="check" size={10} />
-                  <span>Apply All ({proposedBlocks.length})</span>
+                  <span>Review in Git</span>
+                  <Icon name="chevron" size={9} />
                 </button>
-              )}
-              <button
-                type="button"
-                className="agent-banner-review-btn"
-                onClick={onReviewInGit}
-                title="Open Source Control to review side-by-side diffs"
-              >
-                <span>Review in Git</span>
-                <Icon name="chevron" size={9} />
-              </button>
+              </div>
+            </div>
+
+            {/* File Pills List */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              {allTouchedFiles.map((file) => {
+                const baseName = file.split("/").filter(Boolean).pop() || file
+                return (
+                  <button
+                    key={file}
+                    type="button"
+                    onClick={() => onOpenFile(file)}
+                    className="agent-file-pill"
+                    title={`Click to open ${file}`}
+                  >
+                    {baseName}
+                  </button>
+                )
+              })}
             </div>
           </div>
+        )}
 
-          {/* File Pills List */}
-          <div className="flex flex-wrap items-center gap-1.5 pt-1">
-            {allTouchedFiles.map((file) => {
-              const baseName = file.split("/").filter(Boolean).pop() || file
-              return (
-                <button
-                  key={file}
-                  type="button"
-                  onClick={() => onOpenFile(file)}
-                  className="agent-file-pill"
-                  title={`Click to open ${file}`}
-                >
-                  {baseName}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Subtle Micro-Metadata Footer */}
-      {item.text && !item.isStreaming && (
-        <div className="agent-meta-footer">
-          <span className="agent-meta-model">{itemModel}</span>
-          {itemProviderObj && (
-            <span className="agent-meta-provider">
-              · {itemProviderObj.name}
+        {/* Subtle Micro-Metadata Footer */}
+        {item.text && !item.isStreaming && (
+          <div className="agent-meta-footer">
+            <span
+              className={`provider-tag tag-${itemProvider}`}
+              title={`Provider: ${itemProviderObj.name}`}
+            >
+              {itemProviderObj.tag}
             </span>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   )
 })
@@ -287,7 +299,6 @@ export function ChatMessageList() {
     chatMessages,
     isGenerating,
     activeProvider,
-    activeModel,
     showToast,
     setSettingsModalOpen,
     setActiveActivity,
@@ -300,7 +311,6 @@ export function ChatMessageList() {
       chatMessages: s.chatMessages,
       isGenerating: s.isGenerating,
       activeProvider: s.activeProvider,
-      activeModel: s.activeModel,
       showToast: s.showToast,
       setSettingsModalOpen: s.setSettingsModalOpen,
       setActiveActivity: s.setActiveActivity,
@@ -377,17 +387,40 @@ export function ChatMessageList() {
     [applyCodeWithReview, showToast],
   )
 
+  const workspaceName = useMemo(() => {
+    if (!rootWorkspacePath) return "workspace"
+    const parts = rootWorkspacePath.split(/[/\\]/).filter(Boolean)
+    return parts[parts.length - 1] || rootWorkspacePath
+  }, [rootWorkspacePath])
+
   return (
     <div className="messages">
       {chatMessages.length === 0 ? (
         <div className="messages-empty-state">
-          <span className="empty-state-icon">
+          <div className="empty-state-avatar">
             <Icon name="aegis" size={24} />
-          </span>
-          <p>Ask AEGIS anything about your workspace.</p>
-          <span className="empty-state-hint">
-            Type / for skills, @ for files
-          </span>
+          </div>
+          <p className="empty-state-greeting">
+            Hey there! I'm <strong>AEGIS</strong>, your copilot in{" "}
+            <span
+              className="empty-state-workspace-pill"
+              title={rootWorkspacePath || "Current workspace"}
+            >
+              <Icon name="folder" size={11} />
+              <span>{workspaceName}</span>
+            </span>
+            . What can I help you code today?
+          </p>
+          <div className="empty-state-hints">
+            <span className="empty-hint-pill">
+              <kbd className="hint-kbd">/</kbd>
+              <span>skills</span>
+            </span>
+            <span className="empty-hint-pill">
+              <kbd className="hint-kbd">@</kbd>
+              <span>files</span>
+            </span>
+          </div>
         </div>
       ) : (
         chatMessages.map((item) => (
@@ -395,7 +428,6 @@ export function ChatMessageList() {
             key={item.id}
             item={item}
             activeProvider={activeProvider}
-            activeModel={activeModel}
             onCopy={handleCopy}
             onOpenSettings={handleOpenSettings}
             onReviewInGit={handleReviewInGit}

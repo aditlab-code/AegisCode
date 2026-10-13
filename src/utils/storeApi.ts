@@ -327,9 +327,16 @@ export async function fetchAIModels(): Promise<any[]> {
   }
 }
 
-export async function fetchAISkills(): Promise<any[]> {
+export async function fetchAISkills(
+  provider?: string,
+  workspace?: string,
+): Promise<any[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/v1/ai/skills`)
+    const params = new URLSearchParams()
+    if (provider) params.set("provider", provider)
+    if (workspace) params.set("workspace", workspace)
+    const qs = params.toString() ? `?${params.toString()}` : ""
+    const res = await fetch(`${API_BASE}/api/v1/ai/skills${qs}`)
     if (!res.ok) return []
     const data = await res.json()
     return data.skills || []

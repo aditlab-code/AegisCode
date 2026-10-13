@@ -24,13 +24,6 @@ type ModelItem struct {
 	Description string `json:"description,omitempty"`
 }
 
-// SkillItem represents a slash command or skill.
-type SkillItem struct {
-	Command     string `json:"command"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-}
-
 // AntigravityEngine implements ProviderEngine using the out-of-process Antigravity CLI ('agy').
 type AntigravityEngine struct{}
 
@@ -170,51 +163,6 @@ func fallbackModels() []ModelItem {
 		{ID: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6 (Thinking)", Provider: "antigravity", Description: "Claude Sonnet 4.6 via Antigravity"},
 		{ID: "claude-opus-4-6-thinking", Name: "Claude Opus 4.6 (Thinking)", Provider: "antigravity", Description: "Maximum reasoning capacity"},
 	}
-}
-
-// ListSkills returns all available Antigravity slash commands and skills.
-func ListSkills(ctx context.Context, workspaceDir string) ([]SkillItem, error) {
-	skills := []SkillItem{
-		{Command: "/plan", Name: "Implementation Plan", Description: "Phased implementation task breakdown"},
-		{Command: "/spec", Name: "Specification", Description: "Create requirements specification & feature architecture"},
-		{Command: "/review", Name: "Code Review", Description: "Audit code quality, clean code standards, & security"},
-		{Command: "/debug", Name: "Debugging", Description: "Root cause analysis & bug fixing"},
-		{Command: "/simplify", Name: "Simplification", Description: "Refactoring & code structure simplification"},
-		{Command: "/goal", Name: "Autonomous Goal", Description: "Autonomous long-running task execution until completion"},
-		{Command: "/schedule", Name: "Scheduler", Description: "Run timer-based or cron-scheduled instructions"},
-		{Command: "/browser", Name: "Web Browser", Description: "Web browsing & live web interactions"},
-		{Command: "/grill-me", Name: "Interactive Interview", Description: "Interactive design interview and plan alignment"},
-		{Command: "/boost", Name: "Deep Boost", Description: "Strategic planning & rigorous multi-perspective verification"},
-	}
-
-	home, _ := os.UserHomeDir()
-	if home != "" {
-		builtinDir := filepath.Join(home, ".gemini", "antigravity-cli", "builtin", "skills")
-		if entries, err := os.ReadDir(builtinDir); err == nil {
-			for _, entry := range entries {
-				if entry.IsDir() {
-					name := entry.Name()
-					cmdName := "/" + strings.ReplaceAll(name, "_", "-")
-					exists := false
-					for _, s := range skills {
-						if s.Command == cmdName {
-							exists = true
-							break
-						}
-					}
-					if !exists {
-						skills = append(skills, SkillItem{
-							Command:     cmdName,
-							Name:        strings.Title(strings.ReplaceAll(name, "-", " ")),
-							Description: fmt.Sprintf("Antigravity skill: %s", name),
-						})
-					}
-				}
-			}
-		}
-	}
-
-	return skills, nil
 }
 
 // GetSessionTranscript reads Antigravity transcript.jsonl and returns chat messages.

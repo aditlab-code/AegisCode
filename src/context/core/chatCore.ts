@@ -32,15 +32,7 @@ export function createDefaultSession(
     title: "New Session",
     provider,
     model,
-    messages: [
-      {
-        id: "msg-1",
-        role: "agent",
-        text: "I'm connected to your local workspace. What should we build next?",
-        provider,
-        model,
-      },
-    ],
+    messages: [],
     createdAt: Date.now(),
   }
 }
@@ -52,7 +44,16 @@ export function loadStoredSessions(): ChatSession[] {
     if (raw) {
       const parsed = JSON.parse(raw)
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed
+        return parsed.map((s: ChatSession) => ({
+          ...s,
+          messages: (s.messages || []).filter(
+            (m) =>
+              !m.text?.includes("New session started. Ready to assist") &&
+              !m.text?.includes(
+                "I'm connected to your local workspace. What should we build next?",
+              ),
+          ),
+        }))
       }
     }
   } catch {}
@@ -78,8 +79,12 @@ export function formatPromptWithContext(
   const parts: string[] = []
   parts.push("<context>")
   for (const item of context) {
-    const range = item.lineRange ? ` (${item.lineRange})` : ""
-    parts.push(`File: ${item.path}${range}\n\`\`\`\n${item.content}\n\`\`\``)
+    if (item.type === "folder") {
+      parts.push(`Directory: ${item.path}`)
+    } else {
+      const range = item.lineRange ? ` (${item.lineRange})` : ""
+      parts.push(`File: ${item.path}${range}\n\`\`\`\n${item.content}\n\`\`\``)
+    }
   }
   parts.push("</context>\n")
   parts.push(text)
@@ -155,15 +160,7 @@ export function createSessionLogic(
     title: "New Session",
     provider: p,
     model: m,
-    messages: [
-      {
-        id: `msg-${Date.now()}`,
-        role: "agent",
-        text: `[${p} · ${m}] New session started. Ready to assist with your codebase.`,
-        provider: p,
-        model: m,
-      },
-    ],
+    messages: [],
     createdAt: Date.now(),
   }
   return {

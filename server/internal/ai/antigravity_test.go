@@ -46,14 +46,15 @@ func TestListAntigravityModels(t *testing.T) {
 
 func TestListSkills(t *testing.T) {
 	ctx := context.Background()
-	skills, err := ListSkills(ctx, "")
+
+	// 1. Antigravity skills
+	skills, err := ListSkills(ctx, "antigravity", "")
 	if err != nil {
-		t.Fatalf("unexpected error listing skills: %v", err)
+		t.Fatalf("unexpected error listing antigravity skills: %v", err)
 	}
 	if len(skills) < 5 {
 		t.Fatalf("expected at least 5 skills, got %d", len(skills))
 	}
-
 	hasPlan := false
 	for _, s := range skills {
 		if s.Command == "/plan" {
@@ -62,7 +63,39 @@ func TestListSkills(t *testing.T) {
 		}
 	}
 	if !hasPlan {
-		t.Errorf("expected /plan in skills list, got: %+v", skills)
+		t.Errorf("expected /plan in antigravity skills list, got: %+v", skills)
+	}
+
+	// 2. Claude skills
+	claudeSkills, err := ListSkills(ctx, "claude", "")
+	if err != nil {
+		t.Fatalf("unexpected error listing claude skills: %v", err)
+	}
+	hasCompact := false
+	for _, s := range claudeSkills {
+		if s.Command == "/compact" {
+			hasCompact = true
+			break
+		}
+	}
+	if !hasCompact {
+		t.Errorf("expected /compact in claude skills list, got: %+v", claudeSkills)
+	}
+
+	// 3. OpenCode skills
+	opencodeSkills, err := ListSkills(ctx, "opencode", "")
+	if err != nil {
+		t.Fatalf("unexpected error listing opencode skills: %v", err)
+	}
+	hasBuild := false
+	for _, s := range opencodeSkills {
+		if s.Command == "/build" {
+			hasBuild = true
+			break
+		}
+	}
+	if !hasBuild {
+		t.Errorf("expected /build in opencode skills list, got: %+v", opencodeSkills)
 	}
 }
 

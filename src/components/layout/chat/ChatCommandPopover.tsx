@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef } from "react"
 import { useWorkbenchStore, useShallow } from "../../../store"
 import { SKILL_COMMANDS } from "../../../data/chatConstants"
 import { Icon } from "../../ui/Icon"
@@ -37,6 +37,7 @@ export function ChatCommandPopover({
       skills: s.skills,
     })),
   )
+  const itemRefs = useRef<(HTMLDivElement | null)[]>([])
   const activeSkills = skills && skills.length > 0 ? skills : SKILL_COMMANDS
 
   const items: PopoverItem[] = []
@@ -48,13 +49,23 @@ export function ChatCommandPopover({
         (s) =>
           s.command.toLowerCase().includes(q) ||
           s.name.toLowerCase().includes(q) ||
-          s.description.toLowerCase().includes(q),
+          s.description.toLowerCase().includes(q) ||
+          (s.source && s.source.toLowerCase().includes(q)),
       )
       .forEach((s) => {
+        const scopeBadge =
+          s.scope === "workspace"
+            ? "Workspace"
+            : s.scope === "system"
+              ? "System"
+              : ""
+        const detailText = scopeBadge
+          ? `${s.name} · ${scopeBadge}${s.source ? ` (${s.source})` : ""}`
+          : `${s.name} · ${s.description}`
         items.push({
           id: s.command,
           label: s.command,
-          detail: `${s.name} · ${s.description}`,
+          detail: detailText,
           icon: "code",
           insertText: `${s.command} `,
         })
@@ -64,12 +75,12 @@ export function ChatCommandPopover({
     files
       .filter((f) => f.label.toLowerCase().includes(q))
       .forEach((f) => {
-        const isFolder = f.icon === "folder"
+        const isFolder = f.icon === "folder" || f.type === "folder"
         const token = `@${f.label}${isFolder ? "/" : ""}`
         items.push({
           id: f.label,
           label: token,
-          detail: isFolder ? "Folder context" : "File context",
+          detail: isFolder ? "Folder context (Path only)" : "File context",
           icon: isFolder ? "folder" : "file",
           insertText: `${token} `,
           path: f.path || f.label,
@@ -81,6 +92,13 @@ export function ChatCommandPopover({
   useEffect(() => {
     setSelectedIndex(0)
   }, [items.length, setSelectedIndex])
+
+  useEffect(() => {
+    const el = itemRefs.current[selectedIndex]
+    if (el) {
+      el.scrollIntoView({ block: "nearest", inline: "nearest" })
+    }
+  }, [selectedIndex])
 
   if (!type || items.length === 0) {
     return null
@@ -101,6 +119,9 @@ export function ChatCommandPopover({
           return (
             <div
               key={item.id}
+              ref={(el) => {
+                itemRefs.current[idx] = el
+              }}
               className={`command-popover-item ${isSelected ? "selected" : ""}`}
               onClick={() => onSelect(item.insertText, item)}
               onMouseEnter={() => setSelectedIndex(idx)}

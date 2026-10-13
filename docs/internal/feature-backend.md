@@ -524,8 +524,16 @@ To ensure ACID transactional reliability, sub-3ms full-text search, and project-
   - In-memory 5-minute cached discovery of available Antigravity models (`agy models`).
   - Response: `{ "models": [ { "id": "gemini-3.8-flash-high", "name": "Gemini 3.8 Flash (High)", "provider": "antigravity", "description": "..." }, ... ] }`.
 - `GET /api/v1/ai/skills`
-  - Discovers built-in Antigravity skills (`~/.gemini/antigravity-cli/builtin/skills`) and standard slash commands (`/plan`, `/spec`, `/review`, `/debug`, `/simplify`, `/goal`, `/schedule`, `/browser`, `/grill-me`, `/boost`).
-  - Response: `{ "skills": [ { "command": "/plan", "name": "Implementation Plan", "description": "..." }, ... ] }`.
+  - `[DEPRECATED — Static Single-Provider Hardcoded Skills List]`: Static hardcoded skill lists and Antigravity-only discovery without workspace hierarchies are deprecated.
+  - **Dynamic Multi-Provider & Workspace Hierarchical Discovery (`server/internal/ai/skills.go`)**:
+    - Query parameters: `?provider=<provider>&workspace=<workspacePath>`
+    - Discovers native skills dynamically per provider across both System and Workspace directory hierarchies:
+      - **Antigravity**: System (`~/.gemini/antigravity-cli/builtin/skills`, `~/.gemini/skills`) and Workspace (`<ws>/.gemini/skills`, `<ws>/.agents/skills`).
+      - **Claude**: System (`~/.claude/commands/*.md`) and Workspace (`<ws>/.claude/commands/*.md`, `<ws>/.claude/skills/`).
+      - **OpenCode**: System (`~/.opencode/skills/`, `~/.config/opencode/skills/`) and Workspace (`<ws>/.opencode/skills/`, `<ws>/.opencode/commands/`).
+      - **OpenRouter**: Built-in developer commands and Workspace (`<ws>/.skills/`, `<ws>/.prompts/`).
+    - Automatically parses YAML frontmatter metadata (`name`, `description`) from `SKILL.md` or markdown command files, tagging each skill with `scope: "workspace" | "system"` and `source: string`.
+    - Response: `{ "skills": [ { "command": "/plan", "name": "Implementation Plan", "description": "...", "scope": "system" | "workspace", "source": "builtin/skills" }, ... ] }`.
 - `GET /api/v1/ai/transcript/:id`
   - Rehydrates full conversational turns, thinking traces, and tool call histories directly from Antigravity's native `transcript.jsonl` in `~/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/` (and fallback `~/.gemini/antigravity/brain/...`).
   - Normalizes tool call parameters, action summaries, and output mappings, returning standard `ChatMessage[]` array with accurate tool call cards and execution results.
