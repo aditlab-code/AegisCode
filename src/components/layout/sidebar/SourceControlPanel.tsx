@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbenchStore, useShallow } from "../../../store"
+import { hasConflictMarkers } from "../../../utils/gitConflict"
 
 export function SourceControlPanel() {
   const {
@@ -50,6 +51,7 @@ export function SourceControlPanel() {
     setCompareBaseCommit,
     compareCommits,
     clearCompare,
+    fileBuffers,
   } = useWorkbenchStore(
     useShallow((s) => ({
       isGitRepo: s.isGitRepo,
@@ -98,6 +100,7 @@ export function SourceControlPanel() {
       setCompareBaseCommit: s.setCompareBaseCommit,
       compareCommits: s.compareCommits,
       clearCompare: s.clearCompare,
+      fileBuffers: s.fileBuffers,
     })),
   )
 
@@ -131,6 +134,24 @@ export function SourceControlPanel() {
   const [remoteNameInput, setRemoteNameInput] = useState("origin")
   const [remoteUrlInput, setRemoteUrlInput] = useState("")
 
+  const conflictedFiles = useMemo(() => {
+    const list = new Set<string>()
+    if (fileBuffers) {
+      for (const [file, buf] of Object.entries(fileBuffers)) {
+        if (buf?.content && hasConflictMarkers(buf.content)) {
+          list.add(file)
+        }
+      }
+    }
+    for (const c of [...stagedChanges, ...gitChanges]) {
+      if (c.code === "U") {
+        list.add(c.file)
+      }
+    }
+    return Array.from(list)
+  }, [fileBuffers, stagedChanges, gitChanges])
+
+  const hasConflicts = conflictedFiles.length > 0
   const isDirty = gitChanges.length > 0 || stagedChanges.length > 0
 
   // Close menus on outside click
@@ -146,6 +167,13 @@ export function SourceControlPanel() {
   }, [])
 
   function handleCommit(andPush = false) {
+    if (hasConflicts) {
+      showToast(
+        `Cannot commit: Unresolved merge conflicts in ${conflictedFiles.join(", ")}`,
+      )
+      return
+    }
+
     const cleanMsg =
       commitMessage.trim() || (gitCommits.length === 0 ? "Initial commit" : "")
     if (!cleanMsg) {
@@ -564,6 +592,44 @@ export function SourceControlPanel() {
 
         {changesSectionOpen && (
           <div className="p-3 pt-1 space-y-2.5">
+            {/* Conflict Alert Banner */}
+            {hasConflicts && (
+              <div
+                aria-label="Unresolved merge conflicts"
+                className="p-2.5 rounded bg-[var(--color-warning-soft)] border border-[var(--color-warning)]/40 text-[var(--color-warning)] text-xs flex items-start gap-2 select-none"
+              >
+                <Icon
+                  className="shrink-0 mt-0.5 text-[var(--color-warning)]"
+                  name="warning"
+                  size={14}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-[var(--color-ink)]">
+                    Unresolved Merge Conflicts
+                  </div>
+                  <div className="text-[11px] text-[var(--color-ink-muted)] mt-0.5 leading-relaxed">
+                    Resolve conflict markers (
+                    <code className="text-[var(--color-warning)] font-mono">
+                      &lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD
+                    </code>
+                    ,{" "}
+                    <code className="text-[var(--color-warning)] font-mono">
+                      =======
+                    </code>
+                    ,{" "}
+                    <code className="text-[var(--color-warning)] font-mono">
+                      &gt;&gt;&gt;&gt;&gt;&gt;&gt;
+                    </code>
+                    ) in{" "}
+                    <span className="font-mono text-[var(--color-warning)] font-medium">
+                      {conflictedFiles.join(", ")}
+                    </span>{" "}
+                    before committing.
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Commit Message Box with Sparkle AI Icon */}
             <div className="relative">
               <textarea
@@ -593,31 +659,67 @@ export function SourceControlPanel() {
             </div>
 
             {/* Split Commit Button (✓ Commit + dropdown) */}
-            <div className="flex w-full items-stretch rounded-md bg-[var(--color-success)] text-white shadow-xs overflow-visible relative">
+            <div
+              className={`flex w-full items-stretch rounded-md text-white shadow-xs overflow-visible relative ${
+                hasConflicts
+                  ? "bg-[var(--color-surface-raised)] border border-[var(--color-line)] text-[var(--color-ink-muted)]"
+                  : "bg-[var(--color-success)]"
+              }`}
+            >
               <button
-                className="flex-1 flex items-center justify-center gap-2 py-1.5 px-3 text-xs font-medium hover:bg-black/15 active:bg-black/25 transition-colors cursor-pointer select-none rounded-l-md truncate min-w-0"
+                className={`flex-1 flex items-center justify-center gap-2 py-1.5 px-3 text-xs font-medium rounded-l-md truncate min-w-0 select-none ${
+                  hasConflicts
+                    ? "cursor-not-allowed opacity-60 text-[var(--color-ink-muted)]"
+                    : "hover:bg-black/15 active:bg-black/25 transition-colors cursor-pointer"
+                }`}
+                disabled={hasConflicts || isOperatingGit}
                 onClick={() => handleCommit(false)}
-                title={`Commit changes on "${activeBranch}"`}
+                title={
+                  hasConflicts
+                    ? `Cannot commit: Unresolved merge conflicts in ${conflictedFiles.join(", ")}`
+                    : `Commit changes on "${activeBranch}"`
+                }
                 type="button"
               >
-                <Icon className="shrink-0" name="check" size={13} />
+                <Icon
+                  className="shrink-0"
+                  name={hasConflicts ? "warning" : "check"}
+                  size={13}
+                />
                 <span className="truncate">Commit</span>
               </button>
 
-              <div className="w-[1px] bg-white/25 self-stretch my-1 shrink-0" />
+              <div
+                className={`w-[1px] self-stretch my-1 shrink-0 ${
+                  hasConflicts ? "bg-[var(--color-line)]" : "bg-white/25"
+                }`}
+              />
 
               <div className="relative flex items-stretch shrink-0">
                 <button
                   aria-label="Commit Options"
-                  className="flex items-center justify-center px-3 hover:bg-black/15 active:bg-black/25 transition-colors cursor-pointer rounded-r-md"
-                  onClick={() => setCommitDropdownOpen((v) => !v)}
-                  title="More commit options"
+                  className={`flex items-center justify-center px-3 rounded-r-md ${
+                    hasConflicts
+                      ? "cursor-not-allowed opacity-60 text-[var(--color-ink-muted)]"
+                      : "hover:bg-black/15 active:bg-black/25 transition-colors cursor-pointer"
+                  }`}
+                  disabled={hasConflicts || isOperatingGit}
+                  onClick={() => {
+                    if (!hasConflicts) {
+                      setCommitDropdownOpen((v) => !v)
+                    }
+                  }}
+                  title={
+                    hasConflicts
+                      ? `Cannot commit: Unresolved merge conflicts in ${conflictedFiles.join(", ")}`
+                      : "More commit options"
+                  }
                   type="button"
                 >
                   <Icon className="shrink-0" name="chevron-down" size={12} />
                 </button>
 
-                {commitDropdownOpen && (
+                {commitDropdownOpen && !hasConflicts && (
                   <div className="absolute right-0 top-full mt-1.5 w-44 rounded-md border border-[var(--color-line)] bg-[var(--color-surface-raised)] shadow-xl py-1 z-50 text-[11px] animate-in fade-in zoom-in-95 duration-100">
                     <button
                       className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] cursor-pointer"

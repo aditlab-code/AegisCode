@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest"
-import { parseConflictRegions, resolveConflict } from "@/utils/gitConflict"
+import {
+  hasConflictMarkers,
+  parseConflictRegions,
+  resolveConflict,
+} from "@/utils/gitConflict"
 
 describe("gitConflict parser and resolver", () => {
   const sampleWithOneConflict = [
@@ -92,5 +96,40 @@ describe("gitConflict parser and resolver", () => {
     expect(regions).toHaveLength(2)
     expect(regions[0].startLine).toBe(1)
     expect(regions[1].startLine).toBe(7)
+  })
+})
+
+describe("hasConflictMarkers", () => {
+  it("returns true when conflict markers are present", () => {
+    const conflicted = [
+      "line 1",
+      "<<<<<<< HEAD",
+      "my code",
+      "=======",
+      "their code",
+      ">>>>>>> branch",
+      "line 2",
+    ].join("\n")
+    expect(hasConflictMarkers(conflicted)).toBe(true)
+  })
+
+  it("returns false for undefined or empty content", () => {
+    expect(hasConflictMarkers(undefined)).toBe(false)
+    expect(hasConflictMarkers("")).toBe(false)
+  })
+
+  it("returns false for clean code", () => {
+    const clean = "export const answer = 42;\nconsole.log(answer);\n"
+    expect(hasConflictMarkers(clean)).toBe(false)
+  })
+
+  it("returns false for regular less-than / arrow syntax", () => {
+    const code = "if (a << 2 < 10) { console.log('<<< arrow >>>'); }"
+    expect(hasConflictMarkers(code)).toBe(false)
+  })
+
+  it("returns false if conflict marker is incomplete / unclosed", () => {
+    const incomplete = "<<<<<<< HEAD\nsome content without separator"
+    expect(hasConflictMarkers(incomplete)).toBe(false)
   })
 })

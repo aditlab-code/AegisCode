@@ -528,7 +528,6 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
               original: originalContent,
               highlightChanges: true,
               gutter: true,
-              collapseUnchanged: { margin: 3 },
             }),
             blurDomHandler,
             clickDomHandler,
@@ -808,7 +807,7 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
         {/* CodeMirror mount canvas */}
         <div
           ref={containerRef}
-          className="relative flex-1 w-full min-h-0 min-w-0 overflow-hidden select-text"
+          className="relative flex-1 w-full h-full min-h-0 min-w-0 overflow-hidden select-text"
         />
       </div>
     )

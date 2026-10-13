@@ -59,7 +59,7 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
   - Balanced 3-column CSS Grid (`grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr)`) with symmetric `padding: 0 12px;` guaranteeing exact mathematical 50% midpoint centering for the search bar regardless of asymmetric left/right header controls.
   - Left column: macOS-style traffic light window controls (red/yellow/green) with hover icons, Aegis branding badge, and dropdown application menu (File, Edit, View, Run, Terminal, Help).
   - Center column: Unified search bar container (`.header-search-container`, constrained to 300px width). Functions as quick launcher button when idle and live search input when active (`command-search-active`), showing active workspace context, shortcut badge (`⌘K` / `Ctrl+K`), and `Esc` close button.
-  - Right column: Header action buttons aligned to end (`justify-self: end`): toggle bottom panel (`Ctrl+J`), toggle primary sidebar (`Ctrl+B`), and toggle AI chat drawer.
+  - Right column: Header action buttons aligned to end (`justify-self: end`): toggle primary sidebar (`Ctrl+B`, `sidebar-left`), toggle bottom panel (`Ctrl+J`, `panel`), and toggle AI chat drawer (`sidebar-right`).
   - Responsive collapse: switches to `grid-template-columns: auto 1fr auto` on mobile/narrow viewports (`<= 680px`), collapsing idle search into a 32px icon button.
 - **Tokens Used**: `bg-surface`, `border-line`, `text-ink`, `text-ink-muted`, `color-accent`.
 
@@ -81,8 +81,15 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
   - **Dimensions & Drag Sash**: Default width **260px**, minimum width **220px**, maximum width **460px** bounded by an interactive vertical drag sash (`ResizeSash.tsx`). Uses a cumulative mouse movement ref (`dragWidthRef`) starting from `onResizeStart` to ensure reliable continuous drag tracking without clamp traps.
   - **Auto-Collapse**: Dragging the sash leftwards below the threshold (**< 160px**) automatically triggers an instant collapse (`setSidebarOpen(false)`). Reopening the sidebar via Activity Rail or shortcut (`Ctrl+B`) smoothly restores the previous valid width (or default 260px).
   - **Explorer Panel**:
-    - "OPEN EDITORS" section showing pinned tabs across editor groups.
+    - "OPEN EDITORS" section with "Close All Editors" button (safeguarding dirty buffers via confirmation modal) and group-level close buttons when split.
     - Workspace file tree with folder expansion, tree guides, hidden file visibility toggle, inline CRUD actions (New File, New Folder, Rename, safe Delete confirmation modal), Refresh Explorer, and Collapse Folders in Explorer (`collapse-all`).
+    - **Deterministic Ordering**: Folders always render at the top, followed by files, sorted alphabetically (case-insensitive A-Z) across root and all nested subdirectories.
+    - **Dedicated Smooth Scrolling**: Dedicated flex container with `overflow-y: auto` ensuring smooth vertical scrolling on large workspaces.
+  - **Source Control Panel**:
+    - Staged & unstaged changes tree with diff viewer launching.
+    - Commit history with graphical DAG timeline lines.
+    - **Commit Checkout ("Call Back")**: Quick checkout action to inspect or switch working copy directly to any commit hash (detached HEAD).
+    - **Hash-to-Hash Comparison**: Dedicated commit comparison mode (`base` ↔ `target`) displaying changed files list and launching side-by-side / unified diffs between arbitrary commits.
     - **VS Code Standard Git Status Badges**: Fast, non-blocking Git status decorations in the file tree: right-aligned status letter badges (`M` modified in `text-warning`, `U`/`A` untracked/added in `text-success`, `D` deleted in `text-error`, `R` renamed in `text-accent`) on files, and subtle indicator dots (`bg-accent`) on ancestor folders containing modified files computed via `buildExplorerGitDecorations`.
     - Context menu on right-click (Copy Path, Copy Relative Path, Delete, Rename).
   - **Search Panel**:
@@ -102,6 +109,8 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
     - **Interactive SVG Commit Graph**: Visual commit log with clickable branch pills (clicking switches branch via `checkoutBranch`), tag badges, author, and timestamp.
     - **Dynamic Git Profile Footer**: Reads real user profile directly from `git config user.name`/`user.email` without hardcoding.
     - **Zero Fake Fallback Empty States**: Clean "Initialize Repository" and "No Folder Open" guide screens when no Git repo or folder is loaded.
+    - **Conflict Marker Detection & Commit Guard**: Automatic detection of Git merge conflict markers (`<<<<<<< HEAD`, `=======`, `>>>>>>>`) across open buffers and unmerged files (`code === "U"`). Renders a warning banner above the commit input, disables the Commit button and dropdown options, intercepts `⌘Enter` shortcuts with alert toasts, and displays a yellow `CONFLICT` badge on editor tabs.
+    - **Unified Diff Smooth Scrolling**: CodeMirror unified merge view configured without collapsing unchanged lines, rendered in a 100% height container with full vertical and horizontal scrolling matching split view behavior.
 
 ### 4. Workbench Text Editor (`editor/`)
 - **Path**: [`src/components/layout/editor/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/editor)

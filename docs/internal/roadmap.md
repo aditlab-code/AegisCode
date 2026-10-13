@@ -393,6 +393,18 @@
       - **Go Backend Zero-Copy Streaming (`server/internal/api/api.go`)**: Dedicated `GET /api/v1/workspace/file/raw?path=...` endpoint backed by `http.ServeFile` and path boundary resolution (`m.ResolvePath`), delivering $O(1)$ memory usage, proper MIME headers, and 206 Partial Content range streaming.
       - **Contextual Tab Icons in `EditorTabs.tsx`**: Dynamic file icon decoration (`image` for PNG/JPG/SVG, `table` for CSV/TSV, `code` for source files, `git` for diffs).
     - **Verification**: 100% verified via automated frontend Vitest suite (17 test files, 160 tests passing), Go backend tests (`TestWorkspaceFileRaw`), Vite production build, and oxfmt code formatting.
+  - **Sub-Phase 7.1b: Frontend Refinements (Tab Explorer, Source Control, Navbar)**:
+    - **Status**: ✅ Completed
+    - **Deliverables**:
+      - **Tab Explorer "Close All Tabs"**: Global "Close All Editors" button in OPEN EDITORS header and group-level close buttons for split views, with dirty buffer confirmation safeguard.
+      - **Deterministic Directory Ordering**: Folders always render at top, followed by files, sorted alphabetically A-Z (case-insensitive) across root and nested subdirectories in Go backend (`buildSubTree`) and frontend (`flattenBackendTree`).
+      - **Dedicated Vertical Scrolling**: Resolved tree overflow with flex-column container and `.file-tree` `overflow-y: auto; overflow-x: hidden;`, ensuring smooth vertical scrolling on large workspaces.
+      - **Source Control Commit Call Back**: Quick action on each commit in Git Log to checkout any commit directly (detached HEAD) with live status updates.
+      - **Source Control Hash-to-Hash Comparison**: Backend `CompareCommits` + `GET /api/v1/git/compare` endpoint, `base` parameter in `GetDiff`, active comparison subpanel in UI with file badges (`M`, `A`, `D`), and direct diff editor launching between arbitrary hashes.
+      - **Unified Diff Smooth Scrolling**: Restored smooth full-document vertical and horizontal scrolling in unified merge view without line collapse constraints.
+      - **Git Conflict Detection & Commit Guard**: Auto-detection of merge conflict markers (`<<<<<<< HEAD`, `=======`, `>>>>>>>`) with yellow tab warning badge, commit warning banner, and disabled commit button preventing accidental commits of corrupted files.
+      - **Header Actions Iconography & Order**: Reordered toggles to Primary Sidebar -> Bottom Panel -> AI Chat Drawer with dedicated `sidebar-left` and `sidebar-right` icons.
+    - **Verification**: 100% verified via automated frontend Vitest suite (17 test files, 170 tests passing), Go backend tests (including `TestCompareCommits`), Vite production build, and oxfmt code formatting.
   - **Sub-Phase 7.2: Vector Canvas Wireframe Studio (`tldraw`)**:
     - Integration of `@tldraw/tldraw` infinite vector canvas engine isolated strictly inside an on-demand dynamic chunk (`tldraw-chunk.js`).
     - **Zero-Footprint in Code Studio**: The tldraw chunk is downloaded and mounted into RAM **only** when the user opens `.canvas` or `.design` files. While editing standard code (`.go`, `.ts`, `.tsx`, `.py`), tldraw assets consume 0 MB of computer memory and 0 KB initial network bandwidth.

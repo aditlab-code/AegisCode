@@ -941,11 +941,19 @@
 .cm-editor-root > div > .cm-editor {
   position: absolute;
   inset: 0;
+  height: 100%;
 }
 
 .cm-mergeView .cm-editor {
   position: static;
   height: auto;
+}
+
+.cm-editor-root > div > .cm-editor .cm-scroller,
+.cm-editor.cm-merge-b .cm-scroller {
+  height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: auto !important;
 }
 
 .cm-merge-revert {

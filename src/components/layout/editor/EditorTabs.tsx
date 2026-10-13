@@ -4,6 +4,7 @@ import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { useWorkbenchStore, useShallow } from "../../../store"
 import { isGitDiffTab, parseGitDiffTab } from "../../../utils/gitDiffTab"
+import { hasConflictMarkers } from "../../../utils/gitConflict"
 import { getViewerTypeForFile } from "./viewers/viewerTypes"
 
 interface ContextMenuData {
@@ -228,6 +229,9 @@ export function EditorTabs({
           const isDirty = Boolean(buf?.isDirty)
           const hasDiskConflict = Boolean(buf?.hasDiskConflict)
           const isDeletedOnDisk = Boolean(buf?.isDeletedOnDisk)
+          const hasConflict = Boolean(
+            buf?.content && hasConflictMarkers(buf.content),
+          )
 
           return (
             <button
@@ -252,9 +256,11 @@ export function EditorTabs({
               title={
                 isDeletedOnDisk
                   ? `${tabLabel} (Deleted from disk)`
-                  : hasDiskConflict
-                    ? `${tabLabel} (File changed on disk while unsaved)`
-                    : tabLabel
+                  : hasConflict
+                    ? `${tabLabel} (Unresolved Git merge conflict markers detected)`
+                    : hasDiskConflict
+                      ? `${tabLabel} (File changed on disk while unsaved)`
+                      : tabLabel
               }
               type="button"
             >
@@ -287,6 +293,16 @@ export function EditorTabs({
                 {tabLabel}
                 {isDeletedOnDisk ? " (deleted)" : ""}
               </span>
+              {hasConflict && (
+                <span
+                  aria-label="Git merge conflict markers detected"
+                  className="px-1.5 py-0.5 rounded text-[9px] bg-warning/20 text-warning font-semibold border border-warning/40 shrink-0 flex items-center gap-1 select-none"
+                  title="Conflict markers detected (<<<<<<< HEAD, =======, >>>>>>>)"
+                >
+                  <Icon name="warning" size={10} />
+                  <span>CONFLICT</span>
+                </span>
+              )}
               <span className="tab-actions-container">
                 {hasDiskConflict && (
                   <span

@@ -16,6 +16,16 @@ const CONFLICT_SEP_RE = /^={7}\s*$/
 const CONFLICT_END_RE = /^>{7}\s*(.*)$/
 
 /**
+ * Fast detection of Git merge conflict markers (<<<<<<<, =======, >>>>>>>).
+ */
+export function hasConflictMarkers(content?: string): boolean {
+  if (!content || !content.includes("<<<<<<<")) {
+    return false
+  }
+  return parseConflictRegions(content).length > 0
+}
+
+/**
  * Scans document text for Git merge conflict markers (<<<<<<<, =======, >>>>>>>).
  */
 export function parseConflictRegions(content: string): ConflictRegion[] {
