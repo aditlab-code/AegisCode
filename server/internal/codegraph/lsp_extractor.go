@@ -12,6 +12,7 @@ type LSPExtractor struct {
 	lspMgr *lsp.Manager
 	goExt  *GoExtractor
 	tsExt  *TSExtractor
+	pyExt  *PyExtractor
 }
 
 // NewLSPExtractor creates an extractor with LSP capability and local fallback extractors.
@@ -20,6 +21,7 @@ func NewLSPExtractor(lspMgr *lsp.Manager) *LSPExtractor {
 		lspMgr: lspMgr,
 		goExt:  NewGoExtractor(),
 		tsExt:  NewTSExtractor(),
+		pyExt:  NewPyExtractor(),
 	}
 }
 
@@ -44,6 +46,10 @@ func (e *LSPExtractor) Extract(relPath string, content []byte) (*ExtractedFile, 
 				if parsed, pErr := e.tsExt.Extract(relPath, content); pErr == nil && parsed != nil {
 					edges = parsed.Edges
 				}
+			} else if lang == "python" {
+				if parsed, pErr := e.pyExt.Extract(relPath, content); pErr == nil && parsed != nil {
+					edges = parsed.Edges
+				}
 			}
 
 			return &ExtractedFile{
@@ -61,6 +67,9 @@ func (e *LSPExtractor) Extract(relPath string, content []byte) (*ExtractedFile, 
 	}
 	if lang == "typescript" || lang == "javascript" {
 		return e.tsExt.Extract(relPath, content)
+	}
+	if lang == "python" {
+		return e.pyExt.Extract(relPath, content)
 	}
 
 	return &ExtractedFile{

@@ -183,6 +183,12 @@ export function GraphToolbar({
 
       {/* Right: Layout Switcher, Depth, Zoom & Split */}
       <div className="flex items-center gap-2">
+        {/* MCP Status Indicator */}
+        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-accent/10 border border-accent/20 text-accent font-medium text-[10px]">
+          <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+          <span>MCP CodeGraph</span>
+        </div>
+
         {/* Depth Toggle (1 Hop vs 2 Hops) */}
         <div className="flex items-center rounded bg-surface border border-line p-0.5">
           <button

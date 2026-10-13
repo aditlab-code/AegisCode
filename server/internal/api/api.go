@@ -446,6 +446,9 @@ func (s *Server) handleWorkspaceOpen(w http.ResponseWriter, r *http.Request) {
 	if s.store != nil {
 		_ = s.store.AddRecentProject(absPath)
 	}
+	if s.lsp != nil {
+		s.lsp.SetWorkspace(absPath)
+	}
 	if s.codegraph != nil {
 		_ = s.codegraph.SetWorkspace(absPath)
 	}
@@ -468,6 +471,9 @@ func (s *Server) handleWorkspaceClose(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.BroadcastLog("Server", "Unmounted active workspace", "info")
+	if s.lsp != nil {
+		s.lsp.SetWorkspace("")
+	}
 	if s.codegraph != nil {
 		_ = s.codegraph.SetWorkspace("")
 	}
@@ -507,6 +513,9 @@ func (s *Server) handleWorkspacePickFolder(w http.ResponseWriter, r *http.Reques
 	}
 
 	_, name := s.ws.GetRoot()
+	if s.lsp != nil {
+		s.lsp.SetWorkspace(absPath)
+	}
 	if s.codegraph != nil {
 		_ = s.codegraph.SetWorkspace(absPath)
 	}

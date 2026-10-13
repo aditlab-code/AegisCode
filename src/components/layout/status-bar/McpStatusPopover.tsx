@@ -60,7 +60,13 @@ export function McpStatusPopover({ onClose }: McpStatusPopoverProps) {
     onClose?.()
   }
 
-  const isOnline = Boolean(status && status.totalFiles > 0)
+  const filesCount = status?.totalFiles ?? status?.indexedFiles ?? 0
+  const isOnline = Boolean(
+    status &&
+      (filesCount > 0 ||
+        (status.totalSymbols ?? 0) > 0 ||
+        Boolean(status.workspaceRoot)),
+  )
   const dbDisplay = status?.dbPath
     ? status.dbPath.replace(/^.*(?=\.aegis)/, "~/")
     : status?.workspaceRoot
@@ -119,9 +125,7 @@ export function McpStatusPopover({ onClose }: McpStatusPopoverProps) {
         {/* Indexing Metrics */}
         <div className="grid grid-cols-3 gap-2 text-center">
           <div className="p-2 rounded bg-canvas border border-line/60">
-            <div className="text-sm font-semibold text-ink">
-              {status?.totalFiles ?? 0}
-            </div>
+            <div className="text-sm font-semibold text-ink">{filesCount}</div>
             <div className="text-[10px] text-ink-muted">Files</div>
           </div>
           <div className="p-2 rounded bg-canvas border border-line/60">

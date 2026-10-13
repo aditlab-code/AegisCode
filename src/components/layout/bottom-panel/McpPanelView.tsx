@@ -192,7 +192,7 @@ export function McpPanelView() {
             <div className="grid grid-cols-3 gap-2 text-center">
               <div className="p-2 rounded bg-surface border border-line">
                 <div className="text-base font-bold text-ink">
-                  {status?.totalFiles ?? 0}
+                  {status?.totalFiles ?? status?.indexedFiles ?? 0}
                 </div>
                 <div className="text-[10px] text-ink-muted">Files</div>
               </div>

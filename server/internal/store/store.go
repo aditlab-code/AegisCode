@@ -526,7 +526,7 @@ func (s *Store) SaveChat(session *ChatSession) error {
 		}
 
 		_, err = tx.Exec(`
-			INSERT INTO chat_events (
+			INSERT OR REPLACE INTO chat_events (
 				id, session_id, parent_id, type, role, text, content, reasoning,
 				tool_name, tool_args_json, tool_output, blob_ref, preview,
 				provider, model, meta_json, created_at

@@ -162,6 +162,7 @@ type GraphStatus struct {
 	WorkspaceHash string `json:"workspaceHash"`
 	DBPath        string `json:"dbPath"`
 	IndexedFiles  int    `json:"indexedFiles"`
+	TotalFiles    int    `json:"totalFiles"`
 	TotalSymbols  int    `json:"totalSymbols"`
 	TotalEdges    int    `json:"totalEdges"`
 	IsIndexing    bool   `json:"isIndexing"`

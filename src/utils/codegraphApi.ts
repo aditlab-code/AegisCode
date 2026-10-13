@@ -32,6 +32,7 @@ export interface GraphStatus {
   workspaceRoot: string
   workspaceHash: string
   dbPath: string
+  indexedFiles?: number
   totalFiles: number
   totalSymbols: number
   totalEdges: number

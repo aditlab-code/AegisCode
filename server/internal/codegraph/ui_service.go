@@ -296,7 +296,12 @@ func (s *UIService) GetWorkspaceGraph(ctx context.Context, limit int) (*UIGraphP
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT s.id
 		FROM code_symbols s
+		JOIN graph_files f ON s.file_id = f.id
 		LEFT JOIN code_edges e ON (e.source_symbol_id = s.id OR e.target_symbol_id = s.id)
+		WHERE f.path NOT LIKE '%.venv%'
+		  AND f.path NOT LIKE '%/venv/%'
+		  AND f.path NOT LIKE '%/site-packages/%'
+		  AND f.path NOT LIKE '%/__pycache__/%'
 		GROUP BY s.id
 		ORDER BY count(e.id) DESC, s.id ASC
 		LIMIT ?
@@ -379,9 +384,15 @@ func (s *UIService) SearchSymbols(ctx context.Context, query string, limit int) 
 	if len(matchIDs) == 0 {
 		likePattern := "%" + query + "%"
 		likeRows, err := s.db.QueryContext(ctx, `
-			SELECT id FROM code_symbols
-			WHERE name LIKE ?
-			ORDER BY line_start ASC
+			SELECT s.id
+			FROM code_symbols s
+			JOIN graph_files f ON s.file_id = f.id
+			WHERE s.name LIKE ?
+			  AND f.path NOT LIKE '%.venv%'
+			  AND f.path NOT LIKE '%/venv/%'
+			  AND f.path NOT LIKE '%/site-packages/%'
+			  AND f.path NOT LIKE '%/__pycache__/%'
+			ORDER BY s.line_start ASC
 			LIMIT ?
 		`, likePattern, limit)
 		if err == nil {

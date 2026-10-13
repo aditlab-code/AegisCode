@@ -176,3 +176,81 @@ export const processAuth = async (token: string) => {
 		t.Errorf("expected call to handleLogin not found: %+v", res.Edges)
 	}
 }
+
+func TestPyExtractor(t *testing.T) {
+	src := `class ModelTrainer:
+    """ModelTrainer trains fraud detection models."""
+
+    def __init__(self, config):
+        self.config = config
+
+    def train(self, data):
+        """Train the model with input data."""
+        clean_data = preprocess(data)
+        self.fit(clean_data)
+
+def preprocess(data):
+    """Cleans input raw data."""
+    return normalize(data)
+
+def main():
+    trainer = ModelTrainer({})
+    trainer.train([])
+`
+	ext := NewPyExtractor()
+	res, err := ext.Extract("model.py", []byte(src))
+	if err != nil {
+		t.Fatalf("Extract failed: %v", err)
+	}
+
+	if res.Language != "python" {
+		t.Errorf("expected language python, got %s", res.Language)
+	}
+
+	foundClass := false
+	foundMethod := false
+	foundFunc := false
+	for _, s := range res.Symbols {
+		if s.Name == "ModelTrainer" && s.Kind == KindClass {
+			foundClass = true
+			if s.DocComment != "ModelTrainer trains fraud detection models." {
+				t.Errorf("unexpected doc comment: %q", s.DocComment)
+			}
+		}
+		if s.Name == "train" && s.Kind == KindMethod && s.Scope == "ModelTrainer" {
+			foundMethod = true
+		}
+		if s.Name == "preprocess" && s.Kind == KindFunction {
+			foundFunc = true
+		}
+	}
+
+	if !foundClass {
+		t.Errorf("expected ModelTrainer class not found")
+	}
+	if !foundMethod {
+		t.Errorf("expected train method not found")
+	}
+	if !foundFunc {
+		t.Errorf("expected preprocess function not found")
+	}
+
+	// Verify call edges
+	foundCallPreprocess := false
+	foundCallNormalize := false
+	for _, e := range res.Edges {
+		if e.TargetRawName == "preprocess" {
+			foundCallPreprocess = true
+		}
+		if e.TargetRawName == "normalize" {
+			foundCallNormalize = true
+		}
+	}
+
+	if !foundCallPreprocess {
+		t.Errorf("expected call to preprocess not found: %+v", res.Edges)
+	}
+	if !foundCallNormalize {
+		t.Errorf("expected call to normalize not found: %+v", res.Edges)
+	}
+}

@@ -18,6 +18,8 @@ import {
   validateSyntax,
   isLspLanguage,
 } from "../../utils/linter"
+import { isGraphTab } from "../../components/layout/editor/viewers/viewerTypes"
+import { isGitDiffTab } from "../../utils/gitDiffTab"
 import {
   closeWorkspace,
   deleteWorkspaceFile,
@@ -633,6 +635,7 @@ export function useWorkspaceCore(options: UseWorkspaceCoreOptions) {
   // Safe file content fetcher with dirty conflict protection
   const fetchBufferSafely = useCallback(
     (filename: string) => {
+      if (!filename || isGraphTab(filename) || isGitDiffTab(filename)) return
       const clean = normalizeWorkspacePath(filename, rootWorkspacePath)
       if (!clean) return
 

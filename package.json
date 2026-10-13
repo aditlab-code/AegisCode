@@ -20,7 +20,8 @@
     "test": "npm run test:frontend && npm run test:backend",
     "stop": "node scripts/clean-ports.js",
     "clean:ports": "node scripts/clean-ports.js",
-    "lsp:bundle": "node scripts/install-lsp-bundle.js"
+    "lsp:bundle": "node scripts/install-lsp-bundle.js",
+    "mcp:install": "node scripts/install-mcp.js"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

@@ -25,15 +25,21 @@ interface FocusSymbolDetail {
 }
 
 export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
-  const { openFileInGroup, splitEditor, toggleSplitEditor, showToast } =
-    useWorkbenchStore(
-      useShallow((s) => ({
-        openFileInGroup: s.openFileInGroup,
-        splitEditor: s.splitEditor,
-        toggleSplitEditor: s.toggleSplitEditor,
-        showToast: s.showToast,
-      })),
-    )
+  const {
+    openFileInGroup,
+    setCursorPosition,
+    splitEditor,
+    toggleSplitEditor,
+    showToast,
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      openFileInGroup: s.openFileInGroup,
+      setCursorPosition: s.setCursorPosition,
+      splitEditor: s.splitEditor,
+      toggleSplitEditor: s.toggleSplitEditor,
+      showToast: s.showToast,
+    })),
+  )
 
   const parsed = parseGraphTab(filename)
   const isWorkspace = parsed.isWorkspace
@@ -136,12 +142,23 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
           : groupId
 
     openFileInGroup(node.filePath, targetGroup)
+    if (node.lineStart > 0) {
+      setCursorPosition({ line: node.lineStart, column: 1 })
+    }
     showToast(`Jumped to ${node.name} (${node.filePath}:${node.lineStart})`)
   }
 
   function handleFocusNeighborhood(node: UIGraphNode) {
     setFocusedRootId(node.id)
     showToast(`Focused subgraph on ${node.name}`)
+  }
+  function handleDepthChange(newDepth: number) {
+    setDepth(newDepth)
+    const targetId =
+      focusedRootId ?? selectedNode?.id ?? payload?.rootId ?? null
+    if (targetId != null) {
+      setFocusedRootId(targetId)
+    }
   }
 
   function handleSelectSymbolFromSearch(symbol: UIGraphNode) {
@@ -181,7 +198,7 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
         depth={depth}
         layout={layout}
         loading={loading}
-        onDepthChange={setDepth}
+        onDepthChange={handleDepthChange}
         onFit={() => canvasRef.current?.fit()}
         onLayoutChange={setLayout}
         onRefresh={loadGraph}
@@ -191,6 +208,42 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
         onZoomIn={() => canvasRef.current?.zoomIn()}
         onZoomOut={() => canvasRef.current?.zoomOut()}
       />
+
+      {/* Animated Loading Bar */}
+      {loading && (
+        <div className="w-full h-0.5 bg-accent/20 overflow-hidden">
+          <div className="w-1/3 h-full bg-accent animate-pulse" />
+        </div>
+      )}
+
+      {/* Scope & Focus Subgraph Status Bar */}
+      {focusedRootId != null && (
+        <div className="flex items-center justify-between px-3 py-1 bg-surface border-b border-line text-[11px] text-ink-muted">
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+            <span>
+              Neighborhood Scope:{" "}
+              <strong className="text-ink font-mono">
+                {selectedNode?.name}
+              </strong>{" "}
+              ({depth} {depth === 1 ? "Hop" : "Hops"})
+            </span>
+            {payload && payload.nodes.length <= 1 && !loading && (
+              <span className="text-warning text-[10px] ml-1">
+                (Standalone symbol: 0 callers & 0 calls in visible graph)
+              </span>
+            )}
+          </div>
+          <button
+            className="flex items-center gap-1 text-accent hover:underline cursor-pointer font-medium"
+            onClick={() => setFocusedRootId(null)}
+            type="button"
+          >
+            <Icon name="maximize" size={11} />
+            <span>View Full Workspace</span>
+          </button>
+        </div>
+      )}
 
       {/* Truncation / Info Banner */}
       {payload?.truncated && (

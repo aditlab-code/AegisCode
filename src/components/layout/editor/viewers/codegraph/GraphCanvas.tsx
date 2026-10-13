@@ -119,7 +119,6 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
         style: getCytoscapeTheme(true),
         boxSelectionEnabled: false,
         autounselectify: false,
-        wheelSensitivity: 0.25,
         minZoom: 0.2,
         maxZoom: 3.0,
       })
@@ -200,41 +199,64 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
       cy.elements().remove()
       cy.add(elements)
 
-      // Layout Execution with CoSE fallback
+      // Layout Execution with animation
       try {
-        const layoutConfig =
-          layout === "dagre"
-            ? {
-                name: "dagre",
-                rankDir: "TB",
-                nodeSep: 60,
-                rankSep: 80,
-                edgeSep: 30,
-                fit: true,
-                padding: 40,
-                animate: true,
-                animationDuration: 300,
-              }
-            : {
-                name: "cose",
-                animate: true,
-                animationDuration: 300,
-                fit: true,
-                padding: 40,
-                componentSpacing: 70,
-                nodeRepulsion: () => 4000,
-              }
-
-        const l = cy.layout(layoutConfig as cytoscape.LayoutOptions)
-        l.run()
+        if (visibleEdges.length === 0) {
+          // Disconnected nodes without edges: arrange in a clean 2D card grid
+          const cols = Math.min(
+            6,
+            Math.max(2, Math.ceil(Math.sqrt(visibleNodes.length))),
+          )
+          const l = cy.layout({
+            name: "grid",
+            cols,
+            padding: 50,
+            avoidOverlap: true,
+            nodeDimensionsIncludeLabels: true,
+            spacingFactor: 1.6,
+            animate: true,
+            animationDuration: 400,
+            animationEasing: "ease-out-cubic",
+          } as cytoscape.LayoutOptions)
+          l.run()
+        } else if (layout === "dagre") {
+          const l = cy.layout({
+            name: "dagre",
+            rankDir: "TB",
+            nodeSep: 80,
+            rankSep: 100,
+            edgeSep: 40,
+            fit: true,
+            padding: 50,
+            spacingFactor: 1.3,
+          } as cytoscape.LayoutOptions)
+          l.run()
+          cy.animate({
+            fit: { eles: cy.elements(), padding: 50 },
+            duration: 350,
+            easing: "ease-out-cubic",
+          })
+        } else {
+          const l = cy.layout({
+            name: "cose",
+            animate: true,
+            animationDuration: 450,
+            animationEasing: "ease-out-cubic",
+            fit: true,
+            padding: 50,
+            componentSpacing: 80,
+            nodeRepulsion: () => 5000,
+          } as cytoscape.LayoutOptions)
+          l.run()
+        }
       } catch {
-        // Fallback to cose
         const fallback = cy.layout({
-          name: "cose",
-          animate: false,
+          name: "grid",
+          animate: true,
+          animationDuration: 300,
           fit: true,
-          padding: 30,
-        })
+          padding: 40,
+        } as cytoscape.LayoutOptions)
         fallback.run()
       }
     }, [nodes, edges, layout, activeKinds])

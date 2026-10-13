@@ -13,6 +13,8 @@ import {
 } from "../../data/mockData"
 import { detectLanguage, isLspLanguage } from "../../utils/linter"
 import { offloadService } from "../../utils/offloadService"
+import { isGraphTab } from "../../components/layout/editor/viewers/viewerTypes"
+import { isGitDiffTab } from "../../utils/gitDiffTab"
 
 let linterDebounceTimer: ReturnType<typeof setTimeout> | null = null
 let linterAbortController: AbortController | null = null
@@ -870,6 +872,7 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
   },
 
   ensureFileBuffer: (filename: string) => {
+    if (!filename || isGraphTab(filename) || isGitDiffTab(filename)) return
     const clean = normalizeWorkspacePath(filename, get().rootWorkspacePath)
     if (!clean) return
     const current = get().fileBuffers[clean]
@@ -890,6 +893,7 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
   },
 
   fetchBufferSafely: async (filename: string): Promise<void> => {
+    if (!filename || isGraphTab(filename) || isGitDiffTab(filename)) return
     const clean = normalizeWorkspacePath(filename, get().rootWorkspacePath)
     if (!clean) return
 

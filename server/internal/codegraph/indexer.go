@@ -98,6 +98,22 @@ func (e *Engine) initWorkspace(root string) error {
 	e.db = db
 	e.query = NewQueryEngine(db, cleanRoot)
 	e.uiService = NewUIService(db, cleanRoot)
+	// Clean out any historical files in ignored paths (e.g. .venv, node_modules) and orphaned symbols
+	_, _ = db.Exec(`
+		DELETE FROM graph_files 
+		WHERE path LIKE '%.venv%' 
+		   OR path LIKE '%/venv/%' 
+		   OR path LIKE 'venv/%'
+		   OR path LIKE '%.venv/%'
+		   OR path LIKE '%/site-packages/%' 
+		   OR path LIKE 'site-packages/%'
+		   OR path LIKE '%/__pycache__/%'
+		   OR path LIKE '__pycache__/%'
+		   OR path LIKE '%node_modules%';
+		DELETE FROM code_symbols WHERE file_id NOT IN (SELECT id FROM graph_files);
+		DELETE FROM code_edges WHERE source_symbol_id NOT IN (SELECT id FROM code_symbols) 
+		   OR (target_symbol_id IS NOT NULL AND target_symbol_id NOT IN (SELECT id FROM code_symbols));
+	`)
 	// Preload existing file hashes from DB into memory
 	e.hashesMu.Lock()
 	e.fileHashes = make(map[string]string)
@@ -160,15 +176,24 @@ func (e *Engine) SetWorkspace(newRoot string) error {
 
 // isSupportedSourceFile checks if the path has a supported source code extension.
 func isSupportedSourceFile(path string) bool {
-	lower := strings.ToLower(path)
+	norm := filepath.ToSlash(strings.ToLower(path))
+	// Skip any file inside virtual environments, dependencies, or cache directories
+	if strings.Contains(norm, "/.venv/") || strings.HasPrefix(norm, ".venv/") ||
+		strings.Contains(norm, "/venv/") || strings.HasPrefix(norm, "venv/") ||
+		strings.Contains(norm, "/site-packages/") || strings.HasPrefix(norm, "site-packages/") ||
+		strings.Contains(norm, "/__pycache__/") || strings.HasPrefix(norm, "__pycache__/") ||
+		strings.Contains(norm, "/node_modules/") || strings.HasPrefix(norm, "node_modules/") ||
+		strings.Contains(norm, "/vendor/") || strings.HasPrefix(norm, "vendor/") {
+		return false
+	}
 	switch {
-	case strings.HasSuffix(lower, ".go"):
+	case strings.HasSuffix(norm, ".go"):
 		return true
-	case strings.HasSuffix(lower, ".ts"), strings.HasSuffix(lower, ".tsx"):
+	case strings.HasSuffix(norm, ".ts"), strings.HasSuffix(norm, ".tsx"):
 		return true
-	case strings.HasSuffix(lower, ".js"), strings.HasSuffix(lower, ".jsx"):
+	case strings.HasSuffix(norm, ".js"), strings.HasSuffix(norm, ".jsx"):
 		return true
-	case strings.HasSuffix(lower, ".py"):
+	case strings.HasSuffix(norm, ".py"):
 		return true
 	default:
 		return false
@@ -177,10 +202,16 @@ func isSupportedSourceFile(path string) bool {
 
 // isIgnoredDir checks if a directory path should be skipped during walk.
 func isIgnoredDir(name string) bool {
-	switch name {
-	case ".git", "node_modules", "vendor", "dist", "build", ".next", ".cache", "out", "bin":
+	lower := strings.ToLower(name)
+	switch lower {
+	case ".git", "node_modules", "vendor", "dist", "build", ".next", ".cache", "out", "bin",
+		".venv", "venv", "env", ".env", "__pycache__", "site-packages", ".tox", ".pytest_cache",
+		".mypy_cache", ".idea", ".vscode", "target", ".eggs", "eggs":
 		return true
 	default:
+		if strings.HasPrefix(lower, ".venv") || strings.HasPrefix(lower, "__pycache__") {
+			return true
+		}
 		return false
 	}
 }
@@ -315,11 +346,28 @@ func (e *Engine) startColdScan() {
 
 	e.mu.RLock()
 	root := e.workspaceRoot
+	db := e.db
 	e.mu.RUnlock()
 
-	if root == "" {
+	if root == "" || db == nil {
 		return
 	}
+
+	// Purge any previously indexed files in ignored paths
+	e.writeMu.Lock()
+	_, _ = db.Exec(`
+		DELETE FROM graph_files 
+		WHERE path LIKE '%.venv%' 
+		   OR path LIKE '%/venv/%' 
+		   OR path LIKE 'venv/%'
+		   OR path LIKE '%.venv/%'
+		   OR path LIKE '%/site-packages/%' 
+		   OR path LIKE 'site-packages/%'
+		   OR path LIKE '%/__pycache__/%'
+		   OR path LIKE '__pycache__/%'
+		   OR path LIKE '%node_modules%'
+	`)
+	e.writeMu.Unlock()
 
 	var filesToIndex []string
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -388,6 +436,19 @@ func (e *Engine) Reindex(ctx context.Context) error {
 	e.hashesMu.Lock()
 	e.fileHashes = make(map[string]string)
 	e.hashesMu.Unlock()
+
+	e.mu.RLock()
+	db := e.db
+	e.mu.RUnlock()
+	if db != nil {
+		e.writeMu.Lock()
+		_, _ = db.Exec(`
+			DELETE FROM graph_files;
+			DELETE FROM code_symbols;
+			DELETE FROM code_edges;
+		`)
+		e.writeMu.Unlock()
+	}
 
 	go e.startColdScan()
 	return nil

@@ -330,6 +330,7 @@ func QueryGraphStatus(ctx context.Context, db *sql.DB, root, hash, dbPath string
 	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM code_edges`).Scan(&edgesCount)
 
 	st.IndexedFiles = filesCount
+	st.TotalFiles = filesCount
 	st.TotalSymbols = symsCount
 	st.TotalEdges = edgesCount
 	if maxIndexedAt.Valid {
