@@ -10,6 +10,8 @@ import { EditorFindWidget } from "./EditorFindWidget"
 import { EditorEmptyState } from "./EditorEmptyState"
 import { DebugToolbar } from "./DebugToolbar"
 import { isGitDiffTab } from "../../../utils/gitDiffTab"
+import { getViewerTypeForFile } from "./viewers/viewerTypes"
+import { ViewerPane } from "./viewers/ViewerPane"
 
 export function Editor() {
   const {
@@ -45,6 +47,9 @@ export function Editor() {
 
   const hasTabsGroup1 = group1.tabs.length > 0 && Boolean(group1.activeTab)
   const hasTabsGroup2 = group2.tabs.length > 0 && Boolean(group2.activeTab)
+
+  const viewerTypeG1 = getViewerTypeForFile(group1.activeTab)
+  const viewerTypeG2 = getViewerTypeForFile(group2.activeTab)
 
   useEffect(() => {
     if (!isResizing) return
@@ -107,6 +112,12 @@ export function Editor() {
         <div className="editor-panes">
           {isGitDiffTab(group1.activeTab) ? (
             <DiffEditorPane groupId="group1" tab={group1.activeTab} />
+          ) : viewerTypeG1 !== "code" ? (
+            <ViewerPane
+              filename={group1.activeTab}
+              groupId="group1"
+              viewerType={viewerTypeG1}
+            />
           ) : (
             <CodePane
               filename={group1.activeTab}
@@ -149,6 +160,12 @@ export function Editor() {
             <div className="editor-panes">
               {isGitDiffTab(group1.activeTab) ? (
                 <DiffEditorPane groupId="group1" tab={group1.activeTab} />
+              ) : viewerTypeG1 !== "code" ? (
+                <ViewerPane
+                  filename={group1.activeTab}
+                  groupId="group1"
+                  viewerType={viewerTypeG1}
+                />
               ) : (
                 <CodePane
                   filename={group1.activeTab}
@@ -211,6 +228,12 @@ export function Editor() {
             <div className="editor-panes">
               {isGitDiffTab(group2.activeTab) ? (
                 <DiffEditorPane groupId="group2" tab={group2.activeTab} />
+              ) : viewerTypeG2 !== "code" ? (
+                <ViewerPane
+                  filename={group2.activeTab}
+                  groupId="group2"
+                  viewerType={viewerTypeG2}
+                />
               ) : (
                 <CodePane
                   filename={group2.activeTab}

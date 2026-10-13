@@ -4,6 +4,7 @@ import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { useWorkbenchStore, useShallow } from "../../../store"
 import { isGitDiffTab, parseGitDiffTab } from "../../../utils/gitDiffTab"
+import { getViewerTypeForFile } from "./viewers/viewerTypes"
 
 interface ContextMenuData {
   x: number
@@ -265,7 +266,17 @@ export function EditorTabs({
                       ? "text-error shrink-0"
                       : "shrink-0"
                 }
-                name={isDiff ? "git" : isDeletedOnDisk ? "trash" : "code"}
+                name={
+                  isDiff
+                    ? "git"
+                    : isDeletedOnDisk
+                      ? "trash"
+                      : getViewerTypeForFile(tab) === "image"
+                        ? "image"
+                        : getViewerTypeForFile(tab) === "csv"
+                          ? "table"
+                          : "code"
+                }
                 size={14}
               />
               <span

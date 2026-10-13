@@ -267,6 +267,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/workspace/folder", s.handleWorkspaceCreateFolder)
 	mux.HandleFunc("/api/v1/workspace/tree", s.handleWorkspaceTree)
 	mux.HandleFunc("/api/v1/workspace/file", s.handleWorkspaceFile)
+	mux.HandleFunc("/api/v1/workspace/file/raw", s.handleWorkspaceFileRaw)
 	mux.HandleFunc("/api/v1/workspace/rename", s.handleWorkspaceRename)
 	mux.HandleFunc("/api/v1/workspace/move", s.handleWorkspaceMove)
 	mux.HandleFunc("/api/v1/workspace/search", s.handleWorkspaceSearch)
@@ -633,6 +634,41 @@ func (s *Server) handleWorkspaceFile(w http.ResponseWriter, r *http.Request) {
 	default:
 		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func (s *Server) handleWorkspaceFileRaw(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	path := r.URL.Query().Get("path")
+	if strings.TrimSpace(path) == "" {
+		jsonError(w, http.StatusBadRequest, "missing path query parameter")
+		return
+	}
+
+	fullPath, err := s.ws.ResolvePath(path)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	stat, err := os.Stat(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			jsonError(w, http.StatusNotFound, "file not found")
+		} else {
+			jsonError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	if stat.IsDir() {
+		jsonError(w, http.StatusBadRequest, "path is a directory, not a file")
+		return
+	}
+
+	http.ServeFile(w, r, fullPath)
 }
 
 func (s *Server) handleWorkspaceRename(w http.ResponseWriter, r *http.Request) {

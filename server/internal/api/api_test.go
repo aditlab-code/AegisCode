@@ -1361,6 +1361,57 @@ func TestLSPEndpoints(t *testing.T) {
 	}
 }
 
+func TestWorkspaceFileRaw(t *testing.T) {
+	_, handler, tempDir := setupTestServer(t, "")
+	defer os.RemoveAll(tempDir)
+
+	// Create test file
+	sampleContent := "data,header\n1,alpha\n2,beta\n"
+	samplePath := filepath.Join(tempDir, "test.csv")
+	if err := os.WriteFile(samplePath, []byte(sampleContent), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	// 1. GET valid file raw
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspace/file/raw?path=test.csv", nil)
+	rr := executeRequest(handler, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for raw file, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if rr.Body.String() != sampleContent {
+		t.Fatalf("expected body %q, got %q", sampleContent, rr.Body.String())
+	}
+
+	// 2. Traversal attempt
+	traversalReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspace/file/raw?path=../../etc/passwd", nil)
+	rrTrav := executeRequest(handler, traversalReq)
+	if rrTrav.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for traversal, got %d", rrTrav.Code)
+	}
+
+	// 3. Not found file
+	nfReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspace/file/raw?path=nonexistent.png", nil)
+	rrNF := executeRequest(handler, nfReq)
+	if rrNF.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found, got %d", rrNF.Code)
+	}
+
+	// 4. Missing path query parameter
+	missReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspace/file/raw", nil)
+	rrMiss := executeRequest(handler, missReq)
+	if rrMiss.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for missing path, got %d", rrMiss.Code)
+	}
+
+	// 5. Method not allowed (POST)
+	postReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspace/file/raw?path=test.csv", nil)
+	rrPost := executeRequest(handler, postReq)
+	if rrPost.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 Method Not Allowed, got %d", rrPost.Code)
+	}
+}
+
+
 
 
 

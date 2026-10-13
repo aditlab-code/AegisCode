@@ -224,6 +224,68 @@ export function Icon({ name, size = 16, className = "" }: IconProps) {
       </>
     ),
     stop: <rect x="5" y="5" width="14" height="14" rx="2" />,
+    "zoom-in": (
+      <>
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-4-4m-5-7v6m-3-3h6" />
+      </>
+    ),
+    "zoom-out": (
+      <>
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-4-4m-8-5h6" />
+      </>
+    ),
+    "fit-screen": (
+      <>
+        <path d="M4 8V4h4m8 0h4v4m0 8v4h-4M8 20H4v-4" />
+      </>
+    ),
+    table: (
+      <>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M3 10h18M3 15h18M9 4v16M15 4v16" />
+      </>
+    ),
+    image: (
+      <>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <circle cx="8.5" cy="8.5" r="1.5" />
+        <path d="m21 15-5-5L5 20" />
+      </>
+    ),
+    bold: (
+      <path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6Zm0 8h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6Z" />
+    ),
+    italic: <path d="M19 4h-9m4 16H5m9-16L10 20" />,
+    heading: <path d="M6 4v16M18 4v16M6 12h12" />,
+    list: (
+      <>
+        <line x1="8" y1="6" x2="21" y2="6" />
+        <line x1="8" y1="12" x2="21" y2="12" />
+        <line x1="8" y1="18" x2="21" y2="18" />
+        <line x1="3" y1="6" x2="3.01" y2="6" />
+        <line x1="3" y1="12" x2="3.01" y2="12" />
+        <line x1="3" y1="18" x2="3.01" y2="18" />
+      </>
+    ),
+    link: (
+      <>
+        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+      </>
+    ),
+    eye: (
+      <>
+        <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z" />
+        <circle cx="12" cy="12" r="3" />
+      </>
+    ),
+    "wrap-text": (
+      <>
+        <path d="M3 6h18M3 12h15a3 3 0 0 1 0 6h-4m0 0 2-2m-2 2 2 2M3 18h7" />
+      </>
+    ),
   }
 
   return (

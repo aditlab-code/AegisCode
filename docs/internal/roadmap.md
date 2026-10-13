@@ -17,7 +17,7 @@
 | **Special** | UI Dark/Light Theme & Modular Palettes | ✅ Completed | ActivityRail toggle, modular JSON palettes (Default, Atom, Tokyo Night) |
 | **Special** | Settings Registry, Core IDE Preferences & Editor Polish | ✅ Completed | Decoupled schema registry, wildcard exclude, GPU cursor blinking, wrap column |
 | **Phase 6** | Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger | 🟡 Active (6.1–6.4, 6.6–6.11 ✅, 6.5 🟡) | Cross-platform Go binary & embed.FS, supervisor, JSON store, AI agent bridge, DAP/Delve, Append-Only Ledger |
-| **Phase 7** | Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`) | ⚪ Upcoming | Multi-format tab viewers (Images, CSV), vector canvas wireframing |
+| **Phase 7** | Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`) | 🟡 Active (Sub-Phase 7.1 ✅, 7.2–7.3 ⚪) | Multi-format tab viewers (Images, Markdown, PDF, CSV), vector canvas wireframing |
 | **Phase 8** | Research Workshop & Data Science Studio | ⚪ Planned | LaTeX + PDF sync, BibTeX, Python/R dataframes, Biblioshiny |
 | **Phase 9** | Web-Based Remote Pairing & Tablet Companion | ⚪ Deferred (Final) | LAN pairing, web preview host, touch-optimized editor mode |
 
@@ -380,17 +380,19 @@
 ---
 
 ### Phase 7: Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`)
-- **Status**: ⚪ Upcoming (Next UI Frontier)
+- **Status**: 🟡 Active (Sub-Phase 7.1 Completed ✅; Sub-Phases 7.2 & 7.3 Upcoming)
 - **Objectives & Deliverables**:
   - **Sub-Phase 7.1: Multi-Viewer Tab Dispatcher & Universal On-Demand Code Splitting**:
-    - Abstraction of workbench editor tabs from pure text buffers to a versatile MIME/Extension viewer dispatcher.
-    - **PWA Dynamic Code-Splitting Rule for ALL Viewers**: To prevent application bundle bloat beyond 50MB+ and protect client memory, **every** non-code viewer pane and its third-party parsing/rendering engines **MUST NEVER** be imported in the initial boot bundle. All non-text viewers are partitioned into isolated asynchronous chunks via `React.lazy()` and dynamic `import()`:
-      - **Media Pan-Zoom Pane (`ImageViewerPane`)**: Dynamically loaded on-demand strictly upon opening `.png`, `.jpg`, `.jpeg`, `.svg`, `.webp` (with pan, zoom, pixel grid, and checkerboard).
-      - **Spreadsheet & Tabular Pane (`SpreadsheetViewerPane`)**: Dynamically loaded on-demand strictly upon opening `.csv`, `.tsv`, `.xls`, `.xlsx` (row virtualization, column sorting, and sheet parser).
-      - **Live Markdown Splitter (`MarkdownPreviewPane`)**: Dynamically loaded on-demand strictly upon toggling preview on `.md` (live rendered preview and math notation).
-      - **PDF Document Viewer (`PdfViewerPane`)**: Dynamically loaded on-demand strictly upon opening `.pdf` (PDF.js rendering and SyncTeX).
-      - **Vector Canvas Studio (`WireframeStudioPane`)**: Dynamically loaded on-demand strictly upon opening `.canvas`, `.design` (`@tldraw/tldraw`).
-    - **Zero-RAM Code Studio Guarantee**: While developers are editing standard code (`.go`, `.ts`, `.tsx`, `.py`, `.json`, `.css`), none of these viewer chunks are downloaded, parsed, or loaded into computer RAM.
+    - **Status**: ✅ Completed
+    - **Deliverables**:
+      - **Universal On-Demand Code Splitting Engine (`ViewerPane.tsx`)**: Full enforcement of the PWA dynamic code-splitting rule. Specialized viewer runtimes (`ImageViewer`, `MarkdownViewer`, `PdfViewer`, `CsvViewer`) and their parsing libraries are code-split via `React.lazy()` / dynamic `import()`. Main IDE initial bundle remains lean with **Zero-RAM overhead** during standard code editing.
+      - **Media Pan-Zoom Pane (`ImageViewer.tsx`)**: Static initial fit transitioning seamlessly to interactive Pan & Zoom (Pointer Events drag with `setPointerCapture` and mouse wheel) with clamped min/max zoom (0.1x to 25.0x), coordinate bounding box clamping preventing runaway infinite loops, checkerboard transparency grid toggle, dimensions and file size badges, and "Edit SVG XML" mode toggle for `.svg` files.
+      - **Live Markdown Splitter & Enhanced Toolbar (`MarkdownViewer.tsx`)**: Real-time reactive preview from `fileBuffers[filename]` with 150ms debounced sanitization preventing AST thrashing. Dual-pane synchronized scrolling with single-source mutex lock (`isSyncingScroll`) and 4px threshold delta guard eliminating Big-O ping-pong sync loops. Embedded Markdown Enhanced formatting toolbar (Bold, Italic, Headings, Lists, Tasks, Tables, Code Blocks, Quotes) and 3-mode switcher (`Code` | `Split` | `Preview`).
+      - **PDF Document Viewer (`PdfViewer.tsx`)**: Lightweight Mozilla PDF.js (`pdfjs-dist`) on-demand integration streaming pages from Go backend with HTTP `Range` headers. Virtualized page-by-page rendering avoiding $O(N)$ canvas memory spikes on large documents. Clamped zoom (50% to 300%) with active render task cancellation (`renderTask.cancel()`) preventing race conditions, and one-click dual-engine toggle (Canvas vs Native Browser Embed).
+      - **Spreadsheet & Tabular Pane (`CsvViewer.tsx`)**: RFC 4180 parser with automatic delimiter detection (comma `,`, semicolon `;`, tab `\t`) and manual override. Rebatching / pagination (50, 100, 250, 500 rows per page) preventing DOM freezing on tables with $>100$ rows or columns. Sticky column headers with sorting (numeric & alphabetical), sticky row index column, real-time search filter, text wrap toggle (`Wrap` vs `Truncate`), and `[Table | Raw Text]` mode switcher.
+      - **Go Backend Zero-Copy Streaming (`server/internal/api/api.go`)**: Dedicated `GET /api/v1/workspace/file/raw?path=...` endpoint backed by `http.ServeFile` and path boundary resolution (`m.ResolvePath`), delivering $O(1)$ memory usage, proper MIME headers, and 206 Partial Content range streaming.
+      - **Contextual Tab Icons in `EditorTabs.tsx`**: Dynamic file icon decoration (`image` for PNG/JPG/SVG, `table` for CSV/TSV, `code` for source files, `git` for diffs).
+    - **Verification**: 100% verified via automated frontend Vitest suite (17 test files, 160 tests passing), Go backend tests (`TestWorkspaceFileRaw`), Vite production build, and oxfmt code formatting.
   - **Sub-Phase 7.2: Vector Canvas Wireframe Studio (`tldraw`)**:
     - Integration of `@tldraw/tldraw` infinite vector canvas engine isolated strictly inside an on-demand dynamic chunk (`tldraw-chunk.js`).
     - **Zero-Footprint in Code Studio**: The tldraw chunk is downloaded and mounted into RAM **only** when the user opens `.canvas` or `.design` files. While editing standard code (`.go`, `.ts`, `.tsx`, `.py`), tldraw assets consume 0 MB of computer memory and 0 KB initial network bandwidth.

@@ -106,10 +106,37 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
 ### 4. Workbench Text Editor (`editor/`)
 - **Path**: [`src/components/layout/editor/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/editor)
 - **Primary Components**: `Editor.tsx`, `EditorTabs.tsx`, `EditorBreadcrumbs.tsx`, `CodePane.tsx`, `DiffEditorPane.tsx`, `Minimap.tsx`, `EditorFindWidget.tsx`, `DiagnosticHoverCard.tsx`, `editor.css`
+- **Tab View Specialized Viewers Sub-module (`editor/viewers/`)**: `ViewerPane.tsx`, `ImageViewer.tsx`, `MarkdownViewer.tsx`, `PdfViewer.tsx`, `CsvViewer.tsx`, `viewerTypes.ts`, `viewers.css`
 - **Visual Design**:
   - **Dual Window Groups (Split Pane)**: Group 1 and Group 2 side-by-side or stacked, divided by a draggable splitter sash.
   - **Editor Tabs**: Tab bar supporting drag-and-drop (HTML5 native DND) between groups, dirty unsaved indicator dot, close button.
+    - **Contextual Tab Icons**: Displays semantic file icons dynamically (`image` for PNG/JPG/SVG, `table` for CSV/TSV, `git` for diff tabs, `trash` for deleted files, `code` for source files).
     - **Git Diff Tab Integration**: Special diff tab format (`git-diff:<file>?staged=true...`) parsed via [`src/utils/gitDiffTab.ts`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/utils/gitDiffTab.ts), rendering Git branch icon and semantic titles (`file (Working Tree)`, `file (Index)`, `file (commit)`).
+  - **Universal On-Demand Code Splitting for Non-Code Viewers (`ViewerPane.tsx`)**:
+    - Specialized tab viewers (`ImageViewer`, `MarkdownViewer`, `PdfViewer`, `CsvViewer`) are partitioned into isolated asynchronous chunks via `React.lazy()` and dynamic `import()`.
+    - Wrapped in `<Suspense fallback={<ViewerSkeleton />}>` with zero footprint during standard code editing.
+  - **Dynamic Pan-Zoom Image Viewer (`ImageViewer.tsx`)**:
+    - Displays static image centered with natural aspect ratio on initial load.
+    - Seamlessly transitions to dynamic pan & zoom via mouse wheel and pointer dragging with `setPointerCapture`.
+    - Clamped constraints: min zoom 0.1x (10%), max zoom 25.0x (2500%), and container bounding box clamping preventing coordinate runaway and infinite loops.
+    - Toolbar controls: Zoom In, Zoom Out, Fit to Window, 1:1 Reset, Checkerboard Transparency Grid toggle, Dimensions ($W \times H$) and file size badges, and "Edit SVG XML" mode toggle for `.svg` files.
+  - **Markdown Live Preview & Enhanced Toolbar (`MarkdownViewer.tsx`)**:
+    - Real-time reactive preview subscribing to `fileBuffers[filename]`. Debounced sanitization (150ms) prevents AST thrashing and DOM infinite loops during fast keystrokes.
+    - **Anti-Big-O Synchronized Scrolling**: Dual-pane scroll synchronization utilizing a single-source mutex lock (`isSyncingScroll`) and 4px threshold delta guard, completely eliminating infinite scroll ping-pong feedback loops.
+    - **Markdown Enhanced Toolbar**: Embedded top toolbar with quick formatting actions (Bold `**`, Italic `*`, H2, H3, Lists, Tasks `- [ ]`, Hyperlinks, Tables, Code Blocks, Blockquotes) operating cleanly on editor buffers.
+    - **3-Mode Switcher**: One-click toggling between `Code` (Editor only), `Split` (Side-by-side with draggable splitter), and `Preview` (Rendered preview only).
+  - **Lightweight PDF.js Document Viewer (`PdfViewer.tsx`)**:
+    - On-demand `pdfjs-dist` integration streaming pages from Go backend (`GET /api/v1/workspace/file/raw`) supporting HTTP `Range` headers.
+    - **Virtualized Page-by-Page Rendering**: Only active page is rendered onto HTML5 canvas, preventing $O(N)$ canvas memory exhaustion on multi-hundred-page documents.
+    - **Clamped Zoom & In-Flight Cancellation**: Zoom range 50% to 300% (0.25 steps) with active render task cancellation (`renderTask.cancel()`) preventing race condition collisions.
+    - **Dual-Engine Toggle**: One-click switch between custom Canvas view and browser native `<iframe />` embed.
+  - **Data Table CSV Viewer (`CsvViewer.tsx`)**:
+    - Delimiter auto-detection (comma `,`, semicolon `;`, tab `\t`) with manual delimiter selector override.
+    - Robust RFC 4180 parsing supporting quoted fields with embedded delimiters, newlines, and escaped quotes (`""`).
+    - **Rebatching & Pagination for Large Tables (> 100 rows)**: Batch pagination (50, 100, 250, 500 rows per page) keeping DOM lightweight even on 10,000+ row datasets.
+    - Sticky headers with column letters (A, B, C...) and interactive sorting (numeric and alphabetical).
+    - Sticky row numbers column (1, 2, 3...).
+    - Real-time search filter across all cells, text wrap toggle (`Wrap` vs `Truncate`), and `[Table | Raw Text]` mode switcher.
   - **In-Editor Side-by-Side Git Diff (`DiffEditorPane.tsx`)**:
     - Replaces over-engineered popup modals with a native in-editor diff view matching VS Code.
     - **Primary Review Gate for AI Code Generation (Sub-Phase 6.10)**: When users click `[Apply to Editor]` on chat code blocks, changes write to disk and automatically open side-by-side in `DiffEditorPane.tsx` without redundant temporary buffers. Users accept via native **Stage** / **Commit** or reject via native **Discard Changes** (with automatic buffer resynchronization to clean HEAD).
