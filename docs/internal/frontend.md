@@ -76,8 +76,14 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
 
 ### 3. Sidebar (`sidebar/`)
 - **Path**: [`src/components/layout/sidebar/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/sidebar)
-- **Primary Components**: `Sidebar.tsx`, `ExplorerPanel.tsx`, `SearchPanel.tsx`, `SourceControlPanel.tsx`, `sidebar.css`
+- **Primary Components**: `Sidebar.tsx`, `ExplorerPanel.tsx`, `SearchPanel.tsx`, `SourceControlPanel.tsx`, `DebugSidePanel.tsx`, `sidebar.css`
 - **Visual Design & Responsive Architecture**:
+  - **Run & Debug Panel (`DebugSidePanel.tsx`)**:
+    - **Session Controls Header**: Displays current session status badge (`idle`, `running`, `paused: reason`), detected target file (`.go`, `.py`, `.cpp`), and quick Start Debugging (`F5`) / Pause / Continue / Stop controls.
+    - **Vertical Accordions (VS Code Standard)**:
+      - **Variables**: Collapsible accordion displaying in-scope variables with names in accent color, types, and values.
+      - **Call Stack**: Collapsible accordion displaying active stack frames with clickable file and line links that immediately navigate editor panes and set active debug line.
+      - **Breakpoints**: Collapsible accordion listing active breakpoints (`file.go:line`), with one-click navigation to editor lines, individual breakpoint delete hover action, and "Clear All Breakpoints" action in the section title bar.
   - **Dimensions & Drag Sash**: Default width **260px**, minimum width **220px**, maximum width **460px** bounded by an interactive vertical drag sash (`ResizeSash.tsx`). Uses a cumulative mouse movement ref (`dragWidthRef`) starting from `onResizeStart` to ensure reliable continuous drag tracking without clamp traps.
   - **Auto-Collapse**: Dragging the sash leftwards below the threshold (**< 160px**) automatically triggers an instant collapse (`setSidebarOpen(false)`). Reopening the sidebar via Activity Rail or shortcut (`Ctrl+B`) smoothly restores the previous valid width (or default 260px).
   - **Explorer Panel**:
@@ -165,13 +171,13 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
 
 ### 5. Bottom Panel (`bottom-panel/`)
 - **Path**: [`src/components/layout/bottom-panel/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/bottom-panel)
-- **Primary Components**: `BottomPanel.tsx`, `TerminalView.tsx`, `ProblemsView.tsx`, `OutputView.tsx`, `DebugView.tsx`, `bottom-panel.css`
+- **Primary Components**: `BottomPanel.tsx`, `TerminalView.tsx`, `ProblemsView.tsx`, `OutputView.tsx`, `DebugConsoleView.tsx`, `bottom-panel.css`
 - **Visual Design & Interactive Architecture**:
   - **VS Code-Style Hide / Minimize**: Tombol close `[x]` pada header panel atau pintasan keyboard `Ctrl+J` hanya menyembunyikan (*hide / minimize*) drawer ke mini dock strip permanen 28px di atas Status Bar, tanpa mematikan proses PTY shell atau memutuskan koneksi SSE.
-  - **Interactive 28px Mini Dock Strip (`.bottom-panel-dock`)**: Saat panel diminimalkan, strip 28px menampilkan tab-tab interaktif (`Problems`, `Output`, `Debug`, `Terminal`), badge hitungan diagnostik, status live runner (`SSE active`), dan tombol expand `chevron-up`. Mengklik tab manapun langsung membuka kembali panel ke tab tersebut.
+  - **Interactive 28px Mini Dock Strip (`.bottom-panel-dock`)**: Saat panel diminimalkan, strip 28px menampilkan tab-tab interaktif (`Terminal`, `Problems`, `Output`, `Debug Console`), badge hitungan diagnostik, status live runner (`SSE active`), dan tombol expand `chevron-up`. Mengklik tab manapun langsung membuka kembali panel ke tab tersebut.
   - **DOM-Persistent Terminal Architecture**: `<BottomPanel />` selalu terpasang di DOM dan merender `<TerminalView />` dengan CSS `style={{ display: panelOpen ? undefined : "none" }}`. Ini menjamin xterm instance dan SSE EventSource tidak pernah ter-unmount, tidak reconnect, dan mempertahankan live output streaming 100% tanpa jeda (0ms lag).
   - **Dynamic Theme Re-Hydration**: Hook sinkronisasi reaktif `useEffect([theme, themePalette])` di `TerminalView.tsx` mengeksekusi `term.options.theme = getDynamicTerminalTheme(palette, mode)` secara instan (0ms snap) dengan palet hex konkret dan kontras warna ANSI yang tepat, sehingga canvas xterm langsung berganti warna seketika saat tema beralih antara Dark, Light, Atom One, dan Tokyo Night.
-  - **Standardized Canvas Background**: Seluruh area konten panel bawah (`.bottom-panel-content`, `.terminal-session`, `.lint-output`, `.problems-container`, `DebugView`) menggunakan background canvas (`var(--color-canvas)` / `bg-canvas`) dengan teks `var(--color-ink)`, sementara header tab panel dan mini dock strip tetap menggunakan `var(--color-surface)` untuk memisahkan chrome dan konten secara elegan.
+  - **Standardized Canvas Background**: Seluruh area konten panel bawah (`.bottom-panel-content`, `.terminal-session`, `.lint-output`, `.problems-container`, `DebugConsoleView`) menggunakan background canvas (`var(--color-canvas)` / `bg-canvas`) dengan teks `var(--color-ink)`, sementara header tab panel dan mini dock strip tetap menggunakan `var(--color-surface)` untuk memisahkan chrome dan konten secara elegan.
   - **Refreshed Toolbar Actions**:
     - **Session Shell Selector**: Dropdown pemilihan shell (`zsh`, `bash`, `fish`, `sh`) dan sesi aktif.
     - **New Session (`+`)**: Membuat sesi terminal baru via `createTerminalSession`.
@@ -182,7 +188,7 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
     - **Hide Panel (`close` ✕)**: Menyembunyikan drawer ke mini dock strip (`setPanelOpen(false)`).
   - **Problems View**: Tabel diagnostik dengan filter chip (All, Errors, Warnings), jump-to-code saat baris diklik, dan tombol "Ask AI" untuk integrasi langsung ke AI chat drawer.
   - **Output View**: Pilihan channel (Server, Tasks, Linter, Git) dengan streaming log real-time melalui SSE endpoint `/api/v1/events/logs`.
-  - **Debug View**: Visualisasi sesi Delve DAP debugger aktif, menampilkan status runtime, panel Variables inspection, Call Stack frames, dan tombol Start Debugging (F5).
+  - **Debug Console View (`DebugConsoleView.tsx`)**: Menggantikan tampilan debug lama sesuai standar VS Code. Menampilkan streaming real-time event log DAP (`stdout`, `stderr`, lifecycle events), filter teks, tombol copy dan clear console, serta baris interactive REPL input (`> `) di bagian bawah untuk evaluasi ekspresi saat proses berhenti/berjalan.
 
 ### 6. AEGIS AI Agent Drawer (`chat/`)
 - **Path**: [`src/components/layout/chat/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/chat)

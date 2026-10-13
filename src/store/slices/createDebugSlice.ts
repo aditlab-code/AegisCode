@@ -1,5 +1,5 @@
 import type { SliceCreator, DebugSlice } from "../types"
-import type { DebugState } from "../../types/workbench"
+import type { DebugState, DebugConsoleMessage } from "../../types/workbench"
 import {
   startDebugSession,
   stepDebug,
@@ -17,6 +17,24 @@ export const createDebugSlice: SliceCreator<DebugSlice> = (set, get) => ({
     status: "idle",
   },
   isDebugging: false,
+  debugConsoleLogs: [],
+
+  addDebugConsoleLog: (category, message) => {
+    const time = new Date().toTimeString().slice(0, 8)
+    const newEntry: DebugConsoleMessage = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      category,
+      message,
+      timestamp: time,
+    }
+    set((s) => ({
+      debugConsoleLogs: [...s.debugConsoleLogs, newEntry],
+    }))
+  },
+
+  clearDebugConsole: () => {
+    set({ debugConsoleLogs: [] })
+  },
 
   startDebugging: async (program?: string) => {
     const state = get()
@@ -71,7 +89,11 @@ export const createDebugSlice: SliceCreator<DebugSlice> = (set, get) => ({
       }
 
       get().setPanelOpen(true)
-      get().setActiveBottomTab("Debug")
+      get().setActiveBottomTab("Debug Console")
+      get().addDebugConsoleLog(
+        "info",
+        `Debug session started for ${target || "active program"}`,
+      )
       const newState: DebugState = res.state || {
         active: true,
         status: "running",
@@ -125,6 +147,7 @@ export const createDebugSlice: SliceCreator<DebugSlice> = (set, get) => ({
         isDebugging: false,
       })
       get().setActiveDebugLine(null)
+      get().addDebugConsoleLog("info", "Debug session terminated")
       get().showToast("Debug session terminated")
       return true
     } catch (err: unknown) {

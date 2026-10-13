@@ -18,7 +18,7 @@ import {
 import type { BottomTab, OutputChannel } from "../../../types/workbench"
 import { ProblemsView } from "./ProblemsView"
 import { OutputView } from "./OutputView"
-import { DebugView } from "./DebugView"
+import { DebugConsoleView } from "./DebugConsoleView"
 
 const TerminalView = lazy(() => import("./TerminalView"))
 
@@ -439,7 +439,7 @@ export function BottomPanel() {
         {activeBottomTab === "Output" && (
           <OutputView channel={outputChannel} logs={outputLogs} />
         )}
-        {activeBottomTab === "Debug" && <DebugView />}
+        {activeBottomTab === "Debug Console" && <DebugConsoleView />}
       </div>
     </section>
   )

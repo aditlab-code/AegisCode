@@ -9,6 +9,7 @@ import type {
   ChatSession,
   ContextItem,
   CursorPosition,
+  DebugConsoleMessage,
   DebugState,
   DiagnosticItem,
   EditorGroupState,
@@ -393,6 +394,12 @@ export interface ChatSlice {
 export interface DebugSlice {
   debugState: DebugState
   isDebugging: boolean
+  debugConsoleLogs: DebugConsoleMessage[]
+  addDebugConsoleLog: (
+    category: DebugConsoleMessage["category"],
+    message: string,
+  ) => void
+  clearDebugConsole: () => void
   startDebugging: (program?: string) => Promise<boolean>
   stepDebugging: (
     action: "continue" | "stepOver" | "stepIn" | "stepOut" | "pause",

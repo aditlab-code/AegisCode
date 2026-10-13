@@ -27,7 +27,7 @@ export const DEFAULT_BOTTOM_TAB_ORDER: BottomTab[] = [
   "Terminal",
   "Problems",
   "Output",
-  "Debug",
+  "Debug Console",
 ]
 
 // Pure transition functions
@@ -60,17 +60,27 @@ export function loadStoredBottomTabOrder(): BottomTab[] {
   try {
     const raw = window.localStorage.getItem("aegis_bottom_panel_tab_order")
     if (raw) {
-      const parsed = JSON.parse(raw) as BottomTab[]
-      if (
-        Array.isArray(parsed) &&
-        parsed.includes("Terminal") &&
-        parsed.includes("Problems") &&
-        parsed.includes("Output")
-      ) {
-        if (!parsed.includes("Debug")) {
-          parsed.push("Debug")
+      const parsed = JSON.parse(raw) as (string | BottomTab)[]
+      if (Array.isArray(parsed)) {
+        const migrated = parsed.map((t) =>
+          t === "Debug" ? "Debug Console" : t,
+        ) as BottomTab[]
+        if (
+          migrated.includes("Terminal") &&
+          migrated.includes("Problems") &&
+          migrated.includes("Output")
+        ) {
+          if (!migrated.includes("Debug Console")) {
+            migrated.push("Debug Console")
+          }
+          return migrated.filter(
+            (t): t is BottomTab =>
+              t === "Terminal" ||
+              t === "Problems" ||
+              t === "Output" ||
+              t === "Debug Console",
+          )
         }
-        return parsed
       }
     }
   } catch {

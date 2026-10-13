@@ -40,6 +40,8 @@ export function CommandPalette() {
     openFileInPane,
     setCursorPosition,
     serverConnected,
+    setActiveBottomTab,
+    setPanelOpen,
   } = useWorkbenchStore(
     useShallow((s) => ({
       commandPaletteOpen: s.commandPaletteOpen,
@@ -65,6 +67,8 @@ export function CommandPalette() {
       openFileInPane: s.openFileInPane,
       setCursorPosition: s.setCursorPosition,
       serverConnected: s.serverConnected,
+      setActiveBottomTab: s.setActiveBottomTab,
+      setPanelOpen: s.setPanelOpen,
     })),
   )
 
@@ -110,6 +114,16 @@ export function CommandPalette() {
         action: () => {
           setActiveActivity("Debug")
           setSidebarOpen(true)
+        },
+      },
+      {
+        id: "view-debug-console",
+        label: "View: Show Debug Console",
+        detail: "Interactive REPL and DAP output logging",
+        icon: "debug",
+        action: () => {
+          setActiveBottomTab("Debug Console")
+          setPanelOpen(true)
         },
       },
       {
@@ -223,6 +237,8 @@ export function CommandPalette() {
     runFileInTerminal,
     startDebugging,
     setActiveActivity,
+    setActiveBottomTab,
+    setPanelOpen,
     setSettingsModalOpen,
     setSidebarOpen,
     showToast,

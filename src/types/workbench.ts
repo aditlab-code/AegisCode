@@ -353,7 +353,14 @@ export interface MenuGroup {
   items: [string, string, string][]
 }
 
-export type BottomTab = "Terminal" | "Problems" | "Output" | "Debug"
+export type BottomTab = "Terminal" | "Problems" | "Output" | "Debug Console"
+
+export interface DebugConsoleMessage {
+  id: string
+  category: "stdout" | "stderr" | "info" | "input" | "error"
+  message: string
+  timestamp: string
+}
 
 export interface TerminalSession {
   id: string

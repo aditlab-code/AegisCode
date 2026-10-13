@@ -58,7 +58,23 @@ export function useWorkbenchLifecycle() {
           } else if (event.state.status === "running") {
             s.setActiveDebugLine(null)
           }
+        }
+        if (event.type === "debug:output" || event.output) {
+          const cat =
+            event.category === "stderr"
+              ? "stderr"
+              : event.category === "stdout"
+                ? "stdout"
+                : "info"
+          s.addDebugConsoleLog(cat, event.output || "")
         } else if (event.type === "debug:stopped") {
+          const stopDetail = event.state?.stopReason
+            ? ` (${event.state.stopReason})`
+            : ""
+          const location = event.currentFile
+            ? ` at ${event.currentFile.split("/").pop()}:${event.currentLine || ""}`
+            : ""
+          s.addDebugConsoleLog("info", `Paused${location}${stopDetail}`)
           if (event.currentFile && event.currentLine) {
             const clean = normalizeWorkspacePath(
               event.currentFile,
@@ -73,8 +89,10 @@ export function useWorkbenchLifecycle() {
           }
         } else if (event.type === "debug:continued") {
           s.setActiveDebugLine(null)
+          s.addDebugConsoleLog("info", "Resumed execution")
         } else if (event.type === "debug:terminated") {
           s.setActiveDebugLine(null)
+          s.addDebugConsoleLog("info", "Debug session terminated")
           useWorkbenchStore.setState({
             debugState: { active: false, status: "terminated" },
             isDebugging: false,

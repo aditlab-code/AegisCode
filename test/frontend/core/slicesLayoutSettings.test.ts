@@ -50,18 +50,18 @@ describe("createLayoutSlice", () => {
       "Terminal",
       "Problems",
       "Output",
-      "Debug",
+      "Debug Console",
     ])
 
     expect(toggleThemeLogic("dark")).toBe("light")
     expect(toggleThemeLogic("light")).toBe("dark")
 
-    const tabs = ["Terminal", "Problems", "Output", "Debug"] as const
+    const tabs = ["Terminal", "Problems", "Output", "Debug Console"] as const
     expect(reorderBottomTabsLogic([...tabs], 0, 2)).toEqual([
       "Problems",
       "Output",
       "Terminal",
-      "Debug",
+      "Debug Console",
     ])
   })
 

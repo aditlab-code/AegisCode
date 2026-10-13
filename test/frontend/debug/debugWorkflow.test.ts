@@ -358,7 +358,7 @@ describe("DAP Debugger (Delve) Frontend Workflow", () => {
   })
 
   describe("Bottom Panel Tab Order Integration", () => {
-    it("auto-migrates existing 3-tab layout by appending 'Debug'", () => {
+    it("auto-migrates existing 3-tab layout by appending 'Debug Console'", () => {
       const storage = new Map<string, string>()
       storage.set(
         "aegis_bottom_panel_tab_order",
@@ -373,14 +373,19 @@ describe("DAP Debugger (Delve) Frontend Workflow", () => {
 
       try {
         const order = loadStoredBottomTabOrder()
-        expect(order).toContain("Debug")
-        expect(order).toEqual(["Terminal", "Problems", "Output", "Debug"])
+        expect(order).toContain("Debug Console")
+        expect(order).toEqual([
+          "Terminal",
+          "Problems",
+          "Output",
+          "Debug Console",
+        ])
       } finally {
         ;(globalThis as any).window = prevWindow
       }
     })
 
-    it("preserves customized tab order containing 'Debug'", () => {
+    it("preserves customized tab order and migrates legacy 'Debug' to 'Debug Console'", () => {
       const storage = new Map<string, string>()
       storage.set(
         "aegis_bottom_panel_tab_order",
@@ -395,7 +400,12 @@ describe("DAP Debugger (Delve) Frontend Workflow", () => {
 
       try {
         const order = loadStoredBottomTabOrder()
-        expect(order).toEqual(["Debug", "Output", "Terminal", "Problems"])
+        expect(order).toEqual([
+          "Debug Console",
+          "Output",
+          "Terminal",
+          "Problems",
+        ])
       } finally {
         ;(globalThis as any).window = prevWindow
       }
