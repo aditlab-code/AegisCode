@@ -544,7 +544,7 @@
 /* Floating Context Menu */
 .explorer-context-menu {
   position: fixed;
-  z-index: 9999;
+  z-index: var(--z-popover, 100);
   min-width: 170px;
   padding: 4px;
   background: var(--color-surface-raised);

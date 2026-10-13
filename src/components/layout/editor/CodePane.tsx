@@ -10,6 +10,7 @@ import {
   type ConflictResolutionChoice,
 } from "../../../utils/gitConflict"
 import { CMEditor } from "./CMEditor"
+import { EditorContextMenu } from "./EditorContextMenu"
 
 interface CodePaneProps {
   paneId: "primary" | "secondary"
@@ -61,6 +62,8 @@ export function CodePane({
     toggleBreakpoint,
     activeDebugLine,
     openFileInPane,
+    cursorPosition,
+    selection,
   } = useWorkbenchStore(
     useShallow((s) => ({
       buffer: s.fileBuffers[filename],
@@ -83,6 +86,8 @@ export function CodePane({
       toggleBreakpoint: s.toggleBreakpoint,
       activeDebugLine: s.activeDebugLine,
       openFileInPane: s.openFileInPane,
+      cursorPosition: s.cursorPosition,
+      selection: s.selection,
     })),
   )
 
@@ -99,6 +104,10 @@ export function CodePane({
   const renderWhitespace = settings?.editor?.renderWhitespace ?? "selection"
 
   const paneRef = useRef<HTMLDivElement>(null)
+  const [contextMenu, setContextMenu] = useState<{
+    x: number
+    y: number
+  } | null>(null)
   const content = buffer?.content ?? ""
   const isDirty = buffer?.isDirty ?? false
   const lines = useMemo(() => content.split("\n"), [content])
@@ -353,6 +362,10 @@ export function CodePane({
         data-cursor-blinking={cursorBlinking}
         data-render-whitespace={renderWhitespace}
         data-word-wrap={wordWrap}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          setContextMenu({ x: e.clientX, y: e.clientY })
+        }}
         role="region"
         style={
           {
@@ -377,6 +390,7 @@ export function CodePane({
             onCursorChange={(line, col) =>
               setCursorPosition({ line, column: col })
             }
+            onSelectionChange={(sel) => setSelection(sel)}
             onNavigateDefinition={(targetPath, line, col) => {
               openFileInPane(targetPath)
               setCursorPosition({ line, column: col })
@@ -402,6 +416,17 @@ export function CodePane({
           />
         )}
       </div>
+
+      {contextMenu && (
+        <EditorContextMenu
+          filename={filename}
+          line={cursorPosition.line}
+          onClose={() => setContextMenu(null)}
+          selectedText={selection.selectedText}
+          x={contextMenu.x}
+          y={contextMenu.y}
+        />
+      )}
     </div>
   )
 }

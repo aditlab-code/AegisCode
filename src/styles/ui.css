@@ -33,7 +33,7 @@
 
 .action-toast {
   position: fixed;
-  z-index: 50;
+  z-index: var(--z-toast, 1000);
   right: 14px;
   bottom: 36px;
   display: flex;

@@ -3,11 +3,12 @@ import { IconButton } from "../../ui/IconButton"
 import { useWorkbenchStore, useShallow } from "../../../store"
 import type { ActivityType } from "../../../types/workbench"
 
-const activities: [name: "explorer" | "search" | "git", label: ActivityType][] =
+const activities: [name: "explorer" | "search" | "git" | "debug", label: ActivityType][] =
   [
     ["explorer", "Explorer"],
     ["search", "Search"],
     ["git", "Source Control"],
+    ["debug", "Debug"],
   ]
 
 export function ActivityRail() {

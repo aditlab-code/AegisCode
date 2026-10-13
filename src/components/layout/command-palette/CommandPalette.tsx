@@ -31,6 +31,10 @@ export function CommandPalette() {
     openFind,
     runFileInTerminal,
     startDebugging,
+    files,
+    tabs,
+    openFileInPane,
+    setCursorPosition,
   } = useWorkbenchStore(
     useShallow((s) => ({
       commandPaletteOpen: s.commandPaletteOpen,
@@ -51,6 +55,10 @@ export function CommandPalette() {
       openFind: s.openFind,
       runFileInTerminal: s.runFileInTerminal,
       startDebugging: s.startDebugging,
+      files: s.files,
+      tabs: s.tabs,
+      openFileInPane: s.openFileInPane,
+      setCursorPosition: s.setCursorPosition,
     })),
   )
 
@@ -85,6 +93,16 @@ export function CommandPalette() {
         icon: "explorer",
         action: () => {
           setActiveActivity("Explorer")
+          setSidebarOpen(true)
+        },
+      },
+      {
+        id: "view-debug",
+        label: "View: Show Run & Debug",
+        detail: "Manage breakpoints, variables, and call stack (Ctrl+Shift+D)",
+        icon: "debug",
+        action: () => {
+          setActiveActivity("Debug")
           setSidebarOpen(true)
         },
       },
@@ -209,15 +227,117 @@ export function CommandPalette() {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
 
-  const results = useMemo(() => {
-    const q = commandPaletteQuery.toLowerCase().trim()
-    if (!q) return allCommands
-    return allCommands.filter(
-      (cmd) =>
-        cmd.label.toLowerCase().includes(q) ||
-        cmd.detail.toLowerCase().includes(q),
-    )
-  }, [allCommands, commandPaletteQuery])
+  const mode = useMemo<"command" | "goto-line" | "file">(() => {
+    if (commandPaletteQuery.startsWith(">")) return "command"
+    if (commandPaletteQuery.startsWith(":")) return "goto-line"
+    return "file"
+  }, [commandPaletteQuery])
+
+  const results = useMemo<CommandPaletteItem[]>(() => {
+    if (mode === "command") {
+      const q = commandPaletteQuery.slice(1).trim().toLowerCase()
+      if (!q) return allCommands
+      return allCommands.filter(
+        (cmd) =>
+          cmd.label.toLowerCase().includes(q) ||
+          cmd.detail.toLowerCase().includes(q),
+      )
+    }
+
+    if (mode === "goto-line") {
+      const lineStr = commandPaletteQuery.slice(1).trim()
+      const lineNum = parseInt(lineStr, 10)
+      if (!lineStr || isNaN(lineNum) || lineNum <= 0) {
+        return [
+          {
+            id: "goto-line-prompt",
+            label: "Go to Line",
+            detail: "Type a line number to navigate to",
+            icon: "symbol",
+            action: () => {},
+          },
+        ]
+      }
+      return [
+        {
+          id: `goto-line-${lineNum}`,
+          label: `Go to Line: ${lineNum}`,
+          detail: `Jump active editor cursor to line ${lineNum}`,
+          icon: "symbol",
+          action: () => {
+            window.dispatchEvent(
+              new CustomEvent("aegis:editor-goto-line", {
+                detail: { line: lineNum, col: 1 },
+              }),
+            )
+            setCursorPosition({ line: lineNum, col: 1 })
+          },
+        },
+      ]
+    }
+
+    // mode === "file" (Quick Open)
+    const q = commandPaletteQuery.trim().toLowerCase()
+    const seen = new Set<string>()
+    const candidates: CommandPaletteItem[] = []
+
+    // 1. Prioritize open tabs
+    for (const tabPath of tabs) {
+      if (!seen.has(tabPath)) {
+        seen.add(tabPath)
+        const name = tabPath.split("/").pop() || tabPath
+        candidates.push({
+          id: `file-tab-${tabPath}`,
+          label: name,
+          detail: tabPath,
+          icon: "file",
+          action: () => {
+            openFileInPane(tabPath)
+          },
+        })
+      }
+    }
+
+    // 2. Add files from workspace tree
+    for (const f of files) {
+      if (
+        (f.icon === "file" || f.type === "file" || (!f.children && f.path)) &&
+        !seen.has(f.path)
+      ) {
+        seen.add(f.path)
+        const name = f.name || f.label || f.path.split("/").pop() || f.path
+        candidates.push({
+          id: `file-${f.path}`,
+          label: name,
+          detail: f.path,
+          icon: "file",
+          action: () => {
+            openFileInPane(f.path)
+          },
+        })
+      }
+    }
+
+    if (!q) {
+      return candidates.slice(0, 30)
+    }
+
+    return candidates
+      .filter(
+        (item) =>
+          item.label.toLowerCase().includes(q) ||
+          item.detail.toLowerCase().includes(q),
+      )
+      .slice(0, 40)
+  }, [
+    mode,
+    commandPaletteQuery,
+    allCommands,
+    tabs,
+    files,
+    openFileInPane,
+    setCursorPosition,
+  ])
 
   useEffect(() => {
     setSelectedIndex(0)
@@ -287,10 +407,20 @@ export function CommandPalette() {
       role="region"
     >
       <div className="command-results" ref={listRef}>
-        <span className="command-section">COMMANDS</span>
+        <span className="command-section">
+          {mode === "command"
+            ? "COMMANDS"
+            : mode === "goto-line"
+              ? "GO TO LINE"
+              : "FILES"}
+        </span>
         {results.length === 0 ? (
           <div className="px-3 py-4 text-xs text-center text-ink-muted">
-            No matching commands
+            {mode === "command"
+              ? "No matching commands"
+              : mode === "goto-line"
+                ? "Enter a line number"
+                : "No matching files"}
           </div>
         ) : (
           results.map((cmd, index) => {

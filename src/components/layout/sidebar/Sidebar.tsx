@@ -12,6 +12,7 @@ import {
 import { ExplorerPanel } from "./ExplorerPanel"
 import { SearchPanel } from "./SearchPanel"
 import { SourceControlPanel } from "./SourceControlPanel"
+import { DebugView } from "../bottom-panel/DebugView"
 
 export function Sidebar() {
   const {
@@ -95,6 +96,7 @@ export function Sidebar() {
       {activeActivity === "Explorer" && <ExplorerPanel />}
       {activeActivity === "Search" && <SearchPanel />}
       {activeActivity === "Source Control" && <SourceControlPanel />}
+      {activeActivity === "Debug" && <DebugView />}
 
       <ResizeSash
         className="sash-sidebar"

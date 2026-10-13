@@ -382,13 +382,94 @@ export function useWorkbenchLifecycle() {
         }
       }
 
+      if (event.key === "F12") {
+        event.preventDefault()
+        window.dispatchEvent(new CustomEvent("aegis:editor-definition"))
+        return
+      }
+
+      // Command Palette (Cmd+Shift+P / Ctrl+Shift+P / F1)
       if (
-        (event.metaKey || event.ctrlKey) &&
-        (event.key.toLowerCase() === "k" || event.key.toLowerCase() === "p")
+        event.key === "F1" ||
+        ((event.metaKey || event.ctrlKey) &&
+          event.shiftKey &&
+          event.key.toLowerCase() === "p")
       ) {
         event.preventDefault()
-        s.setCommandPaletteOpen((prev) => !prev)
+        s.setCommandPaletteQuery(">")
+        s.setCommandPaletteOpen(true)
+        return
       }
+
+      // Quick Open / Go to File (Cmd+P / Ctrl+P, or Cmd+K)
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.shiftKey &&
+        (event.key.toLowerCase() === "p" || event.key.toLowerCase() === "k")
+      ) {
+        event.preventDefault()
+        s.setCommandPaletteQuery("")
+        s.setCommandPaletteOpen((prev) =>
+          s.commandPaletteQuery === "" ? !prev : true,
+        )
+        return
+      }
+
+      // Go to Line (Ctrl+G on macOS & Win/Linux)
+      if (
+        event.ctrlKey &&
+        !event.metaKey &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === "g"
+      ) {
+        event.preventDefault()
+        s.setCommandPaletteQuery(":")
+        s.setCommandPaletteOpen(true)
+        return
+      }
+
+      // AI Chat with Selection (Cmd+L / Ctrl+L)
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === "l"
+      ) {
+        event.preventDefault()
+        s.setChatOpen(true)
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent("aegis:focus-chat-input"))
+        }, 50)
+        return
+      }
+
+      // Quick Tab Switcher (Ctrl+Tab & Ctrl+Shift+Tab)
+      if (event.ctrlKey && !event.metaKey && event.key === "Tab") {
+        event.preventDefault()
+        const currentGroup = s.focusedGroup === "group2" ? s.group2 : s.group1
+        if (currentGroup.tabs.length > 1) {
+          const currentIndex = currentGroup.tabs.indexOf(currentGroup.activeTab)
+          const nextIndex = event.shiftKey
+            ? (currentIndex - 1 + currentGroup.tabs.length) %
+              currentGroup.tabs.length
+            : (currentIndex + 1) % currentGroup.tabs.length
+          const nextTab = currentGroup.tabs[nextIndex]
+          if (nextTab) {
+            s.openFileInPane(
+              nextTab,
+              s.focusedGroup === "group2" ? "pane-2" : "pane-1",
+            )
+          }
+        }
+        return
+      }
+
+      // Format Document (Shift+Alt+F / Shift+Option+F)
+      if (event.shiftKey && event.altKey && event.key.toLowerCase() === "f") {
+        event.preventDefault()
+        window.dispatchEvent(new CustomEvent("aegis:editor-format"))
+        return
+      }
+
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
         event.preventDefault()
         s.toggleSidebar()
@@ -404,6 +485,16 @@ export function useWorkbenchLifecycle() {
       if ((event.metaKey || event.ctrlKey) && event.key === ",") {
         event.preventDefault()
         s.toggleSettingsModal()
+      }
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.shiftKey &&
+        event.key.toLowerCase() === "d"
+      ) {
+        event.preventDefault()
+        s.setSidebarOpen(true)
+        s.setActiveActivity("Debug")
+        return
       }
       if (
         (event.metaKey || event.ctrlKey) &&

@@ -63,7 +63,13 @@ export function GlobalSearchButton() {
                 handleClose()
               }
             }}
-            placeholder="Type a command or search..."
+            placeholder={
+              commandPaletteQuery.startsWith(">")
+                ? "Type a command..."
+                : commandPaletteQuery.startsWith(":")
+                  ? "Type a line number to navigate to..."
+                  : "Search files by name (type > for commands, : for line)..."
+            }
             value={commandPaletteQuery}
           />
           <kbd
@@ -100,10 +106,10 @@ export function GlobalSearchButton() {
                 <span className="text-ink-muted">— Search...</span>
               </>
             ) : (
-              "Search files, commands, symbols..."
+              "Search files, commands (>), symbols..."
             )}
           </span>
-          <kbd>{isMac ? "⌘ K" : "Ctrl K"}</kbd>
+          <kbd>{isMac ? "⌘ P" : "Ctrl P"}</kbd>
         </button>
       )}
 

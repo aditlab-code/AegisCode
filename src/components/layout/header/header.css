@@ -65,7 +65,7 @@
 
 .menu-dropdown {
   position: absolute;
-  z-index: 1000;
+  z-index: var(--z-dropdown, 50);
   top: 29px;
   left: 0;
   width: 220px;

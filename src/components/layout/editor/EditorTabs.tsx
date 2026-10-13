@@ -43,6 +43,9 @@ export function EditorTabs({
     showToast,
     startDebugging,
     runFileInTerminal,
+    rootWorkspacePath,
+    setActiveActivity,
+    setSidebarOpen,
   } = useWorkbenchStore(
     useShallow((s) => ({
       group1: s.group1,
@@ -63,6 +66,9 @@ export function EditorTabs({
       showToast: s.showToast,
       startDebugging: s.startDebugging,
       runFileInTerminal: s.runFileInTerminal,
+      rootWorkspacePath: s.rootWorkspacePath,
+      setActiveActivity: s.setActiveActivity,
+      setSidebarOpen: s.setSidebarOpen,
     })),
   )
 
@@ -524,6 +530,55 @@ export function EditorTabs({
             >
               <Icon name="debug" size={12} />
               <span>Start Debugging</span>
+            </button>
+            <div className="context-menu-separator" />
+            <button
+              className="context-menu-item"
+              onClick={async () => {
+                const full = rootWorkspacePath
+                  ? `${rootWorkspacePath}/${contextMenu.tab}`
+                  : contextMenu.tab
+                try {
+                  await navigator.clipboard.writeText(full)
+                  showToast("Copied full path")
+                } catch {
+                  // fallback
+                }
+                setContextMenu(null)
+              }}
+              type="button"
+            >
+              <Icon name="copy" size={12} />
+              <span>Copy Full Path</span>
+            </button>
+            <button
+              className="context-menu-item"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(contextMenu.tab)
+                  showToast("Copied relative path")
+                } catch {
+                  // fallback
+                }
+                setContextMenu(null)
+              }}
+              type="button"
+            >
+              <Icon name="copy" size={12} />
+              <span>Copy Relative Path</span>
+            </button>
+            <button
+              className="context-menu-item"
+              onClick={() => {
+                setActiveActivity("Explorer")
+                setSidebarOpen(true)
+                showToast(`Revealed in Explorer`)
+                setContextMenu(null)
+              }}
+              type="button"
+            >
+              <Icon name="explorer" size={12} />
+              <span>Reveal in Explorer</span>
             </button>
             <div className="context-menu-separator" />
             <button

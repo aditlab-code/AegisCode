@@ -16,7 +16,7 @@
 | **Phase 5** | AppDrawer AEGIS AI Agent & Session Hub | ✅ Completed | Multi-session chat, slash autocomplete, provider selector |
 | **Special** | UI Dark/Light Theme & Modular Palettes | ✅ Completed | ActivityRail toggle, modular JSON palettes (Default, Atom, Tokyo Night) |
 | **Special** | Settings Registry, Core IDE Preferences & Editor Polish | ✅ Completed | Decoupled schema registry, wildcard exclude, GPU cursor blinking, wrap column |
-| **Phase 6** | Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger | 🟡 Active (6.1–6.4, 6.6–6.11 ✅, 6.5 🟡) | Cross-platform Go binary & embed.FS, supervisor, JSON store, AI agent bridge, DAP/Delve, Append-Only Ledger |
+| **Phase 6** | Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger | 🟡 Active (6.1–6.11 ✅, 6.12 ⚪) | Cross-platform Go binary & embed.FS, supervisor, JSON store, AI agent bridge, DAP/Delve, Zero-Freeze Offloading |
 | **Phase 7** | Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`) | 🟡 Active (Sub-Phase 7.1, 7.1b, 7.1c ✅, 7.2–7.3 ⚪) | Multi-format tab viewers (Images, Markdown, PDF, Big Data CSV), vector canvas wireframing |
 | **Phase 8** | Research Workshop & Data Science Studio | ⚪ Planned | LaTeX + PDF sync, BibTeX, Python/R dataframes, Biblioshiny |
 | **Phase 9** | Web-Based Remote Pairing & Tablet Companion | ⚪ Deferred (Final) | LAN pairing, web preview host, touch-optimized editor mode |
@@ -376,6 +376,25 @@
     - Self-healing startup indexer resolving dual-write inconsistencies between `sessions.json` and `.jsonl` files.
     - Non-destructive shadow migration converting legacy `chats/<id>.json` to ledger format without modifying source files ([ADR 0007](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0007-non-destructive-shadow-migration.md)).
   - **Verification**: 100% verified across Go backend tests (`TestAppendEventNodeAndBlobOffload`, `TestReverseSeekTail`, `TestReconstructChatAndBranching`, `TestDeleteSessionAndBlobs`, `TestReconcileSessionsOnBoot` in `server/internal/store/ledger_test.go`, and `TestStorageEndpoints` in `server/internal/api/api_test.go`) and Vitest frontend regression tests (`test/frontend/chat/chatGraphLedger.test.ts`, 84 tests passing).
+
+#### Sub-Phase 6.12: Zero-Freeze Architecture (Go-First Offloading & Web Workers)
+- **Status**: ⚪ Planned
+- **Objective**: Menjamin thread utama JavaScript/React selalu bebas dari komputasi berat (*zero blocking execution*) agar rendering editor tetap terkunci di 60 FPS dan pengetikan keyboard memiliki latensi sub-5 ms, bahkan pada berkas 50.000+ baris atau repositori besar.
+- **Deliverables**:
+  - **Offloading Allocation Matrix**:
+    - **React UI Thread**: Input typing, cursor state rendering, dan direct DOM CodeMirror buffer sync.
+    - **Web Workers (`src/workers/`)**: Regex minimap tokenization (`tokenizer.worker.ts`) dan heuristic syntax linter (`linter.worker.ts`) via type-safe Promise RPC bridge (`src/utils/workerBridge.ts`).
+    - **Backend Go**: High-performance multi-threaded workspace regex search, server-side CSV windowing, dan fast fuzzy file indexer (`server/internal/workspace/fuzzy.go`).
+  - **Client-Side Web Workers Engine**:
+    - `src/workers/tokenizer.worker.ts`: Offload pemrosesan token visual minimap dengan buffer transfer dan cancellation token untuk fast-scrolling.
+    - `src/workers/linter.worker.ts`: Offload `validateSyntax` dari thread utama dengan 300ms debounce.
+  - **Go-First Backend Offloading**:
+    - `server/internal/workspace/fuzzy.go`: Endpoint `GET /api/v1/workspace/files/find?q=...` dengan fuzzy matching berbasis byte/Smith-Waterman melintasi 50.000 path dalam waktu < 2 ms.
+    - Universal Server-Side CSV Pipeline: Penghapusan fallback parsing CSV di memori browser (`viewerTypes.ts`) demi streaming RFC 4180 Go windowed data.
+  - **React 19 Main-Thread Scheduling Guardrails**:
+    - `useTransition` / `startTransition` untuk operasi sekunder (tab switch, theme toggle, filter).
+    - `requestAnimationFrame` single-mutex lock throttling untuk sinkronisasi scroll minimap dan live markdown preview.
+- **Exit Criteria**: Pengetikan 100 WPM pada berkas 20.000 baris mempertahankan 60 FPS (zero long-tasks > 50 ms), minimap scroll lancar tanpa lonjakan memory heap, dan fuzzy file search mengembalikan hasil sub-5 ms.
 
 ---
 

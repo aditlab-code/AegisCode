@@ -1,6 +1,19 @@
+import { useState, useRef } from "react"
 import { useWorkbenchStore, useShallow } from "../../../store"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
+
+interface ToolbarOffset {
+  x: number
+  y: number
+}
+
+interface DragStartCoords {
+  mouseX: number
+  mouseY: number
+  startX: number
+  startY: number
+}
 
 export function DebugToolbar() {
   const {
@@ -19,6 +32,48 @@ export function DebugToolbar() {
     })),
   )
 
+  const [offset, setOffset] = useState<ToolbarOffset>({
+    x: 0,
+    y: 10,
+  })
+  const isDraggingRef = useRef(false)
+  const dragStartRef = useRef<DragStartCoords>({
+    mouseX: 0,
+    mouseY: 0,
+    startX: 0,
+    startY: 10,
+  })
+
+  function handleDragStart(e: React.MouseEvent) {
+    e.preventDefault()
+    isDraggingRef.current = true
+    dragStartRef.current = {
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      startX: offset.x,
+      startY: offset.y,
+    }
+
+    function handleMouseMove(moveEvent: MouseEvent) {
+      if (!isDraggingRef.current) return
+      const deltaX = moveEvent.clientX - dragStartRef.current.mouseX
+      const deltaY = moveEvent.clientY - dragStartRef.current.mouseY
+      setOffset({
+        x: Math.max(-450, Math.min(450, dragStartRef.current.startX + deltaX)),
+        y: Math.max(6, Math.min(400, dragStartRef.current.startY + deltaY)),
+      })
+    }
+
+    function handleMouseUp() {
+      isDraggingRef.current = false
+      window.removeEventListener("mousemove", handleMouseMove)
+      window.removeEventListener("mouseup", handleMouseUp)
+    }
+
+    window.addEventListener("mousemove", handleMouseMove)
+    window.addEventListener("mouseup", handleMouseUp)
+  }
+
   if (!isDebugging) {
     return null
   }
@@ -32,8 +87,21 @@ export function DebugToolbar() {
   return (
     <div
       aria-label="Debug Execution Toolbar"
-      className="absolute top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-surface border border-line shadow-xl text-ink backdrop-blur-md transition-all select-none"
+      className="absolute z-40 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-surface border border-line shadow-xl text-ink backdrop-blur-md select-none"
+      style={{
+        left: "50%",
+        top: 0,
+        transform: `translate(calc(-50% + ${offset.x}px), ${offset.y}px)`,
+      }}
     >
+      {/* Drag handle */}
+      <div
+        className="flex items-center cursor-grab active:cursor-grabbing text-ink-muted hover:text-ink px-1 -ml-1"
+        onMouseDown={handleDragStart}
+        title="Drag toolbar"
+      >
+        <Icon name="more" size={13} />
+      </div>
       {/* Status indicator */}
       <div className="flex items-center gap-1.5 pr-2 border-r border-line text-xs font-mono">
         <span

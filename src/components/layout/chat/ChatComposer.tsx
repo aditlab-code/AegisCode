@@ -48,6 +48,15 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
   )
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  useEffect(() => {
+    function handleFocus() {
+      textareaRef.current?.focus()
+    }
+    window.addEventListener("aegis:focus-chat-input", handleFocus)
+    return () =>
+      window.removeEventListener("aegis:focus-chat-input", handleFocus)
+  }, [])
+
   const activeSkills = skills && skills.length > 0 ? skills : SKILL_COMMANDS
 
   const isProviderConfigured = useCallback(() => {

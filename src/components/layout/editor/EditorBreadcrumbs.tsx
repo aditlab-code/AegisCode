@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbenchStore, useShallow } from "../../../store"
 import { isGitDiffTab, parseGitDiffTab } from "../../../utils/gitDiffTab"
@@ -6,16 +7,64 @@ interface EditorBreadcrumbsProps {
   file?: string
 }
 
+interface DropdownItem {
+  name: string
+  path: string
+  isDir: boolean
+}
+
+interface DropdownState {
+  x: number
+  y: number
+  items: DropdownItem[]
+}
+
 export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
-  const { focusedPane, splitEditor, secondaryActiveTab, activeTab } =
-    useWorkbenchStore(
-      useShallow((s) => ({
-        focusedPane: s.focusedPane,
-        splitEditor: s.splitEditor,
-        secondaryActiveTab: s.secondaryActiveTab,
-        activeTab: s.activeTab,
-      })),
-    )
+  const {
+    focusedPane,
+    splitEditor,
+    secondaryActiveTab,
+    activeTab,
+    files,
+    openFileInPane,
+  } = useWorkbenchStore(
+    useShallow((s) => ({
+      focusedPane: s.focusedPane,
+      splitEditor: s.splitEditor,
+      secondaryActiveTab: s.secondaryActiveTab,
+      activeTab: s.activeTab,
+      files: s.files,
+      openFileInPane: s.openFileInPane,
+    })),
+  )
+
+  const [dropdown, setDropdown] = useState<DropdownState | null>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handlePointerDown(e: MouseEvent) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
+        setDropdown(null)
+      }
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setDropdown(null)
+      }
+    }
+
+    if (dropdown) {
+      window.addEventListener("mousedown", handlePointerDown)
+      window.addEventListener("keydown", handleKeyDown)
+      return () => {
+        window.removeEventListener("mousedown", handlePointerDown)
+        window.removeEventListener("keydown", handleKeyDown)
+      }
+    }
+  }, [dropdown])
 
   const currentFile =
     file ||
@@ -50,6 +99,55 @@ export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
 
   if (parts.length === 0) return null
 
+  function handleSegmentClick(
+    e: React.MouseEvent<HTMLButtonElement>,
+    idx: number,
+  ) {
+    e.preventDefault()
+    const rect = e.currentTarget.getBoundingClientRect()
+    const isLast = idx === parts.length - 1
+    const dirPath = isLast
+      ? parts.slice(0, idx).join("/")
+      : parts.slice(0, idx + 1).join("/")
+
+    const prefix = dirPath
+      ? dirPath.endsWith("/")
+        ? dirPath
+        : `${dirPath}/`
+      : ""
+    const seen = new Set<string>()
+    const items: DropdownItem[] = []
+
+    for (const f of files) {
+      if (f.path.startsWith(prefix) && f.path !== dirPath) {
+        const rest = f.path.slice(prefix.length)
+        const segment = rest.split("/")[0]
+        if (segment && !seen.has(segment)) {
+          seen.add(segment)
+          const isDir =
+            rest.includes("/") || f.icon === "folder" || f.type === "folder"
+          items.push({
+            name: segment,
+            path: prefix + segment,
+            isDir,
+          })
+        }
+      }
+    }
+
+    items.sort((a, b) => {
+      if (a.isDir && !b.isDir) return -1
+      if (!a.isDir && b.isDir) return 1
+      return a.name.localeCompare(b.name)
+    })
+
+    setDropdown({
+      x: Math.min(rect.left, window.innerWidth - 180),
+      y: rect.bottom + 4,
+      items,
+    })
+  }
+
   return (
     <div className="breadcrumbs">
       <div className="breadcrumb-path">
@@ -65,15 +163,53 @@ export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
                   className="shrink-0"
                 />
               )}
-              <span
-                className={isLast ? "text-ink font-medium" : "text-ink-muted"}
+              <button
+                type="button"
+                className={`px-1 py-0.5 rounded cursor-pointer transition-colors hover:bg-surface-hover ${
+                  isLast
+                    ? "text-ink font-medium"
+                    : "text-ink-muted hover:text-ink"
+                }`}
+                onClick={(e) => handleSegmentClick(e, idx)}
+                title={`Browse ${segment}`}
               >
                 {segment}
-              </span>
+              </button>
             </span>
           )
         })}
       </div>
+
+      {dropdown && (
+        <div
+          ref={dropdownRef}
+          className="fixed z-[var(--z-popover,100)] min-w-[170px] max-h-60 overflow-y-auto py-1 px-1 bg-surface-raised border border-line-bright rounded-md shadow-lg backdrop-blur-md text-xs"
+          style={{ left: dropdown.x, top: dropdown.y }}
+        >
+          {dropdown.items.length === 0 ? (
+            <div className="px-2 py-1 text-ink-muted text-[11px]">
+              No other files
+            </div>
+          ) : (
+            dropdown.items.map((item) => (
+              <button
+                key={item.path}
+                type="button"
+                className="flex items-center gap-2 w-full px-2 py-1 text-left rounded text-ink-soft hover:text-ink hover:bg-surface-hover cursor-pointer"
+                onClick={() => {
+                  if (!item.isDir) {
+                    openFileInPane(item.path)
+                  }
+                  setDropdown(null)
+                }}
+              >
+                <Icon name={item.isDir ? "folder" : "file"} size={12} />
+                <span className="truncate">{item.name}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -130,7 +130,7 @@ export interface SkillCommand {
   description: string
 }
 
-export type ActivityType = "Explorer" | "Search" | "Source Control" | "Settings"
+export type ActivityType = "Explorer" | "Search" | "Source Control" | "Debug" | "Settings"
 
 export interface FileItem {
   id?: string

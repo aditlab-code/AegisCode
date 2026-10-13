@@ -12,8 +12,8 @@
   display: grid;
   min-height: 0;
   min-width: 0;
-  gap: 7px;
-  padding: 8px 8px 5px;
+  gap: 5px;
+  padding: 4px 5px 3px;
   position: relative;
 }
 
@@ -89,7 +89,7 @@
   min-height: 0;
   background: var(--color-surface);
   border: 1px solid var(--color-line);
-  border-radius: 11px;
+  border-radius: 8px;
   box-shadow: var(--shadow-elevation);
   overflow: hidden;
   position: relative;

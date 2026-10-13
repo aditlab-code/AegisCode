@@ -14,7 +14,7 @@
   box-shadow: var(--shadow-popover);
   backdrop-filter: blur(26px) saturate(145%);
   overflow: hidden;
-  z-index: 60;
+  z-index: var(--z-modal, 500);
   animation: command-palette-slide 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
 

@@ -33,8 +33,16 @@ import {
   notifyLspChange,
   notifyLspOpen,
 } from "../../../utils/lspApi"
-import type { DiagnosticItem } from "../../../types/workbench"
+import type {
+  DiagnosticItem,
+  EditorSelectionRange,
+} from "../../../types/workbench"
 import { getBaseEditorExtensions, resolveLanguage } from "./cmTheme"
+
+export interface GotoLineEventDetail {
+  line: number
+  col?: number
+}
 
 export interface ActiveDebugLine {
   file: string
@@ -68,6 +76,7 @@ export interface CMEditorProps {
   diagnostics?: DiagnosticItem[]
   onChange: (value: string) => void
   onCursorChange?: (line: number, column: number) => void
+  onSelectionChange?: (selection: EditorSelectionRange) => void
   onToggleBreakpoint?: (line: number) => void
   onNavigateDefinition?: (
     targetPath: string,
@@ -96,6 +105,7 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
       diagnostics = [],
       onChange,
       onCursorChange,
+      onSelectionChange,
       onToggleBreakpoint,
       onNavigateDefinition,
       onSave,
@@ -623,10 +633,20 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
               notifyLspChange(filename, val, langInfo.id)
             }, 300)
           }
-          if (update.selectionSet && onCursorChange) {
+          if (update.selectionSet) {
             const mainSel = update.state.selection.main
-            const line = update.state.doc.lineAt(mainSel.head)
-            onCursorChange(line.number, mainSel.head - line.from + 1)
+            if (onCursorChange) {
+              const line = update.state.doc.lineAt(mainSel.head)
+              onCursorChange(line.number, mainSel.head - line.from + 1)
+            }
+            if (onSelectionChange) {
+              const selectedText = mainSel.empty
+                ? ""
+                : update.state.sliceDoc(mainSel.from, mainSel.to)
+              const startLine = update.state.doc.lineAt(mainSel.from).number
+              const endLine = update.state.doc.lineAt(mainSel.to).number
+              onSelectionChange({ startLine, endLine, selectedText })
+            }
           }
         }),
       ]
@@ -725,15 +745,43 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
           viewRef.current || unifiedViewRef.current || mergeViewRef.current?.b
         if (activeView) void handleFormatDocument(activeView)
       }
+      const handleGotoLine = (e: Event) => {
+        const customEvent = e as CustomEvent<GotoLineEventDetail>
+        const activeView =
+          viewRef.current || unifiedViewRef.current || mergeViewRef.current?.b
+        if (!activeView || !customEvent.detail) return
+        const docLines = activeView.state.doc.lines
+        const targetLine = Math.max(
+          1,
+          Math.min(customEvent.detail.line, docLines),
+        )
+        const lineObj = activeView.state.doc.line(targetLine)
+        const targetCol = Math.max(1, customEvent.detail.col || 1)
+        const pos = Math.min(lineObj.from + targetCol - 1, lineObj.to)
+        activeView.dispatch({
+          selection: { anchor: pos, head: pos },
+          scrollIntoView: true,
+        })
+        activeView.focus()
+      }
+      const handleDef = () => {
+        const activeView =
+          viewRef.current || unifiedViewRef.current || mergeViewRef.current?.b
+        if (activeView) void handleDefinition(activeView)
+      }
       window.addEventListener("aegis:editor-undo", handleUndo)
       window.addEventListener("aegis:editor-redo", handleRedo)
       window.addEventListener("aegis:editor-format", handleFormat)
+      window.addEventListener("aegis:editor-goto-line", handleGotoLine)
+      window.addEventListener("aegis:editor-definition", handleDef)
       return () => {
         window.removeEventListener("aegis:editor-undo", handleUndo)
         window.removeEventListener("aegis:editor-redo", handleRedo)
         window.removeEventListener("aegis:editor-format", handleFormat)
+        window.removeEventListener("aegis:editor-goto-line", handleGotoLine)
+        window.removeEventListener("aegis:editor-definition", handleDef)
       }
-    }, [handleFormatDocument])
+    }, [handleFormatDocument, handleDefinition])
 
     // Sync external compiler/linter diagnostics into CodeMirror lint markers
     useEffect(() => {

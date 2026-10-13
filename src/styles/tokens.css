@@ -33,6 +33,15 @@
   /* Universal Shadows */
   --shadow-elevation: 0 14px 38px #00000033, inset 0 1px 0 #ffffff14;
   --shadow-popover: 0 20px 50px #00000066;
+
+  /* Stacking Context Scale */
+  --z-base: 1;
+  --z-dock: 10;
+  --z-dropdown: 50;
+  --z-popover: 100;
+  --z-modal: 500;
+  --z-toast: 1000;
+  --z-drag-shield: 9999;
 }
 
 [data-theme="light"] {
