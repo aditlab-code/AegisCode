@@ -1,4 +1,12 @@
-import { useState, useEffect, useRef, useCallback, type DragEvent } from "react"
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  lazy,
+  Suspense,
+  type DragEvent,
+} from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { ResizeSash } from "../../ui/ResizeSash"
@@ -8,10 +16,11 @@ import {
   DEFAULT_BOTTOM_HEIGHT,
 } from "../../../store/slices/createLayoutSlice"
 import type { BottomTab, OutputChannel } from "../../../types/workbench"
-import { TerminalView } from "./TerminalView"
 import { ProblemsView } from "./ProblemsView"
 import { OutputView } from "./OutputView"
 import { DebugView } from "./DebugView"
+
+const TerminalView = lazy(() => import("./TerminalView"))
 
 export function BottomPanel() {
   const {
@@ -422,7 +431,9 @@ export function BottomPanel() {
               : "hidden"
           }
         >
-          <TerminalView />
+          <Suspense fallback={<div className="flex-1 bg-canvas" />}>
+            <TerminalView />
+          </Suspense>
         </div>
         {activeBottomTab === "Problems" && <ProblemsView />}
         {activeBottomTab === "Output" && (

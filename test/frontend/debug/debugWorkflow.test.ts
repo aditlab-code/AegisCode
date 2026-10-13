@@ -9,7 +9,7 @@ import {
 } from "@/utils/debugApi"
 import type { DebugState, StreamDebugEvent } from "@/types/workbench"
 import { loadStoredBottomTabOrder } from "@/context/core/layoutCore"
-import { getTerminalRunCommand } from "@/context/core/workbenchFacade"
+import { getTerminalRunCommand } from "@/utils/terminalRunCommand"
 
 describe("DAP Debugger (Delve) Frontend Workflow", () => {
   const originalFetch = globalThis.fetch

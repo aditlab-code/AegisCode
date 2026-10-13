@@ -5,7 +5,7 @@ import {
   stepDebug,
   terminateDebugSession,
 } from "../../utils/debugApi"
-import { getTerminalRunCommand } from "../../context/core/workbenchFacade"
+import { getTerminalRunCommand } from "../../utils/terminalRunCommand"
 
 export { getTerminalRunCommand }
 

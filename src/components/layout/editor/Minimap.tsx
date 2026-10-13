@@ -173,8 +173,7 @@ export const Minimap = memo(function Minimap({
 
   function handleWheel(e: WheelEvent<HTMLDivElement>) {
     const scroller =
-      containerRef.current?.parentElement?.querySelector(".cm-scroller") ||
-      document.querySelector(".cm-scroller")
+      containerRef.current?.parentElement?.querySelector(".cm-scroller")
     if (scroller) {
       scroller.scrollTop += e.deltaY
     }

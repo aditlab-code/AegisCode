@@ -151,6 +151,9 @@ export function matchesExcludePattern(
   return false
 }
 
+const FILE_ROW_HEIGHT = 24
+const VIRTUAL_OVERSCAN = 8
+
 export function ExplorerPanel() {
   const {
     files,
@@ -324,6 +327,47 @@ export function ExplorerPanel() {
     }
   }, [])
 
+  // Virtualized tree scroll & viewport tracking
+  const fileTreeRef = useRef<HTMLDivElement>(null)
+  const [treeScrollTop, setTreeScrollTop] = useState(0)
+  const [treeViewportHeight, setTreeViewportHeight] = useState(600)
+
+  useEffect(() => {
+    const container = fileTreeRef.current
+    if (!container || !workspaceOpen) return
+
+    let rafId: number | null = null
+    const handleScroll = () => {
+      if (rafId !== null) return
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        if (fileTreeRef.current) {
+          setTreeScrollTop(fileTreeRef.current.scrollTop)
+        }
+      })
+    }
+
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setTreeViewportHeight(entry.contentRect.height)
+      }
+    })
+    ro.observe(container)
+
+    setTreeScrollTop(container.scrollTop)
+    if (container.clientHeight) {
+      setTreeViewportHeight(container.clientHeight)
+    }
+
+    container.addEventListener("scroll", handleScroll, { passive: true })
+
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId)
+      container.removeEventListener("scroll", handleScroll)
+      ro.disconnect()
+    }
+  }, [workspaceOpen])
+
   // Collapsed folders state
   const [collapsedFolders, setCollapsedFolders] =
     useState<Record<string, boolean>>(() => {
@@ -404,6 +448,42 @@ export function ExplorerPanel() {
 
     return result
   }, [files, collapsedFolders, isExcluded])
+
+  // Virtualized file list calculation to keep DOM tree lean on large repositories (1000+ files)
+  const { virtualFiles, topSpacerHeight, bottomSpacerHeight } = useMemo(() => {
+    const total = visibleFiles.length
+    if (total <= 50) {
+      return {
+        virtualFiles: visibleFiles,
+        topSpacerHeight: 0,
+        bottomSpacerHeight: 0,
+      }
+    }
+
+    let startIndex = Math.max(
+      0,
+      Math.floor(treeScrollTop / FILE_ROW_HEIGHT) - VIRTUAL_OVERSCAN,
+    )
+    const visibleCount =
+      Math.ceil(treeViewportHeight / FILE_ROW_HEIGHT) + 2 * VIRTUAL_OVERSCAN
+    let endIndex = Math.min(total, startIndex + visibleCount)
+
+    if (renamingFile) {
+      const renamingIndex = visibleFiles.findIndex(
+        (f) => (f.path || f.label) === renamingFile,
+      )
+      if (renamingIndex !== -1) {
+        if (renamingIndex < startIndex) startIndex = renamingIndex
+        if (renamingIndex >= endIndex) endIndex = renamingIndex + 1
+      }
+    }
+
+    return {
+      virtualFiles: visibleFiles.slice(startIndex, endIndex),
+      topSpacerHeight: startIndex * FILE_ROW_HEIGHT,
+      bottomSpacerHeight: Math.max(0, (total - endIndex) * FILE_ROW_HEIGHT),
+    }
+  }, [visibleFiles, treeScrollTop, treeViewportHeight, renamingFile])
 
   // Outline symbols of active tab
   const activeSymbols = useMemo(() => {
@@ -749,6 +829,7 @@ export function ExplorerPanel() {
       {workspaceOpen && (
         <div
           className="file-tree"
+          ref={fileTreeRef}
           onDragOver={(e) => {
             e.preventDefault()
             e.dataTransfer.dropEffect = "move"
@@ -876,7 +957,14 @@ export function ExplorerPanel() {
             </div>
           )}
 
-          {visibleFiles.map((file) => {
+          {topSpacerHeight > 0 && (
+            <div
+              aria-hidden="true"
+              style={{ height: `${topSpacerHeight}px`, flexShrink: 0 }}
+            />
+          )}
+
+          {virtualFiles.map((file) => {
             const fileKey = file.path || file.label
             const isCurrent =
               currentTab === file.label || currentTab === file.path
@@ -1037,6 +1125,13 @@ export function ExplorerPanel() {
               </div>
             )
           })}
+
+          {bottomSpacerHeight > 0 && (
+            <div
+              aria-hidden="true"
+              style={{ height: `${bottomSpacerHeight}px`, flexShrink: 0 }}
+            />
+          )}
         </div>
       )}
 

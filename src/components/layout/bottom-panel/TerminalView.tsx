@@ -270,6 +270,7 @@ export function TerminalView() {
       window.removeEventListener("aegis:terminal-copy", handleCopyEvent)
       resizeObserver.disconnect()
       onDataDisposable.dispose()
+      term.dispose()
       if (sse) {
         sse.close()
       }
@@ -294,3 +295,5 @@ export function TerminalView() {
     </div>
   )
 }
+
+export default TerminalView

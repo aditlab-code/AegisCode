@@ -241,9 +241,14 @@ export function useWorkbenchLifecycle() {
   // 5. Auto-save: afterDelay
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
   useEffect(() => {
+    let prevFileBuffers = store.getState().fileBuffers
     return store.subscribe((state) => {
       const { autoSave, autoSaveDelay } = state.settings.files
       if (autoSave !== "afterDelay") return
+
+      // Short-circuit: skip iteration if fileBuffers reference hasn't changed
+      if (state.fileBuffers === prevFileBuffers) return
+      prevFileBuffers = state.fileBuffers
 
       const dirtyFiles = Object.entries(state.fileBuffers)
         .filter(([_, buf]) => buf.isDirty)

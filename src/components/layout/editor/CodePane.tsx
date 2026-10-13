@@ -102,6 +102,10 @@ export function CodePane({
   const content = buffer?.content ?? ""
   const isDirty = buffer?.isDirty ?? false
   const lines = useMemo(() => content.split("\n"), [content])
+  const filteredDiagnostics = useMemo(
+    () => diagnostics.filter((d) => d.location.startsWith(filename)),
+    [diagnostics, filename],
+  )
 
   const conflictRegions = useMemo(() => {
     return parseConflictRegions(content)
@@ -122,9 +126,7 @@ export function CodePane({
   })
 
   useEffect(() => {
-    const scroller =
-      paneRef.current?.querySelector(".cm-scroller") ||
-      document.querySelector(".cm-scroller")
+    const scroller = paneRef.current?.querySelector(".cm-scroller")
     if (!scroller) return
 
     let rafId: number | null = null
@@ -157,9 +159,7 @@ export function CodePane({
 
   const handleScrollToLine = useCallback(
     (lineIndex: number, smooth: boolean = true) => {
-      const scroller =
-        paneRef.current?.querySelector(".cm-scroller") ||
-        document.querySelector(".cm-scroller")
+      const scroller = paneRef.current?.querySelector(".cm-scroller")
       if (!scroller) return
       const target = Math.max(0, lineIndex * editorLineHeight - 60)
       if (smooth) {
@@ -372,9 +372,7 @@ export function CodePane({
             lineHeight={editorLineHeight}
             breakpoints={fileBreakpoints}
             activeDebugLine={activeDebugLine}
-            diagnostics={diagnostics.filter((d) =>
-              d.location.startsWith(filename),
-            )}
+            diagnostics={filteredDiagnostics}
             onChange={(newVal) => updateFileContent(filename, newVal)}
             onCursorChange={(line, col) =>
               setCursorPosition({ line, column: col })

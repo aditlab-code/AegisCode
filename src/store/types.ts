@@ -38,7 +38,7 @@ import type {
   CompanionSettings,
 } from "../types/workbench"
 import type { CursorCoordinates } from "../context/core/workspaceCore"
-import type { ConfirmCloseState } from "../context/core/workbenchFacade"
+import type { ConfirmCloseState } from "../types/workbench"
 
 export type SliceCreator<T> = StateCreator<WorkbenchStore, [], [], T>
 

@@ -54,15 +54,13 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   text,
   isStreaming = false,
 }: MarkdownRendererProps) {
-  const { openFileInPane, activeTab, applyCodeWithReview, showToast } =
-    useWorkbenchStore(
-      useShallow((s) => ({
-        openFileInPane: s.openFileInPane,
-        activeTab: s.activeTab,
-        applyCodeWithReview: s.applyCodeWithReview,
-        showToast: s.showToast,
-      })),
-    )
+  const { openFileInPane, applyCodeWithReview, showToast } = useWorkbenchStore(
+    useShallow((s) => ({
+      openFileInPane: s.openFileInPane,
+      applyCodeWithReview: s.applyCodeWithReview,
+      showToast: s.showToast,
+    })),
+  )
 
   // During streaming: skip the expensive O(N) parser entirely.
   // Parse only once after the stream is done (isStreaming === false).
@@ -93,7 +91,6 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
                 code={block.content}
                 unclosed={block.unclosed}
                 isStreaming={isStreaming}
-                activeTab={activeTab}
                 onApply={(target, code) => {
                   if (target) {
                     void applyCodeWithReview(target, code)
@@ -271,7 +268,6 @@ interface CodeBlockViewProps {
   code: string
   unclosed?: boolean
   isStreaming?: boolean
-  activeTab?: string
   onApply: (target: string, code: string) => void
   onCopy: (code: string) => void
 }
@@ -282,11 +278,13 @@ function CodeBlockView({
   code,
   unclosed,
   isStreaming,
-  activeTab,
   onApply,
   onCopy,
 }: CodeBlockViewProps) {
   const [copied, setCopied] = useState(false)
+  // Read activeTab locally so only CodeBlockView re-renders on tab change,
+  // not the expensive MarkdownRenderer parser above it.
+  const activeTab = useWorkbenchStore((s) => s.activeTab)
 
   const handleCopy = () => {
     onCopy(code)

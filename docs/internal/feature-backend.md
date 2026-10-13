@@ -227,6 +227,9 @@ All operations interact directly with the local native Git CLI binary on the act
   - Retrieves unified diff text, original content (from HEAD/commit), and modified content for the in-editor Side-by-Side diff viewer (`DiffEditorPane.tsx`).
   - Untracked / New File Support (Sub-Phase 6.10): For untracked files not yet in index/HEAD, automatically generates a synthesized addition diff against `/dev/null` with empty original content and full modified working tree text, enabling unified review gates for newly generated files.
   - Response: `{ "file": string, "staged": boolean, "diff": string, "original": string, "modified": string }`
+- `GET /api/v1/git/compare?base=<ref>&head=<ref>&file=<optional>`
+  - Compares two Git branch or commit references (`git diff <base>..<head>`).
+  - Response: `{ "base": string, "head": string, "diff": string }`
 - `POST /api/v1/git/unlock`
   - Safely scans and removes stale lock files left behind by interrupted external Git commands, AI agents, or crashed editors (`.git/index.lock`, `.git/HEAD.lock`, `.git/config.lock`, `.git/packed-refs.lock`, and any orphaned `.git/refs/**/*.lock`).
   - Response: `{ "unlocked": boolean, "removed": ["index.lock", ...], "message": string }`
@@ -234,7 +237,7 @@ All operations interact directly with the local native Git CLI binary on the act
 #### Git Concurrency & Stale Lock Auto-Recovery Architecture
 To eliminate race conditions and the common `fatal: Unable to create '.../.git/index.lock': File exists` error when text editors, AI agents, and file watchers interact simultaneously:
 1. **Server Mutex Serialization**: Every Git execution through Go backend `git.Service` is guarded by an internal `sync.Mutex`. Concurrent requests from the frontend (e.g. background polling, multiple tab updates, or rapid staging) are queued and executed sequentially.
-2. **Read-Only Lock Isolation (`GIT_OPTIONAL_LOCKS=0`)**: Read operations (`status`, `branches`, `log`, `diff`, `timeline`, `tags`) are executed with `GIT_OPTIONAL_LOCKS=0` and `--no-optional-locks`. Git will never attempt to acquire or update index locks during background queries.
+2. **Read-Only Lock Isolation (`GIT_OPTIONAL_LOCKS=0`)**: Read operations (`status`, `branches`, `log`, `diff`, `timeline`, `tags`, `compare`) are executed with `GIT_OPTIONAL_LOCKS=0` and `--no-optional-locks`. Git will never attempt to acquire or update index locks during background queries.
 3. **Transient Retry with Backoff**: If an index-mutating command (`stage`, `commit`, `checkout`, `restore`) encounters an active `index.lock`, it retries up to 3 times (50ms, 150ms, 300ms) before failing.
 4. **Stale Lock Auto-Recovery**: If a lock file remains after retries and its modification timestamp is older than 2 seconds (`time.Since(modTime) > 2s`), the engine identifies it as an abandoned lock from a crashed process, safely removes `.git/index.lock`, and re-executes the command automatically.
 5. **UI Resiliency & Manual Unlock**: The frontend tracks `isRepoLocked` state and renders a dedicated warning banner with an **Unlock Repository** button in the Source Control panel, allowing one-click resolution.
@@ -250,6 +253,15 @@ To eliminate race conditions and the common `fatal: Unable to create '.../.git/i
 - `GET /api/v1/events/workers`
   - Headers: `Accept: text/event-stream`
   - Streams real-time fail-fast crash diagnostic events (`worker:crash`) for supervised workers and terminal shells.
+- `GET /api/v1/events/logs`
+  - Headers: `Accept: text/event-stream`
+  - Streams real-time server activity and diagnostic log entries to the UI Output panel.
+- `GET /api/v1/events/debug`
+  - Headers: `Accept: text/event-stream`
+  - Streams DAP debugger state change events (`output`, `stopped`, `continued`, `terminated`) in real time.
+- `GET /api/v1/events/lsp`
+  - Headers: `Accept: text/event-stream`
+  - Streams LSP server diagnostics, indexing progress, and status notifications.
 
 ### E. WebSocket Event Hub (Bi-directional Sync)
 - `WS /api/v1/ws/sync`
@@ -264,6 +276,9 @@ To eliminate race conditions and the common `fatal: Unable to create '.../.git/i
 - `POST /api/v1/debug/start`
   - Body: `{ "program": "./cmd/server", "args": [], "mode": "debug" }`
   - Response: `{ "debugSessionId": "string", "port": 40001 }`
+- `GET /api/v1/debug/state`
+  - Retrieves live session status (`active`, `status`, `target`, `port`, `breakpoints`).
+  - Response: `{ "active": boolean, "status": "idle" | "running" | "paused", "target": string, "port": number }`
 - `POST /api/v1/debug/breakpoints`
   - Body: `{ "file": "main.go", "lines": [25, 42] }`
   - Response: Verified breakpoints list.
@@ -273,10 +288,16 @@ To eliminate race conditions and the common `fatal: Unable to create '.../.git/i
 - `POST /api/v1/debug/terminate`
   - Terminates the debug target process cleanly.
 
+> [!NOTE]
+> Command generation for target scripts (`python3`, `go run`, `node`, `npx tsx`, `bash`, `clang++`, `rustc`) is resolved via [`src/utils/terminalRunCommand.ts`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/utils/terminalRunCommand.ts), cleanly separated after the removal of legacy `workbenchFacade.ts`.
+
 ### G. Terminal & Process Management
 - `POST /api/v1/terminal/create`
   - Body: `{ "shell": "zsh" | "bash", "cwd": "/path/to/project", "cols": 120, "rows": 32 }`
   - Response: `{ "sessionId": "term-1", "pid": 4821 }`
+- `GET /api/v1/terminal/sessions`
+  - Lists all active supervised PTY terminal sessions with PID, shell type, and working directory.
+  - Response: `{ "sessions": [ { "id": "term-1", "pid": 4821, "shell": "zsh", "cwd": "/path/to/project" } ] }`
 - `POST /api/v1/terminal/:sessionId/input`
   - Body: `{ "data": "ls -la\n" }`
 - `POST /api/v1/terminal/:sessionId/resize`
@@ -294,6 +315,10 @@ To eliminate race conditions and the common `fatal: Unable to create '.../.git/i
   - Returns the 64 KB in-memory ring buffer log history (combined stdout/stderr).
 - `POST /api/v1/workers/:id/stop` / `DELETE /api/v1/workers/:id`
   - Terminates the worker process group gracefully.
+
+#### Terminal Lifecycle & Memory Optimization (PR #6 Architecture)
+1. **On-Demand Dynamic Code-Splitting**: To protect application startup time and keep the main bundle lean, `TerminalView` and its heavy dependencies (`@xterm/xterm`, `@xterm/addon-fit`, xterm CSS) are dynamically code-split via `React.lazy()` and `<Suspense>` in [`BottomPanel.tsx`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/bottom-panel/BottomPanel.tsx). The terminal bundle (~336 kB) is never loaded unless the user opens the Terminal panel.
+2. **Explicit WebGL/DOM Teardown (`term.dispose()`)**: On component unmount, tab close, or session restart, [`TerminalView.tsx`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/bottom-panel/TerminalView.tsx) explicitly executes `term.dispose()`. This completely frees the internal canvas render context, WebGL resources, textarea listeners, and buffer memory from browser RAM.
 
 ### H. Flat-File Persistence & State Management (Sub-Phase 6.4 & 6.11)
 - `GET /api/v1/config`
@@ -319,8 +344,9 @@ To eliminate race conditions and the common `fatal: Unable to create '.../.git/i
     - **Default Mode (Linear Path Reconstructed)**: Backtracks from active head pointer through parent lineage pointers (`parentId`) to reconstruct a linear conversational thread matching standard `ChatSession` struct (`{ "id": "uuid", "title": "string", "createdAt": 177..., "updatedAt": 177..., "messages": [...] }`).
     - **Graph Format Mode (`?format=graph&tail=N`)**: Retrieves raw event nodes slice: `{ "id": "uuid", "nodes": [ { "id": "node-...", "parentId": "node-...", "type": "message", "role": "user" | "agent", "content": "...", "blobRef": "...", "timestamp": 177... } ] }`. When `tail=N` is specified ($N > 0$), executes block-buffered reverse-seek tail reader (`ReverseSeekTail`) to read only the last $N$ lines from `~/.aegis/chats/<id>.jsonl` in sub-millisecond latency.
   - **Non-Destructive Shadow Fallback**: Lazily reads legacy `~/.aegis/chats/<id>.json` if `.jsonl` has not yet been populated.
-- `POST /api/v1/chats/:id`
-  - Atomic session save endpoint (kept for backward compatibility and shadow migration). Fully supports HTTP `keepalive: true` requests to ensure reliable synchronous flush during browser page reloads or tab closures (`beforeunload` / `pagehide`).
+- `POST /api/v1/chats/:id` `[DEPRECATED — Legacy Shadow Fallback]`
+  - Legacy atomic session save endpoint. Kept strictly for backward compatibility and as an emergency shadow fallback during browser unload events (`beforeunload` / `pagehide`).
+  - **Preferred Active Protocol**: All chat operations and message turns MUST use `POST /api/v1/chats/:id/events` (Append-Only Event Ledger & Content-Addressed Storage CAS architecture), ensuring $O(1)$ disk appends without monolithic session rewrites.
 - `POST /api/v1/chats/:id/events`
   - Body: `GraphNode` JSON object:
     ```json
@@ -490,6 +516,32 @@ A high-throughput, low-memory query engine implemented in pure standard library 
 - **Zero-CGO & Cross-Platform**:
   - Requires zero CGO compilers or external database binaries; compiles cleanly on macOS, Linux, and Windows.
 
+### L. Language Server Protocol (LSP) API Operations
+Supervised out-of-process LSP servers (`gopls`, `typescript-language-server`, `pyright`, `rust-analyzer`):
+- `POST /api/v1/lsp/open`
+  - Body: `{ "file": "src/App.tsx", "languageId": "typescript", "content": "..." }`
+- `POST /api/v1/lsp/change`
+  - Body: `{ "file": "src/App.tsx", "content": "...", "version": 2 }`
+- `POST /api/v1/lsp/completion`
+  - Body: `{ "file": "src/App.tsx", "line": 15, "column": 12 }`
+  - Response: Autocomplete candidate items with label, detail, documentation, and kind.
+- `POST /api/v1/lsp/hover`
+  - Body: `{ "file": "src/App.tsx", "line": 15, "column": 12 }`
+  - Response: Type signature markdown and symbol documentation.
+- `POST /api/v1/lsp/definition`
+  - Body: `{ "file": "src/App.tsx", "line": 15, "column": 12 }`
+  - Response: Target file uri, line, and column range for go-to-definition.
+- `POST /api/v1/lsp/formatting`
+  - Body: `{ "file": "src/App.tsx" }`
+  - Response: Array of text replacement edits conforming to LSP spec.
+- `GET /api/v1/lsp/status`
+  - Response: Running health, registered capabilities, and process ID of language servers.
+
+### M. System Management & Clean Shutdown
+- `POST /api/v1/system/shutdown`
+  - Gracefully stops all supervised workers, tears down active PTY shells, flushes pending state to disk, and terminates the core Go HTTP server.
+  - Response: `{ "status": "shutting_down" }`
+
 ---
 
 ## 5. Process Supervision & Worker Isolation
@@ -511,7 +563,7 @@ To prevent regression proliferation and enforce independent testing without arti
 
 ### Directory Structure & Segregation
 Testing is strictly segregated under the root `test/` directory, cleanly separating the UI Shell from the Core Server:
-- [`test/frontend/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/test/frontend): Pure logic, state machine, and facade integration tests running under **Vitest**.
+- [`test/frontend/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/test/frontend): Pure logic, state machine, and modular Zustand slice tests (with legacy monolithic `workbenchFacade.ts` removed) running under **Vitest**.
   - [`virtualWorkspace.ts`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/test/frontend/virtualWorkspace.ts): In-Memory Virtual Workspace Engine providing a deterministic in-memory filesystem for pure logic testing without dummy mocks.
   - [`core/workbenchCore.test.ts`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/test/frontend/core/workbenchCore.test.ts): Centralized Frontend Core Test Suite.
 - [`test/backend/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/test/backend): Native Go Core Server integration and regression suite.
@@ -519,7 +571,7 @@ Testing is strictly segregated under the root `test/` directory, cleanly separat
 
 ### Core Test Pattern (Table-Driven Scenario Matrix)
 Rather than spawning dozens of scattered test files for every bug report or edge case, all regressions register directly into the **Core Test Matrix**:
-1. **Frontend Core Test**: The `coreRegressionScenarios` matrix and domain suites (13 suites, 130 tests passing) execute end-to-end state transitions:
+1. **Frontend Core Test**: The `coreRegressionScenarios` matrix and domain suites (17 suites, 174 tests passing) execute end-to-end state transitions:
    - Workspace file CRUD, buffer dirty flags, and debounced save synchronizations.
    - Editor group tabs, split pane migrations, and automatic un-splitting.
    - Git staging, unstaging, and commit creation.
@@ -535,10 +587,16 @@ Rather than spawning dozens of scattered test files for every bug report or edge
    - Merge conflict region parser and resolution actions (`test/frontend/utils/gitConflict.test.ts`).
    - Context-aware delimiter syntax scanner (`test/frontend/utils/linterSyntax.test.ts`).
    - Diagnostic location format parser (`test/frontend/utils/diagnosticLocation.test.ts`).
-   - Debug DAP workflow, breakpoints, and stepping (`test/frontend/debug/debugWorkflow.test.ts`).
+   - Debug DAP workflow, breakpoints, stepping, and external script command routing (`test/frontend/debug/debugWorkflow.test.ts`).
+   - Terminal WebGL/DOM lifecycle and memory leak prevention via `term.dispose()` on cleanup.
+   - CodeMirror diagnostics reference stability preventing repeated keystroke transactions.
+   - Split pane scroller isolation (removal of global `.cm-scroller` DOM fallbacks).
+   - Virtualized Explorer file tree list windowing (DOM tree node pruning).
+   - Throttled auto-save subscription reference checking (`fileBuffers === prevFileBuffers`).
+   - On-demand dynamic code-splitting for `@xterm/xterm` (`React.lazy()`).
    - `WS-CLOSE-01`: Close workspace lifecycle (tree, buffers, and tab states cleared).
    - `WS-PATH-01`: Path normalization (trailing slash stripping, OS cross-platform paths, recent projects storage).
-2. **Backend Core Test**: The `TestCoreServerLifecycle` scenario matrix and internal packages (12 packages, including Multi-Provider AI engines in `ai`, Append-Only Ledger suites in `store`, and Elastic PTY streaming in `terminal`, 128 tests passing) spin up the native Core Server binary bound to an ephemeral TCP port and an isolated OS temporary directory (`os.MkdirTemp`). It executes real HTTP/REST requests:
+2. **Backend Core Test**: The `TestCoreServerLifecycle` scenario matrix and internal packages (13 packages, including Multi-Provider AI engines in `ai`, Append-Only Ledger suites in `store`, Elastic PTY streaming in `terminal`, and LSP worker coordination, 128+ tests passing) spin up the native Core Server binary bound to an ephemeral TCP port and an isolated OS temporary directory (`os.MkdirTemp`). It executes real HTTP/REST requests:
    - `GET /api/v1/workspace/info`
    - `POST /api/v1/workspace/file` (Write & create directories)
    - `GET /api/v1/workspace/file` (Read verification)

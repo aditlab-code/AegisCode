@@ -66,6 +66,10 @@ export default function PdfViewer({ filename }: PdfViewerProps) {
         renderTaskRef.current.cancel()
         renderTaskRef.current = null
       }
+      if (pdfDocRef.current) {
+        void pdfDocRef.current.destroy()
+        pdfDocRef.current = null
+      }
       loadingTask.destroy()
     }
   }, [rawUrl])

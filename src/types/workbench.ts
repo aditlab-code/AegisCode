@@ -453,4 +453,9 @@ export interface StreamDebugEvent {
   state?: DebugState
 }
 
+export interface ConfirmCloseState {
+  group: "group1" | "group2"
+  filename: string
+}
+
 export type { WorkbenchContextType } from "../context/WorkbenchContext"

@@ -6,7 +6,7 @@ import type {
   MinimapScale,
 } from "../../types/workbench"
 import type { CursorCoordinates } from "../../context/core/workspaceCore"
-import type { ConfirmCloseState } from "../../context/core/workbenchFacade"
+import type { ConfirmCloseState } from "../../types/workbench"
 import { setBreakpoints } from "../../utils/debugApi"
 import type { EditorSlice, SliceCreator } from "../types"
 
