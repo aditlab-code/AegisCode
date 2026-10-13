@@ -94,6 +94,7 @@ export function CodePane({
   const accessibilityPageSize = settings?.editor?.accessibilityPageSize ?? 500
   const currentTabSize = settings?.editor?.tabSize ?? tabSize ?? 2
   const insertSpaces = settings?.editor?.insertSpaces ?? true
+  const formatOnSave = settings?.editor?.formatOnSave ?? true
   const cursorBlinking = settings?.editor?.cursorBlinking ?? "smooth"
   const renderWhitespace = settings?.editor?.renderWhitespace ?? "selection"
 
@@ -385,6 +386,8 @@ export function CodePane({
             onToggleBreakpoint={(line) => toggleBreakpoint(filename, line)}
             onSave={() => saveFile(filename)}
             onFind={() => openFind(focusedGroup, false)}
+            formatOnSave={formatOnSave}
+            insertSpaces={insertSpaces}
           />
         </div>
 

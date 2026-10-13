@@ -14,10 +14,16 @@ export function detectLanguage(filename: string): string {
       return "JSON"
     case "py":
       return "Python"
+    case "go":
+      return "Go"
+    case "rs":
+      return "Rust"
+    case "c":
+    case "h":
+      return "C"
     case "cpp":
     case "cc":
     case "cxx":
-    case "h":
     case "hpp":
       return "C++"
     case "css":

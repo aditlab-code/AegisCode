@@ -45,14 +45,16 @@ func TestMultiLanguageBinaryResolution(t *testing.T) {
 	// 2. Test status inspection includes all standard languages
 	statuses := mgr.GetStatus()
 	expectedLangs := map[string]bool{
-		"go":         false,
 		"typescript": false,
+		"javascript": false,
 		"python":     false,
+		"go":         false,
 		"rust":       false,
+		"c":          false,
 		"cpp":        false,
-		"json":       false,
 		"html":       false,
 		"css":        false,
+		"json":       false,
 	}
 
 	for _, s := range statuses {

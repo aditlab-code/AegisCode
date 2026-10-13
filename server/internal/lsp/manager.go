@@ -72,7 +72,9 @@ func normalizeLang(lang string) string {
 		return "go"
 	case "rs", "rust":
 		return "rust"
-	case "c", "cpp", "c++", "cxx", "cc", "h", "hpp":
+	case "c", "h":
+		return "c"
+	case "cpp", "c++", "cxx", "cc", "hpp":
 		return "cpp"
 	case "json":
 		return "json"
@@ -90,6 +92,8 @@ func clientGroup(normLang string) string {
 	switch normLang {
 	case "javascript":
 		return "typescript"
+	case "c":
+		return "cpp"
 	default:
 		return normLang
 	}
@@ -115,13 +119,22 @@ func (m *Manager) getLangSpec(normLang string) langSpec {
 			installCommand: "go install golang.org/x/tools/gopls@latest",
 		}
 
-	case "typescript", "javascript":
+	case "typescript":
 		return langSpec{
 			candidates: []langCandidate{
 				{binaryName: "vtsls", args: []string{"--stdio"}},
 				{binaryName: "typescript-language-server", args: []string{"--stdio"}},
 			},
-			installCommand: "npm install -g @vtsls/language-server (or npm install -g typescript-language-server typescript)",
+			installCommand: "npm install -g @vtsls/language-server typescript (or npm install -g typescript-language-server typescript)",
+		}
+
+	case "javascript":
+		return langSpec{
+			candidates: []langCandidate{
+				{binaryName: "typescript-language-server", args: []string{"--stdio"}},
+				{binaryName: "vtsls", args: []string{"--stdio"}},
+			},
+			installCommand: "npm install -g typescript-language-server (or npm install -g @vtsls/language-server typescript)",
 		}
 
 	case "python":
@@ -143,7 +156,7 @@ func (m *Manager) getLangSpec(normLang string) langSpec {
 			installCommand: "rustup component add rust-analyzer (or cargo install rust-analyzer)",
 		}
 
-	case "cpp":
+	case "c", "cpp":
 		return langSpec{
 			candidates: []langCandidate{
 				{binaryName: "clangd", args: nil},
@@ -313,7 +326,18 @@ func (m *Manager) IsLanguageSupported(lang string) bool {
 
 // GetStatus returns the operational status and installation commands of all standard language servers.
 func (m *Manager) GetStatus() []LanguageServerStatus {
-	standardLangs := []string{"go", "typescript", "python", "rust", "cpp", "json", "html", "css"}
+	standardLangs := []string{
+		"typescript",
+		"javascript",
+		"python",
+		"go",
+		"rust",
+		"c",
+		"cpp",
+		"html",
+		"css",
+		"json",
+	}
 	result := make([]LanguageServerStatus, 0, len(standardLangs))
 
 	m.clientMu.Lock()

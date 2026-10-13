@@ -117,6 +117,15 @@ export function CommandPalette() {
         },
       },
       {
+        id: "format-document",
+        label: "Format Document",
+        detail: "Format active document using LSP (Shift+Alt+F)",
+        icon: "edit",
+        action: () => {
+          window.dispatchEvent(new CustomEvent("aegis:editor-format"))
+        },
+      },
+      {
         id: "git-scm",
         label: "Git: Open Source Control",
         detail: "Review pending changes",

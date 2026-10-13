@@ -76,6 +76,8 @@ export interface CMEditorProps {
   ) => void
   onSave?: () => void
   onFind?: () => void
+  formatOnSave?: boolean
+  insertSpaces?: boolean
 }
 
 export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
@@ -98,6 +100,8 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
       onNavigateDefinition,
       onSave,
       onFind,
+      formatOnSave = true,
+      insertSpaces = true,
     },
     ref,
   ) {
@@ -235,44 +239,67 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
       [filename, langInfo.id, onNavigateDefinition],
     )
 
-    // Format on save via LSP
-    const handleSaveWithFormat = useCallback(
+    // Explicit document formatting via LSP
+    const handleFormatDocument = useCallback(
       async (view: EditorView) => {
-        if (!isReadOnly) {
-          try {
-            const edits = await fetchLspFormatting(
-              filename,
-              tabSize,
-              true,
-              langInfo.id,
-            )
-            if (edits && edits.length > 0 && view.state) {
-              const changes = edits.map((edit) => {
-                const startLine = view.state.doc.line(
-                  Math.min(edit.range.start.line + 1, view.state.doc.lines),
-                )
-                const endLine = view.state.doc.line(
-                  Math.min(edit.range.end.line + 1, view.state.doc.lines),
-                )
-                const from = Math.min(
+        if (isReadOnly) return
+        try {
+          const edits = await fetchLspFormatting(
+            filename,
+            tabSize,
+            insertSpaces,
+            langInfo.id,
+          )
+          if (edits && edits.length > 0 && view.state) {
+            const sortedEdits = [...edits].sort((a, b) => {
+              if (a.range.start.line !== b.range.start.line) {
+                return a.range.start.line - b.range.start.line
+              }
+              return a.range.start.character - b.range.start.character
+            })
+            const changes = sortedEdits.map((edit) => {
+              const docLines = view.state.doc.lines
+              const startLineNum = Math.max(
+                1,
+                Math.min(edit.range.start.line + 1, docLines),
+              )
+              const endLineNum = Math.max(
+                1,
+                Math.min(edit.range.end.line + 1, docLines),
+              )
+              const startLine = view.state.doc.line(startLineNum)
+              const endLine = view.state.doc.line(endLineNum)
+              const from = Math.max(
+                startLine.from,
+                Math.min(
                   startLine.from + edit.range.start.character,
                   startLine.to,
-                )
-                const to = Math.min(
-                  endLine.from + edit.range.end.character,
-                  endLine.to,
-                )
-                return { from, to, insert: edit.newText }
-              })
-              view.dispatch({ changes })
-            }
-          } catch {
-            // Non-blocking formatting fallback
+                ),
+              )
+              const to = Math.max(
+                from,
+                Math.min(endLine.from + edit.range.end.character, endLine.to),
+              )
+              return { from, to, insert: edit.newText }
+            })
+            view.dispatch({ changes })
           }
+        } catch {
+          // Non-blocking formatting fallback
+        }
+      },
+      [filename, insertSpaces, isReadOnly, langInfo.id, tabSize],
+    )
+
+    // Save handler with optional format-on-save
+    const handleSaveWithFormat = useCallback(
+      async (view: EditorView) => {
+        if (!isReadOnly && formatOnSave) {
+          await handleFormatDocument(view)
         }
         onSave?.()
       },
-      [filename, isReadOnly, langInfo.id, onSave, tabSize],
+      [formatOnSave, handleFormatDocument, isReadOnly, onSave],
     )
 
     // Custom LSP hover tooltip with Markdown code block parsing
@@ -351,6 +378,13 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
           key: "Mod-s",
           run: (view) => {
             void handleSaveWithFormat(view)
+            return true
+          },
+        },
+        {
+          key: "Shift-Alt-f",
+          run: (view) => {
+            void handleFormatDocument(view)
             return true
           },
         },
@@ -679,7 +713,7 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
       })
     }, [wordWrap])
 
-    // Listen to global undo and redo menu actions
+    // Listen to global undo, redo, and format menu/command actions
     useEffect(() => {
       const handleUndo = () => {
         if (viewRef.current) undo(viewRef.current)
@@ -687,13 +721,20 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
       const handleRedo = () => {
         if (viewRef.current) redo(viewRef.current)
       }
+      const handleFormat = () => {
+        const activeView =
+          viewRef.current || unifiedViewRef.current || mergeViewRef.current?.b
+        if (activeView) void handleFormatDocument(activeView)
+      }
       window.addEventListener("aegis:editor-undo", handleUndo)
       window.addEventListener("aegis:editor-redo", handleRedo)
+      window.addEventListener("aegis:editor-format", handleFormat)
       return () => {
         window.removeEventListener("aegis:editor-undo", handleUndo)
         window.removeEventListener("aegis:editor-redo", handleRedo)
+        window.removeEventListener("aegis:editor-format", handleFormat)
       }
-    }, [])
+    }, [handleFormatDocument])
 
     // Sync external compiler/linter diagnostics into CodeMirror lint markers
     useEffect(() => {

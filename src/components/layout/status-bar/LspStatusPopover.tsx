@@ -10,6 +10,23 @@ interface LspStatusPopoverProps {
   onClose?: () => void
 }
 
+function getCanonicalLspKey(lang: string): string {
+  const l = lang.trim().toLowerCase()
+  if (l === "c++" || l === "cpp") return "cpp"
+  if (l === "c") return "c"
+  if (l.startsWith("typescript") || l === "ts" || l === "tsx")
+    return "typescript"
+  if (l.startsWith("javascript") || l === "js" || l === "jsx")
+    return "javascript"
+  if (l === "python" || l === "py") return "python"
+  if (l === "golang" || l === "go") return "go"
+  if (l === "rust" || l === "rs") return "rust"
+  if (l === "html" || l === "htm") return "html"
+  if (l === "css") return "css"
+  if (l === "json") return "json"
+  return l
+}
+
 export function LspStatusPopover({ onClose }: LspStatusPopoverProps) {
   const { activeLanguage, setSettingsModalOpen, openSettingsModal, showToast } =
     useWorkbenchStore(
@@ -77,8 +94,8 @@ export function LspStatusPopover({ onClose }: LspStatusPopoverProps) {
         ) : (
           servers.map((s) => {
             const isCurrent =
-              activeLanguage.toLowerCase().includes(s.language) ||
-              s.language.toLowerCase().includes(activeLanguage.toLowerCase())
+              getCanonicalLspKey(activeLanguage) ===
+              getCanonicalLspKey(s.language)
 
             return (
               <div

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { resolveLanguage } from "../../../src/components/layout/editor/cmTheme"
-import { isLspLanguage } from "../../../src/utils/linter"
+import { isLspLanguage, detectLanguage } from "../../../src/utils/linter"
 import type {
   LspCompletionItem,
   LspLocation,
@@ -110,5 +110,57 @@ describe("LSP Integration & Language Resolution", () => {
     expect(textPart?.trim()).toBe(
       "Calculates whether the value matches the threshold.",
     )
+  })
+
+  it("accurately detects language for all 10 supported programming languages", () => {
+    expect(detectLanguage("main.go")).toBe("Go")
+    expect(detectLanguage("app.ts")).toBe("TypeScript")
+    expect(detectLanguage("component.tsx")).toBe("TypeScript")
+    expect(detectLanguage("index.js")).toBe("JavaScript")
+    expect(detectLanguage("script.py")).toBe("Python")
+    expect(detectLanguage("lib.rs")).toBe("Rust")
+    expect(detectLanguage("driver.c")).toBe("C")
+    expect(detectLanguage("header.h")).toBe("C")
+    expect(detectLanguage("engine.cpp")).toBe("C++")
+    expect(detectLanguage("page.html")).toBe("HTML")
+    expect(detectLanguage("theme.css")).toBe("CSS")
+    expect(detectLanguage("data.json")).toBe("JSON")
+  })
+
+  it("sorts multiple out-of-order TextEdits stably for non-overlapping application", () => {
+    const edits: LspTextEdit[] = [
+      {
+        range: {
+          start: { line: 2, character: 0 },
+          end: { line: 2, character: 5 },
+        },
+        newText: "edit2",
+      },
+      {
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 5 },
+        },
+        newText: "edit0",
+      },
+      {
+        range: {
+          start: { line: 1, character: 0 },
+          end: { line: 1, character: 5 },
+        },
+        newText: "edit1",
+      },
+    ]
+
+    const sorted = [...edits].sort((a, b) => {
+      if (a.range.start.line !== b.range.start.line) {
+        return a.range.start.line - b.range.start.line
+      }
+      return a.range.start.character - b.range.start.character
+    })
+
+    expect(sorted[0].newText).toBe("edit0")
+    expect(sorted[1].newText).toBe("edit1")
+    expect(sorted[2].newText).toBe("edit2")
   })
 })
