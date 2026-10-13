@@ -2,7 +2,7 @@
 
 **Release Date**: October 2026  
 **Tag**: `v1.0.0-beta.1`  
-**License**: [MIT License](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/LICENSE)
+**License**: [MIT License](LICENSE)
 
 ---
 
@@ -24,7 +24,7 @@ Designed under the core principle of **Zero Over-Engineering**, AegisCode delive
 * **Autonomous Port Resolution**: Automatically discovers and binds to open TCP ports (8080–8095) with built-in port clearing utilities.
 
 ### 2. Native macOS Desktop Application (`.dmg` & Cocoa WKWebView)
-* **Tested & Verified on Apple Silicon**: Pre-packaged [`bin/AegisCode.dmg`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/bin/AegisCode.dmg) provides a native drag-and-drop installer for macOS.
+* **Tested & Verified on Apple Silicon**: Pre-packaged `bin/AegisCode.dmg` provides a native drag-and-drop installer for macOS.
 * **Lightweight WKWebView Window**: Uses a compiled native Swift wrapper (`scripts/macos-wrapper/main.swift`) rather than heavyweight Electron runtimes, saving hundreds of megabytes of RAM.
 
 ### 3. Unified Multi-Provider AI Pair-Programming Engine
@@ -44,7 +44,7 @@ Designed under the core principle of **Zero Over-Engineering**, AegisCode delive
 * **High-Throughput WebSockets**: Real-time pseudo-terminal session manager built on `@xterm/xterm` with automatic viewport resizing (`fitAddon`).
 * **Multi-Tab Sessions**: Seamlessly manage, rename, and terminate multiple terminal shells in parallel.
 
-### 6. Wireless Tablet Companion Pairing **Future**
+### 6. Wireless Tablet Companion Pairing (Future)
 * **Second-Screen Workflow**: Open `/?mode=companion` over local Wi-Fi to use your iPad or Android tablet as a responsive companion display.
 * **Dual Modes**:
   - **Live Web Preview**: Test web applications and services directly on physical mobile screens with live reload.
@@ -70,7 +70,7 @@ To ensure absolute transparency for our community, here is our current platform 
 
 ## Quickstart Installation
 
-Refer to our comprehensive [INSTALLATION.md](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/INSTALLATION.md) for full setup instructions, including macOS Gatekeeper authorization steps and building from source.
+Refer to our comprehensive [Installation Guide](docs/user-guide/installation.md) for full setup instructions, including macOS Gatekeeper authorization steps and building from source.
 
 ### Run on macOS Apple Silicon:
 ```bash

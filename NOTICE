@@ -1,0 +1,62 @@
+AegisCode
+Copyright (c) 2026 Adit Wicaksono and AegisCode Contributors
+
+This product includes software developed by the AegisCode project and
+third-party open-source components:
+
+--------------------------------------------------------------------------------
+1. modernc.org/sqlite
+   Copyright (c) 2018 The Go Authors. All rights reserved.
+   Copyright (c) 2020 Jan Mercl. All rights reserved.
+   License: BSD-3-Clause
+   Website: https://gitlab.com/cznic/sqlite
+
+2. Delve (github.com/go-delve/delve)
+   Copyright (c) 2014-present Derek Parker and Delve contributors.
+   License: MIT
+   Website: https://github.com/go-delve/delve
+
+3. CodeMirror (@codemirror/*, codemirror)
+   Copyright (C) 2018-2026 by Marijn Haverbeke <marijnh@gmail.com> and others.
+   License: MIT
+   Website: https://codemirror.net
+
+4. Cytoscape.js & cytoscape-dagre
+   Copyright (c) 2016-2026 The Cytoscape Consortium.
+   License: MIT
+   Website: https://js.cytoscape.org
+
+5. xterm.js (@xterm/xterm, @xterm/addon-fit)
+   Copyright (c) 2017-2026, The xterm.js authors.
+   License: MIT
+   Website: https://xtermjs.org
+
+6. React & React DOM
+   Copyright (c) Meta Platforms, Inc. and affiliates.
+   License: MIT
+   Website: https://react.dev
+
+7. Zustand
+   Copyright (c) 2019 Paul Henschel.
+   License: MIT
+   Website: https://github.com/pmndrs/zustand
+
+8. Tailwind CSS
+   Copyright (c) Tailwind Labs, Inc.
+   License: MIT
+   Website: https://tailwindcss.com
+
+9. Gorilla WebSocket (github.com/gorilla/websocket)
+   Copyright (c) 2013 The Gorilla WebSocket Authors. All rights reserved.
+   License: BSD-2-Clause
+   Website: https://github.com/gorilla/websocket
+
+10. creack/pty
+    Copyright (c) 2014-2026 The creack/pty authors.
+    License: MIT
+    Website: https://github.com/creack/pty
+
+11. PDF.js (pdfjs-dist)
+    Copyright (c) Mozilla Foundation.
+    License: Apache-2.0
+    Website: https://mozilla.github.io/pdf.js/

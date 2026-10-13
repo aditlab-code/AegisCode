@@ -1,0 +1,49 @@
+name: 💡 Feature Request
+description: Propose a new feature, improvement, or architectural enhancement for AegisCode
+title: "[Feature]: "
+labels: ["needs-triage", "enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        We welcome feature ideas that align with AegisCode's Prime Directive: **Zero Over-Engineering, High Performance, and Clean Architecture**.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Target Component
+      description: Which part of AegisCode would this feature enhance?
+      options:
+        - Editor (CodeMirror 6)
+        - Terminal PTY
+        - Delve Debugger (DAP)
+        - AI Assistant & Review Gates
+        - Visual CodeGraph & AST
+        - MCP (Model Context Protocol)
+        - Extension & Plugin System
+        - Cross-Platform Packaging & Distribution
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Is your feature proposal related to a problem or limitation? (e.g. "I am always frustrated when...")
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution & User Experience
+      description: Describe what you would like to happen and how developers would use it.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: What other approaches, workarounds, or existing tools have you considered?
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Add any screenshots, mockups, or references to other software.

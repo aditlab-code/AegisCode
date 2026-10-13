@@ -1,0 +1,99 @@
+name: 🐛 Bug Report
+description: Create a structured report to help us fix a bug in AegisCode
+title: "[Bug]: "
+labels: ["needs-triage", "bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting an issue! Please provide as much context as possible.
+  - type: input
+    id: version
+    attributes:
+      label: AegisCode Version / Commit
+      description: What version or git commit of AegisCode are you using?
+      placeholder: "e.g., v1.0.0-beta.1 or commit 727ff0d"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      description: What operating system are you running AegisCode on?
+      options:
+        - macOS (Apple Silicon - M1/M2/M3/M4)
+        - macOS (Intel x86_64)
+        - Linux (x86_64)
+        - Linux (ARM64)
+        - Windows 10 / 11 (x86_64)
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Execution Mode
+      description: How are you running AegisCode?
+      options:
+        - Standalone Pre-Built Single Binary (--open)
+        - Native macOS Desktop Application (.dmg / Cocoa Wrapper)
+        - Development Server Stack (npm run dev + npm run server)
+        - Headless Server (--no-open)
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      description: Which part of AegisCode is exhibiting the problem?
+      options:
+        - Editor (CodeMirror 6 / Syntax / Auto-save)
+        - Terminal PTY (xterm.js / Shell sessions)
+        - DAP Debugger (Delve / Breakpoints / Call Stack)
+        - AI Assistant & Review Gates (Diff view / Streaming)
+        - Visual CodeGraph (Cytoscape / AST indexing)
+        - MCP Server (Model Context Protocol / Tools)
+        - Git & Source Control
+        - Workspace & File Tree
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Clear steps explaining how to trigger the issue.
+      placeholder: |
+        1. Open workspace '...'
+        2. Set breakpoint at line 25 in main.go
+        3. Press F5 to start debugging
+        4. Observe error...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs & Output
+      description: Paste any error messages, terminal logs, or browser console output.
+      render: shell
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Verification Checklist
+      options:
+        - label: I have searched existing issues and confirmed this is not a duplicate.
+          required: true
+        - label: This is not a security vulnerability (security issues must be reported via GitHub Security Advisories).
+          required: true

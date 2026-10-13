@@ -47,15 +47,15 @@ __debug_bin*
 .claude-replay.*
 
 # Internal Agent Instructions & Local Specs
-#/AGENTS.md
-#/CLAUDE.md
-#/.scratch/
+/AGENTS.md
+/CLAUDE.md
+/.scratch/
+/task/
 .mise.toml
 
 # Internal Developer Documentation
-# docs/internal
-# docs/adr
-# docs/agents
-# docs/report
+docs/internal/
+docs/agents/
+docs/report/
 
 .DS_Store

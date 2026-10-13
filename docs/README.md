@@ -1,31 +1,69 @@
-# AegisCode Documentation Index
+# AegisCode Documentation Index 🛡️📚
 
-This directory contains internal technical specifications, architecture decisions, and agent guidelines for developing and maintaining AegisCode.
-
-For end-user release documentation, please refer to the root release files:
-* [README.md](../README.md) — Main overview & feature summary
-* [INSTALLATION.md](../INSTALLATION.md) — Platform installation guide & test matrix
-* [RELEASE_NOTES.md](../RELEASE_NOTES.md) — Community release notes for `v1.0.0-beta.1`
-* [LICENSE](../LICENSE) — MIT License
+Welcome to the **AegisCode** documentation portal. This hub indexes the user guides, architectural blueprints, developer API specifications, and community governance resources.
 
 ---
 
-## Internal Technical Specifications (`docs/internal/`)
+## 🧭 Documentation Map
 
-| Document | Location | Purpose & Scope |
-| :--- | :--- | :--- |
-| **System Architecture** | [`docs/internal/architecture.md`](internal/architecture.md) | High-level system architecture, folder responsibilities, and hybrid core model. |
-| **Backend & DAP Engine** | [`docs/internal/feature-backend.md`](internal/feature-backend.md) | Go Core Server endpoints, DAP debugger integration, process supervisors, and pairing. |
-| **Frontend UI Reference** | [`docs/internal/frontend.md`](internal/frontend.md) | Layout modules, Tailwind CSS v4 design tokens, and viewer lazy loading rules. |
-| **Engineering Roadmap** | [`docs/internal/roadmap.md`](internal/roadmap.md) | Phased delivery tracker from Phase 1 through Phase 9. |
-| **Feature Assessment Scorecard** | [`docs/internal/report.md`](internal/report.md) | Anti-over-engineering gates, evaluation scorecards, and RFC validation checklists. |
-| **Append-Only Chat Ledger RFC** | [`docs/internal/rfc-append-only-chat-graph-ledger.md`](internal/rfc-append-only-chat-graph-ledger.md) | RFC for the append-only event ledger and conversation branch graph storage. |
-| **Internal Development Setup** | [`docs/internal/installation.md`](internal/installation.md) | Internal workstation build guide, Delve prerequisites, and toolchains. |
-| **Skills & Workflows** | [`docs/internal/skills.md`](internal/skills.md) | Engineering skills, slash commands, and agent execution playbooks. |
+```mermaid
+flowchart TD
+    Root["Documentation Hub (docs/README.md)"]
+    Root --> UserGuide["User Guide (docs/user-guide/)"]
+    Root --> Architecture["Architecture (docs/architecture/)"]
+    Root --> Developers["Developers & MCP (docs/developers/)"]
+    Root --> ADR["ADR Catalog (docs/adr/)"]
+    Root --> Community["Community Standards (Root)"]
+```
 
 ---
 
-## Architecture Decision Records & Agents
+## 📖 1. User & Operations Guide (`docs/user-guide/`)
 
-* **Architecture Decision Records**: [`docs/adr/`](adr/) — Formal ADRs detailing foundational decisions (ADR-0001 through ADR-0013).
-* **Agent Guidelines & Triage**: [`docs/agents/`](agents/) — Issue tracker schemas, triage labels, and domain models.
+Comprehensive guides for developers using AegisCode as their daily coding workbench:
+
+| Guide | Description |
+| :--- | :--- |
+| **[Installation Guide](user-guide/installation.md)** | Pre-built binaries, building from source, checksums, and macOS Gatekeeper. |
+| **[Getting Started](user-guide/getting-started.md)** | First workspace launch, `~/.aegis/` storage locations, and AI configuration. |
+| **[Editor & Terminal](user-guide/editor-and-terminal.md)** | CodeMirror shortcuts, dirty buffer sync, auto-save on blur, and PTY terminal. |
+| **[Delve Debugger](user-guide/debugging-with-delve.md)** | Zero-config Go debugging with Delve DAP, gutter breakpoints, and variable scopes. |
+| **[AI Assistant & Review Gates](user-guide/ai-assistant-and-review-gates.md)** | Multi-provider streaming, collapsible thoughts, and Git-driven line-by-line diff gates. |
+| **[Visual CodeGraph](user-guide/visual-codegraph.md)** | Navigating Hierarchical (Dagre) and Clustered (CoSE) layouts with live AI tracing. |
+| **[Troubleshooting & FAQ](user-guide/troubleshooting-and-faq.md)** | SQLite WAL crash recovery, cache reset, port conflict resolution, and large codebase tuning. |
+
+---
+
+## 🏛️ 2. Architecture & Design Records (`docs/architecture/` & `docs/adr/`)
+
+Technical specifications and formal decision records governing system internals:
+
+| Document | Description |
+| :--- | :--- |
+| **[Architecture Overview](architecture/architecture-overview.md)** | Hybrid Multi-Process blueprint, disk watcher events, and zero-freeze execution. |
+| **[Database Schema & Partitioning](architecture/database-schema.md)** | SQLite3 data dictionary (`aegis.db` and workspace `graphs/*.db`), WAL mode, and FTS5. |
+| **[ADR Catalog](adr/README.md)** | Categorized index of Architecture Decision Records (ADR 0001 through ADR 0013). |
+
+---
+
+## 🛠️ 3. Extensibility, API & MCP Reference (`docs/developers/`)
+
+Specifications for integrating external tools, custom UI modules, and AI agents:
+
+| Reference | Description |
+| :--- | :--- |
+| **[MCP Specification](developers/mcp-specification.md)** | Model Context Protocol JSON-RPC 2.0 runner and 7 progressive disclosure tools. |
+| **[Local REST & SSE APIs](developers/local-rest-and-sse-api.md)** | Comprehensive endpoint catalog for workspace, Git, terminal, and AI streams. |
+| **[Plugin & Extension Guide](developers/plugin-and-extension-guide.md)** | Building custom UI panels, connecting Cursor/Claude via MCP, and AST extractors. |
+
+---
+
+## 🔧 4. Community Standards & Policies (Root Repository)
+
+* **[README.md](../README.md)** — Project elevator pitch, features, and quickstart.
+* **[CONTRIBUTING.md](../CONTRIBUTING.md)** — Development setup, Conventional Commits, and PR checklist.
+* **[CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md)** — Community pledge and Contributor Covenant v2.1.
+* **[SECURITY.md](../SECURITY.md)** — Threat model, socket isolation, and private vulnerability disclosure.
+* **[CHANGELOG.md](../CHANGELOG.md)** — Version history adhering to Keep a Changelog.
+* **[RELEASE_NOTES.md](../RELEASE_NOTES.md)** — Highlight notes for current beta release.
+* **[ROADMAP.md](../ROADMAP.md)** — Strategic milestones from Beta to GA and v2.0.
