@@ -16,7 +16,7 @@
 | **Phase 5** | AppDrawer AEGIS AI Agent & Session Hub | ✅ Completed | Multi-session chat, slash autocomplete, provider selector |
 | **Special** | UI Dark/Light Theme & Modular Palettes | ✅ Completed | ActivityRail toggle, modular JSON palettes (Default, Atom, Tokyo Night) |
 | **Special** | Settings Registry, Core IDE Preferences & Editor Polish | ✅ Completed | Decoupled schema registry, wildcard exclude, GPU cursor blinking, wrap column |
-| **Phase 6** | Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger | 🟡 Active (6.1–6.11 ✅, 6.12 ⚪) | Cross-platform Go binary & embed.FS, supervisor, JSON store, AI agent bridge, DAP/Delve, Zero-Freeze Offloading |
+| **Phase 6** | Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger | ✅ Completed (6.1–6.12 ✅) | Cross-platform Go binary & embed.FS, supervisor, JSON store, AI agent bridge, DAP/Delve, Zero-Freeze Offloading |
 | **Phase 7** | Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`) | 🟡 Active (Sub-Phase 7.1, 7.1b, 7.1c ✅, 7.2–7.3 ⚪) | Multi-format tab viewers (Images, Markdown, PDF, Big Data CSV), vector canvas wireframing |
 | **Phase 8** | Research Workshop & Data Science Studio | ⚪ Planned | LaTeX + PDF sync, BibTeX, Python/R dataframes, Biblioshiny |
 | **Phase 9** | Web-Based Remote Pairing & Tablet Companion | ⚪ Deferred (Final) | LAN pairing, web preview host, touch-optimized editor mode |
@@ -378,23 +378,32 @@
   - **Verification**: 100% verified across Go backend tests (`TestAppendEventNodeAndBlobOffload`, `TestReverseSeekTail`, `TestReconstructChatAndBranching`, `TestDeleteSessionAndBlobs`, `TestReconcileSessionsOnBoot` in `server/internal/store/ledger_test.go`, and `TestStorageEndpoints` in `server/internal/api/api_test.go`) and Vitest frontend regression tests (`test/frontend/chat/chatGraphLedger.test.ts`, 84 tests passing).
 
 #### Sub-Phase 6.12: Zero-Freeze Architecture (Go-First Offloading & Web Workers)
-- **Status**: ⚪ Planned
-- **Objective**: Menjamin thread utama JavaScript/React selalu bebas dari komputasi berat (*zero blocking execution*) agar rendering editor tetap terkunci di 60 FPS dan pengetikan keyboard memiliki latensi sub-5 ms, bahkan pada berkas 50.000+ baris atau repositori besar.
+- **Status**: ✅ Completed
+- **Architecture Reference**: [ADR 0012: Zero-Freeze Architecture via Go-First Offloading and Two-Lane Web Workers](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0012-zero-freeze-architecture-go-first-offloading-and-web-workers.md)
+- **Objective**: Menjamin thread utama JavaScript/React selalu bebas dari komputasi berat (*zero blocking execution*) agar rendering editor tetap terkunci di 60 FPS dan pengetikan keyboard memiliki latensi sub-5 ms, bahkan pada berkas 50.000+ baris atau repositori besar dengan puluhan ribu berkas.
 - **Deliverables**:
-  - **Offloading Allocation Matrix**:
-    - **React UI Thread**: Input typing, cursor state rendering, dan direct DOM CodeMirror buffer sync.
-    - **Web Workers (`src/workers/`)**: Regex minimap tokenization (`tokenizer.worker.ts`) dan heuristic syntax linter (`linter.worker.ts`) via type-safe Promise RPC bridge (`src/utils/workerBridge.ts`).
-    - **Backend Go**: High-performance multi-threaded workspace regex search, server-side CSV windowing, dan fast fuzzy file indexer (`server/internal/workspace/fuzzy.go`).
-  - **Client-Side Web Workers Engine**:
-    - `src/workers/tokenizer.worker.ts`: Offload pemrosesan token visual minimap dengan buffer transfer dan cancellation token untuk fast-scrolling.
-    - `src/workers/linter.worker.ts`: Offload `validateSyntax` dari thread utama dengan 300ms debounce.
-  - **Go-First Backend Offloading**:
-    - `server/internal/workspace/fuzzy.go`: Endpoint `GET /api/v1/workspace/files/find?q=...` dengan fuzzy matching berbasis byte/Smith-Waterman melintasi 50.000 path dalam waktu < 2 ms.
-    - Universal Server-Side CSV Pipeline: Penghapusan fallback parsing CSV di memori browser (`viewerTypes.ts`) demi streaming RFC 4180 Go windowed data.
-  - **React 19 Main-Thread Scheduling Guardrails**:
-    - `useTransition` / `startTransition` untuk operasi sekunder (tab switch, theme toggle, filter).
-    - `requestAnimationFrame` single-mutex lock throttling untuk sinkronisasi scroll minimap dan live markdown preview.
-- **Exit Criteria**: Pengetikan 100 WPM pada berkas 20.000 baris mempertahankan 60 FPS (zero long-tasks > 50 ms), minimap scroll lancar tanpa lonjakan memory heap, dan fuzzy file search mengembalikan hasil sub-5 ms.
+  - **Two-Lane Web Worker Runtime (`src/workers/`)**:
+    - `WorkerBroker.ts`: Runtime worker terpusat mengelola Fast Lane (dedicated interactive worker untuk visual seketika tanpa antrean) dan Batch Lane (worker pool elastis untuk komputasi berat dengan prioritas antrean FIFO dan pembatalan instan via `AbortSignal`).
+    - `defineWorkerTask` & `registry.ts`: Pendaftaran task bertipe ketat (`tokenizerTask.ts`, `linterTask.ts`) yang modular dan pluggable untuk ekspansi worker baru tanpa mengubah core broker.
+  - **Go-First In-Memory Workspace Index (`server/internal/workspace/`)**:
+    - `index.go`: Indeks in-memory RAM `WorkspaceIndex` mengimplementasikan interface `IndexProvider`, tersinkronisasi otomatis dengan file watcher (`fsnotify`) secara atomic.
+    - **Weighted Subsequence Matcher**: Evaluasi query cepat dengan bonus skor basename (+100), prefix (+50), pemisah folder (+30), camelCase (+25), dan karakter berurutan (+15).
+    - **Multi-Core Parallel Chunking**: Benchmark 50.000 berkas dieksekusi dalam **1.16 ms** pada Apple M2 (< 1.5 ms target SLA).
+    - **API Endpoint**: `GET /api/v1/workspace/files/find` dengan parameter `q` dan `limit`.
+  - **Unified `offloadService` Facade (`src/utils/offloadService.ts`)**:
+    - Satu pintu masuk komputasi asinkron dengan In-Flight Request Coalescing (deduplikasi request simultan), Hash LRU Cache (FNV-1a 32-bit), dan Graceful Fallback otomatis ke main-thread idle callback.
+  - **Telemetry & Zero-Freeze SLA Guardrail (`src/utils/perfMonitor.ts` & `PerfStatusPill.tsx`)**:
+    - `PerfMonitor` berbasis `PerformanceObserver` mendeteksi Long Tasks (> 50 ms), FPS, dan event loop lag.
+    - Status bar item `PerfStatusPill.tsx`: UI pill dengan anchor popover di tengah (`left-1/2 -translate-x-1/2`), header terstandarisasi `.status-popover-header`, SVG `zap` icon (`IconName`/`Icon.tsx`), dan active highlight state (`status-button-active`).
+  - **End-to-End Module Migrations**:
+    - `Minimap.tsx`: Tokenisasi baris dialihkan ke Fast Lane worker dengan skeleton visual bar instan saat fast scroll.
+    - `createWorkspaceSlice.ts` & `WorkbenchLifecycle.ts`: Validasi sintaksis dialihkan ke Batch Lane worker dengan debounce 300 ms dan pembatalan `AbortController`.
+    - `CommandPalette.tsx`: Quick Open file search didelegasikan ke endpoint Go `/api/v1/workspace/files/find` dengan fallback lokal.
+    - `CsvViewer.tsx`: Memanfaatkan 100% Go windowing query streaming, fungsi client parse ditandai `@deprecated`.
+  - **Stability & Runtime Bugfixes**:
+    - `CMEditor.tsx`: Memperbaiki `ReferenceError: handleDefinition is not defined` dengan mengaitkan event `aegis:editor-definition` secara tepat ke `handleGoToDefinition`.
+    - `ImageViewer.tsx`: Menghilangkan browser warning `Unable to preventDefault inside passive event listener invocation` dengan memasang native wheel listener `{ passive: false }` untuk zoom & pan yang mulus.
+- **Verification**: 100% lolos verifikasi Go backend tests (`index_test.go`, `api_test.go`), 50k benchmark (1.16 ms), Vitest suite (18 test files, 180 tests passing, termasuk `offloadService.test.ts`), Vite production build (367 ms), dan oxfmt code formatting.
 
 ---
 

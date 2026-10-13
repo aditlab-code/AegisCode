@@ -266,6 +266,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/workspace/browse", s.handleWorkspaceBrowse)
 	mux.HandleFunc("/api/v1/workspace/folder", s.handleWorkspaceCreateFolder)
 	mux.HandleFunc("/api/v1/workspace/tree", s.handleWorkspaceTree)
+	mux.HandleFunc("/api/v1/workspace/files/find", s.handleWorkspaceFilesFind)
 	mux.HandleFunc("/api/v1/workspace/file", s.handleWorkspaceFile)
 	mux.HandleFunc("/api/v1/workspace/file/raw", s.handleWorkspaceFileRaw)
 	mux.HandleFunc("/api/v1/workspace/csv/query", s.handleWorkspaceCsvQuery)
@@ -806,6 +807,44 @@ func (s *Server) handleWorkspaceSearch(w http.ResponseWriter, r *http.Request) {
 
 	jsonResponse(w, http.StatusOK, SearchResponse{
 		Results: results,
+	})
+}
+
+// FilesFindResponse models the JSON payload returned by /api/v1/workspace/files/find.
+type FilesFindResponse struct {
+	Query      string                 `json:"query"`
+	Matches    []workspace.FuzzyMatch `json:"matches"`
+	Total      int                    `json:"total"`
+	DurationMs int64                  `json:"durationMs"`
+}
+
+func (s *Server) handleWorkspaceFilesFind(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	start := time.Now()
+	q := r.URL.Query().Get("q")
+	limitStr := r.URL.Query().Get("limit")
+	limit := 20
+	if limitStr != "" {
+		if val, err := strconv.Atoi(limitStr); err == nil && val > 0 {
+			limit = val
+			if limit > 200 {
+				limit = 200
+			}
+		}
+	}
+
+	matches := s.ws.FuzzyFind(q, limit)
+	dur := time.Since(start).Milliseconds()
+
+	jsonResponse(w, http.StatusOK, FilesFindResponse{
+		Query:      q,
+		Matches:    matches,
+		Total:      len(matches),
+		DurationMs: dur,
 	})
 }
 

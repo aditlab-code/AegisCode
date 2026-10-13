@@ -776,3 +776,35 @@ export async function fetchGitCompare(
   }
   return res.json()
 }
+
+export interface FuzzyFindMatch {
+  path: string
+  score: number
+  positions?: number[]
+}
+
+export interface FilesFindResult {
+  query: string
+  matches: FuzzyFindMatch[]
+  total: number
+  durationMs: number
+}
+
+export async function findWorkspaceFiles(
+  query: string,
+  limit = 20,
+): Promise<FilesFindResult> {
+  const params = new URLSearchParams()
+  if (query) params.set("q", query)
+  params.set("limit", String(limit))
+
+  const res = await fetch(
+    `${API_BASE}/api/v1/workspace/files/find?${params.toString()}`,
+  )
+  if (!res.ok) {
+    throw new Error(
+      await parseResponseError(res, "Failed to search workspace files"),
+    )
+  }
+  return res.json()
+}

@@ -767,7 +767,7 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
       const handleDef = () => {
         const activeView =
           viewRef.current || unifiedViewRef.current || mergeViewRef.current?.b
-        if (activeView) void handleDefinition(activeView)
+        if (activeView) void handleGoToDefinition(activeView)
       }
       window.addEventListener("aegis:editor-undo", handleUndo)
       window.addEventListener("aegis:editor-redo", handleRedo)
@@ -781,7 +781,7 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
         window.removeEventListener("aegis:editor-goto-line", handleGotoLine)
         window.removeEventListener("aegis:editor-definition", handleDef)
       }
-    }, [handleFormatDocument, handleDefinition])
+    }, [handleFormatDocument, handleGoToDefinition])
 
     // Sync external compiler/linter diagnostics into CodeMirror lint markers
     useEffect(() => {

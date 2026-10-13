@@ -5,8 +5,10 @@ import {
   fetchWorkspaceTree,
   normalizeWorkspacePath,
 } from "../utils/workspaceApi"
-import { isLspLanguage, validateSyntax } from "../utils/linter"
-import type { WorkspaceChangeEvent } from "../types/workbench"
+import { isLspLanguage } from "../utils/linter"
+import { offloadService } from "../utils/offloadService"
+import type { WorkspaceChangeEvent, DiagnosticItem } from "../types/workbench"
+import type { LintPayload } from "../workers"
 
 export function useWorkbenchLifecycle() {
   const store = useWorkbenchStore
@@ -313,17 +315,29 @@ export function useWorkbenchLifecycle() {
       lintTimer = setTimeout(() => {
         const buffer = store.getState().fileBuffers[file]
         if (!buffer) return
-        const diags = validateSyntax(
-          file,
-          buffer.content,
-          store.getState().linterSettings.showWarnings,
-        )
-        store
-          .getState()
-          .setDiagnostics((prev) => [
-            ...prev.filter((d) => !d.location.startsWith(file)),
-            ...diags,
-          ])
+        const showWarnings = store.getState().linterSettings.showWarnings
+
+        offloadService
+          .run<LintPayload, DiagnosticItem[]>({
+            task: "lint",
+            payload: { filename: file, content: buffer.content },
+            priority: "normal",
+          })
+          .then((res) => {
+            if (!res?.data) return
+            const diags = showWarnings
+              ? res.data
+              : res.data.filter((d) => d.type === "error")
+            store
+              .getState()
+              .setDiagnostics((prev) => [
+                ...prev.filter((d) => !d.location.startsWith(file)),
+                ...diags,
+              ])
+          })
+          .catch(() => {
+            // Safe ignore
+          })
       }, 300)
     })
   }, [store])

@@ -11,11 +11,83 @@ import {
   initialFiles,
   initialNotifications,
 } from "../../data/mockData"
-import {
-  detectLanguage,
-  validateSyntax,
-  isLspLanguage,
-} from "../../utils/linter"
+import { detectLanguage, isLspLanguage } from "../../utils/linter"
+import { offloadService } from "../../utils/offloadService"
+
+let linterDebounceTimer: ReturnType<typeof setTimeout> | null = null
+let linterAbortController: AbortController | null = null
+
+interface OffloadLintPayload {
+  filename: string
+  content: string
+}
+
+function triggerOffloadedLint(
+  filename: string,
+  content: string,
+  showWarnings: boolean,
+  set: any,
+  debounceMs = 0,
+) {
+  if (debounceMs > 0) {
+    if (linterDebounceTimer) clearTimeout(linterDebounceTimer)
+    if (linterAbortController) linterAbortController.abort()
+
+    linterAbortController = new AbortController()
+    const signal = linterAbortController.signal
+
+    linterDebounceTimer = setTimeout(() => {
+      offloadService
+        .run<OffloadLintPayload, DiagnosticItem[]>({
+          task: "lint",
+          payload: { filename, content },
+          priority: "normal",
+          signal,
+        })
+        .then((res) => {
+          if (!res?.data) return
+          const diags = showWarnings
+            ? res.data
+            : res.data.filter((d) => d.type === "error")
+          set((state: any) => ({
+            diagnostics: [
+              ...state.diagnostics.filter(
+                (d: DiagnosticItem) => !d.location.startsWith(filename),
+              ),
+              ...diags,
+            ],
+          }))
+        })
+        .catch(() => {
+          // Aborted or safe ignore
+        })
+    }, debounceMs)
+  } else {
+    offloadService
+      .run<OffloadLintPayload, DiagnosticItem[]>({
+        task: "lint",
+        payload: { filename, content },
+        priority: "normal",
+      })
+      .then((res) => {
+        if (!res?.data) return
+        const diags = showWarnings
+          ? res.data
+          : res.data.filter((d) => d.type === "error")
+        set((state: any) => ({
+          diagnostics: [
+            ...state.diagnostics.filter(
+              (d: DiagnosticItem) => !d.location.startsWith(filename),
+            ),
+            ...diags,
+          ],
+        }))
+      })
+      .catch(() => {
+        // Safe ignore
+      })
+  }
+}
 import {
   closeWorkspace,
   deleteWorkspaceFile,
@@ -620,17 +692,13 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
       linterSettings.trigger === "onType" &&
       !isLspLanguage(filename)
     ) {
-      const diags = validateSyntax(
+      triggerOffloadedLint(
         filename,
         content,
         linterSettings.showWarnings,
+        set,
+        300,
       )
-      set((state) => ({
-        diagnostics: [
-          ...state.diagnostics.filter((d) => !d.location.startsWith(filename)),
-          ...diags,
-        ],
-      }))
     }
   },
 
@@ -698,19 +766,13 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
 
     const linterSettings = get().linterSettings
     if (linterSettings.enabled && buf && !isLspLanguage(filenameToSave)) {
-      const fileDiags = validateSyntax(
+      triggerOffloadedLint(
         filenameToSave,
         contentToSave,
         linterSettings.showWarnings,
+        set,
+        0,
       )
-      set((state) => ({
-        diagnostics: [
-          ...state.diagnostics.filter(
-            (d) => !d.location.startsWith(filenameToSave),
-          ),
-          ...fileDiags,
-        ],
-      }))
     }
 
     // Cross-slice Git refresh
@@ -790,17 +852,13 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
     const reverted = buf?.savedContent ?? buf?.content ?? ""
     const linterSettings = get().linterSettings
     if (linterSettings.enabled && !isLspLanguage(filename)) {
-      const diags = validateSyntax(
+      triggerOffloadedLint(
         filename,
         reverted,
         linterSettings.showWarnings,
+        set,
+        0,
       )
-      set((state) => ({
-        diagnostics: [
-          ...state.diagnostics.filter((d) => !d.location.startsWith(filename)),
-          ...diags,
-        ],
-      }))
     }
     get().showToast?.(`Reverted changes to ${filename}`)
   },
@@ -862,13 +920,7 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
           },
         }
       })
-      const diags = validateSyntax(clean, content, true)
-      set((state) => ({
-        diagnostics: [
-          ...state.diagnostics.filter((d) => !d.location.startsWith(clean)),
-          ...diags,
-        ],
-      }))
+      triggerOffloadedLint(clean, content, true, set, 0)
     } catch (err) {
       console.warn(`Failed to fetch file content for ${clean}:`, err)
     }

@@ -45,6 +45,7 @@ type Manager struct {
 	rootPath      string
 	watcher       *Watcher
 	watcherCancel func()
+	index         *WorkspaceIndex
 
 	subMu sync.RWMutex
 	subs  map[chan WorkspaceChangeEvent]struct{}
@@ -75,6 +76,7 @@ func NewManager(initialRoot string) (*Manager, error) {
 	}
 
 	m.rootPath = absPath
+	m.index = NewWorkspaceIndex(absPath)
 	m.startWatcherLocked(absPath)
 
 	return m, nil
@@ -103,6 +105,7 @@ func (m *Manager) SetRoot(newRoot string) (string, error) {
 	m.mu.Lock()
 	m.stopWatcherLocked()
 	m.rootPath = absPath
+	m.index = NewWorkspaceIndex(absPath)
 	m.startWatcherLocked(absPath)
 	m.mu.Unlock()
 
@@ -114,6 +117,7 @@ func (m *Manager) Close() error {
 	defer m.mu.Unlock()
 	m.stopWatcherLocked()
 	m.rootPath = ""
+	m.index = nil
 	return nil
 }
 
@@ -173,6 +177,12 @@ func (m *Manager) startWatcherLocked(root string) {
 				if !ok {
 					return
 				}
+				m.mu.RLock()
+				idx := m.index
+				m.mu.RUnlock()
+				if idx != nil {
+					idx.Invalidate(evt)
+				}
 				m.broadcastEvent(evt)
 			}
 		}
@@ -185,6 +195,25 @@ func (m *Manager) stopWatcherLocked() {
 		m.watcherCancel = nil
 	}
 	m.watcher = nil
+}
+
+// GetIndex returns the active IndexProvider interface.
+func (m *Manager) GetIndex() IndexProvider {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.index
+}
+
+// FuzzyFind runs fuzzy matching on the active workspace index.
+func (m *Manager) FuzzyFind(query string, limit int) []FuzzyMatch {
+	m.mu.RLock()
+	idx := m.index
+	m.mu.RUnlock()
+
+	if idx == nil {
+		return []FuzzyMatch{}
+	}
+	return idx.FuzzyFind(query, limit)
 }
 
 func (m *Manager) GetRoot() (string, string) {

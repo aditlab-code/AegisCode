@@ -3,7 +3,6 @@ import {
   useRef,
   useEffect,
   useCallback,
-  type WheelEvent,
   type PointerEvent,
 } from "react"
 import { Icon } from "../../../ui/Icon"
@@ -105,20 +104,26 @@ export default function ImageViewer({
     setScale((prev) => Math.max(MIN_ZOOM, prev * 0.8))
   }, [])
 
-  // Interactive mouse wheel zoom centered at pointer
-  const handleWheel = (e: WheelEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    e.stopPropagation()
+  // Interactive mouse wheel zoom centered at pointer with non-passive listener
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
 
-    const factor = e.deltaY < 0 ? 1.15 : 0.87
-    setScale((prevScale) => {
-      const nextScale = Math.max(
-        MIN_ZOOM,
-        Math.min(MAX_ZOOM, prevScale * factor),
+    const onWheel = (e: globalThis.WheelEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+
+      const factor = e.deltaY < 0 ? 1.15 : 0.87
+      setScale((prevScale) =>
+        Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prevScale * factor)),
       )
-      return nextScale
-    })
-  }
+    }
+
+    el.addEventListener("wheel", onWheel, { passive: false })
+    return () => {
+      el.removeEventListener("wheel", onWheel)
+    }
+  }, [])
 
   // Pointer drag pan handling
   const handlePointerDown = (e: PointerEvent<HTMLDivElement>) => {
@@ -255,7 +260,6 @@ export default function ImageViewer({
         className={`image-canvas-viewport ${
           showGrid ? "transparency-grid" : ""
         } ${isDragging ? "grabbing" : "grab"}`}
-        onWheel={handleWheel}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}

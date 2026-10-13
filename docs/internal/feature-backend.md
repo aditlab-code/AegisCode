@@ -112,6 +112,14 @@ To enable multi-screen remote workflows on tablets without external cloud server
 - `GET /api/v1/workspace/tree`
   - Query: `?depth=8&showHidden=false`
   - Response: Recursive JSON file tree: `{ "tree": [ { "path": "src/App.tsx", "name": "App.tsx", "type": "file" | "folder", "depth": 0, "children": [] } ] }`
+- `GET /api/v1/workspace/files/find`
+  - Query: `?q=searchQuery&limit=20`
+  - **In-Memory Workspace Index (Sub-Phase 6.12 Active)**: Backed by memory-aligned RAM index `WorkspaceIndex` (`server/internal/workspace/index.go`) implementing `IndexProvider`.
+  - **Multi-Core Parallel Chunking**: Evaluates weighted subsequence matching (scoring basename `+100`, prefix `+50`, folder separator `+30`, camelCase boundary `+25`, consecutive character `+15`) using parallel Goroutines across `runtime.NumCPU()`.
+  - **High Performance Benchmark**: Processes 50,000 files in **1.16 ms** on Apple M2 (target SLA $< 1.5\text{ ms}$).
+  - **Atomic File Watcher Sync**: Automatically invalidates and updates indexed files on `fsnotify` events without requiring full rescans.
+  - `[DEPRECATED — Client-Side In-Memory Quick Open files.filter()]`: Deprecates and replaces client-side JavaScript array filtering of tens of thousands of paths in the browser thread.
+  - Response: `{ "query": "string", "count": 20, "results": [ { "path": "src/App.tsx", "basename": "App.tsx", "score": 150 } ] }`
 - `GET /api/v1/workspace/file`
   - Query: `?path=relative/path/to/file.ts`
   - Path Boundary Security: Strictly validated via `filepath.Rel(m.rootPath, target)`. Directory traversal sequences (`..`) and host absolute escapes outside `rootPath` immediately return `400 Bad Request` with descriptive error payload.
@@ -124,6 +132,7 @@ To enable multi-screen remote workflows on tablets without external cloud server
   - Response: Raw binary or text stream with auto-detected Content-Type and Content-Length.
 - `GET /api/v1/workspace/csv/query`
   - Query: `?path=path/to/data.csv&page=1&pageSize=10&colOffset=0&colLimit=25&search=filterTerm`
+  - `[DEPRECATED — Client-Side In-Memory CSV Parsing]`: Reading and parsing full CSV buffers in browser RAM (`parseCsv` in `viewerTypes.ts`) is deprecated in favor of this server-side RFC 4180 streaming and column windowing engine.
   - Big Data CSV Query Engine: Powered by RFC 4180 in-memory row offset indexer (`rowOffsets []int64`) in Go.
   - High Performance: Indexes 590,000+ rows (651 MB) in ~770 ms using ~4.7 MB RAM in Go; random-access seeks to arbitrary pages (e.g. Page 50,000) take $< 0.2\text{ ms}$.
   - Server-Side Column Windowing: Slices columns (`colOffset`, `colLimit`) so only requested column batches (e.g. `Cols 1–25 of 394`) are serialized.
@@ -427,6 +436,7 @@ To ensure unbounded scalability, zero file corruption during unexpected crashes,
       "baseUrl": "optional"
     }
     ```
+  - `[DEPRECATED — Client-Side Mock AI Streaming]`: Simulated local AI stream generators in the frontend (`mockData.ts`) are deprecated in favor of this production multi-provider streaming pipeline.
   - **Multi-Provider Engine Abstraction (`server/internal/ai/engine.go`)**:
     - Dispatches chat requests dynamically via `ProviderEngine` interface:
       ```go

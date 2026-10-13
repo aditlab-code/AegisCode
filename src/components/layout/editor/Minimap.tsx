@@ -1,5 +1,16 @@
-import { useRef, memo, type PointerEvent, type WheelEvent } from "react"
-import { tokenizeLine } from "../../../utils/syntax"
+import {
+  useRef,
+  useState,
+  useEffect,
+  memo,
+  type PointerEvent,
+  type WheelEvent,
+} from "react"
+import {
+  workerBroker,
+  type RawSyntaxToken,
+  type TokenizeResult,
+} from "../../../workers"
 import type { MinimapScale } from "../../../types/workbench"
 
 export interface MinimapScaleConfig {
@@ -139,6 +150,50 @@ export const Minimap = memo(function Minimap({
   const topPadding = visibleStart * scaleConfig.lineHeight
   const bottomPadding = (lines.length - visibleEnd) * scaleConfig.lineHeight
   const visibleLines = lines.slice(visibleStart, visibleEnd)
+  const tokenCacheRef = useRef<Map<number, RawSyntaxToken[]>>(new Map())
+  const [, setTokenVersion] = useState(0)
+
+  // Asynchronously request tokens for visible lines not yet in tokenCacheRef
+  useEffect(() => {
+    const missingLineIndices: number[] = []
+    const missingLineTexts: string[] = []
+
+    for (let i = 0; i < visibleLines.length; i++) {
+      const lineIdx = visibleStart + i
+      if (
+        !tokenCacheRef.current.has(lineIdx) &&
+        visibleLines[i]?.trim().length > 0
+      ) {
+        missingLineIndices.push(lineIdx)
+        missingLineTexts.push(visibleLines[i])
+      }
+    }
+
+    if (missingLineTexts.length === 0) return
+
+    const controller = new AbortController()
+
+    workerBroker
+      .dispatch<{ lines: string[] }, TokenizeResult>(
+        "tokenize",
+        { lines: missingLineTexts },
+        { lane: "fast", signal: controller.signal },
+      )
+      .then((res) => {
+        if (!res?.tokens) return
+        for (let j = 0; j < missingLineIndices.length; j++) {
+          tokenCacheRef.current.set(missingLineIndices[j], res.tokens[j])
+        }
+        setTokenVersion((v) => v + 1)
+      })
+      .catch(() => {
+        // Aborted or fallback
+      })
+
+    return () => {
+      controller.abort()
+    }
+  }, [visibleStart, visibleEnd, visibleLines, lines])
 
   const isDraggingRef = useRef(false)
 
@@ -208,6 +263,8 @@ export const Minimap = memo(function Minimap({
       >
         {visibleLines.map((lineText, idx) => {
           const actualLineIdx = visibleStart + idx
+          const cachedTokens = tokenCacheRef.current.get(actualLineIdx)
+
           return (
             <div
               className="minimap-line"
@@ -218,7 +275,26 @@ export const Minimap = memo(function Minimap({
                 fontSize: `${scaleConfig.fontSize}px`,
               }}
             >
-              {lineText ? tokenizeLine(lineText) : "\u00a0"}
+              {!lineText ? (
+                "\u00a0"
+              ) : cachedTokens ? (
+                cachedTokens.map((tok, tIdx) =>
+                  tok.className ? (
+                    <span className={tok.className} key={tIdx}>
+                      {tok.text}
+                    </span>
+                  ) : (
+                    tok.text
+                  ),
+                )
+              ) : (
+                <span
+                  className="minimap-skeleton-bar"
+                  style={{
+                    width: `${Math.min(100, Math.max(15, lineText.trim().length * 4))}%`,
+                  }}
+                />
+              )}
             </div>
           )
         })}

@@ -5,6 +5,7 @@ import { BranchPopover } from "./BranchPopover"
 import { ProblemsPopover } from "./ProblemsPopover"
 import { NotificationsPopover } from "./NotificationsPopover"
 import { LspStatusPopover } from "./LspStatusPopover"
+import { PerfStatusPill } from "./PerfStatusPill"
 
 const CursorStatusItem = memo(function CursorStatusItem() {
   const cursorPosition = useWorkbenchStore((s) => s.cursorPosition)
@@ -191,6 +192,7 @@ export function StatusBar() {
           />{" "}
           LSP
         </button>
+        <PerfStatusPill />
         <button
           className="status-item cursor-pointer hover:text-[var(--color-ink)]"
           onClick={handleServerConnectionClick}

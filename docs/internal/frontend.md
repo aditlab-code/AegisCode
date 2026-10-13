@@ -140,6 +140,7 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
     - **Clamped Zoom & In-Flight Cancellation**: Zoom range 50% to 300% (0.25 steps) with active render task cancellation (`renderTask.cancel()`) preventing race condition collisions.
     - **Dual-Engine Toggle**: One-click switch between custom Canvas view and browser native `<iframe />` embed.
   - **Data Table CSV Viewer (`CsvViewer.tsx`)**:
+    - `[DEPRECATED — Client-Side CSV Full Parse]`: Client-side parsing of raw string buffers (`parseCsv` in `viewerTypes.ts`) is deprecated in favor of Go Server-Side Windowed Streaming (`/api/v1/workspace/csv/query`) for any non-trivial dataset ($\ge 2\text{ MB}$ or $> 100$ rows).
     - Delimiter auto-detection (comma `,`, semicolon `;`, tab `\t`) with manual delimiter selector override.
     - Robust RFC 4180 parsing supporting quoted fields with embedded delimiters, newlines, and escaped quotes (`""`).
     - **Rebatching & Pagination for Large Tables (> 100 rows)**: Batch pagination (50, 100, 250, 500 rows per page) keeping DOM lightweight even on 10,000+ row datasets.
@@ -147,7 +148,7 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
     - Sticky row numbers column (1, 2, 3...).
     - Real-time search filter across all cells, text wrap toggle (`Wrap` vs `Truncate`), and `[Table | Raw Text]` mode switcher.
   - **In-Editor Side-by-Side Git Diff (`DiffEditorPane.tsx`)**:
-    - Replaces over-engineered popup modals with a native in-editor diff view matching VS Code.
+    - `[DEPRECATED — Legacy Popup Modal Diffs]`: Heavy overlay modal diff dialogs have been deprecated in favor of native in-editor `DiffEditorPane.tsx` matching VS Code ergonomics.
     - **Primary Review Gate for AI Code Generation (Sub-Phase 6.10)**: When users click `[Apply to Editor]` on chat code blocks, changes write to disk and automatically open side-by-side in `DiffEditorPane.tsx` without redundant temporary buffers. Users accept via native **Stage** / **Commit** or reject via native **Discard Changes** (with automatic buffer resynchronization to clean HEAD).
     - **Left Pane (Original)**: Read-only display of HEAD or previous commit revision with red background diff highlights. Synthesizes empty `/dev/null` diff for untracked / newly created files.
     - **Right Pane (Modified)**: Live-editable buffer connected directly to `fileBuffers` (when viewing working copy), saveable via `⌘S` / `Ctrl+S`, with green background diff highlights.
@@ -156,7 +157,11 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
   - **Editor Breadcrumbs**: Clean path navigation bar (`src > components > layout > editor > Editor.tsx`). Displays `diff > [git] file (Working Tree)` when a diff tab is active.
   - **Code Pane**: Lightweight custom buffer editor with line numbers, active line highlight, auto-indentation, and syntax highlighting via semantic token parser.
   - **Inline Find Widget**: Floating widget in top-right corner (`Ctrl+F`) with match count and Next/Previous navigation.
-  - **Minimap**: Scaled visual overview on the right edge of the editor buffer with click-to-scroll viewport box.
+  - **Minimap (`Minimap.tsx`)**:
+    - `[DEPRECATED — Synchronous Main-Thread Tokenizer]`: Synchronous `tokenizeLine` in the React render loop is deprecated in favor of Fast Lane Web Worker tokenization (`tokenizerTask.ts` via `WorkerBroker`) with instant visual skeleton bars during fast scroll.
+    - Scaled visual overview on the right edge of the editor buffer with click-to-scroll viewport box.
+  - **Heuristic Linter (`WorkbenchLifecycle.ts`)**:
+    - `[DEPRECATED — Synchronous Main-Thread Syntax Validation]`: Synchronous `validateSyntax` execution inside `WorkbenchLifecycle.ts` is deprecated in favor of Batch Lane Web Worker (`linterTask.ts` via `WorkerBroker`) debounced at 300ms with `AbortController` cancellation.
 
 ### 5. Bottom Panel (`bottom-panel/`)
 - **Path**: [`src/components/layout/bottom-panel/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/bottom-panel)
@@ -208,7 +213,7 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
   - **Dual Provider & Model Message Badges (`ChatMessageList.tsx`)**:
     - Assistant message headers render both the provider tag (`[AGY]`, `[CLD]`, `[OC]`, `[OR]`) and the model identifier pill (`[gemini-3.8-flash-high]`), providing instant visibility of the serving engine.
   - **Streaming AI Response via HTTP POST & Streamed SSE-Formatted Reader (`storeApi.ts` & `chatCore.ts`)**:
-    - Replaced mock contextual responses with streaming HTTP requests (`POST /api/v1/ai/chat`) connecting to the backend AI engine with multi-provider routing.
+    - `[DEPRECATED — Mock Streaming & Monolithic JSON Overwrite]`: Simulated client-side streaming (`mockData.ts`) and full-session monolithic JSON rewriting (`~/.aegis/chats/<id>.json`) are deprecated. The active system communicates via Go streaming proxy (`POST /api/v1/ai/chat`) and appends atomic event nodes to the graph ledger (`POST /api/v1/chats/:id/events`) with Content-Addressed Storage (CAS) blob offloading.
     - Client consumes streamed Server-Sent Events (`event: start/thinking/tool_call/chunk/done/error`) through a `ReadableStreamDefaultReader` parser.
     - Typewriter streaming text updates with pulsing cursor (`.streaming-cursor`) and shimmer loader (`.message-body-streaming-shimmer`).
   - **Minimalist Flat Linear Timeline Stream (`ChatMessageList.tsx`, `MarkdownRenderer.tsx`, `ToolCallActivity.tsx`, `chat.css`)**:
@@ -241,7 +246,7 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
 
 ### 7. Status Bar (`status-bar/`)
 - **Path**: [`src/components/layout/status-bar/`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/status-bar)
-- **Primary Components**: `StatusBar.tsx`, `BranchPopover.tsx`, `ProblemsPopover.tsx`, `NotificationsPopover.tsx`, `status-bar.css`
+- **Primary Components**: `StatusBar.tsx`, `PerfStatusPill.tsx`, `BranchPopover.tsx`, `ProblemsPopover.tsx`, `NotificationsPopover.tsx`, `LspStatusPopover.tsx`, `status-bar.css`
 - **Visual Design & Interactive Capabilities**:
   - Slim 24px footer anchored at the bottom edge.
   - **Left Section**:
@@ -253,6 +258,15 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
     - **Indentation Toggle Button**: Dynamic `Spaces: {tabSize}` button reflecting workbench editor state; clicking directly toggles between 2 and 4 spaces with feedback toast, kept in sync with Settings Modal and Sidebar.
     - **Document Encoding**: Live file encoding indicator (`UTF-8`).
     - **Language Mode Badge**: Active file syntax mode detected automatically from file extensions.
+    - **LSP Status Button & Popover (`LspStatusPopover.tsx`)**: Displays Language Server Protocol connection status with glowing dot indicator; clicking opens LSP server inspector.
+    - **Zero-Freeze Performance Guard (`PerfStatusPill.tsx`)**:
+      - Real-time frame rate indicator (`{fps} FPS`) monitored via `perfMonitor.ts` with semantic color states (`syntax-green` $\ge 50$ FPS, `syntax-orange`, `syntax-pink` $< 40$ FPS).
+      - Clicking opens the Performance Guard inspector reporting live FPS, main-thread event loop lag (ms), active Web Worker pool size, LRU cache entry count, and detected Long Tasks (> 50 ms).
+      - **Centered Popover Anchor**: Positioned with `left-1/2 -translate-x-1/2 mb-1` directly above the trigger button, guaranteeing symmetrical alignment and preventing viewport overflow.
+      - **Standardized Popover Header**: Adopts `.status-popover-header` with uppercase `PERFORMANCE GUARD` label and "Clear Lags" action button.
+      - **Active State Indicator**: Highlights the status item with `.status-button-active` while the popover remains open.
+      - `[DEPRECATED — Text Emoji ⚡ in Status Bar]`: Text emoticon `⚡` has been deprecated and replaced by `<Icon name="zap" size={13} />` (and `size={12}` in header) from `IconName` and `Icon.tsx`.
+      - `[DEPRECATED — Asymmetric left-0 Popover Alignment]`: Left-aligned positioning (`left-0`) causing right-edge viewport overflow is deprecated in favor of centered anchor `left-1/2 -translate-x-1/2`.
     - **Server Connection Indicator**: Live Go Core Server ping (`/api/v1/workspace/info`) displaying glowing dot (`--color-success` online / `--color-error` offline) with `Local: Connected / Offline`; clicking triggers manual health check / reconnect attempt.
     - **Notification Center Badge & Popover (`NotificationsPopover.tsx`)**:
       - Real-time unread notification badge counter.
@@ -282,6 +296,8 @@ All layout modules live in [`src/components/layout/`](file:///Users/aditwicakson
   - **Backdrop-Free Experience**: Completely eliminates dark blurred overlay/backdrop; workbench and code editor stay 100% bright, crisp, and visible while searching.
   - **Single Input UX**: Eliminates duplicate search bars; the navbar search bar itself serves as the interactive input, while the floating dropdown beneath exclusively displays command results.
   - **Results List**: Scrollable command list with uppercase section headers (`COMMANDS`), icons, bold labels, and muted detail subtitles with clean ellipsis truncation (`text-overflow: ellipsis`) for long items.
+  - **Go-First Quick Open Subsystem (`GET /api/v1/workspace/files/find`)**:
+    - `[DEPRECATED — Client-Side JavaScript files.filter()]`: Client-side linear filtering of tens of thousands of file paths in the browser thread is deprecated. Quick Open (`Cmd+P`) now queries the Go-First in-memory workspace index, evaluating weighted subsequence matches across 50.000+ files in sub-2ms with multi-core Goroutines.
   - **Keyboard Navigation & Shortcuts**: Supports `⌘K` / `Ctrl+K` and `⌘P` / `Ctrl+P` toggle shortcuts, `Arrow Up/Down` for cyclical selection, `Enter` to execute, and `Escape` to close and reset query.
   - **Dismissal**: Outside-click dismissal via `pointerdown` listener on `document` and `Escape` key handling.
 - **Tokens Used**: `bg-surface-overlay`, `border-line-bright`, `shadow-popover`, `text-ink`, `text-ink-soft`, `text-ink-muted`, `bg-surface-hover`.

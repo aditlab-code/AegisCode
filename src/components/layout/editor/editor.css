@@ -387,6 +387,14 @@
   opacity: 1;
 }
 
+.minimap-skeleton-bar {
+  display: inline-block;
+  height: 2px;
+  background: var(--color-ink);
+  opacity: 0.25;
+  border-radius: 1px;
+}
+
 .minimap-slider {
   position: absolute;
   left: 0;

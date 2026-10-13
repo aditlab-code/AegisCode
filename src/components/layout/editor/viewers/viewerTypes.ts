@@ -140,6 +140,8 @@ export function detectCsvDelimiter(content: string): "," | ";" | "\t" {
 }
 
 /**
+ * @deprecated Prefer server-side windowing via /api/v1/workspace/csv/query (RFC 4180 chunk streaming).
+ * Used only as local fallback for small test strings.
  * RFC 4180 compliant CSV parser.
  * Supports quoted strings containing delimiters and newlines, escaped quotes ("").
  */

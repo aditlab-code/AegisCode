@@ -1486,6 +1486,48 @@ func TestWorkspaceCsvQuery(t *testing.T) {
 	}
 }
 
+func TestHandleWorkspaceFilesFind(t *testing.T) {
+	_, handler, tempDir := setupTestServer(t, "")
+	defer os.RemoveAll(tempDir)
+
+	// Create test structure
+	_ = os.MkdirAll(filepath.Join(tempDir, "src", "components"), 0755)
+	fileA := filepath.Join(tempDir, "src", "components", "CsvViewer.tsx")
+	fileB := filepath.Join(tempDir, "src", "components", "CodePane.tsx")
+	_ = os.WriteFile(fileA, []byte("// csv"), 0644)
+	_ = os.WriteFile(fileB, []byte("// code"), 0644)
+
+	// Switch root so index scans newly created files
+	reqOpen := httptest.NewRequest(http.MethodPost, "/api/v1/workspace/open", strings.NewReader(`{"path":"`+tempDir+`"}`))
+	executeRequest(handler, reqOpen)
+
+	// 1. Query for 'csv'
+	reqFind := httptest.NewRequest(http.MethodGet, "/api/v1/workspace/files/find?q=csv&limit=10", nil)
+	rrFind := executeRequest(handler, reqFind)
+	if rrFind.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rrFind.Code, rrFind.Body.String())
+	}
+
+	var res FilesFindResponse
+	if err := json.Unmarshal(rrFind.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(res.Matches) == 0 {
+		t.Fatalf("expected matches for 'csv', got 0")
+	}
+	if res.Matches[0].Path != "src/components/CsvViewer.tsx" {
+		t.Errorf("expected top match CsvViewer.tsx, got %s", res.Matches[0].Path)
+	}
+
+	// 2. Method POST -> 405
+	reqPost := httptest.NewRequest(http.MethodPost, "/api/v1/workspace/files/find", nil)
+	rrPost := executeRequest(handler, reqPost)
+	if rrPost.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", rrPost.Code)
+	}
+}
+
 
 
 

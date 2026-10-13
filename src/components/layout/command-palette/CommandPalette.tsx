@@ -1,6 +1,10 @@
 import { useState, useMemo, useEffect, useRef } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbenchStore, useShallow } from "../../../store"
+import {
+  findWorkspaceFiles,
+  type FuzzyFindMatch,
+} from "../../../utils/workspaceApi"
 import type { IconName } from "../../../types/workbench"
 
 interface CommandPaletteItem {
@@ -59,6 +63,7 @@ export function CommandPalette() {
       tabs: s.tabs,
       openFileInPane: s.openFileInPane,
       setCursorPosition: s.setCursorPosition,
+      serverConnected: s.serverConnected,
     })),
   )
 
@@ -226,12 +231,39 @@ export function CommandPalette() {
 
   const [selectedIndex, setSelectedIndex] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
+  const [backendMatches, setBackendMatches] = useState<FuzzyFindMatch[]>([])
 
   const mode = useMemo<"command" | "goto-line" | "file">(() => {
     if (commandPaletteQuery.startsWith(">")) return "command"
     if (commandPaletteQuery.startsWith(":")) return "goto-line"
     return "file"
   }, [commandPaletteQuery])
+
+  useEffect(() => {
+    if (mode !== "file" || !commandPaletteQuery.trim() || !serverConnected) {
+      setBackendMatches([])
+      return
+    }
+
+    const controller = new AbortController()
+    const q = commandPaletteQuery.trim()
+
+    findWorkspaceFiles(q, 25)
+      .then((res) => {
+        if (!controller.signal.aborted && res?.matches) {
+          setBackendMatches(res.matches)
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setBackendMatches([])
+        }
+      })
+
+    return () => {
+      controller.abort()
+    }
+  }, [mode, commandPaletteQuery, serverConnected])
 
   const results = useMemo<CommandPaletteItem[]>(() => {
     if (mode === "command") {
@@ -278,10 +310,27 @@ export function CommandPalette() {
 
     // mode === "file" (Quick Open)
     const q = commandPaletteQuery.trim().toLowerCase()
+
+    // 1. Prioritize backend fast fuzzy matches from Go WorkspaceIndex
+    if (backendMatches.length > 0 && q) {
+      return backendMatches.map((m) => {
+        const name = m.path.split("/").pop() || m.path
+        return {
+          id: `backend-file-${m.path}`,
+          label: name,
+          detail: m.path,
+          icon: "file",
+          action: () => {
+            openFileInPane(m.path)
+          },
+        }
+      })
+    }
+
     const seen = new Set<string>()
     const candidates: CommandPaletteItem[] = []
 
-    // 1. Prioritize open tabs
+    // 2. Prioritize open tabs
     for (const tabPath of tabs) {
       if (!seen.has(tabPath)) {
         seen.add(tabPath)
@@ -298,7 +347,7 @@ export function CommandPalette() {
       }
     }
 
-    // 2. Add files from workspace tree
+    // 3. Add files from workspace tree (local fallback)
     for (const f of files) {
       if (
         (f.icon === "file" || f.type === "file" || (!f.children && f.path)) &&
@@ -332,6 +381,7 @@ export function CommandPalette() {
   }, [
     mode,
     commandPaletteQuery,
+    backendMatches,
     allCommands,
     tabs,
     files,

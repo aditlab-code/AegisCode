@@ -305,6 +305,7 @@ export function Icon({ name, size = 16, className = "" }: IconProps) {
         <path d="M15 4v16" />
       </>
     ),
+    zap: <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />,
   }
 
   return (
