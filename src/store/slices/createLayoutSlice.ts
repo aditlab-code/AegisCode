@@ -28,6 +28,7 @@ export const DEFAULT_BOTTOM_TAB_ORDER: BottomTab[] = [
   "Problems",
   "Output",
   "Debug Console",
+  "MCP",
 ]
 
 // Pure transition functions
@@ -73,12 +74,16 @@ export function loadStoredBottomTabOrder(): BottomTab[] {
           if (!migrated.includes("Debug Console")) {
             migrated.push("Debug Console")
           }
+          if (!migrated.includes("MCP")) {
+            migrated.push("MCP")
+          }
           return migrated.filter(
             (t): t is BottomTab =>
               t === "Terminal" ||
               t === "Problems" ||
               t === "Output" ||
-              t === "Debug Console",
+              t === "Debug Console" ||
+              t === "MCP",
           )
         }
       }

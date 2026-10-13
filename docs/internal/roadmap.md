@@ -16,7 +16,7 @@
 | **Phase 5** | AppDrawer AEGIS AI Agent & Session Hub | ✅ Completed | Multi-session chat, slash autocomplete, provider selector |
 | **Special** | UI Dark/Light Theme & Modular Palettes | ✅ Completed | ActivityRail toggle, modular JSON palettes (Default, Atom, Tokyo Night) |
 | **Special** | Settings Registry, Core IDE Preferences & Editor Polish | ✅ Completed | Decoupled schema registry, wildcard exclude, GPU cursor blinking, wrap column |
-| **Phase 6** | Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger | ✅ Completed (6.1–6.13 ✅) | Cross-platform Go binary & embed.FS, supervisor, Pure-Go SQLite, AI agent bridge, DAP/Delve, Zero-Freeze Offloading, FTS5 Search |
+| **Phase 6** | Go Core Server, Pure-Go SQLite, AI Agent Bridge, DAP Debugger & CodeGraph MCP | ✅ Completed (6.1–6.14 ✅) | Cross-platform Go binary & embed.FS, supervisor, Pure-Go SQLite, AI agent bridge, DAP/Delve, Zero-Freeze Offloading, FTS5 Search, CodeGraph MCP Engine |
 | **Phase 7** | Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`) | 🟡 Active (Sub-Phase 7.1, 7.1b, 7.1c ✅, 7.2–7.3 ⚪) | Multi-format tab viewers (Images, Markdown, PDF, Big Data CSV), vector canvas wireframing |
 | **Phase 8** | Research Workshop & Data Science Studio | ⚪ Planned | LaTeX + PDF sync, BibTeX, Python/R dataframes, Biblioshiny |
 | **Phase 9** | Web-Based Remote Pairing & Tablet Companion | ⚪ Deferred (Final) | LAN pairing, web preview host, touch-optimized editor mode |
@@ -125,7 +125,7 @@
 ---
 
 ### Phase 6: Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger
-- **Status**: 🟡 Active (Sub-Phases 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9, and 6.10 Completed; Sub-Phase 6.11 Append-Only Ledger Pending)
+- **Status**: ✅ Completed (Sub-Phases 6.1–6.14 Completed ✅)
 
 #### Sub-Phase 6.1: Live Workspace Engine & File Operations
 - **Status**: ✅ Completed
@@ -441,6 +441,43 @@
     - Mengeliminasi pembuatan folder orphan `chats/` dan `blobs/` saat boot.
     - Purge total `~/.aegis/legacy_backup/` dan folder kosong, menghasilkan direktori `~/.aegis/` murni berisi `aegis.db` (+ WAL/SHM).
 - **Verification**: 100% lolos verifikasi Go backend tests (20/20 store tests, 12 Go packages), Vitest frontend suite (18 test files, 183 tests), Vite production build (0 errors), dan oxfmt code formatting.
+
+#### Sub-Phase 6.14: CodeGraph Knowledge Engine & Native MCP Server Bridge
+- **Status**: ✅ Completed
+- **Architecture Reference**: [ADR 0013: Embedded Pure-Go SQLite Engine and FTS5 Search](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/docs/adr/0013-embedded-pure-go-sqlite-and-fts5-search.md)
+- **Objective**: Mengeliminasi token bloat (penghematan 80%–95%), latensi, dan degradasi konteks akibat injeksi berkas mentah / raw AST dumps ke LLM. Menyediakan mesin pengetahuan graph kode berbasis pure-Go SQLite (`modernc.org/sqlite`) per-workspace di `~/.aegis/graphs/<workspace_hash>.db` dan server native Model Context Protocol (MCP) dengan transport Stdio dan HTTP JSON-RPC 2.0 yang mengekspos 5 tingkat progressive disclosure langsung ke penyedia AI AEGIS dan klien MCP eksternal.
+- **Deliverables**:
+  - **Per-Workspace Pure-Go SQLite Schema & Storage Layer (`server/internal/codegraph/db.go`, `types.go`)**:
+    - Zero-CGO SQLite storage di `~/.aegis/graphs/<workspace_hash>.db` (SHA-256 root direktori terpotong 16 karakter hex). Dormant saat tidak ada workspace aktif.
+    - High-concurrency PRAGMA: WAL Mode, `synchronous = NORMAL`, `busy_timeout = 5000`, `foreign_keys = ON`, `recursive_triggers = ON`, `cache_size = -2000`.
+    - Relational schema: `graph_files`, `code_symbols`, `code_edges`, dan virtual table FTS5 `symbol_fts` dengan trigger sinkronisasi otomatis (`AFTER INSERT`, `AFTER DELETE`, `AFTER UPDATE`).
+  - **Multi-Language AST Extractors (`go_extractor.go`, `ts_extractor.go`, `lsp_extractor.go`)**:
+    - **Go AST Extractor**: Standard library `go/parser` dan `go/ast` mengekstrak fungsi, method (dengan tipe receiver di `scope`), deklarasi struct/interface/type/const/var, signature skeleton tanpa body block, doc comments, serta dependency call/instantiation edges via `ast.Inspect`.
+    - **TypeScript/JavaScript Lexical Extractor**: Parser leksikal & regex murni Go tanpa subprocess eksternal mengekstrak fungsi, arrow functions, classes, interfaces, types, imports, dan call expressions.
+    - **LSP DocumentSymbol Extractor**: Pengayaan simbol berpresisi tinggi via `lsp.Manager` (`textDocument/documentSymbol`) dengan fallback otomatis ke parser leksikal/AST native.
+  - **Progressive Disclosure Query Engine & Guardrails (`query.go`)**:
+    - **L0 Outline**: `GetFileOutline(ctx, relPath)` (< 150 token).
+    - **L1 Signature**: `GetSymbolDefinition(ctx, name, fileHint)` (< 80 token).
+    - **L2 Topology**: `FindCallers` (guardrail default `LIMIT 15`, `truncated: true`, dan pagination hint) dan `FindCallees`.
+    - **L3 Surgical Subgraph**: `QuerySubgraph(ctx, rootSymbol, depth)` dengan pembatasan mutlak `depth <= 2` (2-hop BFS, < 400 token).
+    - **L4 Source Body**: `ReadSymbolBody(ctx, name, relPath)` membaca baris kode implementasi exact dari disk.
+    - **Graph-Augmented Git Diff**: `GetDiffImpact(ctx, staged)` memetakan hunk baris diff ke simbol yang terpengaruh dan topologi caller pemanggilnya, mengabaikan vendor, lockfile (`go.sum`, `package-lock.json`), `node_modules`, dan file biner.
+  - **Dual-Path Ingestion Pipeline & Hot-Path LRU Cache (`indexer.go`, `cache.go`)**:
+    - In-memory 500-item thread-safe LRU cache dengan invalidasi instan saat berkas termodifikasi/terhapus.
+    - Hot-path SHA-256 checking (< 0.1 ms) di RAM Go melewati re-parsing jika hash identik.
+    - Transaksi atomik SQLite (< 5 ms) dengan serialisasi write mutex (`writeMu`).
+    - Cold-start background worker pool (hingga `runtime.NumCPU()`) untuk pemindaian repositori awal.
+    - Sinkronisasi real-time via `workspace.Manager.SubscribeEvents()`.
+  - **Native Model Context Protocol (MCP) Server & Transports (`server/internal/mcp/`)**:
+    - Server JSON-RPC 2.0 mendaftarkan 7 tools resmi: `get_file_outline`, `get_symbol_definition`, `find_callers`, `find_callees`, `query_subgraph`, `read_symbol_body`, `get_diff_impact`.
+    - Stdio Transport (`stdio.go`): Runner Stdio untuk klien MCP eksternal (Claude Desktop, Cursor, OpenCode) dengan isolasi logging ke `os.Stderr`.
+    - HTTP JSON-RPC Endpoint: `POST /api/v1/mcp`, `GET /api/v1/codegraph/status`, `POST /api/v1/codegraph/reindex`.
+    - CLI Subcommand: `aegiscode mcp [--workspace <path>]` di `server/cmd/server/main.go`.
+  - **AI AEGIS & UI AppDrawer Chat Integration**:
+    - Slash commands di `server/internal/ai/skills.go`: `/outline`, `/def`, `/callers`, `/subgraph`, `/impact`.
+    - Pendaftaran tools MCP otomatis pada payload OpenAI (`openai.go`) dan Anthropic Claude (`claude.go`).
+    - Ringkasan aksi di `normalizer.go` dan rendering timeline badges dengan SVG icon di `ToolCallActivity.tsx`.
+- **Verification**: 100% lolos verifikasi Go backend tests (36 unit tests di `codegraph`, `mcp`, dan `api`), full backend suite (169 tests passing across 14 packages), Vitest frontend suite (210 tests passing across 19 files), Vite production build (0 errors), dan oxfmt formatting.
 
 ---
 

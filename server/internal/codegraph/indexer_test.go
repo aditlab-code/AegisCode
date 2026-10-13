@@ -139,3 +139,34 @@ func Subtract(a, b int) int {
 		t.Errorf("expected Subtract symbol in updated outline")
 	}
 }
+
+func TestEngineSetWorkspaceDeadlock(t *testing.T) {
+	tmpDir1 := t.TempDir()
+	ws, err := workspace.NewManager(tmpDir1)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	eng, err := NewEngine(ws, nil)
+	if err != nil {
+		t.Fatalf("NewEngine failed: %v", err)
+	}
+	defer eng.Close()
+
+	tmpDir2 := t.TempDir()
+	// Switching workspace to another path must not deadlock
+	done := make(chan struct{})
+	go func() {
+		_ = eng.SetWorkspace(tmpDir2)
+		_ = eng.SetWorkspace("")
+		_ = eng.SetWorkspace(tmpDir1)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Passed without deadlock
+	case <-time.After(3 * time.Second):
+		t.Fatal("SetWorkspace deadlocked!")
+	}
+}

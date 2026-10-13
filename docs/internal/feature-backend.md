@@ -26,6 +26,7 @@ flowchart LR
         Supervisor["Process Supervisor"]
         Workspace["Workspace Engine"]
         Store["Pure-Go SQLite Engine (~/.aegis/aegis.db)"]
+        CodeGraph["CodeGraph & Native MCP Server (~/.aegis/graphs/<hash>.db)"]
     end
 
     subgraph Workers["Supervised Subprocesses"]
@@ -39,6 +40,7 @@ flowchart LR
     HTTPRouter --- DAPRunner
     HTTPRouter --- Workspace
     HTTPRouter --- Store
+    HTTPRouter --- CodeGraph
     HTTPRouter --- Supervisor
     Supervisor -->|stdio JSON-RPC| LSPWorker
     Supervisor -->|PTY Pipe| PTYWorker
@@ -585,6 +587,55 @@ Supervised out-of-process LSP servers (`gopls`, `typescript-language-server`, `p
   - Gracefully stops all supervised workers, tears down active PTY shells, flushes pending state to disk, and terminates the core Go HTTP server.
   - Response: `{ "status": "shutting_down" }`
 
+
+### N. Model Context Protocol (MCP) & CodeGraph Knowledge Engine (Sub-Phase 6.14)
+
+A high-performance CodeGraph Knowledge Engine and native Model Context Protocol (MCP) server implemented in pure standard library Go and pure-Go SQLite (`modernc.org/sqlite`, Zero-CGO):
+
+- **Core Problem Solved**:
+  - Raw AST dumps or reading entire source files into LLM context introduces catastrophic token bloat (7,500–30,000+ tokens per query), high inference latency, and context degradation.
+  - CodeGraph reduces context consumption by **80%–95%** ($< 200$ tokens per query) by skeletonizing ASTs and querying indexed relational graphs.
+- **Per-Workspace Database Storage (`~/.aegis/graphs/<workspace_hash>.db`)**:
+  - Keyed by 16-character SHA-256 hex string of the cleaned absolute workspace root path (`sha256Hex(root)[:16]`).
+  - Zero Repo Pollution: Projects remain 100% clean with zero database or lock file clutter.
+  - High-Concurrency PRAGMAs: WAL mode, `synchronous = NORMAL`, `busy_timeout = 5000`, `foreign_keys = ON`, `recursive_triggers = ON`, `cache_size = -2000`.
+  - Relational Schema: `graph_files`, `code_symbols`, `code_edges`, and full-text search `symbol_fts` virtual table with automatic triggers (`trg_code_symbols_ai`, `trg_code_symbols_ad`, `trg_code_symbols_au`).
+- **API Endpoints**:
+  - `POST /api/v1/mcp`
+    - JSON-RPC 2.0 endpoint conforming to Model Context Protocol specification.
+    - Dispatches protocol methods: `initialize`, `ping`, `tools/list`, and `tools/call`.
+    - Returns standardized MCP payloads: `{ "content": [ { "type": "text", "text": "..." } ], "isError": boolean }`.
+  - `GET /api/v1/codegraph/status`
+    - Returns runtime indexing statistics:
+    - Response: `{ "workspaceRoot": string, "workspaceHash": string, "dbPath": string, "indexedFiles": number, "totalSymbols": number, "totalEdges": number, "isIndexing": boolean, "lastIndexedAt": number }`.
+  - `POST /api/v1/codegraph/reindex`
+    - Triggers an immediate full repository re-scan and background re-indexing.
+    - Response: `{ "status": "ok" }`.
+  - `GET /api/v1/codegraph/neighborhood?id=<symbolID>&depth=<1|2>&limit=<50>`
+    - Recursive CTE query returning connected symbol nodes and directed edges formatted for Cytoscape.js.
+  - `GET /api/v1/codegraph/file?path=<relPath>`
+    - Returns all symbols defined in `<relPath>` and connected relationships for the active file graph view.
+  - `GET /api/v1/codegraph/workspace?limit=<50>`
+    - Returns top structural symbols across the workspace by edge degree with truncation metadata.
+  - `GET /api/v1/codegraph/symbols/search?q=<query>&limit=<20>`
+    - Queries `symbol_fts` (with fallback to LIKE) for symbol autocomplete in the graph toolbar.
+- **Stdio Transport CLI**:
+  - Command: `aegiscode mcp [--workspace <path>]`
+  - Enables external MCP clients (Claude Desktop, Cursor, OpenCode, Zed) to launch AegisCode as a native MCP server over Stdio.
+  - Dedicated stream isolation: All internal diagnostic logging is redirected to `os.Stderr`, preserving `os.Stdout` exclusively for clean JSON-RPC 2.0 frames.
+- **7 Registered Progressive Disclosure Tools**:
+  1. `get_file_outline`: Compact outline of all functions, classes, interfaces, and methods in a file without bodies (< 150 tokens). Parameter: `file_path: string`.
+  2. `get_symbol_definition`: Retrieves symbol signature, line range, and docstrings (< 80 tokens). Parameters: `name: string`, `file_hint: string` (optional).
+  3. `find_callers`: Inbound caller topology with default guardrail `LIMIT 15`, `truncated: true` flag, and pagination hint for high-fanout symbols. Parameters: `function_name: string`, `limit: integer`.
+  4. `find_callees`: Outbound functions called by a function. Parameters: `function_name: string`, `file_hint: string`, `limit: integer`.
+  5. `query_subgraph`: Surgical 2-hop BFS dependency subgraph exploration around a symbol (< 400 tokens). Parameters: `root_symbol: string`, `depth: integer` (strictly clamped to max 2 hops).
+  6. `read_symbol_body`: Reads the exact source implementation body lines of a symbol directly from disk. Parameters: `name: string`, `file_path: string`.
+  7. `get_diff_impact`: Graph-augmented Git diff impact analysis mapping modified line hunks to changed symbols and caller topology. Filters out vendor, lockfiles (`go.sum`, `package-lock.json`), `node_modules`, and binary files. Parameter: `staged: boolean`.
+- **Performance & Dual-Path Ingestion Pipeline**:
+  - **Hot-Path On-Save (< 0.1 ms SHA-256 Check)**: Subscribes to `workspace.Manager.SubscribeEvents()`. Computes SHA-256 of saved files in Go RAM; skips re-parsing if hash is unchanged.
+  - **Single-Transaction Writes (< 5 ms)**: Atomic SQLite transactions with `writeMu` mutex serialization preventing `SQLITE_BUSY` lock contention.
+  - **500-Item Thread-Safe LRU Cache**: In-memory cache for recent outlines, definitions, and callers with instant path invalidation on file mutation.
+  - **Cold-Start Background Worker Pool**: Background goroutines (up to `runtime.NumCPU()`) indexing unindexed files on startup without blocking server boot or UI rendering.
 ---
 
 ## 5. Process Supervision & Worker Isolation

@@ -51,6 +51,7 @@ describe("createLayoutSlice", () => {
       "Problems",
       "Output",
       "Debug Console",
+      "MCP",
     ])
 
     expect(toggleThemeLogic("dark")).toBe("light")

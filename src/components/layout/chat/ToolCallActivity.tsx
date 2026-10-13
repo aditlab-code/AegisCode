@@ -3,6 +3,7 @@ import { Icon } from "../../ui/Icon"
 import type { ToolCallItem, IconName } from "../../../types/workbench"
 import { cleanFilePath } from "../../../utils/workspaceApi"
 import { fetchChatBlob } from "../../../utils/storeApi"
+import { useWorkbenchStore } from "../../../store"
 
 export interface ParsedToolCall {
   actionLabel: string
@@ -373,6 +374,50 @@ export const ToolCallActivityCard = memo(function ToolCallActivityCard({
     }
   }
 
+  const isCodeGraphTool =
+    toolCall.name === "get_file_outline" ||
+    toolCall.name === "get_symbol_definition" ||
+    toolCall.name === "find_callers" ||
+    toolCall.name === "find_callees" ||
+    toolCall.name === "query_subgraph" ||
+    toolCall.name === "read_symbol_body"
+
+  const handleInspectInGraph = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const targetSymbol =
+      toolCall.args?.symbol_name ||
+      toolCall.args?.function_name ||
+      toolCall.args?.root_symbol ||
+      toolCall.args?.name ||
+      parsed.fullTarget ||
+      ""
+    const targetFile =
+      toolCall.args?.file_path ||
+      toolCall.args?.rel_path ||
+      parsed.targetFile ||
+      ""
+
+    const graphTab = targetFile
+      ? `codegraph:${targetFile}`
+      : "codegraph:workspace"
+
+    const state = useWorkbenchStore.getState()
+    if (!state.splitEditor) {
+      state.toggleSplitEditor()
+    }
+    state.openFileInGroup(graphTab, "group2")
+
+    if (targetSymbol) {
+      setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent("aegis:ai-trace-path", {
+            detail: { symbolName: targetSymbol },
+          }),
+        )
+      }, 100)
+    }
+  }
+
   return (
     <div
       className={`tool-call-chip transition-colors ${
@@ -464,6 +509,19 @@ export const ToolCallActivityCard = memo(function ToolCallActivityCard({
             title={`Open ${parsed.fullTarget} in editor`}
           >
             <span>Open</span>
+          </button>
+        )}
+
+        {/* Quick Inspect in Graph button for CodeGraph tools */}
+        {isCodeGraphTool && (
+          <button
+            type="button"
+            className="shrink-0 px-1.5 py-0.5 rounded text-[10px] text-accent hover:bg-surface-raised border border-line cursor-pointer flex items-center gap-1"
+            onClick={handleInspectInGraph}
+            title="Inspect in CodeGraph visual studio"
+          >
+            <Icon name="zap" size={10} />
+            <span>Graph</span>
           </button>
         )}
 

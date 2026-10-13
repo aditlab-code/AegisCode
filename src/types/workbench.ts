@@ -355,7 +355,7 @@ export interface MenuGroup {
   items: [string, string, string][]
 }
 
-export type BottomTab = "Terminal" | "Problems" | "Output" | "Debug Console"
+export type BottomTab = "Terminal" | "Problems" | "Output" | "Debug Console" | "MCP"
 
 export interface DebugConsoleMessage {
   id: string

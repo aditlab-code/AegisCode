@@ -30,6 +30,7 @@ type Engine struct {
 	dbPath        string
 	db            *sql.DB
 	query         *QueryEngine
+	uiService     *UIService
 	extractor     *LSPExtractor
 	cache         *LRUCache
 	ws            *workspace.Manager
@@ -96,7 +97,7 @@ func (e *Engine) initWorkspace(root string) error {
 	e.dbPath = dbPath
 	e.db = db
 	e.query = NewQueryEngine(db, cleanRoot)
-
+	e.uiService = NewUIService(db, cleanRoot)
 	// Preload existing file hashes from DB into memory
 	e.hashesMu.Lock()
 	e.fileHashes = make(map[string]string)
@@ -147,6 +148,7 @@ func (e *Engine) SetWorkspace(newRoot string) error {
 	e.workspaceHash = ""
 	e.dbPath = ""
 	e.query = nil
+	e.uiService = nil
 	e.mu.Unlock()
 
 	if strings.TrimSpace(newRoot) == "" {
@@ -524,6 +526,13 @@ func (e *Engine) GetDiffImpact(ctx context.Context, staged bool) (*DiffImpactRes
 }
 
 // Close terminates event watching and closes database connections.
+// UIService returns the active UIService for graph visualization queries.
+func (e *Engine) UIService() *UIService {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.uiService
+}
+
 func (e *Engine) Close() error {
 	var err error
 	e.closeOnce.Do(func() {

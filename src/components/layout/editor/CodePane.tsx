@@ -397,6 +397,11 @@ export function CodePane({
             onNavigateDefinition={(targetPath, line, col) => {
               openFileInPane(targetPath)
               setCursorPosition({ line, column: col })
+              window.dispatchEvent(
+                new CustomEvent("aegis:focus-symbol", {
+                  detail: { name: targetPath, line },
+                }),
+              )
             }}
             onToggleBreakpoint={(line) => toggleBreakpoint(filename, line)}
             onSave={() => saveFile(filename)}

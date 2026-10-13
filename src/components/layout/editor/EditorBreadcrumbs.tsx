@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbenchStore, useShallow } from "../../../store"
 import { isGitDiffTab, parseGitDiffTab } from "../../../utils/gitDiffTab"
+import { isGraphTab, parseGraphTab } from "./viewers/viewerTypes"
 
 interface EditorBreadcrumbsProps {
   file?: string
@@ -88,6 +89,21 @@ export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
             size={12}
           />
           <span>{diffInfo.displayName}</span>
+        </div>
+      </div>
+    )
+  }
+
+  const isGraph = isGraphTab(currentFile)
+  const graphInfo = isGraph ? parseGraphTab(currentFile) : null
+  if (isGraph && graphInfo) {
+    return (
+      <div className="breadcrumbs">
+        <div className="breadcrumb-path">
+          <span>codegraph</span>
+          <Icon name="chevron" size={11} />
+          <Icon className="text-accent shrink-0" name="zap" size={12} />
+          <span>{graphInfo.displayName}</span>
         </div>
       </div>
     )

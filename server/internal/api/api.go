@@ -368,6 +368,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/mcp", s.handleMCP)
 	mux.HandleFunc("/api/v1/codegraph/status", s.handleCodeGraphStatus)
 	mux.HandleFunc("/api/v1/codegraph/reindex", s.handleCodeGraphReindex)
+	mux.HandleFunc("/api/v1/codegraph/neighborhood", s.handleCodeGraphNeighborhood)
+	mux.HandleFunc("/api/v1/codegraph/file", s.handleCodeGraphFile)
+	mux.HandleFunc("/api/v1/codegraph/workspace", s.handleCodeGraphWorkspace)
+	mux.HandleFunc("/api/v1/codegraph/symbols/search", s.handleCodeGraphSymbolsSearch)
 
 	// System Management
 	mux.HandleFunc("/api/v1/system/shutdown", s.handleSystemShutdown)
@@ -2858,6 +2862,133 @@ func (s *Server) handleCodeGraphReindex(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	jsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleCodeGraphNeighborhood(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.codegraph == nil || s.codegraph.UIService() == nil {
+		jsonResponse(w, http.StatusOK, codegraph.UIGraphPayload{
+			Nodes: make([]codegraph.UIGraphNode, 0),
+			Edges: make([]codegraph.UIGraphEdge, 0),
+		})
+		return
+	}
+
+	idStr := r.URL.Query().Get("id")
+	if idStr == "" {
+		jsonError(w, http.StatusBadRequest, "id parameter required")
+		return
+	}
+	symbolID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid id parameter")
+		return
+	}
+
+	depth := 1
+	if dStr := r.URL.Query().Get("depth"); dStr != "" {
+		if d, err := strconv.Atoi(dStr); err == nil {
+			depth = d
+		}
+	}
+
+	limit := 50
+	if lStr := r.URL.Query().Get("limit"); lStr != "" {
+		if l, err := strconv.Atoi(lStr); err == nil {
+			limit = l
+		}
+	}
+
+	payload, err := s.codegraph.UIService().GetSymbolNeighborhood(r.Context(), symbolID, depth, limit)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	jsonResponse(w, http.StatusOK, payload)
+}
+
+func (s *Server) handleCodeGraphFile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.codegraph == nil || s.codegraph.UIService() == nil {
+		jsonResponse(w, http.StatusOK, codegraph.UIGraphPayload{
+			Nodes: make([]codegraph.UIGraphNode, 0),
+			Edges: make([]codegraph.UIGraphEdge, 0),
+		})
+		return
+	}
+
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		jsonError(w, http.StatusBadRequest, "path parameter required")
+		return
+	}
+
+	payload, err := s.codegraph.UIService().GetActiveFileGraph(r.Context(), path)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	jsonResponse(w, http.StatusOK, payload)
+}
+
+func (s *Server) handleCodeGraphWorkspace(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.codegraph == nil || s.codegraph.UIService() == nil {
+		jsonResponse(w, http.StatusOK, codegraph.UIGraphPayload{
+			Nodes: make([]codegraph.UIGraphNode, 0),
+			Edges: make([]codegraph.UIGraphEdge, 0),
+		})
+		return
+	}
+
+	limit := 50
+	if lStr := r.URL.Query().Get("limit"); lStr != "" {
+		if l, err := strconv.Atoi(lStr); err == nil {
+			limit = l
+		}
+	}
+
+	payload, err := s.codegraph.UIService().GetWorkspaceGraph(r.Context(), limit)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	jsonResponse(w, http.StatusOK, payload)
+}
+
+func (s *Server) handleCodeGraphSymbolsSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.codegraph == nil || s.codegraph.UIService() == nil {
+		jsonResponse(w, http.StatusOK, make([]codegraph.UIGraphNode, 0))
+		return
+	}
+
+	q := r.URL.Query().Get("q")
+	limit := 20
+	if lStr := r.URL.Query().Get("limit"); lStr != "" {
+		if l, err := strconv.Atoi(lStr); err == nil {
+			limit = l
+		}
+	}
+
+	nodes, err := s.codegraph.UIService().SearchSymbols(r.Context(), q, limit)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	jsonResponse(w, http.StatusOK, nodes)
 }
 
 

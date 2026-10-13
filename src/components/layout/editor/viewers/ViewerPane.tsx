@@ -5,6 +5,7 @@ const ImageViewer = lazy(() => import("./ImageViewer"))
 const MarkdownViewer = lazy(() => import("./MarkdownViewer"))
 const PdfViewer = lazy(() => import("./PdfViewer"))
 const CsvViewer = lazy(() => import("./CsvViewer"))
+const GraphViewer = lazy(() => import("./GraphViewer"))
 
 interface ViewerPaneProps {
   filename: string
@@ -31,6 +32,9 @@ export function ViewerPane({ filename, groupId, viewerType }: ViewerPaneProps) {
       {viewerType === "pdf" && <PdfViewer filename={filename} />}
       {viewerType === "csv" && (
         <CsvViewer filename={filename} groupId={groupId} />
+      )}
+      {viewerType === "graph" && (
+        <GraphViewer filename={filename} groupId={groupId} />
       )}
     </Suspense>
   )

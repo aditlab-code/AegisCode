@@ -5,7 +5,11 @@ import { IconButton } from "../../ui/IconButton"
 import { useWorkbenchStore, useShallow } from "../../../store"
 import { isGitDiffTab, parseGitDiffTab } from "../../../utils/gitDiffTab"
 import { hasConflictMarkers } from "../../../utils/gitConflict"
-import { getViewerTypeForFile } from "./viewers/viewerTypes"
+import {
+  getViewerTypeForFile,
+  isGraphTab,
+  parseGraphTab,
+} from "./viewers/viewerTypes"
 
 interface ContextMenuData {
   x: number
@@ -227,8 +231,14 @@ export function EditorTabs({
         {currentGroup.tabs.map((tab, index) => {
           const isActive = tab === currentGroup.activeTab
           const isDiff = isGitDiffTab(tab)
+          const isGraph = isGraphTab(tab)
           const diffInfo = isDiff ? parseGitDiffTab(tab) : null
-          const tabLabel = diffInfo ? diffInfo.displayName : tab
+          const graphInfo = isGraph ? parseGraphTab(tab) : null
+          const tabLabel = diffInfo
+            ? diffInfo.displayName
+            : graphInfo
+              ? graphInfo.displayName
+              : tab
           const buf = isDiff
             ? fileBuffers[diffInfo?.file || ""]
             : fileBuffers[tab]
@@ -274,20 +284,24 @@ export function EditorTabs({
                 className={
                   isDiff
                     ? "text-(--color-accent) shrink-0"
-                    : isDeletedOnDisk
-                      ? "text-error shrink-0"
-                      : "shrink-0"
+                    : isGraph
+                      ? "text-accent shrink-0"
+                      : isDeletedOnDisk
+                        ? "text-error shrink-0"
+                        : "shrink-0"
                 }
                 name={
                   isDiff
                     ? "git"
-                    : isDeletedOnDisk
-                      ? "trash"
-                      : getViewerTypeForFile(tab) === "image"
-                        ? "image"
-                        : getViewerTypeForFile(tab) === "csv"
-                          ? "table"
-                          : "code"
+                    : isGraph
+                      ? "zap"
+                      : isDeletedOnDisk
+                        ? "trash"
+                        : getViewerTypeForFile(tab) === "image"
+                          ? "image"
+                          : getViewerTypeForFile(tab) === "csv"
+                            ? "table"
+                            : "code"
                 }
                 size={14}
               />

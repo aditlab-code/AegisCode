@@ -1,4 +1,38 @@
-export type ViewerType = "image" | "markdown" | "pdf" | "csv" | "code"
+export type ViewerType = "image" | "markdown" | "pdf" | "csv" | "graph" | "code"
+
+export function isGraphTab(filename: string): boolean {
+  return (
+    filename === "CodeGraph" ||
+    filename.startsWith("codegraph:") ||
+    filename.endsWith(".graph")
+  )
+}
+
+export interface ParsedGraphTab {
+  displayName: string
+  target: string
+  isWorkspace: boolean
+}
+
+export function parseGraphTab(tab: string): ParsedGraphTab {
+  if (tab === "CodeGraph" || tab === "codegraph:workspace") {
+    return {
+      displayName: "CodeGraph (Workspace)",
+      target: "",
+      isWorkspace: true,
+    }
+  }
+  if (tab.startsWith("codegraph:")) {
+    const rawTarget = tab.slice("codegraph:".length)
+    const base = rawTarget.split("/").pop() || rawTarget
+    return {
+      displayName: `CodeGraph (${base})`,
+      target: rawTarget,
+      isWorkspace: false,
+    }
+  }
+  return { displayName: tab, target: tab, isWorkspace: false }
+}
 
 const IMAGE_EXTENSIONS = new Set([
   "png",
@@ -26,6 +60,7 @@ export function getFileExtension(filename: string): string {
 }
 
 export function getViewerTypeForFile(filename: string): ViewerType {
+  if (isGraphTab(filename)) return "graph"
   const ext = getFileExtension(filename)
   if (IMAGE_EXTENSIONS.has(ext)) return "image"
   if (MARKDOWN_EXTENSIONS.has(ext)) return "markdown"

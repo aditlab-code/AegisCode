@@ -1589,6 +1589,41 @@ func TestCodeGraphAndMCPEndpoints(t *testing.T) {
 	if !strings.Contains(rrList.Body.String(), "get_file_outline") {
 		t.Errorf("expected get_file_outline in tools/list response: %s", rrList.Body.String())
 	}
+
+	// 5. GET /api/v1/codegraph/workspace
+	reqWs := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/workspace?limit=50", nil)
+	rrWs := executeRequest(handler, reqWs)
+	if rrWs.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for codegraph workspace, got %d: %s", rrWs.Code, rrWs.Body.String())
+	}
+
+	// 6. GET /api/v1/codegraph/file
+	reqFile := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/file?path=main.go", nil)
+	rrFile := executeRequest(handler, reqFile)
+	if rrFile.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for codegraph file, got %d: %s", rrFile.Code, rrFile.Body.String())
+	}
+
+	// 7. GET /api/v1/codegraph/neighborhood (missing id -> 400)
+	reqNBad := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/neighborhood", nil)
+	rrNBad := executeRequest(handler, reqNBad)
+	if rrNBad.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for neighborhood without id, got %d", rrNBad.Code)
+	}
+
+	// 8. GET /api/v1/codegraph/neighborhood (with id=1)
+	reqN := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/neighborhood?id=1&depth=1&limit=50", nil)
+	rrN := executeRequest(handler, reqN)
+	if rrN.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for codegraph neighborhood, got %d: %s", rrN.Code, rrN.Body.String())
+	}
+
+	// 9. GET /api/v1/codegraph/symbols/search
+	reqSearch := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/symbols/search?q=test&limit=10", nil)
+	rrSearch := executeRequest(handler, reqSearch)
+	if rrSearch.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for codegraph search, got %d: %s", rrSearch.Code, rrSearch.Body.String())
+	}
 }
 
 

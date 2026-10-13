@@ -92,6 +92,11 @@
   width: 370px;
 }
 
+.mcp-popover {
+  right: 120px;
+  width: 340px;
+}
+
 .status-popover-header {
   display: flex;
   align-items: center;

@@ -6,6 +6,8 @@ import {
   formatFileSize,
   detectCsvDelimiter,
   parseCsv,
+  isGraphTab,
+  parseGraphTab,
 } from "../../../src/components/layout/editor/viewers/viewerTypes"
 import { queryWorkspaceCsv } from "../../../src/utils/workspaceApi"
 
@@ -36,12 +38,48 @@ describe("viewerTypes utility", () => {
       expect(getViewerTypeForFile("dataset.tsv")).toBe("csv")
     })
 
+    it("classifies codegraph and .graph files as graph viewer", () => {
+      expect(getViewerTypeForFile("CodeGraph")).toBe("graph")
+      expect(getViewerTypeForFile("codegraph:workspace")).toBe("graph")
+      expect(getViewerTypeForFile("codegraph:auth/session.go")).toBe("graph")
+      expect(getViewerTypeForFile("project.graph")).toBe("graph")
+    })
+
     it("falls back to code for source files and unknown extensions", () => {
       expect(getViewerTypeForFile("main.go")).toBe("code")
       expect(getViewerTypeForFile("App.tsx")).toBe("code")
       expect(getViewerTypeForFile("styles.css")).toBe("code")
       expect(getViewerTypeForFile("package.json")).toBe("code")
       expect(getViewerTypeForFile("Makefile")).toBe("code")
+    })
+  })
+
+  describe("isGraphTab and parseGraphTab", () => {
+    it("identifies graph tabs accurately", () => {
+      expect(isGraphTab("CodeGraph")).toBe(true)
+      expect(isGraphTab("codegraph:workspace")).toBe(true)
+      expect(isGraphTab("codegraph:main.go")).toBe(true)
+      expect(isGraphTab("schema.graph")).toBe(true)
+      expect(isGraphTab("main.go")).toBe(false)
+      expect(isGraphTab("App.tsx")).toBe(false)
+    })
+
+    it("parses graph tab targets and display names", () => {
+      expect(parseGraphTab("CodeGraph")).toEqual({
+        displayName: "CodeGraph (Workspace)",
+        target: "",
+        isWorkspace: true,
+      })
+      expect(parseGraphTab("codegraph:workspace")).toEqual({
+        displayName: "CodeGraph (Workspace)",
+        target: "",
+        isWorkspace: true,
+      })
+      expect(parseGraphTab("codegraph:auth/session.go")).toEqual({
+        displayName: "CodeGraph (session.go)",
+        target: "auth/session.go",
+        isWorkspace: false,
+      })
     })
   })
 

@@ -5,6 +5,7 @@ import { BranchPopover } from "./BranchPopover"
 import { ProblemsPopover } from "./ProblemsPopover"
 import { NotificationsPopover } from "./NotificationsPopover"
 import { LspStatusPopover } from "./LspStatusPopover"
+import { McpStatusPopover } from "./McpStatusPopover"
 import { PerfStatusPill } from "./PerfStatusPill"
 
 const CursorStatusItem = memo(function CursorStatusItem() {
@@ -60,7 +61,9 @@ export function StatusBar() {
   )
 
   const [activePanel, setActivePanel] =
-    useState<"branch" | "notifications" | "problems" | "lsp" | null>(null)
+    useState<"branch" | "notifications" | "problems" | "lsp" | "mcp" | null>(
+      null,
+    )
   const statusBarRef = useRef<HTMLElement>(null)
 
   const isDirty = gitChanges.length > 0 || stagedChanges.length > 0
@@ -68,7 +71,9 @@ export function StatusBar() {
   const errorCount = diagnostics.filter((d) => d.type === "error").length
   const warningCount = diagnostics.filter((d) => d.type === "warning").length
 
-  function togglePanel(panel: "branch" | "notifications" | "problems" | "lsp") {
+  function togglePanel(
+    panel: "branch" | "notifications" | "problems" | "lsp" | "mcp",
+  ) {
     setActivePanel((current) => (current === panel ? null : panel))
   }
 
@@ -192,6 +197,21 @@ export function StatusBar() {
           />{" "}
           LSP
         </button>
+        <button
+          className={`status-item cursor-pointer hover:text-[var(--color-ink)] ${
+            activePanel === "mcp" ? "status-button-active" : ""
+          }`}
+          onClick={() => togglePanel("mcp")}
+          title="Model Context Protocol (MCP) & CodeGraph Status"
+          type="button"
+        >
+          <span
+            className={`status-dot ${
+              serverConnected ? "status-dot-online" : "status-dot-offline"
+            }`}
+          />{" "}
+          MCP
+        </button>
         <PerfStatusPill />
         <button
           className="status-item cursor-pointer hover:text-[var(--color-ink)]"
@@ -235,6 +255,9 @@ export function StatusBar() {
       )}
       {activePanel === "lsp" && (
         <LspStatusPopover onClose={() => setActivePanel(null)} />
+      )}
+      {activePanel === "mcp" && (
+        <McpStatusPopover onClose={() => setActivePanel(null)} />
       )}
       {activePanel === "notifications" && (
         <NotificationsPopover onClose={() => setActivePanel(null)} />

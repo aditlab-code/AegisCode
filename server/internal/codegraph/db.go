@@ -258,6 +258,11 @@ func IngestExtractedFile(ctx context.Context, db *sql.DB, file *ExtractedFile, h
 			var targetID *int64
 			if tID, ok := nameToID[e.TargetRawName]; ok {
 				targetID = &tID
+			} else {
+				var existingID int64
+				if err := tx.QueryRowContext(ctx, `SELECT id FROM code_symbols WHERE name = ? LIMIT 1`, e.TargetRawName).Scan(&existingID); err == nil {
+					targetID = &existingID
+				}
 			}
 
 			_, err := stmtEdge.ExecContext(ctx,
@@ -268,6 +273,11 @@ func IngestExtractedFile(ctx context.Context, db *sql.DB, file *ExtractedFile, h
 			}
 		}
 	}
+	// Backfill previously unresolved edges targeting symbols in this file
+	for symName, symID := range nameToID {
+		_, _ = tx.ExecContext(ctx, `UPDATE code_edges SET target_symbol_id = ? WHERE target_symbol_id IS NULL AND target_raw_name = ?`, symID, symName)
+	}
+
 
 	return tx.Commit()
 }
