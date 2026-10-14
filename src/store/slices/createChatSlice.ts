@@ -538,6 +538,48 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
             }
           } else if (event.type === "tool_call") {
             if (event.toolCall) {
+              const tc = event.toolCall
+              const rawName = tc.name || ""
+              const cleanToolName = rawName.replace(
+                /^(mcp__codegraph__|codegraph[:_])/i,
+                "",
+              )
+              const isCodeGraph =
+                cleanToolName === "get_file_outline" ||
+                cleanToolName === "get_symbol_definition" ||
+                cleanToolName === "find_callers" ||
+                cleanToolName === "find_callees" ||
+                cleanToolName === "query_subgraph" ||
+                cleanToolName === "read_symbol_body" ||
+                cleanToolName === "get_diff_impact" ||
+                cleanToolName === "view_file" ||
+                cleanToolName === "read_file"
+
+              if (isCodeGraph && typeof window !== "undefined") {
+                const targetSym =
+                  tc.args?.symbol_name ||
+                  tc.args?.function_name ||
+                  tc.args?.root_symbol ||
+                  tc.args?.name ||
+                  tc.args?.file_path ||
+                  tc.args?.rel_path ||
+                  tc.args?.path ||
+                  tc.args?.AbsolutePath ||
+                  tc.targetFile ||
+                  ""
+                if (targetSym) {
+                  window.dispatchEvent(
+                    new CustomEvent("aegis:ai-trace-path", {
+                      detail: {
+                        symbolName: String(targetSym),
+                        toolName: cleanToolName,
+                        status: tc.status || "running",
+                      },
+                    }),
+                  )
+                }
+              }
+
               const cur = get()
               const updated = updateAgentMessageInSessions(
                 cur.sessions,
@@ -589,6 +631,16 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
             const finalActive = updated.find((s) => s.id === activeSessionId)
             if (finalActive) {
               debouncedSaveBackendSession(finalActive)
+            }
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(
+                new CustomEvent("aegis:ai-trace-path", {
+                  detail: {
+                    symbolName: "",
+                    status: "done",
+                  },
+                }),
+              )
             }
             chatAbortController = null
           } else if (event.type === "error") {

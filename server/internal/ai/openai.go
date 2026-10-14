@@ -172,15 +172,25 @@ func (e *OpenAIEngine) StreamChat(ctx context.Context, req StreamChatRequest, se
 		ConversationID: convID,
 	})
 
-	// 4. Construct request payload
-	reqBody := map[string]any{
-		"model": model,
-		"messages": []map[string]string{
-			{"role": "user", "content": prompt},
-		},
-		"stream": true,
-		"tools":  GetCodeGraphOpenAITools(),
+	// 4. Construct conversation messages history and multi-turn execution loop
+	messages := []map[string]any{
+		{"role": "user", "content": prompt},
 	}
+
+	const maxTurns = 5
+	var totalAccumulatedText strings.Builder
+	var totalAccumulatedThinking strings.Builder
+	var allToolCalls []store.ToolCallItem
+
+	client := &http.Client{Timeout: 0} // No overall timeout; streaming is controlled by ctx
+
+	for turn := 0; turn < maxTurns; turn++ {
+		reqBody := map[string]any{
+			"model":    model,
+			"messages": messages,
+			"stream":   true,
+			"tools":    GetCodeGraphOpenAITools(),
+		}
 
 	payloadBytes, err := json.Marshal(reqBody)
 	if err != nil {
@@ -213,7 +223,6 @@ func (e *OpenAIEngine) StreamChat(ctx context.Context, req StreamChatRequest, se
 		httpReq.Header.Set("X-Title", "AegisCode")
 	}
 
-	client := &http.Client{Timeout: 0} // No overall timeout; streaming is controlled by ctx
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -232,10 +241,10 @@ func (e *OpenAIEngine) StreamChat(ctx context.Context, req StreamChatRequest, se
 		})
 		return err
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
 		errMsg := fmt.Sprintf("%s returned HTTP %d: %s", strings.Title(provider), resp.StatusCode, strings.TrimSpace(string(respBody)))
 		_ = sendEvent("error", StreamEvent{
 			Type:           "error",
@@ -249,10 +258,10 @@ func (e *OpenAIEngine) StreamChat(ctx context.Context, req StreamChatRequest, se
 	scanner := bufio.NewScanner(resp.Body)
 	buf := make([]byte, 1024*1024)
 	scanner.Buffer(buf, 10*1024*1024)
-	var accumulatedText strings.Builder
-	var accumulatedThinking strings.Builder
+
+	var turnText strings.Builder
+	var turnThinking strings.Builder
 	aggregator := NewOpenAIAggregator()
-	var emittedTools []store.ToolCallItem
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -294,7 +303,8 @@ func (e *OpenAIEngine) StreamChat(ctx context.Context, req StreamChatRequest, se
 
 		// Handle text tokens
 		if delta.Content != "" {
-			accumulatedText.WriteString(delta.Content)
+			turnText.WriteString(delta.Content)
+			totalAccumulatedText.WriteString(delta.Content)
 			_ = sendEvent("chunk", StreamEvent{
 				Type:           "chunk",
 				ConversationID: convID,
@@ -311,11 +321,12 @@ func (e *OpenAIEngine) StreamChat(ctx context.Context, req StreamChatRequest, se
 			reasoning = delta.Reasoning
 		}
 		if reasoning != "" {
-			accumulatedThinking.WriteString(reasoning)
+			turnThinking.WriteString(reasoning)
+			totalAccumulatedThinking.WriteString(reasoning)
 			_ = sendEvent("thinking", StreamEvent{
 				Type:           "thinking",
 				ConversationID: convID,
-				Thinking:       accumulatedThinking.String(),
+				Thinking:       totalAccumulatedThinking.String(),
 			})
 		}
 
@@ -330,16 +341,7 @@ func (e *OpenAIEngine) StreamChat(ctx context.Context, req StreamChatRequest, se
 			})
 		}
 	}
-
-	// 6. Finalize tool calls
-	finalTools := aggregator.Finalize(func(tc store.ToolCallItem) {
-		_ = sendEvent("tool_call", StreamEvent{
-			Type:           "tool_call",
-			ConversationID: convID,
-			ToolCall:       &tc,
-		})
-	})
-	emittedTools = append(emittedTools, finalTools...)
+	resp.Body.Close()
 
 	if err := scanner.Err(); err != nil && !errors.Is(err, context.Canceled) {
 		_ = sendEvent("error", StreamEvent{
@@ -359,27 +361,105 @@ func (e *OpenAIEngine) StreamChat(ctx context.Context, req StreamChatRequest, se
 		return ctx.Err()
 	}
 
-	finalText := accumulatedText.String()
-	if strings.TrimSpace(finalText) == "" && len(emittedTools) == 0 {
-		finalText = "Selesai tanpa respons teks tambahan."
-	}
-
-	finalMsg := store.ChatMessage{
-		ID:        fmt.Sprintf("msg-%d", time.Now().UnixMilli()),
-		Role:      "agent",
-		Text:      finalText,
-		Thinking:  accumulatedThinking.String(),
-		ToolCalls: emittedTools,
-		Timestamp: time.Now().UnixMilli(),
-		Provider:  provider,
-		Model:     model,
-	}
-
-	_ = sendEvent("done", StreamEvent{
-		Type:           "done",
-		ConversationID: convID,
-		Message:        &finalMsg,
+	// Finalize tool calls for this turn
+	turnTools := aggregator.Finalize(func(tc store.ToolCallItem) {
+		_ = sendEvent("tool_call", StreamEvent{
+			Type:           "tool_call",
+			ConversationID: convID,
+			ToolCall:       &tc,
+		})
 	})
 
-	return nil
+	// If no tools were called, finish loop
+	if len(turnTools) == 0 {
+		break
+	}
+
+	// Execute tools and append messages for next turn
+	var oaiToolCalls []map[string]any
+	for i := range turnTools {
+		tc := &turnTools[i]
+		tc.Status = "running"
+		_ = sendEvent("tool_call", StreamEvent{
+			Type:           "tool_call",
+			ConversationID: convID,
+			ToolCall:       tc,
+		})
+
+		var output string
+		var execErr error
+		if req.ToolExecutor != nil {
+			output, execErr = req.ToolExecutor(ctx, tc.Name, tc.Args)
+		} else {
+			execErr = fmt.Errorf("no tool executor configured on server")
+		}
+
+		if execErr != nil {
+			tc.Status = "failed"
+			tc.Output = fmt.Sprintf("Error executing tool %s: %v", tc.Name, execErr)
+		} else {
+			tc.Status = "success"
+			tc.Output = output
+		}
+
+		_ = sendEvent("tool_call", StreamEvent{
+			Type:           "tool_call",
+			ConversationID: convID,
+			ToolCall:       tc,
+		})
+
+		argsBytes, _ := json.Marshal(tc.Args)
+		oaiToolCalls = append(oaiToolCalls, map[string]any{
+			"id":   tc.ID,
+			"type": "function",
+			"function": map[string]any{
+				"name":      tc.Name,
+				"arguments": string(argsBytes),
+			},
+		})
+
+		allToolCalls = append(allToolCalls, *tc)
+	}
+
+	assistantMsg := map[string]any{
+		"role":       "assistant",
+		"tool_calls": oaiToolCalls,
+	}
+	if turnText.Len() > 0 {
+		assistantMsg["content"] = turnText.String()
+	}
+	messages = append(messages, assistantMsg)
+
+	for _, tc := range turnTools {
+		messages = append(messages, map[string]any{
+			"role":         "tool",
+			"tool_call_id": tc.ID,
+			"content":      tc.Output,
+		})
+	}
+}
+
+finalText := totalAccumulatedText.String()
+if strings.TrimSpace(finalText) == "" && len(allToolCalls) == 0 {
+	finalText = "Selesai tanpa respons teks tambahan."
+}
+
+finalMsg := store.ChatMessage{
+	ID:        fmt.Sprintf("msg-%d", time.Now().UnixMilli()),
+	Role:      "agent",
+	Text:      finalText,
+	Thinking:  totalAccumulatedThinking.String(),
+	ToolCalls: allToolCalls,
+	Timestamp: time.Now().UnixMilli(),
+	Provider:  provider,
+	Model:     model,
+}
+
+_ = sendEvent("done", StreamEvent{
+	Type:           "done",
+	ConversationID: convID,
+	Message:        &finalMsg,
+})
+
+return nil
 }

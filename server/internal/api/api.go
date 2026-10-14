@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -45,6 +46,8 @@ type Server struct {
 	logSubs      map[chan LogEvent]struct{}
 	workerMu     sync.RWMutex
 	workerSubs   map[chan supervisor.CrashEvent]struct{}
+	mcpMu        sync.RWMutex
+	mcpSubs      map[chan map[string]any]struct{}
 	shutdownChan chan struct{}
 }
 
@@ -76,6 +79,7 @@ func NewServer(ws *workspace.Manager, picker platform.FolderPicker, customStore 
 		pairing:    NewPairingManager(8080),
 		logSubs:    make(map[chan LogEvent]struct{}),
 		workerSubs: make(map[chan supervisor.CrashEvent]struct{}),
+		mcpSubs:    make(map[chan map[string]any]struct{}),
 	}
 	s.supervisor = supervisor.NewManager(func(evt supervisor.CrashEvent) {
 		s.BroadcastLog("Tasks", fmt.Sprintf("[Supervisor] Worker %s (%s) crashed: %v", evt.Name, evt.WorkerID, evt.Error), "error")
@@ -366,6 +370,8 @@ func (s *Server) Routes() http.Handler {
 
 	// Model Context Protocol (MCP) & CodeGraph Endpoints
 	mux.HandleFunc("/api/v1/mcp", s.handleMCP)
+	mux.HandleFunc("/api/v1/mcp/rpc", s.handleMCP)
+	mux.HandleFunc("/api/v1/mcp/events", s.handleMCPEvents)
 	mux.HandleFunc("/api/v1/codegraph/status", s.handleCodeGraphStatus)
 	mux.HandleFunc("/api/v1/codegraph/reindex", s.handleCodeGraphReindex)
 	mux.HandleFunc("/api/v1/codegraph/neighborhood", s.handleCodeGraphNeighborhood)
@@ -1052,6 +1058,9 @@ func (s *Server) handleGitTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filePath := r.URL.Query().Get("file")
+	if filePath == "" {
+		filePath = r.URL.Query().Get("path")
+	}
 	limit := 30
 	if lStr := r.URL.Query().Get("limit"); lStr != "" {
 		if l, err := strconv.Atoi(lStr); err == nil && l > 0 {
@@ -1079,6 +1088,9 @@ func (s *Server) handleGitStage(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	if len(req.Files) == 0 && len(req.Paths) > 0 {
+		req.Files = req.Paths
+	}
 
 	if err := s.git.Stage(r.Context(), req.Files, req.All); err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
@@ -1099,6 +1111,9 @@ func (s *Server) handleGitUnstage(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
+	if len(req.Files) == 0 && len(req.Paths) > 0 {
+		req.Files = req.Paths
+	}
 
 	if err := s.git.Unstage(r.Context(), req.Files, req.All); err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
@@ -1118,6 +1133,9 @@ func (s *Server) handleGitDiscard(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
+	}
+	if len(req.Files) == 0 && len(req.Paths) > 0 {
+		req.Files = req.Paths
 	}
 
 	if err := s.git.Discard(r.Context(), req.Files, req.All); err != nil {
@@ -1253,6 +1271,9 @@ func (s *Server) handleGitDiff(w http.ResponseWriter, r *http.Request) {
 	}
 
 	file := r.URL.Query().Get("file")
+	if file == "" {
+		file = r.URL.Query().Get("path")
+	}
 	staged := r.URL.Query().Get("staged") == "true"
 	commit := r.URL.Query().Get("commit")
 	base := r.URL.Query().Get("base")
@@ -1401,7 +1422,7 @@ func (s *Server) handleTerminalOperations(w http.ResponseWriter, r *http.Request
 		sessionID := parts[0]
 		action := parts[1]
 
-		if action == "input" && r.Method == http.MethodPost {
+		if (action == "input" || action == "write") && r.Method == http.MethodPost {
 			var req TerminalInputRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				jsonError(w, http.StatusBadRequest, "invalid request: "+err.Error())
@@ -2266,6 +2287,9 @@ func (s *Server) handleAIChatStream(w http.ResponseWriter, r *http.Request) {
 			if req.BaseURL == "" && cfg.ProviderBaseURLs != nil {
 				req.BaseURL = cfg.ProviderBaseURLs[provKey]
 			}
+			if req.Command == "" && cfg.BypassCommands != nil {
+				req.Command = cfg.BypassCommands[provKey]
+			}
 		}
 	}
 
@@ -2285,6 +2309,13 @@ func (s *Server) handleAIChatStream(w http.ResponseWriter, r *http.Request) {
 		}
 		flusher.Flush()
 		return nil
+	}
+
+	if s.mcp != nil {
+		req.ToolExecutor = func(ctx context.Context, name string, args map[string]any) (string, error) {
+			s.broadcastMCPEvent(name, args)
+			return s.mcp.ExecuteTool(ctx, name, args)
+		}
 	}
 
 	if err := ai.StreamChat(r.Context(), req, sendEvent); err != nil {
@@ -2833,9 +2864,133 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Method == "tools/call" {
+		var callParams mcp.CallToolParams
+		if err := json.Unmarshal(req.Params, &callParams); err == nil {
+			s.broadcastMCPEvent(callParams.Name, callParams.Arguments)
+		}
+	}
+
 	resp := s.mcp.HandleRequest(r.Context(), &req)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Server) broadcastMCPEvent(tool string, args map[string]any) {
+	sym := ""
+	if args != nil {
+		if v, ok := args["name"].(string); ok && v != "" {
+			sym = v
+		} else if v, ok := args["symbol_name"].(string); ok && v != "" {
+			sym = v
+		} else if v, ok := args["function_name"].(string); ok && v != "" {
+			sym = v
+		} else if v, ok := args["root_symbol"].(string); ok && v != "" {
+			sym = v
+		} else if v, ok := args["file_path"].(string); ok && v != "" {
+			sym = v
+		} else if v, ok := args["rel_path"].(string); ok && v != "" {
+			sym = v
+		}
+	}
+	evt := map[string]any{
+		"event":     "mcp_tool_invoked",
+		"tool":      tool,
+		"symbol":    sym,
+		"timestamp": time.Now().Unix(),
+	}
+	s.mcpMu.RLock()
+	defer s.mcpMu.RUnlock()
+	for ch := range s.mcpSubs {
+		select {
+		case ch <- evt:
+		default:
+		}
+	}
+}
+
+func (s *Server) handleMCPEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			jsonError(w, http.StatusBadRequest, "invalid json")
+			return
+		}
+		tool, _ := payload["tool"].(string)
+		if tool == "" {
+			tool, _ = payload["name"].(string)
+		}
+		var args map[string]any
+		if a, ok := payload["args"].(map[string]any); ok {
+			args = a
+		} else {
+			args = payload
+		}
+		s.broadcastMCPEvent(tool, args)
+		jsonResponse(w, http.StatusOK, map[string]any{"status": "ok"})
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		jsonError(w, http.StatusInternalServerError, "streaming unsupported")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	ch := make(chan map[string]any, 32)
+	s.mcpMu.Lock()
+	if s.mcpSubs == nil {
+		s.mcpSubs = make(map[chan map[string]any]struct{})
+	}
+	s.mcpSubs[ch] = struct{}{}
+	s.mcpMu.Unlock()
+
+	defer func() {
+		s.mcpMu.Lock()
+		delete(s.mcpSubs, ch)
+		close(ch)
+		s.mcpMu.Unlock()
+	}()
+
+	initData, _ := json.Marshal(map[string]any{
+		"status": "connected",
+	})
+	fmt.Fprintf(w, "event: connected\ndata: %s\n\n", string(initData))
+	flusher.Flush()
+
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			fmt.Fprintf(w, ": ping\n\n")
+			flusher.Flush()
+		case evt, ok := <-ch:
+			if !ok {
+				return
+			}
+			data, err := json.Marshal(evt)
+			if err == nil {
+				fmt.Fprintf(w, "event: mcp_tool_invoked\ndata: %s\n\n", string(data))
+				flusher.Flush()
+			}
+		}
+	}
 }
 
 func (s *Server) handleCodeGraphStatus(w http.ResponseWriter, r *http.Request) {
@@ -2886,15 +3041,33 @@ func (s *Server) handleCodeGraphNeighborhood(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	idStr := r.URL.Query().Get("id")
-	if idStr == "" {
-		jsonError(w, http.StatusBadRequest, "id parameter required")
+	idStr := strings.TrimSpace(r.URL.Query().Get("id"))
+	symbolParam := strings.TrimSpace(r.URL.Query().Get("symbol"))
+	if idStr == "" && symbolParam == "" {
+		jsonError(w, http.StatusBadRequest, "id or symbol parameter required")
 		return
 	}
-	symbolID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		jsonError(w, http.StatusBadRequest, "invalid id parameter")
-		return
+
+	var symbolID int64
+	var err error
+	if idStr != "" {
+		symbolID, err = strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			symbolID, err = s.codegraph.UIService().ResolveSymbolID(r.Context(), idStr)
+			if err != nil {
+				jsonError(w, http.StatusBadRequest, "invalid id parameter")
+				return
+			}
+		}
+	} else {
+		symbolID, err = s.codegraph.UIService().ResolveSymbolID(r.Context(), symbolParam)
+		if err != nil {
+			jsonResponse(w, http.StatusOK, codegraph.UIGraphPayload{
+				Nodes: make([]codegraph.UIGraphNode, 0),
+				Edges: make([]codegraph.UIGraphEdge, 0),
+			})
+			return
+		}
 	}
 
 	depth := 1

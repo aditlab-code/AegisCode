@@ -266,3 +266,89 @@ func TestClaudeEngineStreaming(t *testing.T) {
 		t.Errorf("expected receivedText 'Claude reply', got %q", receivedText)
 	}
 }
+
+func TestClaudeEngineMultiTurnToolExecution(t *testing.T) {
+	turnCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		turnCount++
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+			return
+		}
+
+		if turnCount == 1 {
+			// Turn 1: model returns tool_use block
+			fmt.Fprintf(w, "event: content_block_start\n")
+			fmt.Fprintf(w, "data: {\"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"toolu_test\", \"name\": \"get_file_outline\"}}\n\n")
+			flusher.Flush()
+
+			fmt.Fprintf(w, "event: content_block_delta\n")
+			fmt.Fprintf(w, "data: {\"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"file_path\\\": \\\"main.go\\\"}\"}}\n\n")
+			flusher.Flush()
+
+			fmt.Fprintf(w, "event: content_block_stop\n")
+			fmt.Fprintf(w, "data: {}\n\n")
+			flusher.Flush()
+
+			fmt.Fprintf(w, "event: message_stop\n")
+			fmt.Fprintf(w, "data: {}\n\n")
+			flusher.Flush()
+		} else {
+			// Turn 2: model sees tool_result and outputs final answer
+			fmt.Fprintf(w, "event: content_block_delta\n")
+			fmt.Fprintf(w, "data: {\"delta\": {\"type\": \"text_delta\", \"text\": \"Outline for main.go analyzed successfully.\"}}\n\n")
+			flusher.Flush()
+
+			fmt.Fprintf(w, "event: message_stop\n")
+			fmt.Fprintf(w, "data: {}\n\n")
+			flusher.Flush()
+		}
+	}))
+	defer server.Close()
+
+	toolExecuted := false
+	engine := &ClaudeEngine{}
+	req := StreamChatRequest{
+		Prompt:  "Outline main.go",
+		BaseURL: server.URL,
+		APIKey:  "sk-ant-test-key",
+		ToolExecutor: func(ctx context.Context, name string, args map[string]any) (string, error) {
+			if name == "get_file_outline" && args["file_path"] == "main.go" {
+				toolExecuted = true
+				return `{"symbols": ["main"]}`, nil
+			}
+			return "", fmt.Errorf("unexpected tool %s", name)
+		},
+	}
+
+	var finalMessageText string
+	var finalToolCallCount int
+	err := engine.StreamChat(context.Background(), req, func(eventType string, data any) error {
+		if eventType == "done" {
+			if evt, ok := data.(StreamEvent); ok && evt.Message != nil {
+				finalMessageText = evt.Message.Text
+				finalToolCallCount = len(evt.Message.ToolCalls)
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		t.Fatalf("StreamChat unexpected error: %v", err)
+	}
+
+	if !toolExecuted {
+		t.Errorf("expected ToolExecutor to be called by agentic loop")
+	}
+	if turnCount != 2 {
+		t.Errorf("expected 2 turns, got %d", turnCount)
+	}
+	if !strings.Contains(finalMessageText, "analyzed successfully") {
+		t.Errorf("unexpected final text: %q", finalMessageText)
+	}
+	if finalToolCallCount != 1 {
+		t.Errorf("expected 1 final tool call in message, got %d", finalToolCallCount)
+	}
+}

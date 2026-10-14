@@ -25,8 +25,9 @@ interface GraphViewerProps {
 }
 
 interface FocusSymbolDetail {
-  symbolId: number
+  symbolId?: number
   name?: string
+  line?: number
 }
 
 interface AiTraceDetail {
@@ -124,13 +125,35 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
   useEffect(() => {
     function handleCursorFocus(e: Event) {
       const custom = e as CustomEvent<FocusSymbolDetail>
-      if (custom.detail?.symbolId) {
-        canvasRef.current?.focusNode(custom.detail.symbolId)
+      const detail = custom.detail
+      if (!detail) return
+
+      if (detail.symbolId != null) {
+        canvasRef.current?.focusNode(detail.symbolId)
         if (payload) {
-          const match = payload.nodes.find(
-            (n) => n.id === custom.detail.symbolId,
-          )
+          const match = payload.nodes.find((n) => n.id === detail.symbolId)
           if (match) setSelectedNode(match)
+        }
+      } else if (payload && detail.name) {
+        const match = payload.nodes.find((n) => {
+          if (detail.line != null) {
+            const pathMatch =
+              n.filePath === detail.name ||
+              n.filePath.endsWith(detail.name) ||
+              detail.name.endsWith(n.filePath)
+            if (
+              pathMatch &&
+              detail.line >= n.lineStart &&
+              detail.line <= n.lineEnd
+            ) {
+              return true
+            }
+          }
+          return n.name === detail.name
+        })
+        if (match) {
+          canvasRef.current?.focusNode(match.id)
+          setSelectedNode(match)
         }
       }
     }
@@ -224,6 +247,38 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
     }
   }, [payload, showToast])
 
+  // Listen to external MCP events stream (MCP-05)
+  useEffect(() => {
+    let es: EventSource | null = null
+    try {
+      es = new EventSource("/api/v1/mcp/events")
+      es.addEventListener("mcp_tool_invoked", (evt) => {
+        try {
+          const data = JSON.parse(evt.data)
+          if (data && data.symbol) {
+            window.dispatchEvent(
+              new CustomEvent("aegis:ai-trace-path", {
+                detail: {
+                  symbolName: String(data.symbol),
+                  toolName: data.tool || "mcp_tool",
+                  status: "running",
+                },
+              }),
+            )
+          }
+        } catch {
+          // ignore parsing error
+        }
+      })
+    } catch {
+      // EventSource fallback
+    }
+
+    return () => {
+      es?.close()
+    }
+  }, [])
+
   function handleToggleKind(kind: string) {
     setActiveKinds((prev) => {
       const next = new Set(prev)
@@ -236,22 +291,33 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
     })
   }
 
-  function handleJumpToSource(node: UIGraphNode) {
-    if (!node.filePath) return
-    // If split pane is active, open in the other pane; otherwise open in current
-    const targetGroup =
-      splitEditor && groupId === "group2"
-        ? "group1"
-        : splitEditor && groupId === "group1"
-          ? "group2"
-          : groupId
+  const handleJumpToSource = useCallback(
+    (node: UIGraphNode) => {
+      if (!node.filePath) return
+      // If split pane is active, open in the other pane; otherwise open in current
+      const targetGroup =
+        splitEditor && groupId === "group2"
+          ? "group1"
+          : splitEditor && groupId === "group1"
+            ? "group2"
+            : groupId
 
-    openFileInGroup(node.filePath, targetGroup)
-    if (node.lineStart > 0) {
-      setCursorPosition({ line: node.lineStart, column: 1 })
-    }
-    showToast(`Jumped to ${node.name} (${node.filePath}:${node.lineStart})`)
-  }
+      openFileInGroup(node.filePath, targetGroup)
+      if (node.lineStart > 0) {
+        setCursorPosition({ line: node.lineStart, column: 1 })
+      }
+      showToast(`Jumped to ${node.name} (${node.filePath}:${node.lineStart})`)
+    },
+    [splitEditor, groupId, openFileInGroup, setCursorPosition, showToast],
+  )
+
+  const handleNodeClick = useCallback((node: UIGraphNode) => {
+    setSelectedNode(node)
+  }, [])
+
+  const handleBackgroundClick = useCallback(() => {
+    setSelectedNode(null)
+  }, [])
 
   function handleFocusNeighborhood(node: UIGraphNode) {
     setFocusedRootId(node.id)
@@ -295,7 +361,12 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
 
   function handleSelectSymbolFromSearch(symbol: UIGraphNode) {
     setSelectedNode(symbol)
-    canvasRef.current?.focusNode(symbol.id)
+    const exists = payload?.nodes.some((n) => n.id === symbol.id)
+    if (exists) {
+      canvasRef.current?.focusNode(symbol.id)
+    } else {
+      setFocusedRootId(symbol.id)
+    }
   }
 
   function handleSplitSideBySide() {
@@ -565,8 +636,8 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
               No Graph Nodes Discovered
             </div>
             <p className="text-xs max-w-sm leading-relaxed">
-              {targetPath
-                ? `No code symbols or relationships recorded for ${targetPath}.`
+              {scope === "micro" && microPath
+                ? `No code symbols or relationships recorded for ${microPath}.`
                 : "Open a workspace folder or trigger indexing to visualize structural relationships."}
             </p>
             <button
@@ -586,8 +657,8 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
             edges={payload.edges}
             layout={layout}
             nodes={payload.nodes}
-            onBackgroundClick={() => setSelectedNode(null)}
-            onNodeClick={(node) => setSelectedNode(node)}
+            onBackgroundClick={handleBackgroundClick}
+            onNodeClick={handleNodeClick}
             onNodeDoubleClick={handleJumpToSource}
             ref={canvasRef}
             selectedNodeId={selectedNode?.id ?? null}

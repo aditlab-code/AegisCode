@@ -213,11 +213,7 @@ func (s *Store) SaveConfig(cfg *Config) error {
 
 // --- AppState Operations ---
 
-// GetState reads application state from SQLite.
-func (s *Store) GetState() (*AppState, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
+func (s *Store) getStateUnlocked() (*AppState, error) {
 	var activeSessionID sql.NullString
 	var recJSON string
 	var updatedAt int64
@@ -254,15 +250,10 @@ func (s *Store) GetState() (*AppState, error) {
 	return &st, nil
 }
 
-// SaveState persists application state atomically to SQLite.
-func (s *Store) SaveState(st *AppState) error {
+func (s *Store) saveStateUnlocked(st *AppState) error {
 	if st == nil {
 		return errors.New("cannot save nil state")
 	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if st.RecentProjects == nil {
 		st.RecentProjects = []string{}
 	}
@@ -289,14 +280,31 @@ func (s *Store) SaveState(st *AppState) error {
 	return nil
 }
 
-// AddRecentProject adds a workspace path to the recent list, deduplicating and limiting to 20 items.
+// GetState reads application state from SQLite.
+func (s *Store) GetState() (*AppState, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.getStateUnlocked()
+}
+
+// SaveState persists application state atomically to SQLite.
+func (s *Store) SaveState(st *AppState) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.saveStateUnlocked(st)
+}
+
+// AddRecentProject adds a workspace path to the recent list atomically under a single write lock.
 func (s *Store) AddRecentProject(rawPath string) error {
 	cleaned := filepath.Clean(strings.TrimSpace(rawPath))
 	if cleaned == "" || cleaned == "." {
 		return nil
 	}
 
-	st, err := s.GetState()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	st, err := s.getStateUnlocked()
 	if err != nil {
 		st = &AppState{RecentProjects: []string{}}
 	}
@@ -314,17 +322,20 @@ func (s *Store) AddRecentProject(rawPath string) error {
 
 	st.RecentProjects = updated
 	st.LastWorkspace = cleaned
-	return s.SaveState(st)
+	return s.saveStateUnlocked(st)
 }
 
-// RemoveRecentProject removes a workspace path from the recent list.
+// RemoveRecentProject removes a workspace path from the recent list atomically under a single write lock.
 func (s *Store) RemoveRecentProject(rawPath string) error {
 	cleaned := filepath.Clean(strings.TrimSpace(rawPath))
 	if cleaned == "" {
 		return nil
 	}
 
-	st, err := s.GetState()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	st, err := s.getStateUnlocked()
 	if err != nil {
 		return nil
 	}
@@ -336,17 +347,20 @@ func (s *Store) RemoveRecentProject(rawPath string) error {
 		}
 	}
 	st.RecentProjects = filtered
-	return s.SaveState(st)
+	return s.saveStateUnlocked(st)
 }
 
-// ClearRecentProjects empties the recent projects list.
+// ClearRecentProjects empties the recent projects list atomically under a single write lock.
 func (s *Store) ClearRecentProjects() error {
-	st, err := s.GetState()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	st, err := s.getStateUnlocked()
 	if err != nil {
 		st = &AppState{}
 	}
 	st.RecentProjects = []string{}
-	return s.SaveState(st)
+	return s.saveStateUnlocked(st)
 }
 
 // --- Chat Operations ---
@@ -447,21 +461,22 @@ func (s *Store) SaveChat(session *ChatSession) error {
 		_ = tx.Rollback()
 	}()
 
-	// 1. Upsert session master record
+	// 1. Upsert session master record (including conversation_id)
 	_, err = tx.Exec(`
 		INSERT INTO chat_sessions (
-			id, title, provider, model, workspace_path, root_node_id, active_leaf_id, node_count, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			id, title, provider, model, workspace_path, conversation_id, root_node_id, active_leaf_id, node_count, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			title=excluded.title,
 			provider=excluded.provider,
 			model=excluded.model,
 			workspace_path=CASE WHEN excluded.workspace_path != '' THEN excluded.workspace_path ELSE chat_sessions.workspace_path END,
+			conversation_id=CASE WHEN excluded.conversation_id != '' THEN excluded.conversation_id ELSE chat_sessions.conversation_id END,
 			root_node_id=excluded.root_node_id,
 			active_leaf_id=excluded.active_leaf_id,
 			node_count=excluded.node_count,
 			updated_at=excluded.updated_at
-	`, cleanID, session.Title, session.Provider, session.Model, session.WorkspacePath, rootID, leafID, len(nodes), session.CreatedAt, session.UpdatedAt)
+	`, cleanID, session.Title, session.Provider, session.Model, session.WorkspacePath, session.ConversationID, rootID, leafID, len(nodes), session.CreatedAt, session.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to upsert chat session: %w", err)
 	}

@@ -161,6 +161,8 @@ export function SettingsModal() {
     if (provider === "antigravity") {
       command = settings?.agent?.bypassCommands?.antigravity || "antigravity"
     } else if (provider === "claude") {
+      apiKey = settings?.agent?.providerKeys?.claude
+      baseUrl = settings?.agent?.providerBaseUrls?.claude
       command = settings?.agent?.bypassCommands?.claude || "claude"
     } else if (provider === "opencode") {
       apiKey = settings?.agent?.providerKeys?.opencode
@@ -690,10 +692,65 @@ export function SettingsModal() {
                           <span className="provider-tag tag-claude">CLD</span>
                           <span className="ai-cred-name">Claude</span>
                         </div>
-                        <span className="ai-cred-type">OAuth CLI</span>
+                        <span className="ai-cred-type">API Key / CLI</span>
                       </div>
                       <div className="ai-cred-field">
-                        <label>Command / Binary Path</label>
+                        <label>Base URL</label>
+                        <input
+                          aria-label="Claude Base URL"
+                          type="text"
+                          className="settings-text-input"
+                          value={
+                            settings?.agent?.providerBaseUrls?.claude ??
+                            "https://api.anthropic.com/v1"
+                          }
+                          placeholder="https://api.anthropic.com/v1"
+                          onChange={(e) =>
+                            updateAgentSettings?.((prev) => ({
+                              ...prev,
+                              providerBaseUrls: {
+                                ...prev.providerBaseUrls,
+                                claude: e.target.value,
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="ai-cred-field mt-1">
+                        <label>API Key</label>
+                        <div className="settings-password-wrapper">
+                          <input
+                            aria-label="Claude API Key"
+                            type={showPassword["claude"] ? "text" : "password"}
+                            className="settings-text-input"
+                            value={settings?.agent?.providerKeys?.claude ?? ""}
+                            placeholder="sk-ant-..."
+                            onChange={(e) =>
+                              updateAgentSettings?.((prev) => ({
+                                ...prev,
+                                providerKeys: {
+                                  ...prev.providerKeys,
+                                  claude: e.target.value,
+                                },
+                              }))
+                            }
+                          />
+                          <button
+                            type="button"
+                            className="settings-show-pwd-btn"
+                            onClick={() =>
+                              setShowPassword((prev) => ({
+                                ...prev,
+                                claude: !prev["claude"],
+                              }))
+                            }
+                          >
+                            {showPassword["claude"] ? "Hide" : "Show"}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="ai-cred-field mt-1">
+                        <label>Command / Binary Path (CLI Fallback)</label>
                         <input
                           aria-label="Claude Command"
                           type="text"

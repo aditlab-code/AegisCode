@@ -321,14 +321,14 @@ func (s *Store) ReconstructChat(sessionID string, leafID string) (*ChatSession, 
 	}
 
 	s.mu.RLock()
-	var title, provider, model, workspacePath string
+	var title, provider, model, workspacePath, conversationID string
 	var createdAt, updatedAt int64
 	var activeLeafID string
 	err = s.db.QueryRow(`
-		SELECT title, provider, model, coalesce(active_leaf_id, ''), coalesce(workspace_path, ''), created_at, updated_at
+		SELECT title, provider, model, coalesce(active_leaf_id, ''), coalesce(workspace_path, ''), coalesce(conversation_id, ''), created_at, updated_at
 		FROM chat_sessions
 		WHERE id = ?
-	`, cleanID).Scan(&title, &provider, &model, &activeLeafID, &workspacePath, &createdAt, &updatedAt)
+	`, cleanID).Scan(&title, &provider, &model, &activeLeafID, &workspacePath, &conversationID, &createdAt, &updatedAt)
 	s.mu.RUnlock()
 
 	if errors.Is(err, sql.ErrNoRows) {
@@ -344,14 +344,15 @@ func (s *Store) ReconstructChat(sessionID string, leafID string) (*ChatSession, 
 
 	if len(allNodes) == 0 {
 		return &ChatSession{
-			ID:            cleanID,
-			Title:         title,
-			Provider:      provider,
-			Model:         model,
-			WorkspacePath: workspacePath,
-			Messages:      []ChatMessage{},
-			CreatedAt:     createdAt,
-			UpdatedAt:     updatedAt,
+			ID:             cleanID,
+			Title:          title,
+			Provider:       provider,
+			Model:          model,
+			WorkspacePath:  workspacePath,
+			ConversationID: conversationID,
+			Messages:       []ChatMessage{},
+			CreatedAt:      createdAt,
+			UpdatedAt:      updatedAt,
 		}, nil
 	}
 
@@ -446,13 +447,34 @@ func (s *Store) ReconstructChat(sessionID string, leafID string) (*ChatSession, 
 			if output == "" && n.Preview != "" {
 				output = n.Preview
 			}
+			tcID := n.ID
+			summary := "Menjalankan " + n.Tool
+			status := "success"
+			targetFile := ""
+			if n.Meta != nil {
+				if orig, ok := n.Meta["origId"].(string); ok && orig != "" {
+					tcID = orig
+				}
+				if sum, ok := n.Meta["summary"].(string); ok && sum != "" {
+					summary = sum
+				}
+				if st, ok := n.Meta["status"].(string); ok && st != "" {
+					status = st
+				}
+				if tf, ok := n.Meta["targetFile"].(string); ok && tf != "" {
+					targetFile = tf
+				}
+			}
 			currentAgentMsg.ToolCalls = append(currentAgentMsg.ToolCalls, ToolCallItem{
-				ID:      n.ID,
-				Name:    n.Tool,
-				Summary: "Menjalankan " + n.Tool,
-				Status:  "success",
-				Args:    n.Args,
-				Output:  output,
+				ID:         tcID,
+				Name:       n.Tool,
+				Summary:    summary,
+				Status:     status,
+				TargetFile: targetFile,
+				Args:       n.Args,
+				Output:     output,
+				BlobRef:    n.BlobRef,
+				Preview:    n.Preview,
 			})
 
 		case "tool_result":
@@ -483,6 +505,9 @@ func (s *Store) ReconstructChat(sessionID string, leafID string) (*ChatSession, 
 				if m, ok := n.Meta["model"].(string); ok && m != "" {
 					currentAgentMsg.Model = m
 				}
+				if errStr, ok := n.Meta["error"].(string); ok && errStr != "" {
+					currentAgentMsg.Error = errStr
+				}
 			}
 			messages = append(messages, *currentAgentMsg)
 			currentAgentMsg = nil
@@ -498,13 +523,14 @@ func (s *Store) ReconstructChat(sessionID string, leafID string) (*ChatSession, 
 	}
 
 	return &ChatSession{
-		ID:            cleanID,
-		Title:         title,
-		Provider:      provider,
-		Model:         model,
-		WorkspacePath: workspacePath,
-		Messages:      messages,
-		CreatedAt:     createdAt,
-		UpdatedAt:     updatedAt,
+		ID:             cleanID,
+		Title:          title,
+		Provider:       provider,
+		Model:          model,
+		WorkspacePath:  workspacePath,
+		ConversationID: conversationID,
+		Messages:       messages,
+		CreatedAt:      createdAt,
+		UpdatedAt:      updatedAt,
 	}, nil
 }

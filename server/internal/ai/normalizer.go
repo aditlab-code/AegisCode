@@ -9,8 +9,17 @@ func SanitizeString(s string) string {
 	return strings.Trim(s, "\"'` \t\r\n")
 }
 
+// NormalizeToolName strips known MCP server prefixes from tool names.
+func NormalizeToolName(name string) string {
+	clean := strings.TrimPrefix(name, "mcp__codegraph__")
+	clean = strings.TrimPrefix(clean, "codegraph:")
+	clean = strings.TrimPrefix(clean, "codegraph_")
+	return clean
+}
+
 // ExtractTargetFile detects the target file path across diverse parameter keys and guards against ghost tabs.
 func ExtractTargetFile(toolName string, args map[string]any) string {
+	toolName = NormalizeToolName(toolName)
 	candidateKeys := []string{
 		"targetFile",
 		"TargetFile",
@@ -38,6 +47,7 @@ func ExtractTargetFile(toolName string, args map[string]any) string {
 
 // GenerateSummary constructs a concise human-readable summary for a tool execution.
 func GenerateSummary(name, targetFile string, args map[string]any) string {
+	name = NormalizeToolName(name)
 	if rawSummary, ok := args["toolSummary"].(string); ok && strings.TrimSpace(rawSummary) != "" {
 		return SanitizeString(rawSummary)
 	}

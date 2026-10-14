@@ -151,3 +151,32 @@ func TestRunStdio(t *testing.T) {
 		t.Errorf("line 1 returned error: %v", resp1.Error)
 	}
 }
+
+func TestExecuteToolAndPrefixNormalization(t *testing.T) {
+	srv, eng := setupTestServer(t)
+	defer eng.Close()
+
+	ctx := context.Background()
+
+	// 1. Prefix mcp__codegraph__ + parameter alias rel_path
+	out1, err := srv.ExecuteTool(ctx, "mcp__codegraph__get_file_outline", map[string]any{
+		"rel_path": "math.go",
+	})
+	if err != nil {
+		t.Fatalf("ExecuteTool with prefix failed: %v", err)
+	}
+	if !strings.Contains(out1, "Multiply") {
+		t.Errorf("expected Multiply in outline output, got: %s", out1)
+	}
+
+	// 2. Prefix codegraph: + get_symbol_definition alias symbol_name
+	out2, err := srv.ExecuteTool(ctx, "codegraph:get_symbol_definition", map[string]any{
+		"symbol_name": "Multiply",
+	})
+	if err != nil {
+		t.Fatalf("ExecuteTool with colon prefix failed: %v", err)
+	}
+	if !strings.Contains(out2, "Multiply") {
+		t.Errorf("expected Multiply definition, got: %s", out2)
+	}
+}

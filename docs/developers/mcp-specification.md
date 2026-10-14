@@ -10,10 +10,11 @@ The AegisCode MCP engine operates across two supported transports:
 
 1. **Stdio Transport**: Standard JSON-RPC 2.0 frames over newline-delimited standard I/O (`stdin` / `stdout`). Ideal for local process execution via agent config manifests.
    ```bash
-   ./bin/aegiscode-darwin-arm64 --mcp-stdio --workspace /path/to/project
+   aegiscode mcp --workspace /path/to/project
    ```
-2. **HTTP / SSE Transport**: Accessible via the local server REST endpoint:
-   - Request Endpoint: `POST /api/v1/mcp/rpc`
+2. **HTTP JSON-RPC Transport**: Accessible via the local server REST endpoints:
+   - Primary Endpoint: `POST /api/v1/mcp`
+   - Alias Endpoint: `POST /api/v1/mcp/rpc`
    - Real-Time Event Stream: `GET /api/v1/mcp/events`
 
 ---

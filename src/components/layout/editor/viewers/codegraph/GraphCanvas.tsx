@@ -3,6 +3,7 @@ import cytoscape, { type Core, type EventObject } from "cytoscape"
 import dagre from "cytoscape-dagre"
 import { getCytoscapeTheme } from "./graphTheme"
 import type { LayoutMode } from "./GraphToolbar"
+import { useWorkbenchStore } from "../../../../../store"
 import type {
   UIGraphNode,
   UIGraphEdge,
@@ -144,6 +145,16 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
     const containerRef = useRef<HTMLDivElement>(null)
     const cyRef = useRef<Core | null>(null)
 
+    const theme = useWorkbenchStore((s) => s.theme)
+    const isDark = theme === "dark"
+
+    const onNodeClickRef = useRef(onNodeClick)
+    onNodeClickRef.current = onNodeClick
+    const onNodeDoubleClickRef = useRef(onNodeDoubleClick)
+    onNodeDoubleClickRef.current = onNodeDoubleClick
+    const onBackgroundClickRef = useRef(onBackgroundClick)
+    onBackgroundClickRef.current = onBackgroundClick
+
     // Expose imperative methods to parent
     useImperativeHandle(ref, () => ({
       fit: () => {
@@ -204,7 +215,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
 
       const cy = cytoscape({
         container,
-        style: getCytoscapeTheme(true),
+        style: getCytoscapeTheme(isDark),
         boxSelectionEnabled: false,
         autounselectify: false,
         minZoom: 0.2,
@@ -225,17 +236,17 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
 
       cy.on("tap", "node", (evt: EventObject) => {
         const raw = evt.target.data("raw") as UIGraphNode
-        if (raw) onNodeClick(raw)
+        if (raw) onNodeClickRef.current?.(raw)
       })
 
       cy.on("dbltap", "node", (evt: EventObject) => {
         const raw = evt.target.data("raw") as UIGraphNode
-        if (raw) onNodeDoubleClick(raw)
+        if (raw) onNodeDoubleClickRef.current?.(raw)
       })
 
       cy.on("tap", (evt: EventObject) => {
         if (evt.target === cy) {
-          onBackgroundClick()
+          onBackgroundClickRef.current?.()
         }
       })
 
@@ -244,7 +255,14 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
         cy.destroy()
         cyRef.current = null
       }
-    }, [onNodeClick, onNodeDoubleClick, onBackgroundClick])
+    }, [])
+
+    // Update Cytoscape style dynamically when theme changes
+    useEffect(() => {
+      const cy = cyRef.current
+      if (!cy) return
+      cy.style(getCytoscapeTheme(isDark))
+    }, [isDark])
 
     // Update Elements and Run Layout
     useEffect(() => {
@@ -377,7 +395,7 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
         } as cytoscape.LayoutOptions)
         fallback.run()
       }
-    }, [nodes, edges, layout, activeKinds, aiTraceInfo, aiTraceSymbol])
+    }, [nodes, edges, layout, activeKinds])
 
     // Highlight selected node
     useEffect(() => {

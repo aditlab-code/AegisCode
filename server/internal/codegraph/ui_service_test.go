@@ -265,3 +265,44 @@ func TestUIServiceNilDB(t *testing.T) {
 		t.Errorf("nil db search should return empty, err=%v", err)
 	}
 }
+
+func TestUIServiceResolveSymbolIDAndSanitizedFTS(t *testing.T) {
+	svc, cleanup := setupTestGraph(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// 1. Resolve by symbol name
+	id, err := svc.ResolveSymbolID(ctx, "ValidateSession")
+	if err != nil {
+		t.Fatalf("ResolveSymbolID failed for ValidateSession: %v", err)
+	}
+	if id <= 0 {
+		t.Errorf("expected positive ID, got %d", id)
+	}
+
+	// 2. Resolve by file path
+	idFile, err := svc.ResolveSymbolID(ctx, "auth/session.go")
+	if err != nil {
+		t.Fatalf("ResolveSymbolID failed for auth/session.go: %v", err)
+	}
+	if idFile <= 0 {
+		t.Errorf("expected positive ID for file path, got %d", idFile)
+	}
+
+	// 3. Resolve non-existent symbol
+	_, err = svc.ResolveSymbolID(ctx, "NonExistentSymbol123")
+	if err == nil {
+		t.Errorf("expected error resolving non-existent symbol")
+	}
+
+	// 4. Test FTS sanitization with punctuation and operator characters (SQL-06)
+	matches, err := svc.SearchSymbols(ctx, "ValidateSession()", 10)
+	if err != nil {
+		t.Fatalf("SearchSymbols with parens failed: %v", err)
+	}
+	if len(matches) == 0 || matches[0].Name != "ValidateSession" {
+		t.Errorf("expected to find ValidateSession despite parens, got %v", matches)
+	}
+}
+

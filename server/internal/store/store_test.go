@@ -285,3 +285,130 @@ func TestLegacyMigration(t *testing.T) {
 		t.Errorf("legacy auth.json was modified or deleted")
 	}
 }
+
+func TestConversationIDAndToolMetadataPreservation(t *testing.T) {
+	tempDir := t.TempDir()
+	st, err := New(tempDir)
+	if err != nil {
+		t.Fatalf("failed to init store: %v", err)
+	}
+
+	session1 := &ChatSession{
+		ID:             "session-test-meta-1",
+		Title:          "Session 1",
+		Provider:       "claude",
+		Model:          "claude-3-5-sonnet",
+		WorkspacePath:  "/workspace/project",
+		ConversationID: "brain-conv-uuid-12345",
+		Messages: []ChatMessage{
+			{
+				ID:   "msg-1",
+				Role: "user",
+				Text: "Hello AI",
+			},
+			{
+				ID:   "msg-2",
+				Role: "agent",
+				Text: "Here is your tool execution",
+				ToolCalls: []ToolCallItem{
+					{
+						ID:         "tc-1",
+						Name:       "get_file_outline",
+						Summary:    "Viewing outline for server.go",
+						Status:     "error",
+						TargetFile: "server/server.go",
+						Output:     "file outline failure details",
+						BlobRef:    "blob-hash-999",
+						Preview:    "short outline preview",
+					},
+				},
+				Error: "Partial failure in tool processing",
+			},
+		},
+	}
+
+	if err := st.SaveChat(session1); err != nil {
+		t.Fatalf("failed to save session 1: %v", err)
+	}
+
+	// Session 2 with overlapping message IDs to verify SQL-02 PK collision guard
+	session2 := &ChatSession{
+		ID:             "session-test-meta-2",
+		Title:          "Session 2",
+		Provider:       "openai",
+		Model:          "gpt-4o",
+		WorkspacePath:  "/workspace/project",
+		ConversationID: "brain-conv-uuid-67890",
+		Messages: []ChatMessage{
+			{
+				ID:   "msg-1", // Same raw ID as in session 1
+				Role: "user",
+				Text: "Another prompt",
+			},
+			{
+				ID:   "msg-2", // Same raw ID as in session 1
+				Role: "agent",
+				Text: "Session 2 response",
+			},
+		},
+	}
+
+	if err := st.SaveChat(session2); err != nil {
+		t.Fatalf("failed to save session 2: %v", err)
+	}
+
+	// Verify session 1 integrity after session 2 was saved
+	retrieved1, err := st.GetChat("session-test-meta-1")
+	if err != nil {
+		t.Fatalf("failed to get session 1: %v", err)
+	}
+	if retrieved1.ConversationID != "brain-conv-uuid-12345" {
+		t.Errorf("expected ConversationID 'brain-conv-uuid-12345', got '%s'", retrieved1.ConversationID)
+	}
+	if len(retrieved1.Messages) != 2 {
+		t.Fatalf("expected 2 messages in session 1, got %d", len(retrieved1.Messages))
+	}
+	if retrieved1.Messages[0].Text != "Hello AI" {
+		t.Errorf("expected session 1 user prompt preserved, got '%s'", retrieved1.Messages[0].Text)
+	}
+
+	agMsg := retrieved1.Messages[1]
+	if agMsg.Error != "Partial failure in tool processing" {
+		t.Errorf("expected agent Error preserved, got '%s'", agMsg.Error)
+	}
+	if len(agMsg.ToolCalls) != 1 {
+		t.Fatalf("expected 1 tool call in session 1, got %d", len(agMsg.ToolCalls))
+	}
+	tc := agMsg.ToolCalls[0]
+	if tc.ID != "tc-1" {
+		t.Errorf("expected tc.ID 'tc-1', got '%s'", tc.ID)
+	}
+	if tc.Summary != "Viewing outline for server.go" {
+		t.Errorf("expected tc.Summary preserved, got '%s'", tc.Summary)
+	}
+	if tc.Status != "error" {
+		t.Errorf("expected tc.Status 'error', got '%s'", tc.Status)
+	}
+	if tc.TargetFile != "server/server.go" {
+		t.Errorf("expected tc.TargetFile 'server/server.go', got '%s'", tc.TargetFile)
+	}
+	if tc.BlobRef != "blob-hash-999" {
+		t.Errorf("expected tc.BlobRef 'blob-hash-999', got '%s'", tc.BlobRef)
+	}
+	if tc.Preview != "short outline preview" {
+		t.Errorf("expected tc.Preview 'short outline preview', got '%s'", tc.Preview)
+	}
+
+	// Verify session 2 integrity
+	retrieved2, err := st.GetChat("session-test-meta-2")
+	if err != nil {
+		t.Fatalf("failed to get session 2: %v", err)
+	}
+	if retrieved2.ConversationID != "brain-conv-uuid-67890" {
+		t.Errorf("expected ConversationID 'brain-conv-uuid-67890', got '%s'", retrieved2.ConversationID)
+	}
+	if retrieved2.Messages[0].Text != "Another prompt" {
+		t.Errorf("expected session 2 prompt preserved, got '%s'", retrieved2.Messages[0].Text)
+	}
+}
+

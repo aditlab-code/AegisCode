@@ -389,6 +389,9 @@ func StreamChatAntigravity(ctx context.Context, req StreamChatRequest, sendEvent
 	if !pathUpdated && len(localBins) > 0 {
 		env = append(env, "PATH="+strings.Join(localBins, sep))
 	}
+	if req.WorkspaceDir != "" {
+		env = append(env, "WORKSPACE_ROOT="+req.WorkspaceDir)
+	}
 	cmd.Env = env
 
 	if req.WorkspaceDir != "" {

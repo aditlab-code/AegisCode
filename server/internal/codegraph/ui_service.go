@@ -22,6 +22,30 @@ func NewUIService(db *sql.DB, workspaceRoot string) *UIService {
 	}
 }
 
+// ResolveSymbolID resolves a symbol name (or file-qualified symbol) to its integer primary key.
+func (s *UIService) ResolveSymbolID(ctx context.Context, symbolName string) (int64, error) {
+	if s.db == nil {
+		return 0, fmt.Errorf("codegraph database is not initialized")
+	}
+	clean := strings.TrimSpace(symbolName)
+	if clean == "" {
+		return 0, fmt.Errorf("symbol name cannot be empty")
+	}
+	var id int64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT s.id
+		FROM code_symbols s
+		JOIN graph_files f ON s.file_id = f.id
+		WHERE s.name = ? OR f.path = ?
+		ORDER BY CASE WHEN s.name = ? THEN 0 ELSE 1 END, s.line_start ASC
+		LIMIT 1
+	`, clean, clean, clean).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
 // GetSymbolNeighborhood executes a recursive CTE up to 2 hops around symbolID and
 // returns all connected nodes and edges formatted for Cytoscape.js.
 func (s *UIService) GetSymbolNeighborhood(ctx context.Context, symbolID int64, depth int, limit int) (*UIGraphPayload, error) {
@@ -389,13 +413,27 @@ func (s *UIService) SearchSymbols(ctx context.Context, query string, limit int) 
 
 	var matchIDs []int64
 
-	// 1. Try FTS5 MATCH
-	ftsQuery := fmt.Sprintf(`"%s"*`, strings.ReplaceAll(query, `"`, `""`))
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT rowid FROM symbol_fts
-		WHERE symbol_fts MATCH ?
-		LIMIT ?
-	`, ftsQuery, limit)
+	// 1. Try FTS5 MATCH with sanitized tokens
+	var ftsTokens []string
+	for _, tok := range strings.Fields(query) {
+		cleanTok := strings.Trim(strings.ReplaceAll(tok, `"`, ""), "*?:;,.-_()[]{}!&|/'\\")
+		if cleanTok != "" {
+			ftsTokens = append(ftsTokens, fmt.Sprintf(`"%s"*`, cleanTok))
+		}
+	}
+	ftsQuery := strings.Join(ftsTokens, " ")
+	var rows *sql.Rows
+	var err error
+	if ftsQuery != "" {
+		rows, err = s.db.QueryContext(ctx, `
+			SELECT rowid FROM symbol_fts
+			WHERE symbol_fts MATCH ?
+			ORDER BY rank
+			LIMIT ?
+		`, ftsQuery, limit)
+	} else {
+		err = fmt.Errorf("empty fts query")
+	}
 
 	if err == nil {
 		for rows.Next() {
@@ -469,10 +507,14 @@ func (s *UIService) fetchNodesByIDs(ctx context.Context, ids []int64, activeID i
 	}
 
 	q := fmt.Sprintf(`
-		SELECT s.id, s.name, s.kind, coalesce(s.signature, ''), coalesce(f.path, ''), s.line_start, s.line_end, coalesce(s.doc_comment, '')
+		SELECT s.id, s.name, s.kind, coalesce(s.signature, ''), f.path, s.line_start, s.line_end, coalesce(s.doc_comment, '')
 		FROM code_symbols s
-		LEFT JOIN graph_files f ON s.file_id = f.id
+		JOIN graph_files f ON s.file_id = f.id
 		WHERE s.id IN (%s)
+		  AND f.path NOT LIKE '%%%%.venv%%%%'
+		  AND f.path NOT LIKE '%%%%/venv/%%%%'
+		  AND f.path NOT LIKE '%%%%/site-packages/%%%%'
+		  AND f.path NOT LIKE '%%%%/__pycache__/%%%%'
 	`, strings.Join(placeholders, ","))
 
 	rows, err := s.db.QueryContext(ctx, q, args...)
@@ -481,12 +523,20 @@ func (s *UIService) fetchNodesByIDs(ctx context.Context, ids []int64, activeID i
 	}
 	defer rows.Close()
 
+	byID := make(map[int64]UIGraphNode, len(ids))
 	for rows.Next() {
 		var n UIGraphNode
 		if err := rows.Scan(&n.ID, &n.Name, &n.Kind, &n.Signature, &n.FilePath, &n.LineStart, &n.LineEnd, &n.Doc); err == nil {
 			n.IsActive = (n.ID == activeID)
-			nodes = append(nodes, n)
+			byID[n.ID] = n
 			nodeMap[n.ID] = true
+		}
+	}
+
+	// Preserve caller-requested ID ordering (e.g. root symbol first or FTS rank order)
+	for _, id := range ids {
+		if n, ok := byID[id]; ok {
+			nodes = append(nodes, n)
 		}
 	}
 

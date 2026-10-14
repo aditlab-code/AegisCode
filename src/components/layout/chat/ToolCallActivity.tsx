@@ -58,7 +58,8 @@ function sanitizeOutput(output?: string, preview?: string): string | undefined {
  * Parses raw ToolCallItem into clean human-readable action metadata.
  */
 export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
-  const name = tc.name || ""
+  const rawName = tc.name || ""
+  const name = rawName.replace(/^(mcp__codegraph__|codegraph[:_])/i, "")
   const args = tc.args || {}
 
   // 1. Run terminal command

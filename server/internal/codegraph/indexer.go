@@ -99,6 +99,7 @@ func (e *Engine) initWorkspace(root string) error {
 	e.query = NewQueryEngine(db, cleanRoot)
 	e.uiService = NewUIService(db, cleanRoot)
 	// Clean out any historical files in ignored paths (e.g. .venv, node_modules) and orphaned symbols
+	e.writeMu.Lock()
 	_, _ = db.Exec(`
 		DELETE FROM graph_files 
 		WHERE path LIKE '%.venv%' 
@@ -114,6 +115,7 @@ func (e *Engine) initWorkspace(root string) error {
 		DELETE FROM code_edges WHERE source_symbol_id NOT IN (SELECT id FROM code_symbols) 
 		   OR (target_symbol_id IS NOT NULL AND target_symbol_id NOT IN (SELECT id FROM code_symbols));
 	`)
+	e.writeMu.Unlock()
 	// Preload existing file hashes from DB into memory
 	e.hashesMu.Lock()
 	e.fileHashes = make(map[string]string)
@@ -443,14 +445,15 @@ func (e *Engine) Reindex(ctx context.Context) error {
 	if db != nil {
 		e.writeMu.Lock()
 		_, _ = db.Exec(`
-			DELETE FROM graph_files;
-			DELETE FROM code_symbols;
 			DELETE FROM code_edges;
+			DELETE FROM code_symbols;
+			DELETE FROM graph_files;
+			INSERT INTO symbol_fts(symbol_fts) VALUES('rebuild');
 		`)
 		e.writeMu.Unlock()
 	}
 
-	go e.startColdScan()
+	e.startColdScan()
 	return nil
 }
 

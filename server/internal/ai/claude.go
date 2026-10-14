@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -110,21 +113,24 @@ func (e *ClaudeEngine) StreamChat(ctx context.Context, req StreamChatRequest, se
 		return fmt.Errorf("prompt cannot be empty")
 	}
 
-	apiKey := strings.TrimSpace(req.APIKey)
-	if apiKey == "" {
-		errEvt := StreamEvent{
-			Type:           "error",
-			ConversationID: convID,
-			Error:          "Claude API key is required. Please set it in Settings -> AI Providers.",
-		}
-		_ = sendEvent("error", errEvt)
-		return fmt.Errorf("claude api key is missing")
-	}
-
 	// 1. Resolve model
 	model := strings.TrimSpace(req.Model)
 	if model == "" {
 		model = "claude-3-5-sonnet-20241022"
+	}
+
+	apiKey := strings.TrimSpace(req.APIKey)
+	if apiKey == "" {
+		if cliBin := resolveClaudeBinary(req.Command); cliBin != "" {
+			return streamClaudeCLI(ctx, cliBin, convID, model, prompt, req.WorkspaceDir, sendEvent)
+		}
+		errEvt := StreamEvent{
+			Type:           "error",
+			ConversationID: convID,
+			Error:          "Claude API key is required (or install 'claude' CLI). Please set it in Settings -> AI Providers.",
+		}
+		_ = sendEvent("error", errEvt)
+		return fmt.Errorf("claude api key is missing")
 	}
 
 	// 2. Resolve endpoint
@@ -140,46 +146,177 @@ func (e *ClaudeEngine) StreamChat(ctx context.Context, req StreamChatRequest, se
 		ConversationID: convID,
 	})
 
-	// 4. Construct Anthropic payload
-	reqBody := map[string]any{
-		"model": model,
-		"messages": []map[string]string{
-			{"role": "user", "content": prompt},
-		},
-		"max_tokens": 4096,
-		"stream":     true,
-		"tools":      GetCodeGraphClaudeTools(),
+	// 4. Construct conversation messages history and multi-turn execution loop
+	messages := []map[string]any{
+		{"role": "user", "content": prompt},
 	}
 
-	payloadBytes, err := json.Marshal(reqBody)
-	if err != nil {
-		errEvt := StreamEvent{
-			Type:           "error",
-			ConversationID: convID,
-			Error:          fmt.Sprintf("failed to encode request: %v", err),
-		}
-		_ = sendEvent("error", errEvt)
-		return err
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payloadBytes))
-	if err != nil {
-		errEvt := StreamEvent{
-			Type:           "error",
-			ConversationID: convID,
-			Error:          fmt.Sprintf("failed to create HTTP request: %v", err),
-		}
-		_ = sendEvent("error", errEvt)
-		return err
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("x-api-key", apiKey)
-	httpReq.Header.Set("anthropic-version", "2023-06-01")
+	const maxTurns = 5
+	var totalAccumulatedText strings.Builder
+	var totalAccumulatedThinking strings.Builder
+	var allToolCalls []store.ToolCallItem
 
 	client := &http.Client{Timeout: 0}
-	resp, err := client.Do(httpReq)
-	if err != nil {
+
+	for turn := 0; turn < maxTurns; turn++ {
+		reqBody := map[string]any{
+			"model":      model,
+			"messages":   messages,
+			"max_tokens": 4096,
+			"stream":     true,
+			"tools":      GetCodeGraphClaudeTools(),
+		}
+
+		payloadBytes, err := json.Marshal(reqBody)
+		if err != nil {
+			errEvt := StreamEvent{
+				Type:           "error",
+				ConversationID: convID,
+				Error:          fmt.Sprintf("failed to encode request: %v", err),
+			}
+			_ = sendEvent("error", errEvt)
+			return err
+		}
+
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payloadBytes))
+		if err != nil {
+			errEvt := StreamEvent{
+				Type:           "error",
+				ConversationID: convID,
+				Error:          fmt.Sprintf("failed to create HTTP request: %v", err),
+			}
+			_ = sendEvent("error", errEvt)
+			return err
+		}
+
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("x-api-key", apiKey)
+		httpReq.Header.Set("anthropic-version", "2023-06-01")
+
+		resp, err := client.Do(httpReq)
+		if err != nil {
+			if ctx.Err() != nil {
+				_ = sendEvent("error", StreamEvent{
+					Type:           "error",
+					ConversationID: convID,
+					Error:          "Generation stopped by user.",
+				})
+				return ctx.Err()
+			}
+			errMsg := fmt.Sprintf("Claude connection failed: %v", err)
+			_ = sendEvent("error", StreamEvent{
+				Type:           "error",
+				ConversationID: convID,
+				Error:          errMsg,
+			})
+			return err
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			respBody, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			errMsg := fmt.Sprintf("Claude returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+			_ = sendEvent("error", StreamEvent{
+				Type:           "error",
+				ConversationID: convID,
+				Error:          errMsg,
+			})
+			return fmt.Errorf("%s", errMsg)
+		}
+
+		// Parse Anthropic SSE Stream for this turn
+		scanner := bufio.NewScanner(resp.Body)
+		buf := make([]byte, 1024*1024)
+		scanner.Buffer(buf, 10*1024*1024)
+		var currentEventType string
+		var turnText strings.Builder
+		var turnThinking strings.Builder
+		var turnToolCalls []store.ToolCallItem
+		blockHandler := &ClaudeBlockHandler{}
+
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || strings.HasPrefix(line, ":") {
+				continue
+			}
+
+			if strings.HasPrefix(line, "event:") {
+				currentEventType = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+				continue
+			}
+
+			if strings.HasPrefix(line, "data:") {
+				rawJSON := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+				if rawJSON == "[DONE]" {
+					break
+				}
+
+				if currentEventType == "content_block_delta" {
+					var deltaPayload struct {
+						Delta struct {
+							Type     string `json:"type"`
+							Text     string `json:"text"`
+							Thinking string `json:"thinking"`
+						} `json:"delta"`
+					}
+					if err := json.Unmarshal([]byte(rawJSON), &deltaPayload); err == nil {
+						if deltaPayload.Delta.Type == "text_delta" && deltaPayload.Delta.Text != "" {
+							turnText.WriteString(deltaPayload.Delta.Text)
+							totalAccumulatedText.WriteString(deltaPayload.Delta.Text)
+							_ = sendEvent("chunk", StreamEvent{
+								Type:           "chunk",
+								ConversationID: convID,
+								Delta:          deltaPayload.Delta.Text,
+							})
+						} else if deltaPayload.Delta.Type == "thinking_delta" && deltaPayload.Delta.Thinking != "" {
+							turnThinking.WriteString(deltaPayload.Delta.Thinking)
+							totalAccumulatedThinking.WriteString(deltaPayload.Delta.Thinking)
+							_ = sendEvent("thinking", StreamEvent{
+								Type:           "thinking",
+								ConversationID: convID,
+								Thinking:       totalAccumulatedThinking.String(),
+							})
+						}
+					}
+				}
+
+				_ = blockHandler.HandleEvent(currentEventType, []byte(rawJSON), func(tc store.ToolCallItem) {
+					foundIdx := -1
+					for i, existing := range turnToolCalls {
+						if existing.ID == tc.ID {
+							foundIdx = i
+							break
+						}
+					}
+					if foundIdx >= 0 {
+						turnToolCalls[foundIdx] = tc
+					} else {
+						turnToolCalls = append(turnToolCalls, tc)
+					}
+
+					_ = sendEvent("tool_call", StreamEvent{
+						Type:           "tool_call",
+						ConversationID: convID,
+						ToolCall:       &tc,
+					})
+				})
+
+				if currentEventType == "message_stop" {
+					break
+				}
+			}
+		}
+		resp.Body.Close()
+
+		if err := scanner.Err(); err != nil && !errors.Is(err, context.Canceled) {
+			_ = sendEvent("error", StreamEvent{
+				Type:           "error",
+				ConversationID: convID,
+				Error:          fmt.Sprintf("Claude stream error: %v", err),
+			})
+			return err
+		}
+
 		if ctx.Err() != nil {
 			_ = sendEvent("error", StreamEvent{
 				Type:           "error",
@@ -188,130 +325,82 @@ func (e *ClaudeEngine) StreamChat(ctx context.Context, req StreamChatRequest, se
 			})
 			return ctx.Err()
 		}
-		errMsg := fmt.Sprintf("Claude connection failed: %v", err)
-		_ = sendEvent("error", StreamEvent{
-			Type:           "error",
-			ConversationID: convID,
-			Error:          errMsg,
-		})
-		return err
-	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		errMsg := fmt.Sprintf("Claude returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
-		_ = sendEvent("error", StreamEvent{
-			Type:           "error",
-			ConversationID: convID,
-			Error:          errMsg,
-		})
-		return fmt.Errorf("%s", errMsg)
-	}
-
-	// 5. Parse Anthropic SSE Stream
-	scanner := bufio.NewScanner(resp.Body)
-	buf := make([]byte, 1024*1024)
-	scanner.Buffer(buf, 10*1024*1024)
-	var currentEventType string
-	var accumulatedText strings.Builder
-	var accumulatedThinking strings.Builder
-	var toolCalls []store.ToolCallItem
-	blockHandler := &ClaudeBlockHandler{}
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, ":") {
-			continue
+		// If no tool calls occurred, we reached final answer
+		if len(turnToolCalls) == 0 {
+			break
 		}
 
-		if strings.HasPrefix(line, "event:") {
-			currentEventType = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
-			continue
+		// Execute tool calls and prepare assistant & user message blocks for next turn
+		var assistantContent []map[string]any
+		if turnText.Len() > 0 {
+			assistantContent = append(assistantContent, map[string]any{
+				"type": "text",
+				"text": turnText.String(),
+			})
 		}
 
-		if strings.HasPrefix(line, "data:") {
-			rawJSON := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-			if rawJSON == "[DONE]" {
-				break
-			}
-
-			// Handle text deltas and thinking deltas
-			if currentEventType == "content_block_delta" {
-				var deltaPayload struct {
-					Delta struct {
-						Type     string `json:"type"`
-						Text     string `json:"text"`
-						Thinking string `json:"thinking"`
-					} `json:"delta"`
-				}
-				if err := json.Unmarshal([]byte(rawJSON), &deltaPayload); err == nil {
-					if deltaPayload.Delta.Type == "text_delta" && deltaPayload.Delta.Text != "" {
-						accumulatedText.WriteString(deltaPayload.Delta.Text)
-						_ = sendEvent("chunk", StreamEvent{
-							Type:           "chunk",
-							ConversationID: convID,
-							Delta:          deltaPayload.Delta.Text,
-						})
-					} else if deltaPayload.Delta.Type == "thinking_delta" && deltaPayload.Delta.Thinking != "" {
-						accumulatedThinking.WriteString(deltaPayload.Delta.Thinking)
-						_ = sendEvent("thinking", StreamEvent{
-							Type:           "thinking",
-							ConversationID: convID,
-							Thinking:       accumulatedThinking.String(),
-						})
-					}
-				}
-			}
-
-			// Handle tool block events
-			_ = blockHandler.HandleEvent(currentEventType, []byte(rawJSON), func(tc store.ToolCallItem) {
-				foundIdx := -1
-				for i, existing := range toolCalls {
-					if existing.ID == tc.ID {
-						foundIdx = i
-						break
-					}
-				}
-				if foundIdx >= 0 {
-					toolCalls[foundIdx] = tc
-				} else {
-					toolCalls = append(toolCalls, tc)
-				}
-
-				_ = sendEvent("tool_call", StreamEvent{
-					Type:           "tool_call",
-					ConversationID: convID,
-					ToolCall:       &tc,
-				})
+		var toolResults []map[string]any
+		for i := range turnToolCalls {
+			tc := &turnToolCalls[i]
+			tc.Status = "running"
+			_ = sendEvent("tool_call", StreamEvent{
+				Type:           "tool_call",
+				ConversationID: convID,
+				ToolCall:       tc,
 			})
 
-			if currentEventType == "message_stop" {
-				break
+			var output string
+			var execErr error
+			if req.ToolExecutor != nil {
+				output, execErr = req.ToolExecutor(ctx, tc.Name, tc.Args)
+			} else {
+				execErr = fmt.Errorf("no tool executor configured on server")
 			}
+
+			if execErr != nil {
+				tc.Status = "failed"
+				tc.Output = fmt.Sprintf("Error executing tool %s: %v", tc.Name, execErr)
+			} else {
+				tc.Status = "success"
+				tc.Output = output
+			}
+
+			_ = sendEvent("tool_call", StreamEvent{
+				Type:           "tool_call",
+				ConversationID: convID,
+				ToolCall:       tc,
+			})
+
+			assistantContent = append(assistantContent, map[string]any{
+				"type":  "tool_use",
+				"id":    tc.ID,
+				"name":  tc.Name,
+				"input": tc.Args,
+			})
+
+			toolResults = append(toolResults, map[string]any{
+				"type":        "tool_result",
+				"tool_use_id": tc.ID,
+				"content":     tc.Output,
+				"is_error":    tc.Status == "failed",
+			})
+
+			allToolCalls = append(allToolCalls, *tc)
 		}
-	}
 
-	if err := scanner.Err(); err != nil && !errors.Is(err, context.Canceled) {
-		_ = sendEvent("error", StreamEvent{
-			Type:           "error",
-			ConversationID: convID,
-			Error:          fmt.Sprintf("Claude stream error: %v", err),
+		messages = append(messages, map[string]any{
+			"role":    "assistant",
+			"content": assistantContent,
 		})
-		return err
-	}
-
-	if ctx.Err() != nil {
-		_ = sendEvent("error", StreamEvent{
-			Type:           "error",
-			ConversationID: convID,
-			Error:          "Generation stopped by user.",
+		messages = append(messages, map[string]any{
+			"role":    "user",
+			"content": toolResults,
 		})
-		return ctx.Err()
 	}
 
-	finalText := accumulatedText.String()
-	if strings.TrimSpace(finalText) == "" && len(toolCalls) == 0 {
+	finalText := totalAccumulatedText.String()
+	if strings.TrimSpace(finalText) == "" && len(allToolCalls) == 0 {
 		finalText = "Selesai tanpa respons teks tambahan."
 	}
 
@@ -319,8 +408,8 @@ func (e *ClaudeEngine) StreamChat(ctx context.Context, req StreamChatRequest, se
 		ID:        fmt.Sprintf("msg-%d", time.Now().UnixMilli()),
 		Role:      "agent",
 		Text:      finalText,
-		Thinking:  accumulatedThinking.String(),
-		ToolCalls: toolCalls,
+		Thinking:  totalAccumulatedThinking.String(),
+		ToolCalls: allToolCalls,
 		Timestamp: time.Now().UnixMilli(),
 		Provider:  "claude",
 		Model:     model,
@@ -332,5 +421,89 @@ func (e *ClaudeEngine) StreamChat(ctx context.Context, req StreamChatRequest, se
 		Message:        &finalMsg,
 	})
 
+	return nil
+}
+
+func resolveClaudeBinary(customCmd string) string {
+	cmdStr := strings.TrimSpace(customCmd)
+	if cmdStr == "" {
+		cmdStr = "claude"
+	}
+	parts := strings.Fields(cmdStr)
+	binary := parts[0]
+	if p, err := exec.LookPath(binary); err == nil {
+		return p
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		for _, cand := range []string{
+			filepath.Join(home, ".local", "bin", binary),
+			filepath.Join(home, ".local", "bin", "claude"),
+		} {
+			if fi, statErr := os.Stat(cand); statErr == nil && !fi.IsDir() {
+				return cand
+			}
+		}
+	}
+	return ""
+}
+
+func streamClaudeCLI(ctx context.Context, binary, convID, model, prompt, workspaceDir string, sendEvent EventSender) error {
+	_ = sendEvent("start", StreamEvent{
+		Type:           "start",
+		ConversationID: convID,
+	})
+	args := []string{"-p", prompt, "--output-format", "stream-json", "--verbose"}
+	if model != "" {
+		args = append(args, "--model", model)
+	}
+	cmd := exec.CommandContext(ctx, binary, args...)
+	if workspaceDir != "" {
+		if fi, err := os.Stat(workspaceDir); err == nil && fi.IsDir() {
+			cmd.Dir = workspaceDir
+			cmd.Env = append(os.Environ(), "WORKSPACE_ROOT="+workspaceDir)
+		}
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		_ = sendEvent("error", StreamEvent{
+			Type:           "error",
+			ConversationID: convID,
+			Error:          fmt.Sprintf("Failed to start Claude CLI: %v", err),
+		})
+		return err
+	}
+	var accumulatedText strings.Builder
+	scanner := bufio.NewScanner(stdout)
+	buf := make([]byte, 1024*1024)
+	scanner.Buffer(buf, 10*1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var raw map[string]any
+		if json.Unmarshal([]byte(line), &raw) == nil {
+			if res, ok := raw["result"].(string); ok && res != "" && accumulatedText.Len() == 0 {
+				accumulatedText.WriteString(res)
+				_ = sendEvent("chunk", StreamEvent{Type: "chunk", ConversationID: convID, Delta: res})
+			}
+		}
+	}
+	_ = cmd.Wait()
+	_ = sendEvent("done", StreamEvent{
+		Type:           "done",
+		ConversationID: convID,
+		Message: &store.ChatMessage{
+			ID:        fmt.Sprintf("msg-%d", time.Now().UnixMilli()),
+			Role:      "agent",
+			Text:      accumulatedText.String(),
+			Timestamp: time.Now().UnixMilli(),
+			Provider:  "claude",
+			Model:     model,
+		},
+	})
 	return nil
 }

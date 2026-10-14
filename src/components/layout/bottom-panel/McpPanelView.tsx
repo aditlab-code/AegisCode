@@ -11,17 +11,29 @@ import {
 } from "../../../utils/codegraphApi"
 
 const TOOL_DEFAULTS: Record<string, string> = {
-  get_file_outline: JSON.stringify({ rel_path: "main.go" }, null, 2),
-  get_symbol_definition: JSON.stringify(
-    { symbol_name: "main", file_hint: "" },
+  get_file_outline: JSON.stringify(
+    { file_path: "server/cmd/server/main.go" },
     null,
     2,
   ),
-  find_callers: JSON.stringify({ function_name: "main", limit: 10 }, null, 2),
+  get_symbol_definition: JSON.stringify(
+    { name: "main", file_hint: "" },
+    null,
+    2,
+  ),
+  find_callers: JSON.stringify(
+    { function_name: "NewServer", limit: 10 },
+    null,
+    2,
+  ),
   find_callees: JSON.stringify({ function_name: "main", limit: 10 }, null, 2),
-  query_subgraph: JSON.stringify({ root_symbol: "main", depth: 1 }, null, 2),
+  query_subgraph: JSON.stringify(
+    { root_symbol: "NewServer", depth: 1 },
+    null,
+    2,
+  ),
   read_symbol_body: JSON.stringify(
-    { symbol_name: "main", rel_path: "main.go" },
+    { name: "main", file_path: "server/cmd/server/main.go" },
     null,
     2,
   ),

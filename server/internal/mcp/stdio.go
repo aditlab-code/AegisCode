@@ -2,13 +2,16 @@ package mcp
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 // RunStdio executes the MCP server over standard input/output streams,
@@ -78,6 +81,10 @@ func RunStdio(ctx context.Context, srv *Server, in io.Reader, out io.Writer) err
 			continue
 		}
 
+		if req.Method == "tools/call" {
+			go notifyLocalEventBridge(req.Params)
+		}
+
 		resp := srv.HandleRequest(ctx, &req)
 		if resp != nil {
 			respBytes, mErr := json.Marshal(resp)
@@ -95,6 +102,34 @@ func RunStdio(ctx context.Context, srv *Server, in io.Reader, out io.Writer) err
 			_, _ = writer.Write(respBytes)
 			_ = writer.WriteByte('\n')
 			_ = writer.Flush()
+		}
+	}
+}
+
+// notifyLocalEventBridge informs the local running AegisCode Core Server if active on port 8080/8081.
+func notifyLocalEventBridge(params json.RawMessage) {
+	port := os.Getenv("AEGISCODE_PORT")
+	if port == "" {
+		port = "8080"
+	}
+	var callParams CallToolParams
+	if err := json.Unmarshal(params, &callParams); err != nil {
+		return
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"event":     "mcp_tool_invoked",
+		"tool":      callParams.Name,
+		"args":      callParams.Arguments,
+		"timestamp": time.Now().Unix(),
+	})
+	client := &http.Client{Timeout: 300 * time.Millisecond}
+	url := fmt.Sprintf("http://127.0.0.1:%s/api/v1/mcp/events", port)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(payload))
+	if err == nil {
+		req.Header.Set("Content-Type", "application/json")
+		resp, doErr := client.Do(req)
+		if doErr == nil {
+			_ = resp.Body.Close()
 		}
 	}
 }

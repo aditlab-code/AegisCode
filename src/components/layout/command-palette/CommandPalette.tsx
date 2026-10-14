@@ -127,6 +127,25 @@ export function CommandPalette() {
         },
       },
       {
+        id: "view-codegraph",
+        label: "View: Open CodeGraph (Workspace)",
+        detail: "Interactive AST & dependency architecture visualization",
+        icon: "zap",
+        action: () => {
+          openFileInPane("codegraph:workspace")
+        },
+      },
+      {
+        id: "view-mcp",
+        label: "View: Show MCP Panel",
+        detail: "Inspect Model Context Protocol tools and CodeGraph status",
+        icon: "zap",
+        action: () => {
+          setActiveBottomTab("MCP")
+          setPanelOpen(true)
+        },
+      },
+      {
         id: "search-files",
         label: "Search: Find in Files",
         detail: "Search and replace across files (Ctrl+Shift+F)",
@@ -236,6 +255,7 @@ export function CommandPalette() {
     recentProjects,
     runFileInTerminal,
     startDebugging,
+    openFileInPane,
     setActiveActivity,
     setActiveBottomTab,
     setPanelOpen,

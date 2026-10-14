@@ -46,6 +46,8 @@ type ToolCallItem struct {
 	TargetFile string         `json:"targetFile,omitempty"`
 	Args       map[string]any `json:"args,omitempty"`
 	Output     string         `json:"output,omitempty"`
+	BlobRef    string         `json:"blobRef,omitempty"`
+	Preview    string         `json:"preview,omitempty"`
 }
 
 // ChatMessage represents a single message in an AI conversation.

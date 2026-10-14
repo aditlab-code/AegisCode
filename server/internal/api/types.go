@@ -145,21 +145,24 @@ type BranchesResponse struct {
 	Branches []git.BranchInfo `json:"branches"`
 }
 
-// StageFilesRequest models staging files payload.
+// StageFilesRequest models staging files payload (accepts "files" or "paths").
 type StageFilesRequest struct {
 	Files []string `json:"files"`
+	Paths []string `json:"paths,omitempty"`
 	All   bool     `json:"all"`
 }
 
-// UnstageFilesRequest models unstaging files payload.
+// UnstageFilesRequest models unstaging files payload (accepts "files" or "paths").
 type UnstageFilesRequest struct {
 	Files []string `json:"files"`
+	Paths []string `json:"paths,omitempty"`
 	All   bool     `json:"all"`
 }
 
-// DiscardFilesRequest models discarding changes payload.
+// DiscardFilesRequest models discarding changes payload (accepts "files" or "paths").
 type DiscardFilesRequest struct {
 	Files []string `json:"files"`
+	Paths []string `json:"paths,omitempty"`
 	All   bool     `json:"all"`
 }
 

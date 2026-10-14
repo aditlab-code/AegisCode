@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { execSync, spawn } from "node:child_process"
+import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { terminatePorts } from "./clean-ports.js"
@@ -83,6 +84,14 @@ terminatePorts([8080, 5173], false)
 
 // 1. Compile Go server binary directly to eliminate 'go run' intermediate processes
 console.log("[dev:all] Building Go Core Server binary...")
+const distSrcDir = path.resolve(rootDir, "dist")
+const distDestDir = path.resolve(serverDir, "internal/web/dist")
+if (
+  fs.existsSync(distSrcDir) &&
+  fs.existsSync(path.resolve(distSrcDir, "index.html"))
+) {
+  fs.cpSync(distSrcDir, distDestDir, { recursive: true, force: true })
+}
 try {
   execSync(`go build -o "${serverBin}" ./cmd/server`, {
     cwd: serverDir,

@@ -22,8 +22,9 @@ func OpenDB(dbPath string) (*sql.DB, error) {
 	}
 
 	// Open connection with pure-Go modernc.org/sqlite driver, ensuring every connection
-	// in the pool inherits WAL, foreign_keys, and busy_timeout via DSN URI parameters.
-	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=cache_size(-2000)", dbPath)
+	// in the pool inherits WAL, foreign_keys, busy_timeout, and immediate tx lock via DSN URI parameters.
+	cleanDSNPath := filepath.ToSlash(dbPath)
+	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=cache_size(-2000)&_pragma=temp_store(MEMORY)&_txlock=immediate", cleanDSNPath)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite database %s: %w", dbPath, err)
@@ -59,7 +60,7 @@ func OpenDB(dbPath string) (*sql.DB, error) {
 
 // migrateSchema executes table, index, and FTS5 triggers creation.
 func migrateSchema(db *sql.DB) error {
-	// Auto-heal legacy chat_sessions table if missing 'workspace_path' column before creating indices
+	// Auto-heal legacy chat_sessions table if missing 'workspace_path' or 'conversation_id' columns
 	var hasSessionsTable int
 	_ = db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='chat_sessions'`).Scan(&hasSessionsTable)
 	if hasSessionsTable > 0 {
@@ -68,6 +69,13 @@ func migrateSchema(db *sql.DB) error {
 		if hasWorkspaceCol == 0 {
 			if _, err := db.Exec(`ALTER TABLE chat_sessions ADD COLUMN workspace_path TEXT NOT NULL DEFAULT ''`); err != nil {
 				return fmt.Errorf("failed to add workspace_path column to chat_sessions: %w", err)
+			}
+		}
+		var hasConvIDCol int
+		_ = db.QueryRow(`SELECT count(*) FROM pragma_table_info('chat_sessions') WHERE name = 'conversation_id'`).Scan(&hasConvIDCol)
+		if hasConvIDCol == 0 {
+			if _, err := db.Exec(`ALTER TABLE chat_sessions ADD COLUMN conversation_id TEXT NOT NULL DEFAULT ''`); err != nil {
+				return fmt.Errorf("failed to add conversation_id column to chat_sessions: %w", err)
 			}
 		}
 	}
@@ -133,6 +141,7 @@ func migrateSchema(db *sql.DB) error {
 		provider TEXT NOT NULL,
 		model TEXT NOT NULL,
 		workspace_path TEXT NOT NULL DEFAULT '',
+		conversation_id TEXT NOT NULL DEFAULT '',
 		root_node_id TEXT,
 		active_leaf_id TEXT,
 		node_count INTEGER NOT NULL DEFAULT 0,

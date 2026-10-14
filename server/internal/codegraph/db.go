@@ -63,7 +63,8 @@ func OpenGraphDB(dbPath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to create directory for database: %w", err)
 	}
 
-	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=cache_size(-2000)&_pragma=recursive_triggers(ON)", dbPath)
+	cleanDSNPath := filepath.ToSlash(dbPath)
+	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=cache_size(-2000)&_pragma=recursive_triggers(ON)&_pragma=temp_store(MEMORY)&_txlock=immediate", cleanDSNPath)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite database %s: %w", dbPath, err)

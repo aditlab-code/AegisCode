@@ -244,6 +244,30 @@ func (s *Server) HandleRequest(ctx context.Context, req *JSONRPCRequest) *JSONRP
 	}
 }
 
+// CallTool runs the given tool and returns the CallToolResult.
+func (s *Server) CallTool(ctx context.Context, name string, args map[string]any) (*CallToolResult, error) {
+	return s.callTool(ctx, name, args)
+}
+
+// ExecuteTool executes a named tool and returns the textual representation of the output.
+func (s *Server) ExecuteTool(ctx context.Context, name string, args map[string]any) (string, error) {
+	res, err := s.callTool(ctx, name, args)
+	if err != nil {
+		return "", err
+	}
+	if res == nil || len(res.Content) == 0 {
+		return "{}", nil
+	}
+	var sb strings.Builder
+	for i, c := range res.Content {
+		if i > 0 {
+			sb.WriteString("\n")
+		}
+		sb.WriteString(c.Text)
+	}
+	return sb.String(), nil
+}
+
 // callTool executes the specified tool against the CodeGraph engine.
 func (s *Server) callTool(ctx context.Context, name string, args map[string]any) (*CallToolResult, error) {
 	if s.engine == nil {
@@ -254,12 +278,22 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]any)
 		args = make(map[string]any)
 	}
 
+	cleanName := strings.TrimPrefix(name, "mcp__codegraph__")
+	cleanName = strings.TrimPrefix(cleanName, "codegraph:")
+	cleanName = strings.TrimPrefix(cleanName, "codegraph_")
+
 	var resultData any
 	var err error
 
-	switch name {
+	switch cleanName {
 	case "get_file_outline":
 		filePath, _ := args["file_path"].(string)
+		if filePath == "" {
+			filePath, _ = args["rel_path"].(string)
+		}
+		if filePath == "" {
+			filePath, _ = args["path"].(string)
+		}
 		if strings.TrimSpace(filePath) == "" {
 			return nil, fmt.Errorf("argument 'file_path' is required")
 		}
@@ -267,6 +301,9 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]any)
 
 	case "get_symbol_definition":
 		symName, _ := args["name"].(string)
+		if symName == "" {
+			symName, _ = args["symbol_name"].(string)
+		}
 		fileHint, _ := args["file_hint"].(string)
 		if strings.TrimSpace(symName) == "" {
 			return nil, fmt.Errorf("argument 'name' is required")
@@ -286,7 +323,7 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]any)
 		}
 		resultData, err = s.engine.FindCallers(ctx, fnName, limit)
 
-	case "find_callees":
+	case "find_callees", "get_dependencies":
 		fnName, _ := args["function_name"].(string)
 		fileHint, _ := args["file_hint"].(string)
 		limit := 15
@@ -315,7 +352,13 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]any)
 
 	case "read_symbol_body":
 		symName, _ := args["name"].(string)
+		if symName == "" {
+			symName, _ = args["symbol_name"].(string)
+		}
 		filePath, _ := args["file_path"].(string)
+		if filePath == "" {
+			filePath, _ = args["rel_path"].(string)
+		}
 		if strings.TrimSpace(symName) == "" || strings.TrimSpace(filePath) == "" {
 			return nil, fmt.Errorf("arguments 'name' and 'file_path' are required")
 		}

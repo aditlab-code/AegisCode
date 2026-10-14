@@ -34,28 +34,43 @@ PRAGMA cache_size = -2000; -- ~2 MB cache
 
 ### Table Dictionary
 
-#### 1. `app_config`
-Stores persistent user settings and workbench state key-value pairs.
+#### 1. `app_config` & `app_state`
+Stores persistent global user settings (`id = 1` singleton row) and workbench window/recent project state.
 ```sql
 CREATE TABLE IF NOT EXISTS app_config (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL,
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    data_json TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS app_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    active_session_id TEXT,
+    recent_projects_json TEXT NOT NULL DEFAULT '[]',
+    window_state_json TEXT NOT NULL DEFAULT '{}',
     updated_at INTEGER NOT NULL
 );
 ```
 
 #### 2. `chat_sessions`
-Manages AI conversation threads, branch pointers, and project scoping.
+Manages AI conversation threads, external CLI `conversation_id` links, branch pointers, and project scoping.
 ```sql
 CREATE TABLE IF NOT EXISTS chat_sessions (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    workspace_path TEXT NOT NULL DEFAULT '',
+    conversation_id TEXT NOT NULL DEFAULT '',
+    root_node_id TEXT,
+    active_leaf_id TEXT,
+    node_count INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
-    active_leaf_id TEXT,
-    workspace_path TEXT NOT NULL DEFAULT ''
+    is_archived INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX IF NOT EXISTS idx_chat_sessions_workspace ON chat_sessions(workspace_path);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated ON chat_sessions(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_workspace ON chat_sessions(workspace_path, updated_at DESC);
 ```
 
 #### 3. `chat_events`
@@ -90,14 +105,15 @@ CREATE TABLE IF NOT EXISTS blobs (
 ```
 
 #### 5. `chat_fts` (FTS5 Full-Text Search)
-Virtual full-text search table with automatic insert/update/delete triggers.
+External-content virtual full-text search table backed by `chat_events` with automatic insert/update/delete triggers.
 ```sql
 CREATE VIRTUAL TABLE IF NOT EXISTS chat_fts USING fts5(
     session_id UNINDEXED,
-    event_id UNINDEXED,
+    id UNINDEXED,
     text,
     reasoning,
-    tokenize = 'porter unicode61'
+    content='chat_events',
+    content_rowid='rowid'
 );
 ```
 
@@ -162,13 +178,13 @@ CREATE INDEX IF NOT EXISTS idx_code_edges_relation ON code_edges(relation);
 ```
 
 #### 4. `symbol_fts` (FTS5 Search)
-Fast symbol lookup for code jump and fuzzy search.
+External-content virtual table synchronized with `code_symbols` (`content_rowid='id'`) for fast symbol lookup and autocomplete.
 ```sql
 CREATE VIRTUAL TABLE IF NOT EXISTS symbol_fts USING fts5(
-    symbol_id UNINDEXED,
     name,
     signature,
     doc_comment,
-    tokenize = 'porter unicode61'
+    content='code_symbols',
+    content_rowid='id'
 );
 ```

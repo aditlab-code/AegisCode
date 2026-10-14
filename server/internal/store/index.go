@@ -173,10 +173,30 @@ func ConvertMessagesToGraphNodes(sessionID, provider, model string, messages []C
 			nodeTs = time.Now().UnixMilli()
 		}
 
+		scopeNodeID := func(rawID, fallback string) string {
+			if rawID == "" {
+				return fallback
+			}
+			if len(rawID) > len(sessionID)+1 && rawID[:len(sessionID)+1] == sessionID+":" {
+				return rawID
+			}
+			if len(rawID) > len(sessionID)+3 && rawID[:len(sessionID)+3] == "n-"+sessionID+"-" {
+				return rawID
+			}
+			return fmt.Sprintf("n-%s-%s", sessionID, rawID)
+		}
+
 		if msg.Role == "user" {
-			uID := msg.ID
-			if uID == "" {
-				uID = fmt.Sprintf("n-%s-u%d", sessionID, idx)
+			uID := scopeNodeID(msg.ID, fmt.Sprintf("n-%s-u%d", sessionID, idx))
+			uMeta := map[string]any{
+				"provider": provider,
+				"model":    model,
+			}
+			if msg.ID != "" {
+				uMeta["origId"] = msg.ID
+			}
+			if len(msg.Context) > 0 {
+				uMeta["context"] = msg.Context
 			}
 			uNode := GraphNode{
 				ID:     uID,
@@ -184,10 +204,7 @@ func ConvertMessagesToGraphNodes(sessionID, provider, model string, messages []C
 				Type:   "user",
 				Text:   msg.Text,
 				Ts:     nodeTs,
-				Meta: map[string]any{
-					"provider": provider,
-					"model":    model,
-				},
+				Meta:   uMeta,
 			}
 			nodes = append(nodes, uNode)
 			idCopy := uID
@@ -210,18 +227,31 @@ func ConvertMessagesToGraphNodes(sessionID, provider, model string, messages []C
 
 			// Tool call nodes
 			for tIdx, tc := range msg.ToolCalls {
-				tcID := tc.ID
-				if tcID == "" {
-					tcID = fmt.Sprintf("n-%s-tc%d-%d", sessionID, idx, tIdx)
+				tcID := scopeNodeID(tc.ID, fmt.Sprintf("n-%s-tc%d-%d", sessionID, idx, tIdx))
+				tcMeta := map[string]any{}
+				if tc.ID != "" {
+					tcMeta["origId"] = tc.ID
+				}
+				if tc.Summary != "" {
+					tcMeta["summary"] = tc.Summary
+				}
+				if tc.Status != "" {
+					tcMeta["status"] = tc.Status
+				}
+				if tc.TargetFile != "" {
+					tcMeta["targetFile"] = tc.TargetFile
 				}
 				tcNode := GraphNode{
-					ID:     tcID,
-					Parent: lastNodeID,
-					Type:   "tool_call",
-					Tool:   tc.Name,
-					Args:   tc.Args,
-					Ts:     nodeTs,
-					Output: tc.Output,
+					ID:      tcID,
+					Parent:  lastNodeID,
+					Type:    "tool_call",
+					Tool:    tc.Name,
+					Args:    tc.Args,
+					Ts:      nodeTs,
+					Output:  tc.Output,
+					BlobRef: tc.BlobRef,
+					Preview: tc.Preview,
+					Meta:    tcMeta,
 				}
 				nodes = append(nodes, tcNode)
 				idCopy := tcID
@@ -229,9 +259,16 @@ func ConvertMessagesToGraphNodes(sessionID, provider, model string, messages []C
 			}
 
 			// Agent final text node
-			agID := msg.ID
-			if agID == "" {
-				agID = fmt.Sprintf("n-%s-a%d", sessionID, idx)
+			agID := scopeNodeID(msg.ID, fmt.Sprintf("n-%s-a%d", sessionID, idx))
+			agMeta := map[string]any{
+				"provider": msg.Provider,
+				"model":    msg.Model,
+			}
+			if msg.ID != "" {
+				agMeta["origId"] = msg.ID
+			}
+			if msg.Error != "" {
+				agMeta["error"] = msg.Error
 			}
 			agNode := GraphNode{
 				ID:     agID,
@@ -239,10 +276,7 @@ func ConvertMessagesToGraphNodes(sessionID, provider, model string, messages []C
 				Type:   "agent",
 				Text:   msg.Text,
 				Ts:     nodeTs,
-				Meta: map[string]any{
-					"provider": msg.Provider,
-					"model":    msg.Model,
-				},
+				Meta:   agMeta,
 			}
 			nodes = append(nodes, agNode)
 			idCopy := agID

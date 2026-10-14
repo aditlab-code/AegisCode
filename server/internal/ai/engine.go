@@ -11,15 +11,20 @@ import (
 // EventSender is the callback function used to emit real-time SSE events.
 type EventSender func(eventType string, data any) error
 
+// ToolExecutor is a callback function invoked to execute tools on behalf of an agentic model turn.
+type ToolExecutor func(ctx context.Context, name string, args map[string]any) (string, error)
+
 // StreamChatRequest holds parameters for an AI chat execution turn across providers.
 type StreamChatRequest struct {
-	WorkspaceDir   string `json:"workspaceDir,omitempty"`
-	ConversationID string `json:"conversationId,omitempty"`
-	Provider       string `json:"provider,omitempty"`
-	Model          string `json:"model,omitempty"`
-	Prompt         string `json:"prompt"`
-	APIKey         string `json:"apiKey,omitempty"`
-	BaseURL        string `json:"baseUrl,omitempty"`
+	WorkspaceDir   string       `json:"workspaceDir,omitempty"`
+	ConversationID string       `json:"conversationId,omitempty"`
+	Provider       string       `json:"provider,omitempty"`
+	Model          string       `json:"model,omitempty"`
+	Prompt         string       `json:"prompt"`
+	APIKey         string       `json:"apiKey,omitempty"`
+	BaseURL        string       `json:"baseUrl,omitempty"`
+	Command        string       `json:"command,omitempty"`
+	ToolExecutor   ToolExecutor `json:"-"`
 }
 
 // StreamEvent represents a real-time event sent over SSE.
