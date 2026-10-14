@@ -45,15 +45,15 @@ __debug_bin*
 /.plugins/
 /.opencode-skills/
 .claude-replay.*
-.codegraph/
-.codegraph
+#.codegraph/
+#.codegraph
 
 # Internal Agent Instructions & Local Specs
-/AGENTS.md
-/CLAUDE.md
+#/AGENTS.md
+#/CLAUDE.md
 /.scratch/
 /task/
-.mise.toml
+#.mise.toml
 
 # Internal Developer Documentation
 docs/internal/

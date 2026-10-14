@@ -15,7 +15,7 @@ import {
 } from "@codemirror/language"
 import { history } from "@codemirror/commands"
 import { closeBrackets } from "@codemirror/autocomplete"
-import { EditorState, type Extension } from "@codemirror/state"
+import { EditorState, Compartment, type Extension } from "@codemirror/state"
 import { tags as t } from "@lezer/highlight"
 import { javascript } from "@codemirror/lang-javascript"
 import { go } from "@codemirror/lang-go"
@@ -102,7 +102,7 @@ export const aegisHighlightStyle = HighlightStyle.define([
     color: "var(--color-blue)",
   },
   {
-    tag: [t.string, t.special(t.string), t.character],
+    tag: [t.string, t.special(t.string), t.character, t.docString],
     color: "var(--color-green)",
   },
   {
@@ -110,7 +110,27 @@ export const aegisHighlightStyle = HighlightStyle.define([
     color: "var(--color-orange)",
   },
   {
+    tag: [t.unit],
+    color: "var(--color-orange)",
+  },
+  {
+    tag: [t.constant(t.variableName), t.constant(t.name)],
+    color: "var(--color-orange)",
+  },
+  {
     tag: [t.typeName, t.className, t.standard(t.typeName), t.namespace],
+    color: "var(--color-cyan)",
+  },
+  {
+    tag: [t.tagName, t.angleBracket],
+    color: "var(--color-red)",
+  },
+  {
+    tag: [t.attributeName],
+    color: "var(--color-orange)",
+  },
+  {
+    tag: [t.propertyName],
     color: "var(--color-cyan)",
   },
   {
@@ -119,16 +139,16 @@ export const aegisHighlightStyle = HighlightStyle.define([
     fontStyle: "italic",
   },
   {
-    tag: [t.propertyName, t.attributeName],
-    color: "var(--color-ink)",
-  },
-  {
     tag: [t.variableName, t.definition(t.variableName), t.self],
     color: "var(--color-ink)",
   },
   {
     tag: [t.operator, t.punctuation, t.bracket, t.paren, t.brace, t.separator],
     color: "var(--color-ink-soft)",
+  },
+  {
+    tag: [t.meta, t.annotation, t.processingInstruction],
+    color: "var(--color-ink-muted)",
   },
   {
     tag: [t.regexp, t.escape],
@@ -157,131 +177,165 @@ export const aegisHighlightStyle = HighlightStyle.define([
 /**
  * Creates the base AegisCode editor theme for EditorView and MergeView.
  */
-export function createAegisEditorTheme(fontSize = 13.5, lineHeight = 22) {
-  return EditorView.theme({
-    "&": {
-      height: "100%",
-      fontSize: `${fontSize}px`,
-      backgroundColor: "transparent",
-      color: "var(--color-ink)",
-      fontFamily:
-        "var(--editor-font-family, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace)",
-    },
-    ".cm-scroller": {
-      overflow: "auto",
-      lineHeight: `${lineHeight}px`,
-    },
-    ".cm-gutters": {
-      backgroundColor: "transparent",
-      color: "var(--color-ink-muted)",
-      borderRight:
-        "1px solid color-mix(in srgb, var(--color-line) 40%, transparent)",
-      minWidth: "48px",
-      userSelect: "none",
-    },
-    ".cm-activeLineGutter": {
-      backgroundColor: "transparent !important",
-      color: "var(--color-ink) !important",
-      fontWeight: "700 !important",
-    },
-    ".cm-activeLine": {
-      backgroundColor:
-        "color-mix(in srgb, var(--color-ink) 5%, transparent) !important",
-    },
-    ".cm-cursor": {
-      borderLeftColor: "var(--color-ink)",
-    },
-    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection":
-      {
-        backgroundColor:
-          "color-mix(in srgb, var(--color-accent) 25%, transparent) !important",
+export function createAegisEditorTheme(
+  fontSize = 13.5,
+  lineHeight = 22,
+  isDark = true,
+) {
+  return EditorView.theme(
+    {
+      "&": {
+        height: "100%",
+        fontSize: `${fontSize}px`,
+        backgroundColor: "transparent",
+        color: "var(--color-ink)",
+        fontFamily:
+          "var(--editor-font-family, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace)",
       },
-    ".cm-line": {
-      padding: "0 8px",
-    },
+      ".cm-scroller": {
+        overflow: "auto",
+        lineHeight: `${lineHeight}px`,
+      },
+      ".cm-gutters": {
+        backgroundColor: "transparent",
+        color: "var(--color-ink-muted)",
+        borderRight:
+          "1px solid color-mix(in srgb, var(--color-line) 40%, transparent)",
+        minWidth: "48px",
+        userSelect: "none",
+      },
+      ".cm-activeLineGutter": {
+        backgroundColor: "transparent !important",
+        color: "var(--color-ink) !important",
+        fontWeight: "700 !important",
+      },
+      ".cm-activeLine": {
+        backgroundColor:
+          "color-mix(in srgb, var(--color-ink) 5%, transparent) !important",
+      },
+      ".cm-cursor": {
+        borderLeftColor: "var(--color-accent) !important",
+      },
+      "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection":
+        {
+          backgroundColor:
+            "color-mix(in srgb, var(--color-accent) 25%, transparent) !important",
+        },
+      ".cm-line": {
+        padding: "0 8px",
+      },
+      ".cm-tooltip": {
+        backgroundColor: "var(--color-surface-raised) !important",
+        border: "1px solid var(--color-line-bright) !important",
+        color: "var(--color-ink) !important",
+        borderRadius: "6px",
+        boxShadow: "var(--shadow-popover)",
+        backdropFilter: "blur(16px)",
+      },
+      ".cm-tooltip-autocomplete": {
+        border: "1px solid var(--color-line-bright) !important",
+        borderRadius: "6px",
+      },
+      ".cm-tooltip-autocomplete ul li[aria-selected]": {
+        backgroundColor: "var(--color-surface-hover) !important",
+        color: "var(--color-ink) !important",
+      },
+      ".cm-panels": {
+        backgroundColor: "var(--color-surface) !important",
+        color: "var(--color-ink) !important",
+        borderBottom: "1px solid var(--color-line)",
+      },
+      ".cm-panels-top": {
+        borderBottom: "1px solid var(--color-line)",
+      },
+      ".cm-panels-bottom": {
+        borderTop: "1px solid var(--color-line)",
+      },
 
-    // Diff chunk and change styles
-    "&.cm-merge-a .cm-changedLine, .cm-deletedChunk": {
-      backgroundColor:
-        "color-mix(in srgb, var(--color-error) 15%, transparent) !important",
-    },
-    "&.cm-merge-b .cm-changedLine, .cm-inlineChangedLine": {
-      backgroundColor:
-        "color-mix(in srgb, var(--color-success) 15%, transparent) !important",
-    },
-    ".cm-merge-a .cm-changedText, .cm-deletedChunk .cm-deletedText": {
-      backgroundColor:
-        "color-mix(in srgb, var(--color-error) 28%, transparent) !important",
-      borderRadius: "2px",
-    },
-    ".cm-merge-b .cm-changedText": {
-      backgroundColor:
-        "color-mix(in srgb, var(--color-success) 28%, transparent) !important",
-      borderRadius: "2px",
-    },
-    "&.cm-merge-a .cm-changedLineGutter, .cm-deletedLineGutter": {
-      backgroundColor: "var(--color-error) !important",
-      width: "3px",
-    },
-    "&.cm-merge-b .cm-changedLineGutter": {
-      backgroundColor: "var(--color-success) !important",
-      width: "3px",
-    },
-    ".cm-merge-revert": {
-      width: "2em",
-      backgroundColor:
-        "color-mix(in srgb, var(--color-canvas) 50%, transparent)",
-      borderLeft:
-        "1px solid color-mix(in srgb, var(--color-line) 40%, transparent)",
-      borderRight:
-        "1px solid color-mix(in srgb, var(--color-line) 40%, transparent)",
-    },
-    ".cm-merge-revert button": {
-      color: "var(--color-accent)",
-      cursor: "pointer",
-      opacity: "0.8",
-      transition: "opacity 0.15s, transform 0.15s",
-      "&:hover": {
-        opacity: "1",
-        transform: "scale(1.2)",
-      },
-    },
-    ".cm-collapsedLines": {
-      padding: "6px 12px",
-      fontSize: "11px",
-      fontFamily: "var(--editor-font-family, monospace)",
-      color: "var(--color-ink-muted)",
-      backgroundColor:
-        "color-mix(in srgb, var(--color-surface-raised) 70%, transparent)",
-      borderTop:
-        "1px dashed color-mix(in srgb, var(--color-line) 60%, transparent)",
-      borderBottom:
-        "1px dashed color-mix(in srgb, var(--color-line) 60%, transparent)",
-      cursor: "pointer",
-      textAlign: "center",
-      userSelect: "none",
-      "&:hover": {
-        color: "var(--color-accent)",
+      // Diff chunk and change styles
+      "&.cm-merge-a .cm-changedLine, .cm-deletedChunk": {
         backgroundColor:
-          "color-mix(in srgb, var(--color-surface-hover) 80%, transparent)",
+          "color-mix(in srgb, var(--color-error) 15%, transparent) !important",
+      },
+      "&.cm-merge-b .cm-changedLine, .cm-inlineChangedLine": {
+        backgroundColor:
+          "color-mix(in srgb, var(--color-success) 15%, transparent) !important",
+      },
+      ".cm-merge-a .cm-changedText, .cm-deletedChunk .cm-deletedText": {
+        backgroundColor:
+          "color-mix(in srgb, var(--color-error) 28%, transparent) !important",
+        borderRadius: "2px",
+      },
+      ".cm-merge-b .cm-changedText": {
+        backgroundColor:
+          "color-mix(in srgb, var(--color-success) 28%, transparent) !important",
+        borderRadius: "2px",
+      },
+      "&.cm-merge-a .cm-changedLineGutter, .cm-deletedLineGutter": {
+        backgroundColor: "var(--color-error) !important",
+        width: "3px",
+      },
+      "&.cm-merge-b .cm-changedLineGutter": {
+        backgroundColor: "var(--color-success) !important",
+        width: "3px",
+      },
+      ".cm-merge-revert": {
+        width: "2em",
+        backgroundColor:
+          "color-mix(in srgb, var(--color-canvas) 50%, transparent)",
+        borderLeft:
+          "1px solid color-mix(in srgb, var(--color-line) 40%, transparent)",
+        borderRight:
+          "1px solid color-mix(in srgb, var(--color-line) 40%, transparent)",
+      },
+      ".cm-merge-revert button": {
+        color: "var(--color-accent)",
+        cursor: "pointer",
+        opacity: "0.8",
+        transition: "opacity 0.15s, transform 0.15s",
+        "&:hover": {
+          opacity: "1",
+          transform: "scale(1.2)",
+        },
+      },
+      ".cm-collapsedLines": {
+        padding: "6px 12px",
+        fontSize: "11px",
+        fontFamily: "var(--editor-font-family, monospace)",
+        color: "var(--color-ink-muted)",
+        backgroundColor:
+          "color-mix(in srgb, var(--color-surface-raised) 70%, transparent)",
+        borderTop:
+          "1px dashed color-mix(in srgb, var(--color-line) 60%, transparent)",
+        borderBottom:
+          "1px dashed color-mix(in srgb, var(--color-line) 60%, transparent)",
+        cursor: "pointer",
+        textAlign: "center",
+        userSelect: "none",
+        "&:hover": {
+          color: "var(--color-accent)",
+          backgroundColor:
+            "color-mix(in srgb, var(--color-surface-hover) 80%, transparent)",
+        },
+      },
+      ".cm-deletedChunk button": {
+        border: "none",
+        cursor: "pointer",
+        color: "var(--color-canvas)",
+        fontWeight: "600",
+        padding: "1px 6px",
+        fontSize: "10px",
+        borderRadius: "3px",
+        "&[name=accept]": {
+          backgroundColor: "var(--color-success)",
+        },
+        "&[name=reject]": {
+          backgroundColor: "var(--color-error)",
+        },
       },
     },
-    ".cm-deletedChunk button": {
-      border: "none",
-      cursor: "pointer",
-      color: "var(--color-canvas)",
-      fontWeight: "600",
-      padding: "1px 6px",
-      fontSize: "10px",
-      borderRadius: "3px",
-      "&[name=accept]": {
-        backgroundColor: "var(--color-success)",
-      },
-      "&[name=reject]": {
-        backgroundColor: "var(--color-error)",
-      },
-    },
-  })
+    { dark: isDark },
+  )
 }
 
 export interface BaseEditorExtensionsConfig {
@@ -291,6 +345,8 @@ export interface BaseEditorExtensionsConfig {
   wordWrap?: "on" | "off" | "wordWrapColumn"
   showFoldGutter?: boolean
   languageExtension?: Extension | null
+  isDark?: boolean
+  themeCompartment?: Compartment
 }
 
 /**
@@ -303,7 +359,13 @@ export function getBaseEditorExtensions({
   wordWrap = "off",
   showFoldGutter = true,
   languageExtension = null,
+  isDark = true,
+  themeCompartment,
 }: BaseEditorExtensionsConfig): Extension[] {
+  const themeExtension = themeCompartment
+    ? themeCompartment.of(createAegisEditorTheme(fontSize, lineHeight, isDark))
+    : createAegisEditorTheme(fontSize, lineHeight, isDark)
+
   const exts: Extension[] = [
     lineNumbers(),
     highlightActiveLineGutter(),
@@ -316,7 +378,7 @@ export function getBaseEditorExtensions({
     closeBrackets(),
     syntaxHighlighting(aegisHighlightStyle),
     EditorState.tabSize.of(tabSize),
-    createAegisEditorTheme(fontSize, lineHeight),
+    themeExtension,
   ]
 
   if (showFoldGutter) {

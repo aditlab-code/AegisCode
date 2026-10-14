@@ -27,6 +27,7 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
     settings,
     updateEditorSettings,
     gitDiffVersion,
+    theme,
   } = useWorkbenchStore(
     useShallow((s) => ({
       fetchDiff: s.fetchDiff,
@@ -43,8 +44,11 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
       settings: s.settings,
       updateEditorSettings: s.updateEditorSettings,
       gitDiffVersion: s.gitDiffVersion,
+      theme: s.theme,
     })),
   )
+
+  const isDark = theme !== "light"
 
   const inheritEditorFont =
     settings?.editor?.diffEditor?.inheritEditorFont ?? true
@@ -308,13 +312,12 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
           <button
             className="flex items-center gap-1 px-2 py-1 rounded border border-line bg-surface-raised hover:bg-surface-hover text-[11px] text-ink transition-colors cursor-pointer"
             onClick={() => {
-              updateEditorSettings((prev) => ({
-                ...prev,
+              updateEditorSettings({
                 diffEditor: {
-                  ...prev.diffEditor,
+                  ...settings?.editor?.diffEditor,
                   renderSideBySide: !renderSideBySide,
                 },
-              }))
+              })
             }}
             title={
               renderSideBySide
@@ -408,6 +411,7 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
           tabSize={currentTabSize}
           fontSize={editorFontSize}
           lineHeight={editorLineHeight}
+          isDark={isDark}
           onChange={(val) => updateFileContent(file, val)}
           onSave={handleSave}
         />

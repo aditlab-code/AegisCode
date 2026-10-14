@@ -37,7 +37,11 @@ import type {
   DiagnosticItem,
   EditorSelectionRange,
 } from "../../../types/workbench"
-import { getBaseEditorExtensions, resolveLanguage } from "./cmTheme"
+import {
+  getBaseEditorExtensions,
+  resolveLanguage,
+  createAegisEditorTheme,
+} from "./cmTheme"
 
 export interface GotoLineEventDetail {
   line: number
@@ -77,6 +81,8 @@ export interface CMEditorProps {
   breakpoints?: number[]
   activeDebugLine?: ActiveDebugLine | null
   diagnostics?: DiagnosticItem[]
+  isDark?: boolean
+  isFocused?: boolean
   onChange: (value: string) => void
   onCursorChange?: (line: number, column: number) => void
   onSelectionChange?: (selection: EditorSelectionRange) => void
@@ -289,6 +295,8 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
       onFind,
       formatOnSave = true,
       insertSpaces = true,
+      isDark = true,
+      isFocused = true,
     },
     ref,
   ) {
@@ -299,6 +307,7 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
 
     const readOnlyCompartment = useRef(new Compartment())
     const wrapCompartment = useRef(new Compartment())
+    const themeCompartment = useRef(new Compartment())
     const contentRef = useRef(content)
     contentRef.current = content
 
@@ -637,6 +646,7 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
           wordWrap,
           showFoldGutter: false,
           languageExtension: langInfo.ext,
+          isDark,
         })
 
         const baseExtensionsB = getBaseEditorExtensions({
@@ -646,6 +656,7 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
           wordWrap,
           showFoldGutter: false,
           languageExtension: langInfo.ext,
+          isDark,
         })
 
         if (isSideBySide) {
@@ -777,6 +788,8 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
         wordWrap,
         showFoldGutter: true,
         languageExtension: langInfo.ext,
+        isDark,
+        themeCompartment: themeCompartment.current,
       })
 
       const extensions = [
@@ -860,6 +873,7 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
       filename,
       diff ? diff.original : null,
       diff ? diff.renderSideBySide : null,
+      diff ? isDark : null,
       isReadOnly,
       wordWrap,
       tabSize,
@@ -915,6 +929,23 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
         ),
       })
     }, [wordWrap])
+
+    // Sync theme mode, fontSize, and lineHeight dynamically without full editor teardown
+    useEffect(() => {
+      if (!viewRef.current) return
+      try {
+        viewRef.current.dispatch({
+          effects: themeCompartment.current.reconfigure(
+            createAegisEditorTheme(fontSize, lineHeight, isDark),
+          ),
+        })
+      } catch (err) {
+        console.warn(
+          "AegisCode: Failed to reconfigure editor theme compartment:",
+          err,
+        )
+      }
+    }, [fontSize, lineHeight, isDark])
 
     // Listen to global undo, redo, and format menu/command actions
     useEffect(() => {

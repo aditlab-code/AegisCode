@@ -70,6 +70,7 @@ export function CodePane({
     sendChatMessage,
     setChatOpen,
     showToast,
+    theme,
   } = useWorkbenchStore(
     useShallow((s) => ({
       buffer: s.fileBuffers[filename],
@@ -97,9 +98,11 @@ export function CodePane({
       sendChatMessage: s.sendChatMessage,
       setChatOpen: s.setChatOpen,
       showToast: s.showToast,
+      theme: s.theme,
     })),
   )
 
+  const isDark = theme !== "light"
   const editorFontSize = settings?.editor?.fontSize ?? 13.5
   const editorLineHeight = settings?.editor?.lineHeight ?? 22
   const wordWrap = settings?.editor?.wordWrap ?? "off"
@@ -509,14 +512,13 @@ export function CodePane({
             breakpoints={fileBreakpoints}
             activeDebugLine={activeDebugLine}
             diagnostics={filteredDiagnostics}
+            isDark={isDark}
             onChange={(newVal) => updateFileContent(filename, newVal)}
-            onCursorChange={(line, col) =>
-              setCursorPosition({ line, column: col })
-            }
+            onCursorChange={(line, col) => setCursorPosition({ line, col })}
             onSelectionChange={(sel) => setSelection(sel)}
             onNavigateDefinition={(targetPath, line, col) => {
               openFileInPane(targetPath)
-              setCursorPosition({ line, column: col })
+              setCursorPosition({ line, col })
               window.dispatchEvent(
                 new CustomEvent("aegis:focus-symbol", {
                   detail: { name: targetPath, line },
