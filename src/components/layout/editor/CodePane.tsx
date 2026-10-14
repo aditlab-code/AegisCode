@@ -9,9 +9,10 @@ import {
   type ConflictRegion,
   type ConflictResolutionChoice,
 } from "../../../utils/gitConflict"
-import { CMEditor, type CMEditorHandle } from "./CMEditor"
+import { CMEditor, isSameFile, type CMEditorHandle } from "./CMEditor"
 import { EditorContextMenu } from "./EditorContextMenu"
 import { fetchActiveFileGraph } from "../../../utils/codegraphApi"
+import { streamAIChat } from "../../../utils/storeApi"
 
 interface CodePaneProps {
   paneId: "primary" | "secondary"
@@ -20,18 +21,6 @@ interface CodePaneProps {
   secondary?: boolean
   onClose?: () => void
   editorRef?: React.Ref<CMEditorHandle>
-}
-
-function isSameFile(a?: string, b?: string): boolean {
-  if (!a || !b) return false
-  if (a === b) return true
-  const normA = a.replace(/\\/g, "/").replace(/^\.\//, "")
-  const normB = b.replace(/\\/g, "/").replace(/^\.\//, "")
-  return (
-    normA === normB ||
-    normA.endsWith("/" + normB) ||
-    normB.endsWith("/" + normA)
-  )
 }
 
 const EMPTY_BREAKPOINTS: number[] = []
@@ -123,12 +112,18 @@ export function CodePane({
   } | null>(null)
   const [inlineAiOpen, setInlineAiOpen] = useState(false)
   const [inlineAiPrompt, setInlineAiPrompt] = useState("")
-  const [inlineAiSubmitting, setInlineAiSubmitting] = useState(false)
+  const [inlineAiStreaming, setInlineAiStreaming] = useState(false)
+  const [inlineAiResult, setInlineAiResult] = useState<string | null>(null)
+  const [inlineAiRange, setInlineAiRange] = useState<{
+    startLine: number
+    endLine: number
+  } | null>(null)
 
   useEffect(() => {
     function handleOpenInlineAi() {
       if (!isFocused) return
       setInlineAiOpen((prev) => !prev)
+      setInlineAiResult(null)
       setTimeout(() => inlineInputRef.current?.focus(), 30)
     }
     window.addEventListener("aegis:inline-ai-prompt", handleOpenInlineAi)
@@ -158,9 +153,67 @@ export function CodePane({
   const handleInlineAiSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const instruction = inlineAiPrompt.trim()
-    if (!instruction || inlineAiSubmitting) return
-    setInlineAiSubmitting(true)
+    if (!instruction || inlineAiStreaming) return
 
+    const targetLine = cursorPosition.line || 1
+    const selStart = selection?.startLine || targetLine
+    const selEnd = selection?.endLine || targetLine
+    const range = { startLine: selStart, endLine: selEnd }
+    setInlineAiRange(range)
+
+    const snippet =
+      selection?.selectedText?.trim() ||
+      lines.slice(selStart - 1, selEnd).join("\n")
+
+    setInlineAiStreaming(true)
+    setInlineAiResult("")
+
+    let accumulated = ""
+    try {
+      await streamAIChat(
+        {
+          prompt: `You are an expert AI code editor for AegisCode.\nFile: ${filename}\nLine Range: L${selStart}-L${selEnd}\nCode:\n\`\`\`\n${snippet}\n\`\`\`\n\nInstruction: ${instruction}\n\nIMPORTANT: Return ONLY the replacement code for this exact block. Do NOT include Markdown backticks or commentary outside the code.`,
+        },
+        (ev) => {
+          if (ev.type === "chunk" && ev.delta) {
+            accumulated += ev.delta
+            setInlineAiResult(accumulated)
+          } else if (ev.type === "error") {
+            showToast(`Inline AI Error: ${ev.error || "Failed to generate"}`)
+          }
+        },
+      )
+    } catch (err: any) {
+      showToast(`Inline AI request failed: ${err.message || String(err)}`)
+    } finally {
+      setInlineAiStreaming(false)
+    }
+  }
+
+  const handleAcceptInlineAi = () => {
+    if (!inlineAiResult || !inlineAiRange) return
+    const cleanedResult = inlineAiResult
+      .replace(/^```[a-z]*\n?/i, "")
+      .replace(/\n?```$/i, "")
+    const beforeLines = lines.slice(0, inlineAiRange.startLine - 1)
+    const afterLines = lines.slice(inlineAiRange.endLine)
+    const newContent = [...beforeLines, cleanedResult, ...afterLines].join("\n")
+    updateFileContent(filename, newContent)
+    showToast(
+      `Applied AI edit at L${inlineAiRange.startLine}-L${inlineAiRange.endLine}`,
+    )
+    setInlineAiResult(null)
+    setInlineAiOpen(false)
+    setInlineAiPrompt("")
+    setInlineAiRange(null)
+  }
+
+  const handleRejectInlineAi = () => {
+    setInlineAiResult(null)
+  }
+
+  const handleOpenInChat = () => {
+    if (!inlineAiPrompt) return
     const targetLine = cursorPosition.line || 1
     const selStart = selection?.startLine || Math.max(1, targetLine - 10)
     const selEnd = selection?.endLine || Math.min(lines.length, targetLine + 15)
@@ -168,43 +221,25 @@ export function CodePane({
       selection?.selectedText?.trim() ||
       lines.slice(selStart - 1, selEnd).join("\n")
 
-    let symbolContext = ""
-    try {
-      const graph = await fetchActiveFileGraph(filename)
-      if (graph && graph.nodes.length > 0) {
-        const enclosing = graph.nodes.find(
-          (n) => targetLine >= n.lineStart && targetLine <= n.lineEnd,
-        )
-        if (enclosing) {
-          symbolContext = `\nEnclosing AST Symbol: ${enclosing.kind} \`${enclosing.name}\` (L${enclosing.lineStart}-L${enclosing.lineEnd})${
-            enclosing.signature ? `\nSignature: \`${enclosing.signature}\`` : ""
-          }`
-        }
-      }
-    } catch {
-      // ignore if codegraph unavailable
-    }
-
-    const formattedPrompt = `[Inline Edit · ${filename}:L${selStart}-${selEnd}]${symbolContext}\nInstruction: ${instruction}\n\nProvide the updated code block using \`\`\`lang:${filename} format so it can be applied directly.`
     setChatOpen(true)
-    sendChatMessage(formattedPrompt, [
-      {
-        id: `inline-${filename}-${Date.now()}`,
-        type: "selection",
-        path: filename,
-        lineRange: `L${selStart}-L${selEnd}`,
-        content: snippet,
-        charCount: snippet.length,
-        estimatedTokens: Math.ceil(snippet.length / 4),
-        mode: "selection",
-      },
-    ])
-    setInlineAiSubmitting(false)
-    setInlineAiPrompt("")
-    setInlineAiOpen(false)
-    showToast(
-      `Dispatched inline AI edit for ${filename} (L${selStart}-L${selEnd})`,
+    sendChatMessage(
+      `[Inline Edit · ${filename}:L${selStart}-${selEnd}]\nInstruction: ${inlineAiPrompt}`,
+      [
+        {
+          id: `inline-${filename}-${Date.now()}`,
+          type: "selection",
+          path: filename,
+          lineRange: `L${selStart}-L${selEnd}`,
+          content: snippet,
+          charCount: snippet.length,
+          estimatedTokens: Math.ceil(snippet.length / 4),
+          mode: "selection",
+        },
+      ],
     )
+    setInlineAiOpen(false)
+    setInlineAiPrompt("")
+    setInlineAiResult(null)
   }
 
   const [scrollInfo, setScrollInfo] = useState({
@@ -373,49 +408,94 @@ export function CodePane({
       )}
 
       {inlineAiOpen && (
-        <form
-          onSubmit={handleInlineAiSubmit}
-          className="flex items-center gap-2 px-3 py-1.5 bg-surface-raised border-b border-accent/50 text-xs shadow-md z-20"
-        >
-          <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-accent/15 text-accent font-mono text-[10px] font-semibold shrink-0">
-            <Icon name="sparkle" size={11} />
-            <span>
-              AI Edit ·{" "}
-              {selection?.selectedText
-                ? `L${selection.startLine}-L${selection.endLine}`
-                : `Ln ${cursorPosition.line}`}
+        <div className="flex flex-col bg-surface-raised border-b border-accent/50 text-xs shadow-md z-20">
+          <form
+            onSubmit={handleInlineAiSubmit}
+            className="flex items-center gap-2 px-3 py-1.5"
+          >
+            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-accent/15 text-accent font-mono text-[10px] font-semibold shrink-0">
+              <Icon name="sparkle" size={11} />
+              <span>
+                AI Edit ·{" "}
+                {selection?.selectedText
+                  ? `L${selection.startLine}-L${selection.endLine}`
+                  : `Ln ${cursorPosition.line}`}
+              </span>
             </span>
-          </span>
-          <input
-            ref={inlineInputRef}
-            type="text"
-            value={inlineAiPrompt}
-            onChange={(e) => setInlineAiPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                e.stopPropagation()
+            <input
+              ref={inlineInputRef}
+              type="text"
+              value={inlineAiPrompt}
+              onChange={(e) => setInlineAiPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.stopPropagation()
+                  setInlineAiOpen(false)
+                  setInlineAiResult(null)
+                }
+              }}
+              placeholder="Ask Aegis AI to refactor, document, or fix code at cursor... (Enter to generate, Esc to close)"
+              className="flex-1 bg-canvas px-2.5 py-1 rounded border border-line focus:border-accent outline-none text-xs text-ink placeholder:text-ink-muted"
+            />
+            <button
+              type="submit"
+              disabled={!inlineAiPrompt.trim() || inlineAiStreaming}
+              className="px-2.5 py-1 rounded bg-accent text-accent-contrast font-medium text-[11px] hover:opacity-90 disabled:opacity-40 cursor-pointer shrink-0"
+            >
+              {inlineAiStreaming ? "Generating..." : "Generate (Enter)"}
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenInChat}
+              className="px-2 py-1 rounded bg-surface hover:bg-surface-hover border border-line text-ink-muted hover:text-ink text-[11px] cursor-pointer shrink-0"
+              title="Open full conversation in Chat Drawer"
+            >
+              Ask Chat ↗
+            </button>
+            <button
+              type="button"
+              onClick={() => {
                 setInlineAiOpen(false)
-              }
-            }}
-            placeholder="Ask Aegis AI to refactor, document, or fix code at cursor... (Enter to send, Esc to close)"
-            className="flex-1 bg-canvas px-2.5 py-1 rounded border border-line focus:border-accent outline-none text-xs text-ink placeholder:text-ink-muted"
-          />
-          <button
-            type="submit"
-            disabled={!inlineAiPrompt.trim() || inlineAiSubmitting}
-            className="px-2.5 py-1 rounded bg-accent text-accent-contrast font-medium text-[11px] hover:opacity-90 disabled:opacity-40 cursor-pointer shrink-0"
-          >
-            {inlineAiSubmitting ? "Sending..." : "Generate (⌘I)"}
-          </button>
-          <button
-            type="button"
-            onClick={() => setInlineAiOpen(false)}
-            className="p-1 text-ink-muted hover:text-ink cursor-pointer"
-            title="Close Inline AI (Esc)"
-          >
-            <Icon name="close" size={12} />
-          </button>
-        </form>
+                setInlineAiResult(null)
+              }}
+              className="p-1 text-ink-muted hover:text-ink cursor-pointer"
+              title="Close Inline AI (Esc)"
+            >
+              <Icon name="close" size={12} />
+            </button>
+          </form>
+
+          {inlineAiResult !== null && (
+            <div className="px-3 pb-2 pt-1 border-t border-line/60 flex flex-col gap-2">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="font-semibold text-accent flex items-center gap-1">
+                  <Icon name="sparkle" size={12} />
+                  <span>Generated Edit Preview:</span>
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleAcceptInlineAi}
+                    className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-medium cursor-pointer"
+                  >
+                    Accept (✓)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRejectInlineAi}
+                    className="flex items-center gap-1 px-2 py-0.5 rounded bg-surface-hover hover:bg-line text-ink cursor-pointer"
+                  >
+                    Discard (✕)
+                  </button>
+                </div>
+              </div>
+              <pre className="p-2 rounded bg-canvas border border-line text-[11px] font-mono text-ink max-h-48 overflow-auto whitespace-pre">
+                {inlineAiResult ||
+                  (inlineAiStreaming ? "Generating replacement..." : "")}
+              </pre>
+            </div>
+          )}
+        </div>
       )}
 
       {conflictRegions.length > 0 && (
@@ -513,6 +593,7 @@ export function CodePane({
             activeDebugLine={activeDebugLine}
             diagnostics={filteredDiagnostics}
             isDark={isDark}
+            isFocused={isFocused}
             onChange={(newVal) => updateFileContent(filename, newVal)}
             onCursorChange={(line, col) => setCursorPosition({ line, col })}
             onSelectionChange={(sel) => setSelection(sel)}

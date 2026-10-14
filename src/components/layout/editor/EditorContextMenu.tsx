@@ -101,10 +101,7 @@ export function EditorContextMenu({
 
   function handleAskAi() {
     onClose()
-    setChatOpen(true)
-    setTimeout(() => {
-      window.dispatchEvent(new CustomEvent("aegis:focus-chat-input"))
-    }, 50)
+    window.dispatchEvent(new CustomEvent("aegis:inline-ai-prompt"))
   }
 
   return createPortal(

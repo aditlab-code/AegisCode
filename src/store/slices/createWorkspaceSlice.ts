@@ -2,6 +2,7 @@ import type {
   DiagnosticItem,
   FileBuffer,
   FileItem,
+  GotoLineEventDetail,
   LinterSettings,
   NotificationItem,
 } from "../../types/workbench"
@@ -1007,17 +1008,61 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
     })),
 
   navigateToDiagnostic: (diag: DiagnosticItem) => {
-    const match = diag.location.match(/^([^[\s]+)\s*\[(\d+),\s*(\d+)\]/)
-    if (match) {
-      const filename = match[1]
-      const line = parseInt(match[2], 10)
-      const col = parseInt(match[3], 10)
+    let filename = ""
+    let line = 1
+    let col = 1
 
+    const bracketMatch = diag.location.match(/^([^[\s]+)\s*\[(\d+),\s*(\d+)\]/)
+    const colonMatch = diag.location.match(/^([^:\s]+):(\d+)(?::(\d+))?/)
+    const parenMatch = diag.location.match(
+      /^([^(\s]+)\s*\(\s*(\d+)(?:,\s*(\d+))?\s*\)/,
+    )
+
+    if (bracketMatch) {
+      filename = bracketMatch[1]
+      line = parseInt(bracketMatch[2], 10)
+      col = parseInt(bracketMatch[3], 10)
+    } else if (colonMatch) {
+      filename = colonMatch[1]
+      line = parseInt(colonMatch[2], 10)
+      col = colonMatch[3] ? parseInt(colonMatch[3], 10) : 1
+    } else if (parenMatch) {
+      filename = parenMatch[1]
+      line = parseInt(parenMatch[2], 10)
+      col = parenMatch[3] ? parseInt(parenMatch[3], 10) : 1
+    }
+
+    if (filename) {
       if (typeof get().openFileInPane === "function") {
         get().openFileInPane(filename)
       }
       if (typeof get().setCursorPosition === "function") {
         get().setCursorPosition({ line, col })
+      }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent<GotoLineEventDetail>("aegis:editor-goto-line", {
+            detail: {
+              file: filename,
+              line,
+              col,
+              preventFocus: false,
+            },
+          }),
+        )
+        // Ensure mounted/transitioning editor catches the jump
+        setTimeout(() => {
+          window.dispatchEvent(
+            new CustomEvent<GotoLineEventDetail>("aegis:editor-goto-line", {
+              detail: {
+                file: filename,
+                line,
+                col,
+                preventFocus: false,
+              },
+            }),
+          )
+        }, 50)
       }
       get().showToast?.(`Jumped to ${filename} [Ln ${line}, Col ${col}]`)
     } else {

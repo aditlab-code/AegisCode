@@ -3,6 +3,7 @@ import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { useWorkbenchStore, useShallow } from "../../../store"
 import { saveWorkspaceFile } from "../../../utils/workspaceApi"
+import type { GotoLineEventDetail } from "./CMEditor"
 
 interface EditorFindWidgetProps {
   isOpen: boolean
@@ -163,7 +164,38 @@ export function EditorFindWidget({
     if (!target) return
     setActiveMatchIndex(idx)
     setCursorPosition({ line: target.line, col: target.col })
+    window.dispatchEvent(
+      new CustomEvent<GotoLineEventDetail>("aegis:editor-goto-line", {
+        detail: {
+          file: currentFile,
+          line: target.line,
+          col: target.col,
+          length: target.length,
+          preventFocus: true,
+        },
+      }),
+    )
   }
+
+  useEffect(() => {
+    if (isOpen && matches.length > 0 && query.trim()) {
+      const target = matches[safeIndex]
+      if (target) {
+        setCursorPosition({ line: target.line, col: target.col })
+        window.dispatchEvent(
+          new CustomEvent<GotoLineEventDetail>("aegis:editor-goto-line", {
+            detail: {
+              file: currentFile,
+              line: target.line,
+              col: target.col,
+              length: target.length,
+              preventFocus: true,
+            },
+          }),
+        )
+      }
+    }
+  }, [isOpen, matches, safeIndex, query, currentFile, setCursorPosition])
 
   function handleNext() {
     if (matches.length === 0) return

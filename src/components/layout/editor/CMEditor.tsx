@@ -5,8 +5,23 @@ import {
   forwardRef,
   useImperativeHandle,
 } from "react"
-import { EditorState, Compartment } from "@codemirror/state"
-import { EditorView, keymap, lineNumbers, hoverTooltip } from "@codemirror/view"
+import {
+  EditorState,
+  Compartment,
+  StateField,
+  StateEffect,
+  RangeSet,
+  RangeSetBuilder,
+} from "@codemirror/state"
+import {
+  EditorView,
+  keymap,
+  hoverTooltip,
+  gutter,
+  GutterMarker,
+  Decoration,
+  type DecorationSet,
+} from "@codemirror/view"
 import { defaultKeymap, historyKeymap, undo, redo } from "@codemirror/commands"
 import {
   autocompletion,
@@ -36,6 +51,7 @@ import {
 import type {
   DiagnosticItem,
   EditorSelectionRange,
+  GotoLineEventDetail,
 } from "../../../types/workbench"
 import {
   getBaseEditorExtensions,
@@ -43,15 +59,86 @@ import {
   createAegisEditorTheme,
 } from "./cmTheme"
 
-export interface GotoLineEventDetail {
-  line: number
-  col?: number
+export type { GotoLineEventDetail }
+
+export function isSameFile(a?: string, b?: string): boolean {
+  if (!a || !b) return false
+  if (a === b) return true
+  const normA = a.replace(/\\/g, "/").replace(/^\.\//, "")
+  const normB = b.replace(/\\/g, "/").replace(/^\.\//, "")
+  return (
+    normA === normB ||
+    normA.endsWith("/" + normB) ||
+    normB.endsWith("/" + normA)
+  )
 }
 
 export interface ActiveDebugLine {
   file: string
   line: number
 }
+
+export class BreakpointMarker extends GutterMarker {
+  toDOM() {
+    const dot = document.createElement("span")
+    dot.className = "cm-breakpoint-dot"
+    dot.title = "Breakpoint"
+    return dot
+  }
+}
+export const breakpointMarker = new BreakpointMarker()
+
+export const setBreakpointsEffect = StateEffect.define<number[]>()
+
+export const breakpointField = StateField.define<RangeSet<GutterMarker>>({
+  create() {
+    return RangeSet.empty
+  },
+  update(markers, tr) {
+    markers = markers.map(tr.changes)
+    for (const e of tr.effects) {
+      if (e.is(setBreakpointsEffect)) {
+        const builder = new RangeSetBuilder<GutterMarker>()
+        const sorted = [...new Set(e.value)].sort((a, b) => a - b)
+        for (const lineNum of sorted) {
+          if (lineNum >= 1 && lineNum <= tr.newDoc.lines) {
+            const line = tr.newDoc.line(lineNum)
+            builder.add(line.from, line.from, breakpointMarker)
+          }
+        }
+        markers = builder.finish()
+      }
+    }
+    return markers
+  },
+})
+
+export const setActiveDebugLineEffect = StateEffect.define<number | null>()
+
+export const activeDebugLineField = StateField.define<DecorationSet>({
+  create() {
+    return Decoration.none
+  },
+  update(decorations, tr) {
+    decorations = decorations.map(tr.changes)
+    for (const e of tr.effects) {
+      if (e.is(setActiveDebugLineEffect)) {
+        if (e.value === null || e.value < 1 || e.value > tr.newDoc.lines) {
+          decorations = Decoration.none
+        } else {
+          const line = tr.newDoc.line(e.value)
+          decorations = Decoration.set([
+            Decoration.line({
+              class: "cm-active-debug-line",
+            }).range(line.from),
+          ])
+        }
+      }
+    }
+    return decorations
+  },
+  provide: (f) => EditorView.decorations.from(f),
+})
 
 export interface CMEditorDiffConfig {
   original: string
@@ -283,8 +370,8 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
       tabSize = 2,
       fontSize = 13.5,
       lineHeight = 22,
-      breakpoints: _breakpoints = [],
-      activeDebugLine: _activeDebugLine,
+      breakpoints = [],
+      activeDebugLine = null,
       diagnostics = [],
       onChange,
       onCursorChange,
@@ -304,6 +391,9 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
     const viewRef = useRef<EditorView | null>(null)
     const mergeViewRef = useRef<MergeView | null>(null)
     const unifiedViewRef = useRef<EditorView | null>(null)
+
+    const onToggleBreakpointRef = useRef(onToggleBreakpoint)
+    onToggleBreakpointRef.current = onToggleBreakpoint
 
     const readOnlyCompartment = useRef(new Compartment())
     const wrapCompartment = useRef(new Compartment())
@@ -392,7 +482,7 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
       [filename, langInfo.id],
     )
 
-    // Go to definition via LSP
+    // Go to definition via LSP with local AST / symbol declaration fallback
     const handleGoToDefinition = useCallback(
       async (view: EditorView, targetPos?: number) => {
         const pos = targetPos ?? view.state.selection.main.head
@@ -400,43 +490,91 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
         const lineNum = line.number - 1
         const charNum = pos - line.from
 
-        const locs = await fetchLspDefinition(
-          filename,
-          lineNum,
-          charNum,
-          langInfo.id,
-        )
-        if (!locs || locs.length === 0) return
+        // Extract the word/symbol under the cursor
+        const wordRange = view.state.wordAt(pos)
+        const symbolName = wordRange
+          ? view.state.sliceDoc(wordRange.from, wordRange.to).trim()
+          : ""
 
-        const loc = locs[0]
-        let targetPath = loc.uri
-        if (targetPath.startsWith("file://")) {
-          targetPath = targetPath.slice(7)
+        try {
+          const locs = await fetchLspDefinition(
+            filename,
+            lineNum,
+            charNum,
+            langInfo.id,
+          )
+          if (locs && locs.length > 0) {
+            const loc = locs[0]
+            let targetPath = loc.uri
+            if (targetPath.startsWith("file://")) {
+              targetPath = targetPath.slice(7)
+            }
+
+            const isCurrentFile =
+              targetPath === filename ||
+              targetPath.endsWith("/" + filename) ||
+              filename.endsWith(targetPath)
+
+            const targetLine = (loc.range?.start?.line ?? 0) + 1
+            const targetCol = (loc.range?.start?.character ?? 0) + 1
+
+            if (isCurrentFile) {
+              if (targetLine <= view.state.doc.lines) {
+                const lineObj = view.state.doc.line(targetLine)
+                const newPos = Math.min(
+                  lineObj.from + Math.max(0, targetCol - 1),
+                  lineObj.to,
+                )
+                view.dispatch({
+                  selection: { anchor: newPos },
+                  scrollIntoView: true,
+                })
+                view.focus()
+                return
+              }
+            } else if (onNavigateDefinition) {
+              onNavigateDefinition(targetPath, targetLine, targetCol)
+              return
+            }
+          }
+        } catch {
+          // LSP offline or uninitialized, proceed to document fallback
         }
 
-        const isCurrentFile =
-          targetPath === filename ||
-          targetPath.endsWith("/" + filename) ||
-          filename.endsWith(targetPath)
+        // Resilient fallback: search for symbol declaration in current document
+        if (symbolName && symbolName.length > 1) {
+          const doc = view.state.doc
+          const patterns = [
+            new RegExp(`\\bfunction\\s+${symbolName}\\b`),
+            new RegExp(`\\bclass\\s+${symbolName}\\b`),
+            new RegExp(`\\binterface\\s+${symbolName}\\b`),
+            new RegExp(`\\btype\\s+${symbolName}\\b`),
+            new RegExp(`\\bdef\\s+${symbolName}\\b`),
+            new RegExp(`\\bfunc\\s+(\\([^)]*\\)\\s+)?${symbolName}\\b`),
+            new RegExp(`\\bconst\\s+${symbolName}\\b`),
+            new RegExp(`\\blet\\s+${symbolName}\\b`),
+            new RegExp(`\\bvar\\s+${symbolName}\\b`),
+            new RegExp(`\\b${symbolName}\\s*:=`),
+            new RegExp(`\\b${symbolName}\\s*:`),
+          ]
 
-        const targetLine = (loc.range?.start?.line ?? 0) + 1
-        const targetCol = (loc.range?.start?.character ?? 0) + 1
-
-        if (isCurrentFile) {
-          if (targetLine <= view.state.doc.lines) {
-            const lineObj = view.state.doc.line(targetLine)
-            const newPos = Math.min(
-              lineObj.from + Math.max(0, targetCol - 1),
-              lineObj.to,
-            )
-            view.dispatch({
-              selection: { anchor: newPos },
-              scrollIntoView: true,
-            })
-            view.focus()
+          for (let i = 1; i <= doc.lines; i++) {
+            if (i === line.number) continue
+            const lineText = doc.line(i).text
+            for (const pat of patterns) {
+              const match = pat.exec(lineText)
+              if (match) {
+                const targetLineObj = doc.line(i)
+                const targetPos = targetLineObj.from + match.index
+                view.dispatch({
+                  selection: { anchor: targetPos, head: targetPos },
+                  scrollIntoView: true,
+                })
+                view.focus()
+                return
+              }
+            }
           }
-        } else if (onNavigateDefinition) {
-          onNavigateDefinition(targetPath, targetLine, targetCol)
         }
       },
       [filename, langInfo.id, onNavigateDefinition],
@@ -607,12 +745,10 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
         },
       ])
 
-      // Auto-save on blur / focus transition
+      // Auto-save on blur / focus transition: do NOT blindly save on every blur
+      // (prevents accidental file saves when triggering shortcuts like Ctrl+L or quick dialogs)
       const blurDomHandler = EditorView.domEventHandlers({
         blur() {
-          if (!isReadOnly) {
-            onSave?.()
-          }
           return false
         },
       })
@@ -793,16 +929,21 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
       })
 
       const extensions = [
-        ...baseExtensions,
-        lineNumbers({
+        breakpointField,
+        gutter({
+          class: "cm-breakpoint-gutter",
+          markers: (v) => v.state.field(breakpointField),
+          initialSpacer: () => breakpointMarker,
           domEventHandlers: {
             mousedown(view, block) {
               const line = view.state.doc.lineAt(block.from)
-              onToggleBreakpoint?.(line.number)
+              onToggleBreakpointRef.current?.(line.number)
               return true
             },
           },
         }),
+        activeDebugLineField,
+        ...baseExtensions,
         readOnlyCompartment.current.of([
           EditorState.readOnly.of(isReadOnly),
           EditorView.editable.of(!isReadOnly),
@@ -862,6 +1003,17 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
       mergeViewRef.current = null
       unifiedViewRef.current = null
 
+      if (breakpoints.length > 0) {
+        view.dispatch({
+          effects: setBreakpointsEffect.of(breakpoints),
+        })
+      }
+      if (activeDebugLine && activeDebugLine.file === filename) {
+        view.dispatch({
+          effects: setActiveDebugLineEffect.of(activeDebugLine.line),
+        })
+      }
+
       return () => {
         if (lspChangeTimerRef.current) {
           clearTimeout(lspChangeTimerRef.current)
@@ -880,6 +1032,40 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
       fontSize,
       lineHeight,
     ])
+
+    // Synchronize breakpoint markers dynamically
+    useEffect(() => {
+      if (!viewRef.current) return
+      viewRef.current.dispatch({
+        effects: setBreakpointsEffect.of(breakpoints),
+      })
+    }, [breakpoints])
+
+    // Synchronize active debug line dynamically with auto-scroll
+    useEffect(() => {
+      if (!viewRef.current) return
+      const targetLine =
+        activeDebugLine && activeDebugLine.file === filename
+          ? activeDebugLine.line
+          : null
+      const effects: StateEffect<unknown>[] = [
+        setActiveDebugLineEffect.of(targetLine),
+      ]
+      if (
+        targetLine &&
+        targetLine >= 1 &&
+        targetLine <= viewRef.current.state.doc.lines
+      ) {
+        const line = viewRef.current.state.doc.line(targetLine)
+        viewRef.current.dispatch({
+          effects,
+          selection: { anchor: line.from },
+          scrollIntoView: true,
+        })
+      } else {
+        viewRef.current.dispatch({ effects })
+      }
+    }, [activeDebugLine, filename])
 
     // Sync external content updates to the active view
     useEffect(() => {
@@ -947,15 +1133,35 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
       }
     }, [fontSize, lineHeight, isDark])
 
+    const isFocusedRef = useRef(isFocused)
+    useEffect(() => {
+      isFocusedRef.current = isFocused
+    }, [isFocused])
+
+    const filenameRef = useRef(filename)
+    useEffect(() => {
+      filenameRef.current = filename
+    }, [filename])
+
     // Listen to global undo, redo, and format menu/command actions
     useEffect(() => {
+      const isCurrentActive = () => {
+        if (isFocusedRef.current !== undefined) {
+          return isFocusedRef.current || Boolean(viewRef.current?.hasFocus)
+        }
+        return Boolean(viewRef.current?.hasFocus)
+      }
+
       const handleUndo = () => {
+        if (!isCurrentActive()) return
         if (viewRef.current) undo(viewRef.current)
       }
       const handleRedo = () => {
+        if (!isCurrentActive()) return
         if (viewRef.current) redo(viewRef.current)
       }
       const handleFormat = () => {
+        if (!isCurrentActive()) return
         const activeView =
           viewRef.current || unifiedViewRef.current || mergeViewRef.current?.b
         if (activeView) void handleFormatDocument(activeView)
@@ -965,21 +1171,43 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
         const activeView =
           viewRef.current || unifiedViewRef.current || mergeViewRef.current?.b
         if (!activeView || !customEvent.detail) return
-        const docLines = activeView.state.doc.lines
+
+        // File targeting guard: If file is specified and doesn't match this editor's file, ignore
+        if (
+          customEvent.detail.file &&
+          !isSameFile(customEvent.detail.file, filenameRef.current)
+        ) {
+          return
+        }
+
+        // Focus guard for split editor if file wasn't specified: only active pane handles it
+        if (!customEvent.detail.file && !isCurrentActive()) {
+          return
+        }
+
+        const doc = activeView.state.doc
+        const docLines = doc.lines
         const targetLine = Math.max(
           1,
           Math.min(customEvent.detail.line, docLines),
         )
-        const lineObj = activeView.state.doc.line(targetLine)
+        const lineObj = doc.line(targetLine)
         const targetCol = Math.max(1, customEvent.detail.col || 1)
         const pos = Math.min(lineObj.from + targetCol - 1, lineObj.to)
+        const targetLength = Math.max(0, customEvent.detail.length ?? 0)
+        const head = Math.min(pos + targetLength, doc.length)
+
         activeView.dispatch({
-          selection: { anchor: pos, head: pos },
+          selection: { anchor: pos, head },
           scrollIntoView: true,
         })
-        activeView.focus()
+
+        if (!customEvent.detail.preventFocus) {
+          activeView.focus()
+        }
       }
       const handleDef = () => {
+        if (!isCurrentActive()) return
         const activeView =
           viewRef.current || unifiedViewRef.current || mergeViewRef.current?.b
         if (activeView) void handleGoToDefinition(activeView)

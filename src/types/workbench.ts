@@ -229,6 +229,14 @@ export interface EditorSelectionRange {
   selectedText: string
 }
 
+export interface GotoLineEventDetail {
+  line: number
+  col?: number
+  length?: number
+  preventFocus?: boolean
+  file?: string
+}
+
 export interface ToolCallItem {
   id: string
   name: string

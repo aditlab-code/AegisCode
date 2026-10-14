@@ -551,11 +551,11 @@ export function useWorkbenchLifecycle() {
         return
       }
 
-      // Inline AI Code Action Prompt (Cmd+I / Ctrl+I)
+      // Inline AI Code Action Prompt (Cmd+L / Ctrl+L or Cmd+I / Ctrl+I)
       if (
         (event.metaKey || event.ctrlKey) &&
         !event.shiftKey &&
-        event.key.toLowerCase() === "i"
+        (event.key.toLowerCase() === "l" || event.key.toLowerCase() === "i")
       ) {
         event.preventDefault()
         window.dispatchEvent(new CustomEvent("aegis:inline-ai-prompt"))
@@ -583,10 +583,10 @@ export function useWorkbenchLifecycle() {
         return
       }
 
-      // AI Chat with Selection (Cmd+L / Ctrl+L)
+      // AI Chat with Selection (Cmd+Shift+L / Ctrl+Shift+L)
       if (
         (event.metaKey || event.ctrlKey) &&
-        !event.shiftKey &&
+        event.shiftKey &&
         event.key.toLowerCase() === "l"
       ) {
         event.preventDefault()
@@ -609,10 +609,7 @@ export function useWorkbenchLifecycle() {
             : (currentIndex + 1) % currentGroup.tabs.length
           const nextTab = currentGroup.tabs[nextIndex]
           if (nextTab) {
-            s.openFileInPane(
-              nextTab,
-              s.focusedGroup === "group2" ? "pane-2" : "pane-1",
-            )
+            s.openFileInPane(nextTab)
           }
         }
         return

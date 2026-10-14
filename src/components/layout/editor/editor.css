@@ -833,6 +833,39 @@
   color: var(--color-accent);
 }
 
+/* ========================================================
+   BREAKPOINT GUTTER & ACTIVE DEBUG LINE DECORATIONS
+   ======================================================== */
 
+.cm-breakpoint-gutter {
+  width: 20px;
+  cursor: pointer;
+}
 
+.cm-breakpoint-gutter .cm-gutterElement {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0 4px;
+}
 
+.cm-breakpoint-dot {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: var(--color-error);
+  box-shadow: 0 0 4px var(--color-error);
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.cm-breakpoint-gutter .cm-gutterElement:hover .cm-breakpoint-dot {
+  transform: scale(1.2);
+}
+
+.cm-active-debug-line {
+  background-color: var(--color-warning-soft) !important;
+  border-left: 3px solid var(--color-warning);
+}

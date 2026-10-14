@@ -344,6 +344,7 @@ export interface BaseEditorExtensionsConfig {
   tabSize?: number
   wordWrap?: "on" | "off" | "wordWrapColumn"
   showFoldGutter?: boolean
+  showLineNumbers?: boolean
   languageExtension?: Extension | null
   isDark?: boolean
   themeCompartment?: Compartment
@@ -358,6 +359,7 @@ export function getBaseEditorExtensions({
   tabSize = 2,
   wordWrap = "off",
   showFoldGutter = true,
+  showLineNumbers = true,
   languageExtension = null,
   isDark = true,
   themeCompartment,
@@ -367,7 +369,6 @@ export function getBaseEditorExtensions({
     : createAegisEditorTheme(fontSize, lineHeight, isDark)
 
   const exts: Extension[] = [
-    lineNumbers(),
     highlightActiveLineGutter(),
     highlightActiveLine(),
     history(),
@@ -380,6 +381,10 @@ export function getBaseEditorExtensions({
     EditorState.tabSize.of(tabSize),
     themeExtension,
   ]
+
+  if (showLineNumbers) {
+    exts.unshift(lineNumbers())
+  }
 
   if (showFoldGutter) {
     exts.push(foldGutter())

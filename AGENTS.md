@@ -16,16 +16,17 @@ All agents MUST follow a disciplined Chain-of-Thought execution cycle:
 3. **Execute**: Implement changes cleanly and modularly.
 4. **Verify**: Run verification gates (`npm run build` & `npm run format`) to ensure zero errors.
 
-### CodeGraph Progressive Disclosure (Token & Context Optimization)
-Dumping entire source files or raw ASTs is an anti-pattern that leads to high latency and context window bloat. Agents MUST apply the **5-Level Progressive Disclosure Hierarchy** when navigating and inspecting code:
+### CodeGraph AND Tokenizer
 
-| Level Zoom | Granularity / Target | Token Budget | Agent Action |
-| --- | --- | --- | --- |
-| **L0: Outline** | File outline / skeleton | $< 150$ tokens | Inspect function lists, structs, interfaces, and exported types without reading bodies. |
-| **L1: Signature** | Symbol definitions | $< 80$ tokens | Review function signatures, parameter lists, return types, and docstrings. |
-| **L2: Topology** | Callers & callees (1-hop) | $< 120$ tokens | Trace direct dependencies and call hierarchy to assess change blast radius. |
-| **L3: Surgical Subgraph** | Module dependency subgraph | $< 400$ tokens | Map multi-hop dependency relationships capped at depth 1–2 for affected modules. |
-| **L4: Source Body** | Function / method body | Target size | Read only the specific target function/block when actively refactoring or modifying logic. |
+> USE MCP Connection tools : 'codegraph_explore'
+> USE AegisCode enforces the use of **RTK (Rust Token Killer)** (`~/.local/bin/rtk`) to compress terminal outputs before they enter the LLM context:
+- **Always Prefix Commands**: Prefix every shell invocation with `rtk`:
+  - `rtk git status`, `rtk git diff`, `rtk git log -n 5`
+  - `rtk npm run build`, `rtk npm run format`
+  - `rtk ls -la src/components/layout/`
+  - `rtk cargo test`, `rtk go test ./...`
+  
+> CONSTRAIN DO NOT tools call -grep 
 
 ### Shell Invocation Guidelines
 Execute shell commands directly and natively without CLI wrappers:
