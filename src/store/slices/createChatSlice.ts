@@ -18,6 +18,10 @@ import {
   streamAIChat,
 } from "../../utils/storeApi"
 import { fetchFileContent } from "../../utils/workspaceApi"
+import {
+  extractCodeGraphTraceTargets,
+  type AiTraceState,
+} from "../../utils/codegraphApi"
 
 import {
   createSessionLogic,
@@ -294,6 +298,68 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
     },
     skills: SKILL_COMMANDS,
     antigravityModels: CHAT_MODELS.antigravity,
+    aiTrace: null,
+    aiTraceHistory: [],
+
+    clearAiTrace: () => {
+      set({ aiTrace: null })
+    },
+
+    triggerAiTrace: (incoming) => {
+      const state = get()
+      const nextStatus = incoming.status || "running"
+      const currentTrace = state.aiTrace
+
+      const resolvedSymbols =
+        incoming.symbols && incoming.symbols.length > 0
+          ? incoming.symbols
+          : incoming.symbolName
+            ? [incoming.symbolName]
+            : currentTrace?.symbols || []
+
+      const resolvedPrimary =
+        incoming.symbolName ||
+        resolvedSymbols[0] ||
+        currentTrace?.symbolName ||
+        ""
+
+      if (!resolvedPrimary) {
+        set({ aiTrace: null })
+        return
+      }
+
+      const traceObj: AiTraceState = {
+        symbols:
+          resolvedSymbols.length > 0 ? resolvedSymbols : [resolvedPrimary],
+        symbolName: resolvedPrimary,
+        rawQuery:
+          incoming.rawQuery ||
+          (resolvedSymbols.length > 0
+            ? resolvedSymbols.join(" ")
+            : resolvedPrimary),
+        filePath: incoming.filePath || currentTrace?.filePath,
+        toolName:
+          incoming.toolName || currentTrace?.toolName || "codegraph_explore",
+        provider: incoming.provider || state.activeProvider || DEFAULT_PROVIDER,
+        model: incoming.model || state.activeModel || DEFAULT_MODEL,
+        status: nextStatus,
+        timestamp: Date.now(),
+      }
+
+      set((prev) => ({
+        aiTrace: traceObj,
+        aiTraceHistory: [
+          traceObj,
+          ...prev.aiTraceHistory.filter(
+            (h) =>
+              !(
+                h.rawQuery === traceObj.rawQuery &&
+                h.toolName === traceObj.toolName
+              ),
+          ),
+        ].slice(0, 25),
+      }))
+    },
 
     createSession: (provider?: ChatProvider, model?: string) => {
       const state = get()
@@ -539,45 +605,28 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
           } else if (event.type === "tool_call") {
             if (event.toolCall) {
               const tc = event.toolCall
-              const rawName = tc.name || ""
-              const cleanToolName = rawName.replace(
-                /^(mcp__codegraph__|codegraph[:_])/i,
-                "",
+              const parsedTrace = extractCodeGraphTraceTargets(
+                tc.name || "",
+                tc.args,
+                tc.targetFile,
               )
-              const isCodeGraph =
-                cleanToolName === "get_file_outline" ||
-                cleanToolName === "get_symbol_definition" ||
-                cleanToolName === "find_callers" ||
-                cleanToolName === "find_callees" ||
-                cleanToolName === "query_subgraph" ||
-                cleanToolName === "read_symbol_body" ||
-                cleanToolName === "get_diff_impact" ||
-                cleanToolName === "view_file" ||
-                cleanToolName === "read_file"
 
-              if (isCodeGraph && typeof window !== "undefined") {
-                const targetSym =
-                  tc.args?.symbol_name ||
-                  tc.args?.function_name ||
-                  tc.args?.root_symbol ||
-                  tc.args?.name ||
-                  tc.args?.file_path ||
-                  tc.args?.rel_path ||
-                  tc.args?.path ||
-                  tc.args?.AbsolutePath ||
-                  tc.targetFile ||
-                  ""
-                if (targetSym) {
-                  window.dispatchEvent(
-                    new CustomEvent("aegis:ai-trace-path", {
-                      detail: {
-                        symbolName: String(targetSym),
-                        toolName: cleanToolName,
-                        status: tc.status || "running",
-                      },
-                    }),
-                  )
-                }
+              if (parsedTrace.isCodeGraph && parsedTrace.symbols.length > 0) {
+                get().triggerAiTrace({
+                  symbols: parsedTrace.symbols,
+                  symbolName: parsedTrace.primarySymbol,
+                  rawQuery: parsedTrace.rawQuery,
+                  filePath: parsedTrace.filePath,
+                  toolName: parsedTrace.cleanToolName,
+                  provider: activeSession.provider,
+                  model: effectiveModel,
+                  status:
+                    tc.status === "failed" || tc.status === "error"
+                      ? "error"
+                      : tc.status === "success" || tc.status === "done"
+                        ? "completed"
+                        : "running",
+                })
               }
 
               const cur = get()
@@ -632,15 +681,12 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
             if (finalActive) {
               debouncedSaveBackendSession(finalActive)
             }
-            if (typeof window !== "undefined") {
-              window.dispatchEvent(
-                new CustomEvent("aegis:ai-trace-path", {
-                  detail: {
-                    symbolName: "",
-                    status: "done",
-                  },
-                }),
-              )
+            const activeTrace = get().aiTrace
+            if (activeTrace) {
+              get().triggerAiTrace({
+                ...activeTrace,
+                status: "completed",
+              })
             }
             chatAbortController = null
           } else if (event.type === "error") {

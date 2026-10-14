@@ -7,6 +7,7 @@ import { useWorkbenchStore } from "../../../../../store"
 import type {
   UIGraphNode,
   UIGraphEdge,
+  AiTraceState,
 } from "../../../../../utils/codegraphApi"
 
 // Register Dagre plugin safely once
@@ -20,13 +21,15 @@ export interface GraphCanvasHandle {
   fit: () => void
   zoomIn: () => void
   zoomOut: () => void
-  focusNode: (id: number) => void
-  pulseAiTrace: (symbolName: string) => boolean
+  focusNode: (id: string | number) => void
+  pulseAiTrace: (symbolOrSymbols: string | string[]) => boolean
 }
 
-export interface AiTraceDetail {
-  symbolName: string
+export type AiTraceDetail = Partial<AiTraceState> & {
+  symbolName?: string
+  symbols?: string[]
   toolName?: string
+  provider?: string
   status?: string
 }
 
@@ -35,7 +38,7 @@ interface GraphCanvasProps {
   edges: UIGraphEdge[]
   layout: LayoutMode
   activeKinds: Set<string>
-  selectedNodeId: number | null
+  selectedNodeId: string | number | null
   aiTraceSymbol?: string | null
   aiTraceInfo?: AiTraceDetail | null
   onNodeClick: (node: UIGraphNode) => void
@@ -43,83 +46,68 @@ interface GraphCanvasProps {
   onBackgroundClick: () => void
 }
 
-function findMatchingNodes(cy: Core, query: string) {
-  if (!query) return cy.collection()
-  const q = query.toLowerCase().trim()
+function toDomSafeNodeId(id: string | number): string {
+  return `sym_${String(id).replace(/[^a-zA-Z0-9_-]/g, "_")}`
+}
+
+function findMatchingNodes(cy: Core, symbols: string[]) {
+  if (!symbols || symbols.length === 0) return cy.collection()
+  const lowered = symbols.map((s) => s.toLowerCase().trim()).filter(Boolean)
+  if (lowered.length === 0) return cy.collection()
+
   return cy.nodes().filter((n) => {
-    if (n.id() === "node_ai_caller") return false
     const raw = n.data("raw") as UIGraphNode | undefined
     if (!raw) return false
-    const nameMatch =
-      raw.name.toLowerCase() === q ||
-      raw.name.toLowerCase().includes(q) ||
-      q.includes(raw.name.toLowerCase())
-    const fileMatch =
-      raw.filePath &&
-      (raw.filePath.toLowerCase().endsWith(q) ||
-        q.endsWith(raw.filePath.toLowerCase()) ||
-        raw.filePath.toLowerCase().includes(q))
-    return Boolean(nameMatch || fileMatch)
+
+    const rawName = raw.name.toLowerCase()
+    const qualName = (raw.qualifiedName || raw.name).toLowerCase()
+    const filePath = (raw.filePath || "").toLowerCase()
+
+    return lowered.some((q) => {
+      const shortQ = q.includes(".") ? q.split(".").pop() || q : q
+      const nameMatch =
+        rawName === q ||
+        rawName === shortQ ||
+        qualName === q ||
+        qualName.endsWith(`.${shortQ}`) ||
+        rawName.includes(shortQ)
+      const fileMatch =
+        filePath &&
+        (filePath.endsWith(q) || q.endsWith(filePath) || filePath.includes(q))
+      return Boolean(nameMatch || fileMatch)
+    })
   })
 }
 
 function applyAiTrace(cy: Core, trace: AiTraceDetail | null): boolean {
-  // Clear any existing dynamic AI caller node and beam edge
-  cy.$("#node_ai_caller").remove()
-  cy.$("edge[id ^= 'edge_ai_beam']").remove()
-  cy.elements().removeClass("ai-trace")
+  // Clear previous trace highlights
+  cy.elements().removeClass("ai-target-pulse ai-target-edge ai-pulse-dim")
 
-  if (!trace || !trace.symbolName) return false
+  const targetSymbols =
+    trace?.symbols && trace.symbols.length > 0
+      ? trace.symbols
+      : trace?.symbolName
+        ? [trace.symbolName]
+        : []
 
-  const matching = findMatchingNodes(cy, trace.symbolName)
+  if (!trace || targetSymbols.length === 0) return false
+
+  const matching = findMatchingNodes(cy, targetSymbols)
   if (matching.length === 0) return false
 
-  matching.addClass("ai-trace")
-  matching.connectedEdges().addClass("ai-trace")
+  // Apply persistent highlight & smooth pulse ring to target nodes
+  matching.addClass("ai-target-pulse active")
 
-  const isCompleted = trace.status === "completed" || trace.status === "done"
-  const targetNode = matching[0]
-  const targetPos = targetNode.position()
+  // Highlight connected edges in the call-tree hierarchy
+  const connected = matching.connectedEdges()
+  connected.addClass("ai-target-edge")
 
-  // Position the AI caller node near the target
-  const aiPos = {
-    x: targetPos.x - 220,
-    y: targetPos.y - 70,
-  }
-
-  const toolTitle = trace.toolName
-    ? `AI · ${trace.toolName}`
-    : "AI Assistant (MCP)"
-
-  cy.add({
-    group: "nodes",
-    data: {
-      id: "node_ai_caller",
-      label: toolTitle,
-    },
-    classes: `ai-caller${isCompleted ? " completed" : ""}`,
-    position: aiPos,
-  })
-
-  cy.add({
-    group: "edges",
-    data: {
-      id: `edge_ai_beam_${targetNode.id()}`,
-      source: "node_ai_caller",
-      target: targetNode.id(),
-      label: trace.toolName || "query",
-    },
-    classes: `ai-beam${isCompleted ? " completed" : ""}`,
-  })
-
-  // Animate viewport to frame both AI caller node and target node with padding
-  const targetElements = matching.union(cy.$("#node_ai_caller"))
+  // Smoothly center on the target node(s)
+  cy.stop(true)
   cy.animate({
-    fit: {
-      eles: targetElements,
-      padding: 70,
-    },
-    duration: 450,
+    center: { eles: matching },
+    zoom: Math.min(1.4, cy.zoom() * 1.15),
+    duration: 350,
     easing: "ease-out-cubic",
   })
 
@@ -155,7 +143,18 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
     const onBackgroundClickRef = useRef(onBackgroundClick)
     onBackgroundClickRef.current = onBackgroundClick
 
-    // Expose imperative methods to parent
+    // Keep latest trace in a ref so layout stop callbacks never read a stale closure
+    const latestTraceRef = useRef<AiTraceDetail | null>(null)
+    latestTraceRef.current =
+      aiTraceInfo ||
+      (aiTraceSymbol
+        ? {
+            symbols: [aiTraceSymbol],
+            symbolName: aiTraceSymbol,
+            status: "running",
+          }
+        : null)
+
     useImperativeHandle(ref, () => ({
       fit: () => {
         if (!cyRef.current) return
@@ -184,11 +183,12 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
           },
         })
       },
-      focusNode: (id: number) => {
+      focusNode: (id: string | number) => {
         if (!cyRef.current) return
         cyRef.current.resize()
-        const node = cyRef.current.$(`#sym_${id}`)
+        const node = cyRef.current.$(`#${toDomSafeNodeId(id)}`)
         if (node.length > 0) {
+          cyRef.current.stop(true)
           cyRef.current.animate({
             center: { eles: node },
             zoom: 1.3,
@@ -198,11 +198,16 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
           node.addClass("active")
         }
       },
-      pulseAiTrace: (symbolName: string): boolean => {
-        if (!cyRef.current || !symbolName) return false
+      pulseAiTrace: (symbolOrSymbols: string | string[]): boolean => {
+        if (!cyRef.current) return false
+        const syms = Array.isArray(symbolOrSymbols)
+          ? symbolOrSymbols
+          : [symbolOrSymbols]
+        if (syms.length === 0 || !syms[0]) return false
         return applyAiTrace(cyRef.current, {
-          symbolName,
-          toolName: "CodeGraph MCP",
+          symbols: syms,
+          symbolName: syms[0],
+          toolName: "codegraph_explore",
           status: "running",
         })
       },
@@ -269,48 +274,61 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
       const cy = cyRef.current
       if (!cy) return
 
-      // Ensure canvas dimensions match container before elements layout
       cy.resize()
 
-      // Filter nodes according to activeKinds
       const visibleNodes = nodes.filter((n) => {
         const kind = n.kind.toLowerCase()
         if (kind === "function" || kind === "method") {
           return activeKinds.has("function")
         }
-        if (kind === "interface") {
+        if (
+          kind === "interface" ||
+          kind === "trait" ||
+          kind === "protocol" ||
+          kind === "type_alias"
+        ) {
           return activeKinds.has("interface")
         }
-        if (kind === "class" || kind === "struct" || kind === "type") {
+        if (
+          kind === "class" ||
+          kind === "struct" ||
+          kind === "type" ||
+          kind === "enum" ||
+          kind === "module" ||
+          kind === "namespace" ||
+          kind === "route" ||
+          kind === "component"
+        ) {
           return activeKinds.has("class")
         }
         return true
       })
 
-      const visibleNodeIds = new Set(visibleNodes.map((n) => n.id))
+      const visibleNodeIds = new Set(visibleNodes.map((n) => String(n.id)))
 
-      // Only edges whose both source and target are visible
       const visibleEdges = edges.filter(
-        (e) => visibleNodeIds.has(e.sourceId) && visibleNodeIds.has(e.targetId),
+        (e) =>
+          visibleNodeIds.has(String(e.sourceId)) &&
+          visibleNodeIds.has(String(e.targetId)),
       )
 
       const elements = [
         ...visibleNodes.map((n) => ({
           group: "nodes" as const,
           data: {
-            id: `sym_${n.id}`,
+            id: toDomSafeNodeId(n.id),
             label: n.name,
             kind: n.kind.toLowerCase(),
             raw: n,
           },
           classes: n.isActive ? "active" : "",
         })),
-        ...visibleEdges.map((e) => ({
+        ...visibleEdges.map((e, idx) => ({
           group: "edges" as const,
           data: {
-            id: `edge_${e.id}`,
-            source: `sym_${e.sourceId}`,
-            target: `sym_${e.targetId}`,
+            id: `edge_${String(e.id)}_${idx}`,
+            source: toDomSafeNodeId(e.sourceId),
+            target: toDomSafeNodeId(e.targetId),
             label: e.relation,
             raw: e,
           },
@@ -320,27 +338,20 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
       cy.elements().remove()
       cy.add(elements)
 
-      // Callback to re-apply AI trace after layout finishes computing positions
       const reapplyTrace = () => {
-        const currentTrace =
-          aiTraceInfo ||
-          (aiTraceSymbol
-            ? { symbolName: aiTraceSymbol, status: "running" }
-            : null)
-        if (currentTrace) {
-          applyAiTrace(cy, currentTrace)
+        if (latestTraceRef.current && cyRef.current) {
+          applyAiTrace(cyRef.current, latestTraceRef.current)
         }
       }
 
-      // Layout Execution with animation
+      // Single deterministic layout callback (no duplicate cy.one("layoutstop") + stop)
       try {
         if (visibleEdges.length === 0) {
-          // Disconnected nodes without edges: arrange in a clean 2D card grid
           const cols = Math.min(
             6,
             Math.max(2, Math.ceil(Math.sqrt(visibleNodes.length))),
           )
-          const l = cy.layout({
+          cy.layout({
             name: "grid",
             cols,
             padding: 50,
@@ -348,14 +359,12 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
             nodeDimensionsIncludeLabels: true,
             spacingFactor: 1.6,
             animate: true,
-            animationDuration: 400,
+            animationDuration: 350,
             animationEasing: "ease-out-cubic",
             stop: reapplyTrace,
-          } as cytoscape.LayoutOptions)
-          l.run()
+          } as cytoscape.LayoutOptions).run()
         } else if (layout === "dagre") {
-          cy.one("layoutstop", reapplyTrace)
-          const l = cy.layout({
+          cy.layout({
             name: "dagre",
             rankDir: "TB",
             nodeSep: 80,
@@ -365,14 +374,12 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
             padding: 50,
             spacingFactor: 1.3,
             stop: reapplyTrace,
-          } as cytoscape.LayoutOptions)
-          l.run()
+          } as cytoscape.LayoutOptions).run()
         } else {
-          cy.one("layoutstop", reapplyTrace)
-          const l = cy.layout({
+          cy.layout({
             name: "cose",
             animate: true,
-            animationDuration: 450,
+            animationDuration: 420,
             animationEasing: "ease-out-cubic",
             fit: true,
             padding: 60,
@@ -381,19 +388,17 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
             idealEdgeLength: () => 140,
             nodeOverlap: 20,
             stop: reapplyTrace,
-          } as cytoscape.LayoutOptions)
-          l.run()
+          } as cytoscape.LayoutOptions).run()
         }
       } catch {
-        const fallback = cy.layout({
+        cy.layout({
           name: "grid",
           animate: true,
           animationDuration: 300,
           fit: true,
           padding: 40,
           stop: reapplyTrace,
-        } as cytoscape.LayoutOptions)
-        fallback.run()
+        } as cytoscape.LayoutOptions).run()
       }
     }, [nodes, edges, layout, activeKinds])
 
@@ -404,14 +409,14 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
 
       cy.nodes().removeClass("active")
       if (selectedNodeId != null) {
-        const sel = cy.$(`#sym_${selectedNodeId}`)
+        const sel = cy.$(`#${toDomSafeNodeId(selectedNodeId)}`)
         if (sel.length > 0) {
           sel.addClass("active")
         }
       }
     }, [selectedNodeId])
 
-    // Highlight AI trace and maintain live pulsing animation while active
+    // Highlight AI trace using stylesheet class toggling (.ai-pulse) instead of inline style mutation
     useEffect(() => {
       const cy = cyRef.current
       if (!cy) return
@@ -419,80 +424,44 @@ export const GraphCanvas = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
       const trace =
         aiTraceInfo ||
         (aiTraceSymbol
-          ? { symbolName: aiTraceSymbol, status: "running" }
+          ? {
+              symbols: [aiTraceSymbol],
+              symbolName: aiTraceSymbol,
+              status: "running",
+            }
           : null)
 
-      if (!trace || !trace.symbolName) {
+      const hasSymbols =
+        (trace?.symbols && trace.symbols.length > 0) ||
+        Boolean(trace?.symbolName)
+
+      if (!trace || !hasSymbols) {
         applyAiTrace(cy, null)
         return
       }
 
-      applyAiTrace(cy, trace)
+      const applied = applyAiTrace(cy, trace)
+      if (!applied) return
 
-      if (trace.status !== "completed" && trace.status !== "done") {
-        let step = 0
-        const pulseInterval = setInterval(() => {
-          if (!cyRef.current) {
-            clearInterval(pulseInterval)
-            return
-          }
-          const aiNode = cyRef.current.$("#node_ai_caller")
-          const matching = findMatchingNodes(cyRef.current, trace.symbolName)
-          const beamEdges = cyRef.current.$("edge[id ^= 'edge_ai_beam']")
-          if (aiNode.length === 0 && matching.length === 0) {
-            clearInterval(pulseInterval)
-            return
-          }
-
-          if (step % 2 === 0) {
-            aiNode.style({
-              "border-width": "8px",
-              "border-color": "#F0ABFC",
-              "background-color": "#9333EA",
-            })
-            matching.style({
-              "border-width": "9px",
-              "border-color": "#FDA4AF",
-              "background-color": "#E11D48",
-            })
-            beamEdges.style({
-              width: 11,
-              "line-color": "#FDA4AF",
-              "target-arrow-color": "#FDA4AF",
-            })
-          } else {
-            aiNode.style({
-              "border-width": "4.5px",
-              "border-color": "#C084FC",
-              "background-color": "#7C3AED",
-            })
-            matching.style({
-              "border-width": "5.5px",
-              "border-color": "#F43F5E",
-              "background-color": "#BE185D",
-            })
-            beamEdges.style({
-              width: 7,
-              "line-color": "#F43F5E",
-              "target-arrow-color": "#F43F5E",
-            })
-          }
-          step++
-        }, 240)
-
-        return () => {
+      const pulseInterval = setInterval(() => {
+        if (!cyRef.current) {
           clearInterval(pulseInterval)
-          if (cyRef.current) {
-            cyRef.current
-              .$("#node_ai_caller")
-              .removeStyle("border-width border-color background-color")
-            findMatchingNodes(cyRef.current, trace.symbolName).removeStyle(
-              "border-width border-color background-color",
-            )
-            cyRef.current
-              .$("edge[id ^= 'edge_ai_beam']")
-              .removeStyle("width line-color target-arrow-color")
-          }
+          return
+        }
+        const targets = cyRef.current.$("node.ai-target-pulse")
+        const edges = cyRef.current.$("edge.ai-target-edge")
+        if (targets.length === 0) {
+          clearInterval(pulseInterval)
+          return
+        }
+        targets.toggleClass("ai-pulse-dim")
+        edges.toggleClass("ai-pulse-dim")
+      }, 700)
+
+      return () => {
+        clearInterval(pulseInterval)
+        if (cyRef.current) {
+          cyRef.current.elements().removeClass("ai-pulse-dim")
         }
       }
     }, [aiTraceInfo, aiTraceSymbol])

@@ -2879,13 +2879,19 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) broadcastMCPEvent(tool string, args map[string]any) {
 	sym := ""
 	if args != nil {
-		if v, ok := args["name"].(string); ok && v != "" {
+		if v, ok := args["query"].(string); ok && v != "" {
+			sym = v
+		} else if v, ok := args["symbol"].(string); ok && v != "" {
+			sym = v
+		} else if v, ok := args["name"].(string); ok && v != "" {
 			sym = v
 		} else if v, ok := args["symbol_name"].(string); ok && v != "" {
 			sym = v
 		} else if v, ok := args["function_name"].(string); ok && v != "" {
 			sym = v
 		} else if v, ok := args["root_symbol"].(string); ok && v != "" {
+			sym = v
+		} else if v, ok := args["file"].(string); ok && v != "" {
 			sym = v
 		} else if v, ok := args["file_path"].(string); ok && v != "" {
 			sym = v
@@ -2897,6 +2903,7 @@ func (s *Server) broadcastMCPEvent(tool string, args map[string]any) {
 		"event":     "mcp_tool_invoked",
 		"tool":      tool,
 		"symbol":    sym,
+		"args":      args,
 		"timestamp": time.Now().Unix(),
 	}
 	s.mcpMu.RLock()
@@ -3048,26 +3055,9 @@ func (s *Server) handleCodeGraphNeighborhood(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var symbolID int64
-	var err error
-	if idStr != "" {
-		symbolID, err = strconv.ParseInt(idStr, 10, 64)
-		if err != nil {
-			symbolID, err = s.codegraph.UIService().ResolveSymbolID(r.Context(), idStr)
-			if err != nil {
-				jsonError(w, http.StatusBadRequest, "invalid id parameter")
-				return
-			}
-		}
-	} else {
-		symbolID, err = s.codegraph.UIService().ResolveSymbolID(r.Context(), symbolParam)
-		if err != nil {
-			jsonResponse(w, http.StatusOK, codegraph.UIGraphPayload{
-				Nodes: make([]codegraph.UIGraphNode, 0),
-				Edges: make([]codegraph.UIGraphEdge, 0),
-			})
-			return
-		}
+	target := idStr
+	if target == "" {
+		target = symbolParam
 	}
 
 	depth := 1
@@ -3084,7 +3074,7 @@ func (s *Server) handleCodeGraphNeighborhood(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	payload, err := s.codegraph.UIService().GetSymbolNeighborhood(r.Context(), symbolID, depth, limit)
+	payload, err := s.codegraph.UIService().GetSymbolNeighborhoodByTarget(r.Context(), target, depth, limit)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return

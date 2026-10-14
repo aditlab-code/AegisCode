@@ -18,6 +18,7 @@ import {
   saveBackendChatSession,
   streamAIChat,
 } from "../../utils/storeApi"
+import { extractCodeGraphTraceTargets } from "../../utils/codegraphApi"
 
 export const DEFAULT_PROVIDER: ChatProvider = "antigravity"
 export const DEFAULT_MODEL = "gemini-3.8-flash"
@@ -601,40 +602,29 @@ export function useChatCore() {
           } else if (event.type === "tool_call") {
             if (event.toolCall) {
               const tc = event.toolCall
-              const tcName = tc.name || ""
-              const isCodeGraph =
-                tcName === "get_file_outline" ||
-                tcName === "get_symbol_definition" ||
-                tcName === "find_callers" ||
-                tcName === "find_callees" ||
-                tcName === "query_subgraph" ||
-                tcName === "read_symbol_body" ||
-                tcName === "get_diff_impact" ||
-                tcName === "view_file" ||
-                tcName === "read_file"
-
-              if (isCodeGraph && typeof window !== "undefined") {
-                const targetSym =
-                  tc.args?.symbol_name ||
-                  tc.args?.function_name ||
-                  tc.args?.root_symbol ||
-                  tc.args?.name ||
-                  tc.args?.file_path ||
-                  tc.args?.path ||
-                  tc.args?.AbsolutePath ||
-                  tc.targetFile ||
-                  ""
-                if (targetSym) {
-                  window.dispatchEvent(
-                    new CustomEvent("aegis:ai-trace-path", {
-                      detail: {
-                        symbolName: String(targetSym),
-                        toolName: tcName,
-                        status: tc.status || "running",
-                      },
-                    }),
-                  )
-                }
+              const traceInfo = extractCodeGraphTraceTargets(
+                tc.name || "",
+                tc.args,
+                tc.targetFile,
+              )
+              if (
+                traceInfo.isCodeGraph &&
+                traceInfo.symbols.length > 0 &&
+                typeof window !== "undefined"
+              ) {
+                window.dispatchEvent(
+                  new CustomEvent("aegis:ai-trace-path", {
+                    detail: {
+                      symbols: traceInfo.symbols,
+                      symbolName: traceInfo.primarySymbol,
+                      rawQuery: traceInfo.rawQuery,
+                      filePath: traceInfo.filePath,
+                      toolName: traceInfo.cleanToolName,
+                      status:
+                        tc.status === "completed" ? "completed" : "running",
+                    },
+                  }),
+                )
               }
               setSessions((prev) =>
                 updateAgentMessageInSessions(

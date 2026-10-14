@@ -306,3 +306,78 @@ func TestUIServiceResolveSymbolIDAndSanitizedFTS(t *testing.T) {
 	}
 }
 
+func TestUIServiceColbyNativeSchema(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "colby_test.db")
+
+	db, err := OpenGraphDB(dbPath)
+	if err != nil {
+		t.Fatalf("OpenGraphDB failed: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Seed native Colby nodes and edges
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO nodes (id, kind, name, qualified_name, file_path, start_line, end_line, signature, docstring, is_exported)
+		VALUES
+			('node:server:main', 'function', 'main', 'main.main', 'server/main.go', 10, 30, 'func main()', 'entrypoint', 1),
+			('node:server:NewServer', 'function', 'NewServer', 'server.NewServer', 'server/server.go', 15, 45, 'func NewServer() *Server', 'creates server', 1),
+			('node:server:Server', 'struct', 'Server', 'server.Server', 'server/server.go', 5, 12, 'type Server struct', 'server struct', 1);
+
+		INSERT INTO edges (source, target, kind, line)
+		VALUES
+			('node:server:main', 'node:server:NewServer', 'calls', 22),
+			('node:server:NewServer', 'node:server:Server', 'instantiates', 35);
+	`)
+	if err != nil {
+		t.Fatalf("failed to insert colby test data: %v", err)
+	}
+
+	svc := NewUIService(db, tmpDir)
+
+	if !svc.hasColbyNodes(ctx) {
+		t.Fatalf("expected hasColbyNodes to be true")
+	}
+
+	// 1. Workspace graph
+	ws, err := svc.GetWorkspaceGraph(ctx, 10)
+	if err != nil {
+		t.Fatalf("GetWorkspaceGraph failed: %v", err)
+	}
+	if len(ws.Nodes) != 3 {
+		t.Errorf("expected 3 nodes in workspace, got %d", len(ws.Nodes))
+	}
+	if len(ws.Edges) != 2 {
+		t.Errorf("expected 2 edges in workspace, got %d", len(ws.Edges))
+	}
+
+	// 2. Active file graph
+	fileRes, err := svc.GetActiveFileGraph(ctx, "server/server.go")
+	if err != nil {
+		t.Fatalf("GetActiveFileGraph failed: %v", err)
+	}
+	if len(fileRes.Nodes) != 2 {
+		t.Errorf("expected 2 nodes for server/server.go, got %d", len(fileRes.Nodes))
+	}
+
+	// 3. Multi-token neighborhood query
+	targetRes, err := svc.GetSymbolNeighborhoodByTarget(ctx, "NewServer Server", 2, 50)
+	if err != nil {
+		t.Fatalf("GetSymbolNeighborhoodByTarget failed: %v", err)
+	}
+	if len(targetRes.Nodes) < 2 {
+		t.Errorf("expected at least 2 nodes connected to NewServer, got %d", len(targetRes.Nodes))
+	}
+
+	// 4. Search symbols
+	searchRes, err := svc.SearchSymbols(ctx, "Server", 5)
+	if err != nil {
+		t.Fatalf("SearchSymbols failed: %v", err)
+	}
+	if len(searchRes) < 2 {
+		t.Errorf("expected at least 2 symbols matching Server, got %d", len(searchRes))
+	}
+}
+

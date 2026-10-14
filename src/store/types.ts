@@ -40,6 +40,7 @@ import type {
 } from "../types/workbench"
 import type { CursorCoordinates } from "../context/core/workspaceCore"
 import type { ConfirmCloseState } from "../types/workbench"
+import type { AiTraceState } from "../utils/codegraphApi"
 
 export type SliceCreator<T> = StateCreator<WorkbenchStore, [], [], T>
 
@@ -390,6 +391,15 @@ export interface ChatSlice {
   addMentionContext: (path: string, isFolder?: boolean) => Promise<void>
   clearManualMentions: () => void
   refreshAISkills: (provider?: string, workspacePath?: string) => Promise<void>
+  aiTrace: AiTraceState | null
+  aiTraceHistory: AiTraceState[]
+  triggerAiTrace: (
+    trace: Partial<AiTraceState> & {
+      symbolName?: string
+      symbols?: string[]
+    },
+  ) => void
+  clearAiTrace: () => void
 }
 
 export interface DebugSlice {

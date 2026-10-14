@@ -19,8 +19,9 @@ import {
   normalizePath,
 } from "../../../utils/explorerGitStatus"
 import { sortFileTree } from "../../../utils/workspaceApi"
+import { fetchActiveFileGraph } from "../../../utils/codegraphApi"
 
-function extractSymbols(code?: string): OutlineSymbol[] {
+export function extractSymbols(code?: string): OutlineSymbol[] {
   if (!code) return []
   const symbols: OutlineSymbol[] = []
   const lines = code.split("\n")
@@ -29,15 +30,73 @@ function extractSymbols(code?: string): OutlineSymbol[] {
     const lineNum = idx + 1
     const trimmed = lineText.trim()
     if (
+      !trimmed ||
       trimmed.startsWith("//") ||
       trimmed.startsWith("/*") ||
-      trimmed.startsWith("*")
+      trimmed.startsWith("*") ||
+      trimmed.startsWith("#")
     ) {
       return
     }
 
+    // 1. Go functions & receiver methods: func (r *Recv) Name(...) or func Name(...)
+    const goFuncMatch = trimmed.match(
+      /^func\s+(?:\([^)]+\)\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*(?:\[[^\]]*\])?\s*\(/,
+    )
+    if (goFuncMatch) {
+      symbols.push({
+        id: `go-fn-${idx}`,
+        name: goFuncMatch[1],
+        kind: "function",
+        line: lineNum,
+      })
+      return
+    }
+
+    // 2. Go struct / interface / type definitions: type Name struct | interface | ...
+    const goTypeMatch = trimmed.match(
+      /^type\s+([A-Za-z_][A-Za-z0-9_]*)\s+(struct|interface)\b/,
+    )
+    if (goTypeMatch) {
+      symbols.push({
+        id: `go-type-${idx}`,
+        name: goTypeMatch[1],
+        kind: goTypeMatch[2] === "interface" ? "interface" : "class",
+        line: lineNum,
+      })
+      return
+    }
+
+    // 3. Python functions & classes: def name(...) / async def name(...) / class Name...
+    const pyFuncMatch = trimmed.match(
+      /^(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/,
+    )
+    if (pyFuncMatch) {
+      symbols.push({
+        id: `py-fn-${idx}`,
+        name: pyFuncMatch[1],
+        kind: "function",
+        line: lineNum,
+      })
+      return
+    }
+
+    const pyClassMatch = trimmed.match(
+      /^class\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(|:)/,
+    )
+    if (pyClassMatch) {
+      symbols.push({
+        id: `py-cls-${idx}`,
+        name: pyClassMatch[1],
+        kind: "class",
+        line: lineNum,
+      })
+      return
+    }
+
+    // 4. TS/JS functions, classes, interfaces, types, arrow functions
     const fnMatch = trimmed.match(
-      /^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)/,
+      /^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)/,
     )
     if (fnMatch) {
       symbols.push({
@@ -49,7 +108,9 @@ function extractSymbols(code?: string): OutlineSymbol[] {
       return
     }
 
-    const classMatch = trimmed.match(/^(?:export\s+)?class\s+([A-Za-z0-9_$]+)/)
+    const classMatch = trimmed.match(
+      /^(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z0-9_$]+)/,
+    )
     if (classMatch) {
       symbols.push({
         id: `cls-${idx}`,
@@ -85,7 +146,7 @@ function extractSymbols(code?: string): OutlineSymbol[] {
     }
 
     const arrowFnMatch = trimmed.match(
-      /^(?:export\s+)?const\s+([A-Za-z0-9_$]+)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z0-9_$]+)\s*=>/,
+      /^(?:export\s+)?const\s+([A-Za-z0-9_$]+)\s*(?::[^=]+)?=\s*(?:async\s*)?(?:<[^>]*>)?\s*(?:\([^)]*\)|[A-Za-z0-9_$]+)\s*=>/,
     )
     if (arrowFnMatch) {
       symbols.push({
@@ -499,11 +560,61 @@ export function ExplorerPanel() {
     }
   }, [visibleFiles, treeScrollTop, treeViewportHeight, renamingFile])
 
-  // Outline symbols of active tab
+  const [codeGraphSymbols, setCodeGraphSymbols] = useState<OutlineSymbol[]>([])
+
+  useEffect(() => {
+    if (
+      !outlineOpen ||
+      !currentTab ||
+      currentTab.startsWith("codegraph:") ||
+      currentTab.startsWith("diff:")
+    ) {
+      setCodeGraphSymbols([])
+      return
+    }
+    let cancelled = false
+    fetchActiveFileGraph(currentTab)
+      .then((res) => {
+        if (cancelled || !res || !Array.isArray(res.nodes)) return
+        const fileNodes = res.nodes
+          .filter(
+            (n) =>
+              n.filePath === currentTab ||
+              currentTab.endsWith("/" + n.filePath) ||
+              n.filePath.endsWith("/" + currentTab),
+          )
+          .sort((a, b) => a.lineStart - b.lineStart)
+        if (fileNodes.length > 0) {
+          setCodeGraphSymbols(
+            fileNodes.map((n) => ({
+              id: `cg-${n.id}`,
+              name: n.name,
+              kind: (n.kind === "method"
+                ? "function"
+                : n.kind === "struct"
+                  ? "class"
+                  : n.kind) as OutlineSymbol["kind"],
+              line: n.lineStart,
+            })),
+          )
+        } else {
+          setCodeGraphSymbols([])
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setCodeGraphSymbols([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [outlineOpen, currentTab])
+
+  // Outline symbols of active tab (CodeGraph AST enriched with local lexical fallback)
   const activeSymbols = useMemo(() => {
     const code = fileBuffers[currentTab]?.content
-    return extractSymbols(code)
-  }, [fileBuffers, currentTab])
+    const lexical = extractSymbols(code)
+    return lexical.length > 0 ? lexical : codeGraphSymbols
+  }, [fileBuffers, currentTab, codeGraphSymbols])
 
   function handleCreateSubmit() {
     const name = createName.trim()

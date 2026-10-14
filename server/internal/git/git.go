@@ -373,6 +373,11 @@ func (s *Service) GetStatus(ctx context.Context) (RepoStatus, error) {
 			if len(parts) >= 9 {
 				xy := parts[1]
 				filePath := parts[8]
+				cleanPath := filepath.ToSlash(filePath)
+				if cleanPath == ".codegraph" || strings.HasPrefix(cleanPath, ".codegraph/") ||
+					cleanPath == ".aegis" || strings.HasPrefix(cleanPath, ".aegis/") {
+					continue
+				}
 				dir := filepath.Dir(filePath)
 				if dir == "." {
 					dir = ""
@@ -447,6 +452,11 @@ func (s *Service) GetStatus(ctx context.Context) (RepoStatus, error) {
 		// Untracked entry: ? <path>
 		if strings.HasPrefix(line, "? ") {
 			filePath := strings.TrimPrefix(line, "? ")
+			cleanPath := filepath.ToSlash(filePath)
+			if cleanPath == ".codegraph" || strings.HasPrefix(cleanPath, ".codegraph/") ||
+				cleanPath == ".aegis" || strings.HasPrefix(cleanPath, ".aegis/") {
+				continue
+			}
 			dir := filepath.Dir(filePath)
 			if dir == "." {
 				dir = ""

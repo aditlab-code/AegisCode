@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbenchStore, useShallow } from "../../../store"
+import { fetchActiveFileGraph } from "../../../utils/codegraphApi"
 import type { DiagnosticItem } from "../../../types/workbench"
 
 export interface HoverPosition {
@@ -52,12 +53,33 @@ export function DiagnosticHoverCard({
     showToast(`Inspecting ${diagnostic.title} in Problems view`)
   }
 
-  function handleAskAi() {
+  async function handleAskAi() {
     setChatOpen(true)
-    sendChatMessage(
-      `Diagnose and fix this ${diagnostic.type} at ${diagnostic.location}: "${diagnostic.title}" (${diagnostic.source || "linter"})`,
-    )
     onClose()
+    const colonMatch = diagnostic.location.match(/^(.*?):(\d+)/)
+    const file = colonMatch ? colonMatch[1].trim() : diagnostic.location
+    const lineNum = colonMatch ? parseInt(colonMatch[2], 10) : 0
+
+    let cgContext = ""
+    if (file && lineNum > 0) {
+      try {
+        const graph = await fetchActiveFileGraph(file)
+        const sym = graph?.nodes.find(
+          (n) => lineNum >= n.lineStart && lineNum <= n.lineEnd,
+        )
+        if (sym) {
+          cgContext = `\nCodeGraph Symbol: ${sym.kind} \`${sym.name}\` (L${sym.lineStart}-L${sym.lineEnd})${
+            sym.signature ? ` — \`${sym.signature}\`` : ""
+          }`
+        }
+      } catch {
+        // ignore if unavailable
+      }
+    }
+
+    sendChatMessage(
+      `Diagnose and fix this ${diagnostic.type} at ${diagnostic.location}: "${diagnostic.title}" (${diagnostic.source || "linter"}).${cgContext}\nPlease provide a ready-to-apply code block with \`\`\`lang:${file}.`,
+    )
   }
 
   const isError = diagnostic.type === "error"

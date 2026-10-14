@@ -37,14 +37,14 @@ export function NodeInspector({
   const callers: NodeConnection[] = []
   const callees: NodeConnection[] = []
 
-  const nodeMap = new Map<number, UIGraphNode>()
+  const nodeMap = new Map<string, UIGraphNode>()
   for (const n of allNodes) {
-    nodeMap.set(n.id, n)
+    nodeMap.set(String(n.id), n)
   }
 
   for (const edge of allEdges) {
-    if (edge.targetId === node.id) {
-      const srcNode = nodeMap.get(edge.sourceId)
+    if (String(edge.targetId) === String(node.id)) {
+      const srcNode = nodeMap.get(String(edge.sourceId))
       if (srcNode) {
         callers.push({
           node: srcNode,
@@ -53,8 +53,8 @@ export function NodeInspector({
         })
       }
     }
-    if (edge.sourceId === node.id) {
-      const tgtNode = nodeMap.get(edge.targetId)
+    if (String(edge.sourceId) === String(node.id)) {
+      const tgtNode = nodeMap.get(String(edge.targetId))
       if (tgtNode) {
         callees.push({
           node: tgtNode,

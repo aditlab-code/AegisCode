@@ -3,6 +3,10 @@ import { Icon } from "../../ui/Icon"
 import { useWorkbenchStore, useShallow } from "../../../store"
 import { isGitDiffTab, parseGitDiffTab } from "../../../utils/gitDiffTab"
 import { isGraphTab, parseGraphTab } from "./viewers/viewerTypes"
+import {
+  fetchActiveFileGraph,
+  type UIGraphNode,
+} from "../../../utils/codegraphApi"
 
 interface EditorBreadcrumbsProps {
   file?: string
@@ -28,6 +32,8 @@ export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
     activeTab,
     files,
     openFileInPane,
+    cursorPosition,
+    setCursorPosition,
   } = useWorkbenchStore(
     useShallow((s) => ({
       focusedPane: s.focusedPane,
@@ -36,10 +42,14 @@ export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
       activeTab: s.activeTab,
       files: s.files,
       openFileInPane: s.openFileInPane,
+      cursorPosition: s.cursorPosition,
+      setCursorPosition: s.setCursorPosition,
     })),
   )
 
   const [dropdown, setDropdown] = useState<DropdownState | null>(null)
+  const [fileSymbols, setFileSymbols] = useState<UIGraphNode[]>([])
+  const [symbolDropdownOpen, setSymbolDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -73,6 +83,38 @@ export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
       ? secondaryActiveTab
       : activeTab) ||
     ""
+
+  useEffect(() => {
+    if (!currentFile || isGitDiffTab(currentFile) || isGraphTab(currentFile)) {
+      setFileSymbols([])
+      return
+    }
+    let cancelled = false
+    fetchActiveFileGraph(currentFile)
+      .then((res) => {
+        if (cancelled || !res || !Array.isArray(res.nodes)) return
+        const syms = res.nodes
+          .filter(
+            (n) =>
+              n.filePath === currentFile ||
+              currentFile.endsWith("/" + n.filePath) ||
+              n.filePath.endsWith("/" + currentFile),
+          )
+          .sort((a, b) => a.lineStart - b.lineStart)
+        setFileSymbols(syms)
+      })
+      .catch(() => {
+        if (!cancelled) setFileSymbols([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [currentFile])
+
+  const activeSymbol = fileSymbols.find(
+    (s) =>
+      cursorPosition.line >= s.lineStart && cursorPosition.line <= s.lineEnd,
+  )
 
   const isDiff = isGitDiffTab(currentFile)
   const diffInfo = isDiff ? parseGitDiffTab(currentFile) : null
@@ -194,6 +236,47 @@ export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
             </span>
           )
         })}
+
+        {fileSymbols.length > 0 && (
+          <span className="flex items-center gap-1 relative">
+            <Icon name="chevron" size={11} />
+            <button
+              type="button"
+              onClick={() => setSymbolDropdownOpen((v) => !v)}
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-accent hover:bg-surface-hover font-mono text-[11px] cursor-pointer"
+              title="Jump to symbol in file"
+            >
+              <Icon name="symbol" size={11} />
+              <span>
+                {activeSymbol
+                  ? activeSymbol.name
+                  : `${fileSymbols.length} symbols`}
+              </span>
+            </button>
+            {symbolDropdownOpen && (
+              <div className="absolute left-0 top-full mt-1 w-60 max-h-60 overflow-y-auto py-1 px-1 bg-surface-raised border border-line-bright rounded-md shadow-xl z-50 text-xs">
+                {fileSymbols.map((sym) => (
+                  <button
+                    key={sym.id}
+                    type="button"
+                    onClick={() => {
+                      setCursorPosition({ line: sym.lineStart, column: 1 })
+                      setSymbolDropdownOpen(false)
+                    }}
+                    className="flex items-center justify-between gap-2 w-full px-2 py-1 text-left rounded hover:bg-surface-hover cursor-pointer"
+                  >
+                    <span className="font-mono text-ink truncate">
+                      {sym.name}
+                    </span>
+                    <span className="text-[10px] text-ink-muted font-mono shrink-0">
+                      {sym.kind} · L{sym.lineStart}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </span>
+        )}
       </div>
 
       {dropdown && (

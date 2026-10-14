@@ -45,6 +45,8 @@ __debug_bin*
 /.plugins/
 /.opencode-skills/
 .claude-replay.*
+.codegraph/
+.codegraph
 
 # Internal Agent Instructions & Local Specs
 /AGENTS.md

@@ -22,6 +22,7 @@ function BrowserAiSyncEffect() {
       : s.group1.activeTab,
   )
   const activeLanguage = useWorkbenchStore((s) => s.activeLanguage)
+  const rootWorkspaceName = useWorkbenchStore((s) => s.rootWorkspaceName)
   const cursorPosition = useWorkbenchStore((s) => s.cursorPosition)
   const isDirty = useWorkbenchStore((s) =>
     activeFile ? Boolean(s.fileBuffers[activeFile]?.isDirty) : false,
@@ -43,7 +44,7 @@ function BrowserAiSyncEffect() {
       syncBrowserAiContext({
         activeFile: currentFile,
         language: activeLanguage,
-        workspace: "AegisCodev2",
+        workspace: rootWorkspaceName || "AegisCode",
         cursor: cursorPosition,
         isDirty,
         diagnosticsCount,
@@ -57,7 +58,14 @@ function BrowserAiSyncEffect() {
 
     const timer = setTimeout(doSync, 150)
     return () => clearTimeout(timer)
-  }, [activeFile, activeLanguage, cursorPosition, isDirty, diagnosticsCount])
+  }, [
+    activeFile,
+    activeLanguage,
+    rootWorkspaceName,
+    cursorPosition,
+    isDirty,
+    diagnosticsCount,
+  ])
 
   return null
 }

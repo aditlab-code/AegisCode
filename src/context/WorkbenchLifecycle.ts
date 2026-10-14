@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react"
 import { useWorkbenchStore } from "../store"
 import { connectDebugSSE } from "../utils/debugApi"
+import { extractCodeGraphTraceTargets } from "../utils/codegraphApi"
 import {
   fetchWorkspaceTree,
   normalizeWorkspacePath,
@@ -105,6 +106,85 @@ export function useWorkbenchLifecycle() {
     )
     return () => {
       disconnect()
+    }
+  }, [store])
+
+  // 2b. Global MCP Tool Invocation SSE Listener (/api/v1/mcp/events)
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof EventSource === "undefined")
+      return
+    let es: EventSource | null = null
+    let reconnectTimer: NodeJS.Timeout | null = null
+
+    const connectMcpSSE = () => {
+      try {
+        es = new EventSource("/api/v1/mcp/events")
+        es.addEventListener("mcp_tool_invoked", (evt) => {
+          try {
+            const data = JSON.parse(evt.data)
+            if (!data) return
+            const s = store.getState()
+            const parsed = extractCodeGraphTraceTargets(
+              String(data.tool || "codegraph_explore"),
+              data.args || { query: data.symbol || "" },
+              data.symbol ? String(data.symbol) : undefined,
+            )
+            if (parsed.symbols.length > 0) {
+              s.triggerAiTrace({
+                symbols: parsed.symbols,
+                symbolName: parsed.primarySymbol,
+                rawQuery: parsed.rawQuery,
+                filePath: parsed.filePath,
+                toolName: parsed.cleanToolName,
+                provider: data.provider || s.activeProvider,
+                model: data.model || s.activeModel,
+                status: data.status === "completed" ? "completed" : "running",
+              })
+            }
+          } catch {
+            // Ignore malformed SSE payload
+          }
+        })
+        es.onerror = () => {
+          es?.close()
+          reconnectTimer = setTimeout(connectMcpSSE, 5000)
+        }
+      } catch {
+        // Safe fallback when offline
+      }
+    }
+
+    const handleTraceEvent = (e: Event) => {
+      const custom = e as CustomEvent
+      if (!custom.detail) return
+      const s = store.getState()
+      const d = custom.detail
+      if (d.status === "done" || d.status === "completed") {
+        if (s.aiTrace && s.aiTrace.status === "running") {
+          s.triggerAiTrace({ ...s.aiTrace, status: "completed" })
+        }
+        return
+      }
+      if (d.symbols || d.symbolName) {
+        s.triggerAiTrace({
+          symbols: d.symbols || (d.symbolName ? [d.symbolName] : []),
+          symbolName: d.symbolName || (d.symbols ? d.symbols[0] : ""),
+          rawQuery: d.rawQuery || d.symbolName || "",
+          filePath: d.filePath,
+          toolName: d.toolName || "codegraph_explore",
+          provider: d.provider || s.activeProvider,
+          model: d.model || s.activeModel,
+          status: d.status || "running",
+        })
+      }
+    }
+    window.addEventListener("aegis:ai-trace-path", handleTraceEvent)
+
+    connectMcpSSE()
+    return () => {
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      es?.close()
+      window.removeEventListener("aegis:ai-trace-path", handleTraceEvent)
     }
   }, [store])
 
@@ -457,6 +537,49 @@ export function useWorkbenchLifecycle() {
         event.preventDefault()
         s.setCommandPaletteQuery(":")
         s.setCommandPaletteOpen(true)
+        return
+      }
+
+      // Open Visual CodeGraph (Cmd+G on macOS or Alt+G on Win/Linux)
+      if (
+        ((event.metaKey && !event.ctrlKey) || event.altKey) &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === "g"
+      ) {
+        event.preventDefault()
+        s.openFileInPane("codegraph:workspace")
+        return
+      }
+
+      // Inline AI Code Action Prompt (Cmd+I / Ctrl+I)
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === "i"
+      ) {
+        event.preventDefault()
+        window.dispatchEvent(new CustomEvent("aegis:inline-ai-prompt"))
+        return
+      }
+
+      // Toggle Terminal / New Terminal (Ctrl+` and Ctrl+Shift+`)
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        (event.key === "`" || event.key === "~" || event.code === "Backquote")
+      ) {
+        event.preventDefault()
+        if (event.shiftKey) {
+          s.setPanelOpen(true)
+          s.setActiveBottomTab("Terminal")
+          s.createTerminalSession()
+        } else {
+          if (s.panelOpen && s.activeBottomTab === "Terminal") {
+            s.setPanelOpen(false)
+          } else {
+            s.setPanelOpen(true)
+            s.setActiveBottomTab("Terminal")
+          }
+        }
         return
       }
 

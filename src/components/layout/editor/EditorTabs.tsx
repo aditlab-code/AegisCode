@@ -79,6 +79,19 @@ export function EditorTabs({
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [isDropTarget, setIsDropTarget] = useState(false)
   const [contextMenu, setContextMenu] = useState<ContextMenuData | null>(null)
+  const [pinnedTabs, setPinnedTabs] = useState<Set<string>>(() => new Set())
+
+  const togglePinTab = (tabName: string) => {
+    setPinnedTabs((prev) => {
+      const next = new Set(prev)
+      if (next.has(tabName)) {
+        next.delete(tabName)
+      } else {
+        next.add(tabName)
+      }
+      return next
+    })
+  }
   const [runMenuOpen, setRunMenuOpen] = useState(false)
   const [preferredRunMode, setPreferredRunMode] =
     useState<"terminal" | "debug">(() => {
@@ -340,19 +353,35 @@ export function EditorTabs({
                     title="Unsaved changes"
                   />
                 )}
-                <span
-                  aria-label={`Close ${tab}`}
-                  className="close-tab-trigger"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    closeTabInGroup(currentGroup.id, tab)
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  title="Close tab"
-                >
-                  <Icon name="close" size={12} />
-                </span>
+                {pinnedTabs.has(tab) ? (
+                  <span
+                    aria-label={`Unpin ${tab}`}
+                    className="close-tab-trigger text-accent"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      togglePinTab(tab)
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    title="Pinned tab (click to unpin)"
+                  >
+                    <Icon name="sparkle" size={11} />
+                  </span>
+                ) : (
+                  <span
+                    aria-label={`Close ${tab}`}
+                    className="close-tab-trigger"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      closeTabInGroup(currentGroup.id, tab)
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    title="Close tab"
+                  >
+                    <Icon name="close" size={12} />
+                  </span>
+                )}
               </span>
             </button>
           )
@@ -484,7 +513,23 @@ export function EditorTabs({
             <button
               className="context-menu-item"
               onClick={() => {
-                closeTabInGroup(currentGroup.id, contextMenu.tab)
+                togglePinTab(contextMenu.tab)
+                setContextMenu(null)
+              }}
+              type="button"
+            >
+              <Icon name="sparkle" size={12} />
+              <span>
+                {pinnedTabs.has(contextMenu.tab) ? "Unpin Tab" : "Pin Tab"}
+              </span>
+            </button>
+            <button
+              className="context-menu-item"
+              disabled={pinnedTabs.has(contextMenu.tab)}
+              onClick={() => {
+                if (!pinnedTabs.has(contextMenu.tab)) {
+                  closeTabInGroup(currentGroup.id, contextMenu.tab)
+                }
                 setContextMenu(null)
               }}
               type="button"

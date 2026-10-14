@@ -536,7 +536,6 @@ export function buildSettingsSchema(
         }))
         showToast(`Terminal SSE streaming ${v ? "enabled" : "disabled"}`)
       },
-      isFutureNotice: true,
     },
     {
       id: "features.terminal.shortcut",
@@ -552,7 +551,6 @@ export function buildSettingsSchema(
           terminal: { ...prev.terminal, shortcut: v },
         }))
       },
-      isFutureNotice: true,
     },
     {
       id: "features.terminal.cursorStyle",
@@ -569,7 +567,6 @@ export function buildSettingsSchema(
           terminal: { ...prev.terminal, cursorStyle: v },
         }))
       },
-      isFutureNotice: true,
     },
     {
       id: "features.terminal.cursorBlinking",
@@ -584,7 +581,6 @@ export function buildSettingsSchema(
           terminal: { ...prev.terminal, cursorBlinking: Boolean(v) },
         }))
       },
-      isFutureNotice: true,
     },
     {
       id: "features.terminal.fontSize",
@@ -599,7 +595,6 @@ export function buildSettingsSchema(
           terminal: { ...prev.terminal, fontSize: Number(v) || 12 },
         }))
       },
-      isFutureNotice: true,
     },
     {
       id: "features.terminal.fontFamily",
@@ -617,7 +612,6 @@ export function buildSettingsSchema(
           terminal: { ...prev.terminal, fontFamily: v },
         }))
       },
-      isFutureNotice: true,
     },
     {
       id: "features.terminal.lineHeight",
@@ -633,7 +627,6 @@ export function buildSettingsSchema(
           terminal: { ...prev.terminal, lineHeight: Number(v) || 1.4 },
         }))
       },
-      isFutureNotice: true,
     },
     {
       id: "features.sourceControl.maxVisibleChanges",

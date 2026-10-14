@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from "vitest"
 import { DEFAULT_APP_SETTINGS } from "@/context/core/settingsCore"
-import { matchesExcludePattern } from "@/components/layout/sidebar/ExplorerPanel"
+import {
+  matchesExcludePattern,
+  extractSymbols,
+} from "@/components/layout/sidebar/ExplorerPanel"
 import { buildSettingsSchema } from "@/components/layout/settings/settingsRegistry"
 import { tokenizeLine, buildTodoRegex } from "@/utils/syntax"
 import { sortFileTree, flattenBackendTree } from "@/utils/workspaceApi"
@@ -322,6 +325,104 @@ describe("Settings, Explorer Exclude, and Syntax Highlighting", () => {
       expect(lspIds).toContain("features.lsp.servers.go")
       expect(lspIds).toContain("features.lsp.servers.rust")
       expect(lspIds).toContain("features.lsp.servers.cpp")
+    })
+
+    it("verifies terminal settings do not have isFutureNotice flag", () => {
+      const dummyCallbacks = {
+        settings: DEFAULT_APP_SETTINGS,
+        updateEditorSettings: vi.fn(),
+        updateWorkbenchSettings: vi.fn(),
+        updateFilesSettings: vi.fn(),
+        updateFeaturesSettings: vi.fn(),
+        updateCompanionSettings: vi.fn(),
+        updateAgentSettings: vi.fn(),
+        setThemePalette: vi.fn(),
+        setThemeMode: vi.fn(),
+        showToast: vi.fn(),
+      }
+
+      const schema = buildSettingsSchema(dummyCallbacks)
+      const terminalSettings = schema.filter((item) =>
+        item.id.startsWith("features.terminal."),
+      )
+      expect(terminalSettings.length).toBeGreaterThan(0)
+      for (const item of terminalSettings) {
+        expect(item.isFutureNotice).toBeFalsy()
+      }
+    })
+  })
+
+  describe("extractSymbols (Multi-language lexical outline parser)", () => {
+    it("extracts Go functions and structs", () => {
+      const goCode = `
+package main
+
+type Config struct {
+  Port int
+}
+
+type Service interface {
+  Start() error
+}
+
+func main() {
+}
+
+func (s *Service) Handle() {
+}
+`
+      const syms = extractSymbols(goCode)
+      expect(syms.some((s) => s.name === "Config" && s.kind === "class")).toBe(
+        true,
+      )
+      expect(
+        syms.some((s) => s.name === "Service" && s.kind === "interface"),
+      ).toBe(true)
+      expect(syms.some((s) => s.name === "main" && s.kind === "function")).toBe(
+        true,
+      )
+      expect(
+        syms.some((s) => s.name === "Handle" && s.kind === "function"),
+      ).toBe(true)
+    })
+
+    it("extracts Python functions and classes", () => {
+      const pyCode = `
+class DataProcessor:
+    def process(self):
+        pass
+
+async def fetch_data():
+    pass
+`
+      const syms = extractSymbols(pyCode)
+      expect(
+        syms.some((s) => s.name === "DataProcessor" && s.kind === "class"),
+      ).toBe(true)
+      expect(
+        syms.some((s) => s.name === "process" && s.kind === "function"),
+      ).toBe(true)
+      expect(
+        syms.some((s) => s.name === "fetch_data" && s.kind === "function"),
+      ).toBe(true)
+    })
+
+    it("extracts TypeScript/JavaScript functions, classes, and arrow functions", () => {
+      const tsCode = `
+export default function App() {}
+export abstract class BaseService {}
+export const computeTotal = async <T>(items: T[]) => {}
+`
+      const syms = extractSymbols(tsCode)
+      expect(syms.some((s) => s.name === "App" && s.kind === "function")).toBe(
+        true,
+      )
+      expect(
+        syms.some((s) => s.name === "BaseService" && s.kind === "class"),
+      ).toBe(true)
+      expect(
+        syms.some((s) => s.name === "computeTotal" && s.kind === "function"),
+      ).toBe(true)
     })
   })
 })

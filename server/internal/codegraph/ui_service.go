@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -20,6 +21,184 @@ func NewUIService(db *sql.DB, workspaceRoot string) *UIService {
 		db:            db,
 		workspaceRoot: workspaceRoot,
 	}
+}
+
+func (s *UIService) hasColbyNodes(ctx context.Context) bool {
+	if s.db == nil {
+		return false
+	}
+	var count int
+	_ = s.db.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE type='table' AND name='nodes'`).Scan(&count)
+	if count == 0 {
+		return false
+	}
+	var nodeCount int
+	_ = s.db.QueryRowContext(ctx, `SELECT count(*) FROM nodes`).Scan(&nodeCount)
+	return nodeCount > 0
+}
+
+// GetSymbolNeighborhoodByTarget resolves target (name, symbol, or ID) and returns its neighborhood.
+func (s *UIService) GetSymbolNeighborhoodByTarget(ctx context.Context, target string, depth int, limit int) (*UIGraphPayload, error) {
+	if s.db == nil {
+		return &UIGraphPayload{
+			Nodes: make([]UIGraphNode, 0),
+			Edges: make([]UIGraphEdge, 0),
+		}, nil
+	}
+
+	clean := strings.TrimSpace(target)
+	if clean == "" {
+		return &UIGraphPayload{
+			Nodes: make([]UIGraphNode, 0),
+			Edges: make([]UIGraphEdge, 0),
+		}, nil
+	}
+
+	if depth <= 0 {
+		depth = 1
+	} else if depth > 2 {
+		depth = 2
+	}
+	if limit <= 0 {
+		limit = 50
+	} else if limit > 100 {
+		limit = 100
+	}
+
+	if s.hasColbyNodes(ctx) {
+		tokens := strings.Fields(clean)
+		var rootID string
+		for _, tok := range tokens {
+			var candidate string
+			err := s.db.QueryRowContext(ctx, `
+				SELECT id FROM nodes
+				WHERE id = ? OR name = ? OR qualified_name = ? OR file_path = ? OR name LIKE ?
+				ORDER BY CASE WHEN id = ? THEN 0 WHEN name = ? THEN 1 ELSE 2 END
+				LIMIT 1
+			`, tok, tok, tok, tok, "%"+tok+"%", tok, tok).Scan(&candidate)
+			if err == nil && candidate != "" {
+				rootID = candidate
+				break
+			}
+		}
+		if rootID == "" {
+			return &UIGraphPayload{
+				Nodes: make([]UIGraphNode, 0),
+				Edges: make([]UIGraphEdge, 0),
+			}, nil
+		}
+
+		query := `
+			WITH RECURSIVE neighborhood(node_id, current_depth) AS (
+				SELECT ? AS node_id, 0 AS current_depth
+				UNION
+				SELECT
+					CASE WHEN e.source = n.node_id THEN e.target ELSE e.source END,
+					n.current_depth + 1
+				FROM neighborhood n
+				JOIN edges e ON (e.source = n.node_id OR e.target = n.node_id)
+				WHERE n.current_depth < ?
+			)
+			SELECT DISTINCT node_id FROM neighborhood;
+		`
+		rows, err := s.db.QueryContext(ctx, query, rootID, depth)
+		if err != nil {
+			return nil, fmt.Errorf("colby neighborhood CTE failed: %w", err)
+		}
+		defer rows.Close()
+
+		var nodeIDs []string
+		nodeIDs = append(nodeIDs, rootID)
+		seen := map[string]bool{rootID: true}
+		for rows.Next() {
+			var nid string
+			if err := rows.Scan(&nid); err == nil && !seen[nid] {
+				seen[nid] = true
+				nodeIDs = append(nodeIDs, nid)
+			}
+		}
+
+		truncated := false
+		if len(nodeIDs) > limit {
+			truncated = true
+			nodeIDs = nodeIDs[:limit]
+		}
+
+		placeholders := make([]string, len(nodeIDs))
+		args := make([]interface{}, len(nodeIDs))
+		for i, id := range nodeIDs {
+			placeholders[i] = "?"
+			args[i] = id
+		}
+
+		nodeRows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
+			SELECT id, name, kind, coalesce(signature, ''), file_path, start_line, end_line, coalesce(docstring, '')
+			FROM nodes
+			WHERE id IN (%s)
+		`, strings.Join(placeholders, ",")), args...)
+		if err != nil {
+			return nil, fmt.Errorf("colby fetch nodes failed: %w", err)
+		}
+		defer nodeRows.Close()
+
+		var nodes []UIGraphNode
+		validNodeMap := make(map[string]bool)
+		for nodeRows.Next() {
+			var n UIGraphNode
+			if err := nodeRows.Scan(&n.ID, &n.Name, &n.Kind, &n.Signature, &n.FilePath, &n.LineStart, &n.LineEnd, &n.Doc); err == nil {
+				idStr := fmt.Sprintf("%v", n.ID)
+				n.IsActive = (idStr == rootID)
+				nodes = append(nodes, n)
+				validNodeMap[idStr] = true
+			}
+		}
+
+		var edges []UIGraphEdge
+		if len(validNodeMap) > 0 {
+			edgeArgs := make([]interface{}, len(nodeIDs)*2)
+			for i, id := range nodeIDs {
+				edgeArgs[i] = id
+				edgeArgs[len(nodeIDs)+i] = id
+			}
+			edgeRows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
+				SELECT id, source, target, kind, line
+				FROM edges
+				WHERE source IN (%s) AND target IN (%s)
+				LIMIT 250
+			`, strings.Join(placeholders, ","), strings.Join(placeholders, ",")), edgeArgs...)
+			if err == nil {
+				defer edgeRows.Close()
+				for edgeRows.Next() {
+					var e UIGraphEdge
+					if err := edgeRows.Scan(&e.ID, &e.SourceID, &e.TargetID, &e.Relation, &e.Line); err == nil {
+						if validNodeMap[fmt.Sprintf("%v", e.SourceID)] && validNodeMap[fmt.Sprintf("%v", e.TargetID)] {
+							edges = append(edges, e)
+						}
+					}
+				}
+			}
+		}
+
+		return &UIGraphPayload{
+			RootID:    rootID,
+			Nodes:     nodes,
+			Edges:     edges,
+			Truncated: truncated,
+			Total:     len(nodeIDs),
+		}, nil
+	}
+
+	symID, err := strconv.ParseInt(clean, 10, 64)
+	if err != nil {
+		symID, err = s.ResolveSymbolID(ctx, clean)
+		if err != nil {
+			return &UIGraphPayload{
+				Nodes: make([]UIGraphNode, 0),
+				Edges: make([]UIGraphEdge, 0),
+			}, nil
+		}
+	}
+	return s.GetSymbolNeighborhood(ctx, symID, depth, limit)
 }
 
 // ResolveSymbolID resolves a symbol name (or file-qualified symbol) to its integer primary key.
@@ -170,6 +349,76 @@ func (s *UIService) GetActiveFileGraph(ctx context.Context, relPath string) (*UI
 	cleanRel := filepath.ToSlash(filepath.Clean(relPath))
 	baseName := filepath.Base(cleanRel)
 
+	if s.hasColbyNodes(ctx) {
+		fileRows, err := s.db.QueryContext(ctx, `
+			SELECT id, name, kind, coalesce(signature, ''), file_path, start_line, end_line, coalesce(docstring, '')
+			FROM nodes
+			WHERE (file_path = ? OR file_path = ? OR file_path LIKE ? OR ? LIKE '%' || file_path OR file_path LIKE ?)
+			ORDER BY start_line ASC
+		`, relPath, cleanRel, "%"+cleanRel, cleanRel, "%"+baseName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query colby file symbols: %w", err)
+		}
+		defer fileRows.Close()
+
+		var nodes []UIGraphNode
+		nodeMap := make(map[string]bool)
+		var fileNodeIDs []string
+
+		for fileRows.Next() {
+			var n UIGraphNode
+			if err := fileRows.Scan(&n.ID, &n.Name, &n.Kind, &n.Signature, &n.FilePath, &n.LineStart, &n.LineEnd, &n.Doc); err == nil {
+				idStr := fmt.Sprintf("%v", n.ID)
+				nodes = append(nodes, n)
+				nodeMap[idStr] = true
+				fileNodeIDs = append(fileNodeIDs, idStr)
+			}
+		}
+
+		if len(fileNodeIDs) == 0 {
+			return &UIGraphPayload{
+				Nodes: make([]UIGraphNode, 0),
+				Edges: make([]UIGraphEdge, 0),
+			}, nil
+		}
+
+		placeholders := make([]string, len(fileNodeIDs))
+		args := make([]interface{}, len(fileNodeIDs)*2)
+		for i, id := range fileNodeIDs {
+			placeholders[i] = "?"
+			args[i] = id
+			args[len(fileNodeIDs)+i] = id
+		}
+		inList := strings.Join(placeholders, ",")
+
+		edgeQuery := fmt.Sprintf(`
+			SELECT id, source, target, kind, line
+			FROM edges
+			WHERE (source IN (%s) OR target IN (%s))
+			LIMIT 150
+		`, inList, inList)
+
+		edgeRows, err := s.db.QueryContext(ctx, edgeQuery, args...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query colby file edges: %w", err)
+		}
+		defer edgeRows.Close()
+
+		var edges []UIGraphEdge
+		for edgeRows.Next() {
+			var e UIGraphEdge
+			if err := edgeRows.Scan(&e.ID, &e.SourceID, &e.TargetID, &e.Relation, &e.Line); err == nil {
+				edges = append(edges, e)
+			}
+		}
+
+		return &UIGraphPayload{
+			Nodes: nodes,
+			Edges: edges,
+			Total: len(nodes),
+		}, nil
+	}
+
 	// 1. Fetch all symbols in this file
 	fileRows, err := s.db.QueryContext(ctx, `
 		SELECT s.id, s.name, s.kind, coalesce(s.signature, ''), f.path, s.line_start, s.line_end, coalesce(s.doc_comment, '')
@@ -189,10 +438,12 @@ func (s *UIService) GetActiveFileGraph(ctx context.Context, relPath string) (*UI
 
 	for fileRows.Next() {
 		var n UIGraphNode
-		if err := fileRows.Scan(&n.ID, &n.Name, &n.Kind, &n.Signature, &n.FilePath, &n.LineStart, &n.LineEnd, &n.Doc); err == nil {
+		var id int64
+		if err := fileRows.Scan(&id, &n.Name, &n.Kind, &n.Signature, &n.FilePath, &n.LineStart, &n.LineEnd, &n.Doc); err == nil {
+			n.ID = id
 			nodes = append(nodes, n)
-			nodeMap[n.ID] = true
-			fileSymbolIDs = append(fileSymbolIDs, n.ID)
+			nodeMap[id] = true
+			fileSymbolIDs = append(fileSymbolIDs, id)
 		}
 	}
 
@@ -282,7 +533,7 @@ func (s *UIService) GetActiveFileGraph(ctx context.Context, relPath string) (*UI
 		}
 	}
 
-	var rootID int64
+	var rootID any
 	if len(nodes) > 0 {
 		rootID = nodes[0].ID
 	}
@@ -308,6 +559,51 @@ func (s *UIService) GetWorkspaceGraph(ctx context.Context, limit int) (*UIGraphP
 		limit = 50
 	} else if limit > 1000 {
 		limit = 1000
+	}
+
+	if s.hasColbyNodes(ctx) {
+		rows, err := s.db.QueryContext(ctx, `
+			SELECT id, name, kind, coalesce(signature, ''), file_path, start_line, end_line, coalesce(docstring, '')
+			FROM nodes
+			ORDER BY is_exported DESC, length(docstring) DESC, id ASC
+			LIMIT ?
+		`, limit)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query colby workspace nodes: %w", err)
+		}
+		defer rows.Close()
+
+		var nodes []UIGraphNode
+		nodeMap := make(map[string]bool)
+		for rows.Next() {
+			var n UIGraphNode
+			if err := rows.Scan(&n.ID, &n.Name, &n.Kind, &n.Signature, &n.FilePath, &n.LineStart, &n.LineEnd, &n.Doc); err == nil {
+				nodes = append(nodes, n)
+				nodeMap[fmt.Sprintf("%v", n.ID)] = true
+			}
+		}
+
+		var edges []UIGraphEdge
+		if len(nodes) > 0 {
+			edgeRows, err := s.db.QueryContext(ctx, `SELECT id, source, target, kind, line FROM edges LIMIT 350`)
+			if err == nil {
+				defer edgeRows.Close()
+				for edgeRows.Next() {
+					var e UIGraphEdge
+					if err := edgeRows.Scan(&e.ID, &e.SourceID, &e.TargetID, &e.Relation, &e.Line); err == nil {
+						if nodeMap[fmt.Sprintf("%v", e.SourceID)] && nodeMap[fmt.Sprintf("%v", e.TargetID)] {
+							edges = append(edges, e)
+						}
+					}
+				}
+			}
+		}
+
+		return &UIGraphPayload{
+			Nodes: nodes,
+			Edges: edges,
+			Total: len(nodes),
+		}, nil
 	}
 
 	var totalSymbols int
@@ -380,7 +676,7 @@ func (s *UIService) GetWorkspaceGraph(ctx context.Context, limit int) (*UIGraphP
 		return nil, err
 	}
 
-	var rootID int64
+	var rootID any
 	if len(nodes) > 0 {
 		rootID = nodes[0].ID
 	}
@@ -409,6 +705,29 @@ func (s *UIService) SearchSymbols(ctx context.Context, query string, limit int) 
 		limit = 20
 	} else if limit > 50 {
 		limit = 50
+	}
+
+	if s.hasColbyNodes(ctx) {
+		rows, err := s.db.QueryContext(ctx, `
+			SELECT id, name, kind, coalesce(signature, ''), file_path, start_line, end_line, coalesce(docstring, '')
+			FROM nodes
+			WHERE name LIKE ? OR qualified_name LIKE ? OR file_path LIKE ?
+			ORDER BY CASE WHEN name = ? THEN 0 WHEN qualified_name = ? THEN 1 ELSE 2 END, start_line ASC
+			LIMIT ?
+		`, "%"+query+"%", "%"+query+"%", "%"+query+"%", query, query, limit)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+
+		var nodes []UIGraphNode
+		for rows.Next() {
+			var n UIGraphNode
+			if err := rows.Scan(&n.ID, &n.Name, &n.Kind, &n.Signature, &n.FilePath, &n.LineStart, &n.LineEnd, &n.Doc); err == nil {
+				nodes = append(nodes, n)
+			}
+		}
+		return nodes, nil
 	}
 
 	var matchIDs []int64
@@ -526,10 +845,12 @@ func (s *UIService) fetchNodesByIDs(ctx context.Context, ids []int64, activeID i
 	byID := make(map[int64]UIGraphNode, len(ids))
 	for rows.Next() {
 		var n UIGraphNode
-		if err := rows.Scan(&n.ID, &n.Name, &n.Kind, &n.Signature, &n.FilePath, &n.LineStart, &n.LineEnd, &n.Doc); err == nil {
-			n.IsActive = (n.ID == activeID)
-			byID[n.ID] = n
-			nodeMap[n.ID] = true
+		var id int64
+		if err := rows.Scan(&id, &n.Name, &n.Kind, &n.Signature, &n.FilePath, &n.LineStart, &n.LineEnd, &n.Doc); err == nil {
+			n.ID = id
+			n.IsActive = (id == activeID)
+			byID[id] = n
+			nodeMap[id] = true
 		}
 	}
 
@@ -578,8 +899,11 @@ func (s *UIService) fetchEdgesBetweenNodes(ctx context.Context, nodeMap map[int6
 
 	for rows.Next() {
 		var e UIGraphEdge
-		if err := rows.Scan(&e.ID, &e.SourceID, &e.TargetID, &e.Relation, &e.Line); err == nil {
-			if nodeMap[e.SourceID] && nodeMap[e.TargetID] {
+		var srcID, tgtID int64
+		if err := rows.Scan(&e.ID, &srcID, &tgtID, &e.Relation, &e.Line); err == nil {
+			e.SourceID = srcID
+			e.TargetID = tgtID
+			if nodeMap[srcID] && nodeMap[tgtID] {
 				edges = append(edges, e)
 			}
 		}

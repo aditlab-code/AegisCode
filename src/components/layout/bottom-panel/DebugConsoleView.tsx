@@ -10,6 +10,11 @@ import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { useWorkbenchStore, useShallow } from "../../../store"
 
+interface ScopeVariable {
+  value: string
+  type?: string
+}
+
 export function DebugConsoleView() {
   const {
     debugConsoleLogs,
@@ -75,7 +80,7 @@ export function DebugConsoleView() {
     setHistoryIndex(-1)
     setInputVal("")
 
-    // Response logic
+    // Response logic: evaluate against active DAP scope variables & expressions
     if (
       !isDebugging ||
       debugState.status === "idle" ||
@@ -85,10 +90,77 @@ export function DebugConsoleView() {
         "error",
         "Cannot evaluate expression: No active debug session. Press F5 to start debugging.",
       )
-    } else {
+      return
+    }
+
+    const vars = debugState.variables || []
+    const varMap = new Map<string, ScopeVariable>()
+    for (const v of vars) {
+      varMap.set(v.name, { value: v.value, type: v.type })
+    }
+
+    if (trimmed === ":vars" || trimmed === "locals") {
+      if (vars.length === 0) {
+        addDebugConsoleLog("info", "(no local variables in current frame)")
+      } else {
+        const dump = vars
+          .map((v) => `${v.name}${v.type ? ` (${v.type})` : ""} = ${v.value}`)
+          .join("\n")
+        addDebugConsoleLog("stdout", dump)
+      }
+      return
+    }
+
+    if (trimmed === ":stack" || trimmed === "bt") {
+      const frames = debugState.stackFrames || []
+      if (frames.length === 0) {
+        addDebugConsoleLog("info", "(call stack empty)")
+      } else {
+        const dump = frames
+          .map(
+            (f, idx) =>
+              `#${idx} ${f.name} at ${f.file || "unknown"}:${f.line || 0}`,
+          )
+          .join("\n")
+        addDebugConsoleLog("stdout", dump)
+      }
+      return
+    }
+
+    const directVar = varMap.get(trimmed)
+    if (directVar) {
       addDebugConsoleLog(
-        "info",
-        `[eval] Expression submitted in ${debugState.status} scope: ${trimmed}`,
+        "stdout",
+        `${directVar.value}${directVar.type ? ` (${directVar.type})` : ""}`,
+      )
+      return
+    }
+
+    // Attempt safe expression evaluation with current frame variables injected
+    try {
+      const argNames: string[] = []
+      const argValues: unknown[] = []
+      for (const [k, v] of varMap.entries()) {
+        if (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(k)) {
+          argNames.push(k)
+          try {
+            argValues.push(JSON.parse(v.value))
+          } catch {
+            argValues.push(v.value)
+          }
+        }
+      }
+      const fn = new Function(...argNames, `"use strict"; return (${trimmed});`)
+      const result = fn(...argValues)
+      const formatted =
+        typeof result === "object" && result !== null
+          ? JSON.stringify(result, null, 2)
+          : String(result)
+      addDebugConsoleLog("stdout", formatted)
+    } catch {
+      addDebugConsoleLog(
+        "error",
+        `Symbol or expression "${trimmed}" not found in current frame (tip: type "locals" or ":stack" to inspect active scope).`,
       )
     }
   }

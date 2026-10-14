@@ -4,6 +4,7 @@ import type { ToolCallItem, IconName } from "../../../types/workbench"
 import { cleanFilePath } from "../../../utils/workspaceApi"
 import { fetchChatBlob } from "../../../utils/storeApi"
 import { useWorkbenchStore } from "../../../store"
+import { extractCodeGraphTraceTargets } from "../../../utils/codegraphApi"
 
 export interface ParsedToolCall {
   actionLabel: string
@@ -215,7 +216,44 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
       rawArgs: sanitizeRawArgs(tc.args),
     }
   }
-  // 5. CodeGraph Knowledge Engine tools
+  // 5. @colbymchenry/codegraph MCP tools (codegraph_explore, codegraph_node, codegraph_search, etc.)
+  const rawCg = rawName.replace(/^mcp__codegraph__/i, "")
+  if (
+    rawCg === "codegraph_explore" ||
+    rawCg === "codegraph_node" ||
+    rawCg === "codegraph_search" ||
+    rawCg === "codegraph_callers" ||
+    rawCg === "codegraph_callees" ||
+    rawCg === "codegraph_impact" ||
+    rawCg === "codegraph_files" ||
+    rawCg === "codegraph_status"
+  ) {
+    const q = String(
+      args.query || args.symbol || args.name || args.file || tc.summary || "",
+    ).trim()
+    const labelMap: Record<string, string> = {
+      codegraph_explore: "Explore",
+      codegraph_node: "Node",
+      codegraph_search: "Search",
+      codegraph_callers: "Callers",
+      codegraph_callees: "Callees",
+      codegraph_impact: "Impact",
+      codegraph_files: "Files",
+      codegraph_status: "Status",
+    }
+    return {
+      actionLabel: labelMap[rawCg] || "CodeGraph",
+      actionIcon: "zap",
+      target: q || rawCg,
+      fullTarget: q,
+      secondary: args.projectPath ? String(args.projectPath) : "codegraph",
+      targetFile: args.file ? String(args.file) : undefined,
+      output: sanitizeOutput(tc.output, tc.preview),
+      blobRef: tc.blobRef,
+      rawArgs: sanitizeRawArgs(tc.args),
+    }
+  }
+  // 5b. Legacy CodeGraph Knowledge Engine tools
   if (
     name === "get_file_outline" ||
     name === "get_symbol_definition" ||
@@ -375,51 +413,40 @@ export const ToolCallActivityCard = memo(function ToolCallActivityCard({
     }
   }
 
-  const isCodeGraphTool =
-    toolCall.name === "get_file_outline" ||
-    toolCall.name === "get_symbol_definition" ||
-    toolCall.name === "find_callers" ||
-    toolCall.name === "find_callees" ||
-    toolCall.name === "query_subgraph" ||
-    toolCall.name === "read_symbol_body" ||
-    toolCall.name === "get_diff_impact"
-
-  // NOTE: Automatic AI trace dispatch is handled upstream by chatCore.ts SSE handler.
-  // Only the manual "Inspect in Graph" button (handleInspectInGraph below) dispatches from here.
+  const parsedTraceInfo = useMemo(
+    () =>
+      extractCodeGraphTraceTargets(
+        toolCall.name || "",
+        toolCall.args,
+        toolCall.targetFile || parsed.targetFile,
+      ),
+    [toolCall.name, toolCall.args, toolCall.targetFile, parsed.targetFile],
+  )
+  const isCodeGraphTool = parsedTraceInfo.isCodeGraph
 
   const handleInspectInGraph = (e: React.MouseEvent) => {
     e.stopPropagation()
-    const targetSymbol =
-      toolCall.args?.symbol_name ||
-      toolCall.args?.function_name ||
-      toolCall.args?.root_symbol ||
-      toolCall.args?.name ||
-      parsed.fullTarget ||
-      ""
-    const targetFile =
-      toolCall.args?.file_path ||
-      toolCall.args?.rel_path ||
-      parsed.targetFile ||
-      ""
-
-    const graphTab = targetFile
-      ? `codegraph:${targetFile}`
+    const state = useWorkbenchStore.getState()
+    const graphTab = parsedTraceInfo.filePath
+      ? `codegraph:${parsedTraceInfo.filePath}`
       : "codegraph:workspace"
 
-    const state = useWorkbenchStore.getState()
     if (!state.splitEditor) {
       state.toggleSplitEditor()
     }
     state.openFileInGroup(graphTab, "group2")
 
-    if (targetSymbol) {
-      setTimeout(() => {
-        window.dispatchEvent(
-          new CustomEvent("aegis:ai-trace-path", {
-            detail: { symbolName: targetSymbol },
-          }),
-        )
-      }, 100)
+    if (parsedTraceInfo.symbols.length > 0) {
+      state.triggerAiTrace({
+        symbols: parsedTraceInfo.symbols,
+        symbolName: parsedTraceInfo.primarySymbol,
+        rawQuery: parsedTraceInfo.rawQuery,
+        filePath: parsedTraceInfo.filePath,
+        toolName: parsedTraceInfo.cleanToolName,
+        provider: state.activeProvider,
+        model: state.activeModel,
+        status: "running",
+      })
     }
   }
 

@@ -1,103 +1,65 @@
 #!/usr/bin/env node
 import { execSync, spawnSync } from "node:child_process"
-import fs from "node:fs"
-import os from "node:os"
-import path from "node:path"
-import { fileURLToPath } from "node:url"
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-const rootDir = path.resolve(__dirname, "..")
-const serverDir = path.resolve(rootDir, "server")
 
 console.log("\n=======================================================")
-console.log(" AegisCode Universal MCP Installer")
+console.log(" AegisCode · @colbymchenry/codegraph MCP Installer")
 console.log("=======================================================")
 
-// 1. Determine target installation directory
-const homeDir = os.homedir()
-const isWin = process.platform === "win32"
-const binDir = path.join(homeDir, ".local", "bin")
-
-if (!fs.existsSync(binDir)) {
-  fs.mkdirSync(binDir, { recursive: true })
-}
-
-const binName = isWin ? "aegiscode.exe" : "aegiscode"
-const targetBin = path.join(binDir, binName)
-
-// 2. Compile standalone Go binary
-console.log("\n[1/3] Compiling AegisCode Core CLI binary...")
-try {
-  execSync(`go build -o "${targetBin}" ./cmd/server`, {
-    cwd: serverDir,
-    stdio: "inherit",
-    env: process.env,
-  })
-  if (!isWin) {
-    fs.chmodSync(targetBin, 0o755)
-  }
-  console.log(`✓ Successfully compiled and installed to ${targetBin}`)
-} catch (err) {
-  console.error("❌ Failed to compile Go binary:", err.message)
-  process.exit(1)
-}
-
-// 3. Configure Antigravity MCP if 'agy' is installed
-console.log("\n[2/3] Configuring Antigravity / Gemini CLI...")
-const agyCheck = spawnSync("which", ["agy"], { encoding: "utf8" })
-if (agyCheck.status === 0 && agyCheck.stdout.trim()) {
+// 1. Ensure @colbymchenry/codegraph is installed globally
+console.log("\n[1/3] Checking @colbymchenry/codegraph CLI...")
+const cgCheck = spawnSync("which", ["codegraph"], { encoding: "utf8" })
+if (cgCheck.status !== 0 || !cgCheck.stdout.trim()) {
+  console.log("Installing @colbymchenry/codegraph globally via npm...")
   try {
-    // Remove dead/bloated graphify or agent-lsp if present
-    spawnSync("agy", ["mcp", "remove", "graphify"], { stdio: "ignore" })
-    spawnSync("agy", ["mcp", "remove", "agent-lsp"], { stdio: "ignore" })
-
-    // Clean old ~/.gemini/antigravity-cli/mcp/graphify directory
-    const agyMcpGraphify = path.join(
-      homeDir,
-      ".gemini",
-      "antigravity-cli",
-      "mcp",
-      "graphify",
-    )
-    if (fs.existsSync(agyMcpGraphify)) {
-      fs.rmSync(agyMcpGraphify, { recursive: true, force: true })
-    }
-
-    // Register clean portable stdio command with absolute path
-    execSync(`agy mcp add codegraph "${targetBin}" mcp`, { stdio: "inherit" })
-    console.log(`✓ Antigravity CLI registered: codegraph -> ${targetBin} mcp`)
+    execSync("npm install -g @colbymchenry/codegraph@latest", {
+      stdio: "inherit",
+    })
   } catch (err) {
-    console.warn("⚠️  Antigravity CLI configuration note:", err.message)
+    console.error("❌ Failed to install @colbymchenry/codegraph:", err.message)
+    process.exit(1)
   }
 } else {
-  console.log(
-    "ℹ Antigravity CLI ('agy') not found in PATH; skipping agy registration.",
-  )
+  console.log(`✓ Found codegraph CLI at ${cgCheck.stdout.trim()}`)
 }
 
-// 4. Output configuration instructions for other MCP clients
-console.log("\n[3/3] Client Configuration Reference:")
-console.log("-------------------------------------------------------")
-console.log("AegisCode MCP can be integrated into any MCP client using:\n")
+// 2. Wire up all detected AI agents (Claude Code, Cursor, Antigravity, OpenCode, Gemini CLI, Codex)
+// and initialize the current workspace's .codegraph/codegraph.db index
+console.log(
+  "\n[2/3] Wiring @colbymchenry/codegraph MCP to AI agents & indexing workspace...",
+)
+try {
+  execSync("codegraph install --yes --init", {
+    cwd: process.cwd(),
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      CODEGRAPH_MCP_TOOLS:
+        "explore,node,search,callers,callees,impact,files,status",
+    },
+  })
+  console.log("✓ Agents wired and .codegraph/codegraph.db initialized")
+} catch (err) {
+  console.warn("⚠️  codegraph install note:", err.message)
+}
 
+// 3. Print MCP configuration summary
+console.log("\n[3/3] @colbymchenry/codegraph MCP Configuration Reference:")
+console.log("-------------------------------------------------------")
 const sampleConfig = {
   mcpServers: {
     codegraph: {
-      command: "aegiscode",
-      args: ["mcp"],
+      type: "stdio",
+      command: "codegraph",
+      args: ["serve", "--mcp"],
+      alwaysLoad: true,
+      env: {
+        CODEGRAPH_MCP_TOOLS:
+          "explore,node,search,callers,callees,impact,files,status",
+      },
     },
   },
 }
-
-console.log(
-  "• Claude Desktop (~/Library/Application Support/Claude/claude_desktop_config.json):",
-)
 console.log(JSON.stringify(sampleConfig, null, 2))
-console.log("\n• Cursor (.cursor/mcp.json or Settings > MCP):")
-console.log(JSON.stringify(sampleConfig, null, 2))
-console.log("\n• Direct terminal invocation:")
-console.log("  $ aegiscode mcp [--workspace <path>]\n")
-console.log("=======================================================")
-console.log("✓ AegisCode MCP installation complete!")
+console.log("\n=======================================================")
+console.log("✓ @colbymchenry/codegraph MCP setup complete!")
 console.log("=======================================================\n")

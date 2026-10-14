@@ -3,6 +3,7 @@ import {
   parseToolCall,
   UnifiedActivityTimeline,
 } from "@/components/layout/chat/ToolCallActivity"
+import { extractCodeGraphTraceTargets } from "@/utils/codegraphApi"
 import type { ToolCallItem } from "@/types/workbench"
 
 describe("ToolCallActivity parseToolCall", () => {
@@ -239,6 +240,36 @@ describe("ToolCallActivity parseToolCall", () => {
     expect(parsedEdit.targetFile).toBe("server/cmd/server/main.go")
     expect(parsedEdit.fullTarget).toBe("server/cmd/server/main.go")
     expect(parsedEdit.target).toBe("main.go")
+  })
+
+  it("parses @colbymchenry/codegraph codegraph_explore into Explore action with zap icon", () => {
+    const item: ToolCallItem = {
+      id: "tc-cg-1",
+      name: "mcp__codegraph__codegraph_explore",
+      status: "running",
+      args: {
+        query: "StreamChat AntigravityEngine",
+        maxFiles: 8,
+      },
+    }
+
+    const parsed = parseToolCall(item)
+    expect(parsed.actionLabel).toBe("Explore")
+    expect(parsed.actionIcon).toBe("zap")
+    expect(parsed.target).toBe("StreamChat AntigravityEngine")
+  })
+
+  it("extracts trace targets accurately from multi-symbol queries and filters stop words", () => {
+    const res = extractCodeGraphTraceTargets(
+      "mcp__codegraph__codegraph_explore",
+      { query: "how does StreamChat call AntigravityEngine in session flow?" },
+    )
+    expect(res.isCodeGraph).toBe(true)
+    expect(res.cleanToolName).toBe("codegraph_explore")
+    expect(res.symbols).toContain("StreamChat")
+    expect(res.symbols).toContain("AntigravityEngine")
+    expect(res.symbols).not.toContain("how")
+    expect(res.symbols).not.toContain("does")
   })
 })
 

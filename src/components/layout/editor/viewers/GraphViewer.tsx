@@ -7,12 +7,17 @@ import {
   type LayoutMode,
   type ScopeMode,
 } from "./codegraph/GraphToolbar"
-import { GraphCanvas, type GraphCanvasHandle } from "./codegraph/GraphCanvas"
+import {
+  GraphCanvas,
+  type GraphCanvasHandle,
+  type AiTraceDetail,
+} from "./codegraph/GraphCanvas"
 import { NodeInspector } from "./codegraph/NodeInspector"
 import {
   fetchWorkspaceGraph,
   fetchActiveFileGraph,
   fetchSymbolNeighborhood,
+  fetchExploreSubgraph,
   triggerCodeGraphReindex,
   searchGraphSymbols,
   type UIGraphPayload,
@@ -25,15 +30,9 @@ interface GraphViewerProps {
 }
 
 interface FocusSymbolDetail {
-  symbolId?: number
+  symbolId?: string | number
   name?: string
   line?: number
-}
-
-interface AiTraceDetail {
-  symbolName: string
-  toolName?: string
-  status?: string
 }
 
 export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
@@ -45,6 +44,8 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
     showToast,
     group1ActiveTab,
     group2ActiveTab,
+    storeAiTrace,
+    clearAiTrace,
   } = useWorkbenchStore(
     useShallow((s) => ({
       openFileInGroup: s.openFileInGroup,
@@ -54,6 +55,8 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
       showToast: s.showToast,
       group1ActiveTab: s.group1.activeTab,
       group2ActiveTab: s.group2.activeTab,
+      storeAiTrace: s.aiTrace,
+      clearAiTrace: s.clearAiTrace,
     })),
   )
 
@@ -73,12 +76,25 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
     () => new Set(["function", "interface", "class"]),
   )
   const [selectedNode, setSelectedNode] = useState<UIGraphNode | null>(null)
-  const [aiTraceSymbol, setAiTraceSymbol] = useState<string | null>(null)
-  const [aiTraceInfo, setAiTraceInfo] = useState<AiTraceDetail | null>(null)
-  const [focusedRootId, setFocusedRootId] = useState<number | null>(null)
-  const aiTraceTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const [localTrace, setLocalTrace] = useState<AiTraceDetail | null>(null)
+  const [focusedRootId, setFocusedRootId] = useState<string | number | null>(
+    null,
+  )
 
   const canvasRef = useRef<GraphCanvasHandle>(null)
+  const lastResolvedTraceKeyRef = useRef<string | null>(null)
+
+  // Effective trace combines centralized Zustand store trace with any local inspection event
+  const activeTrace: AiTraceDetail | null = storeAiTrace || localTrace
+
+  const traceSymbols =
+    activeTrace?.symbols && activeTrace.symbols.length > 0
+      ? activeTrace.symbols
+      : activeTrace?.symbolName
+        ? [activeTrace.symbolName]
+        : []
+
+  const traceKey = traceSymbols.join("|")
 
   // Sync tab navigation if filename prop changes
   useEffect(() => {
@@ -92,36 +108,169 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
     setFocusedRootId(null)
   }, [filename])
 
-  // Load Graph Data
+  // Load Graph Data (Single deterministic fetch pipeline)
   const loadGraph = useCallback(async () => {
     setLoading(true)
     let res: UIGraphPayload | null = null
 
-    if (focusedRootId != null) {
-      res = await fetchSymbolNeighborhood(focusedRootId, 1, 60)
-    } else if (scope === "macro") {
-      res = await fetchWorkspaceGraph(macroLimit)
-    } else if (microPath) {
-      res = await fetchActiveFileGraph(microPath)
-    } else {
-      res = await fetchWorkspaceGraph(macroLimit)
+    // If an active AI trace exists on initial mount or refresh, prioritize its subgraph directly
+    if (traceSymbols.length > 0 && focusedRootId == null) {
+      res = await fetchExploreSubgraph(traceSymbols, 60)
+    }
+
+    if (!res || res.nodes.length === 0) {
+      if (focusedRootId != null) {
+        res = await fetchSymbolNeighborhood(focusedRootId, 2, 60)
+      } else if (scope === "macro") {
+        res = await fetchWorkspaceGraph(macroLimit)
+      } else if (microPath) {
+        res = await fetchActiveFileGraph(microPath)
+      } else {
+        res = await fetchWorkspaceGraph(macroLimit)
+      }
     }
 
     setPayload(res)
     setLoading(false)
 
-    // Select active/root node if present
     if (res && res.nodes.length > 0) {
-      const active = res.nodes.find((n) => n.isActive) || res.nodes[0]
+      const active =
+        (traceSymbols.length > 0
+          ? res.nodes.find((n) =>
+              traceSymbols.some((sym) => {
+                const q = sym.toLowerCase().trim()
+                const shortQ = q.includes(".") ? q.split(".").pop() || q : q
+                const nameL = n.name.toLowerCase()
+                const qualL = (n.qualifiedName || n.name).toLowerCase()
+                return (
+                  nameL === q ||
+                  nameL === shortQ ||
+                  qualL === q ||
+                  qualL.endsWith(`.${shortQ}`)
+                )
+              }),
+            )
+          : null) ||
+        res.nodes.find((n) => n.isActive) ||
+        res.nodes[0]
+
       setSelectedNode(active)
+      if (active) {
+        const k = active.kind.toLowerCase()
+        const bucket =
+          k === "function" || k === "method"
+            ? "function"
+            : k === "interface" || k === "trait" || k === "protocol"
+              ? "interface"
+              : "class"
+        setActiveKinds((prev) =>
+          prev.has(bucket) ? prev : new Set(prev).add(bucket),
+        )
+      }
     }
-  }, [focusedRootId, scope, macroLimit, microPath])
+  }, [focusedRootId, scope, macroLimit, microPath, traceKey])
 
   useEffect(() => {
     loadGraph()
   }, [loadGraph])
 
-  // Bidirectional Follow Cursor Event Listener
+  // Reactively synchronize canvas when activeTrace changes while viewer is mounted
+  useEffect(() => {
+    if (!activeTrace || traceSymbols.length === 0) {
+      lastResolvedTraceKeyRef.current = null
+      return
+    }
+
+    const currentKey = `${traceSymbols.join("|")}::${activeTrace.toolName || ""}`
+    if (lastResolvedTraceKeyRef.current === currentKey) return
+    lastResolvedTraceKeyRef.current = currentKey
+
+    // If payload is not yet loaded, loadGraph() will handle it
+    if (!payload) return
+
+    // 1. Check if queried symbols are already present in current payload
+    const matchedInPayload = payload.nodes.filter((n) => {
+      const nameL = n.name.toLowerCase()
+      const qualL = (n.qualifiedName || n.name).toLowerCase()
+      const fileL = (n.filePath || "").toLowerCase()
+      return traceSymbols.some((sym) => {
+        const q = sym.toLowerCase().trim()
+        const shortQ = q.includes(".") ? q.split(".").pop() || q : q
+        return (
+          nameL === q ||
+          nameL === shortQ ||
+          qualL === q ||
+          qualL.endsWith(`.${shortQ}`) ||
+          (fileL && (fileL.endsWith(q) || q.endsWith(fileL)))
+        )
+      })
+    })
+
+    if (matchedInPayload.length > 0) {
+      const target = matchedInPayload[0]
+      const k = target.kind.toLowerCase()
+      const bucket =
+        k === "function" || k === "method"
+          ? "function"
+          : k === "interface" || k === "trait" || k === "protocol"
+            ? "interface"
+            : "class"
+      setActiveKinds((prev) =>
+        prev.has(bucket) ? prev : new Set(prev).add(bucket),
+      )
+      setSelectedNode(target)
+      canvasRef.current?.focusNode(target.id)
+      return
+    }
+
+    // 2. Otherwise fetch the explore subgraph on-demand
+    let cancelled = false
+    setLoading(true)
+    fetchExploreSubgraph(traceSymbols, 60).then((subgraphRes) => {
+      if (cancelled) return
+      setLoading(false)
+      if (subgraphRes && subgraphRes.nodes.length > 0) {
+        setPayload(subgraphRes)
+        const target =
+          subgraphRes.nodes.find((n) =>
+            traceSymbols.some((sym) => {
+              const q = sym.toLowerCase().trim()
+              const shortQ = q.includes(".") ? q.split(".").pop() || q : q
+              const nameL = n.name.toLowerCase()
+              const qualL = (n.qualifiedName || n.name).toLowerCase()
+              return (
+                nameL === q ||
+                nameL === shortQ ||
+                qualL === q ||
+                qualL.endsWith(`.${shortQ}`)
+              )
+            }),
+          ) ||
+          subgraphRes.nodes.find((n) => n.isActive) ||
+          subgraphRes.nodes[0]
+
+        setSelectedNode(target)
+        if (target) {
+          const k = target.kind.toLowerCase()
+          const bucket =
+            k === "function" || k === "method"
+              ? "function"
+              : k === "interface" || k === "trait" || k === "protocol"
+                ? "interface"
+                : "class"
+          setActiveKinds((prev) =>
+            prev.has(bucket) ? prev : new Set(prev).add(bucket),
+          )
+        }
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeTrace, traceKey, payload])
+
+  // Bidirectional Follow Cursor & legacy custom event listener
   useEffect(() => {
     function handleCursorFocus(e: Event) {
       const custom = e as CustomEvent<FocusSymbolDetail>
@@ -131,7 +280,9 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
       if (detail.symbolId != null) {
         canvasRef.current?.focusNode(detail.symbolId)
         if (payload) {
-          const match = payload.nodes.find((n) => n.id === detail.symbolId)
+          const match = payload.nodes.find(
+            (n) => String(n.id) === String(detail.symbolId),
+          )
           if (match) setSelectedNode(match)
         }
       } else if (payload && detail.name) {
@@ -158,126 +309,20 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
       }
     }
 
-    async function handleAiTrace(e: Event) {
+    function handleLegacyAiTrace(e: Event) {
       const custom = e as CustomEvent<AiTraceDetail>
       if (!custom.detail) return
-
-      const detail = custom.detail
-
-      if (detail.status === "done" || detail.status === "completed") {
-        setAiTraceInfo((prev) =>
-          prev ? { ...prev, status: "completed" } : null,
-        )
-        clearTimeout(aiTraceTimerRef.current)
-        // Keep completed visual state visible for 4 seconds before fade-out
-        aiTraceTimerRef.current = setTimeout(() => {
-          setAiTraceSymbol(null)
-          setAiTraceInfo(null)
-        }, 4000)
-        return
-      }
-
-      if (detail.symbolName) {
-        const sym = detail.symbolName
-        setAiTraceSymbol(sym)
-        setAiTraceInfo(detail)
-
-        clearTimeout(aiTraceTimerRef.current)
-
-        // 1. First attempt to pulse matching node directly in canvas
-        const pulsed = canvasRef.current?.pulseAiTrace(sym)
-        if (!pulsed) {
-          // 2. Fetch symbol from workspace index asynchronously
-          let matches = await searchGraphSymbols(sym, 5)
-
-          // 2b. If search by full string yielded nothing, try base name if sym is a path
-          if (
-            matches.length === 0 &&
-            (sym.includes("/") || sym.includes("\\"))
-          ) {
-            const base =
-              sym
-                .split(/[/\\]/)
-                .pop()
-                ?.replace(/\.[^/.]+$/, "") || ""
-            if (base) {
-              matches = await searchGraphSymbols(base, 5)
-            }
-          }
-
-          if (matches.length > 0) {
-            const target = matches[0]
-            setFocusedRootId(target.id)
-            setSelectedNode(target)
-
-            // Direct deterministic fetch without relying on timers
-            const res = await fetchSymbolNeighborhood(target.id, 1, 60)
-            if (res && res.nodes.length > 0) {
-              setPayload(res)
-            }
-          } else {
-            // 2c. If symbol search returned empty, attempt file graph fetch if sym represents a file
-            const fileRes = await fetchActiveFileGraph(sym)
-            if (fileRes && fileRes.nodes.length > 0) {
-              setPayload(fileRes)
-              const first =
-                fileRes.nodes.find((n) => n.isActive) || fileRes.nodes[0]
-              setSelectedNode(first)
-            } else {
-              // Explicit error feedback without silent pass or dummy mocks
-              setAiTraceInfo({
-                ...detail,
-                status: "error",
-              })
-              showToast(
-                `CodeGraph: Symbol "${sym}" not found in workspace index`,
-              )
-            }
-          }
-        }
-      }
+      setLocalTrace(custom.detail)
     }
 
     window.addEventListener("aegis:focus-symbol", handleCursorFocus)
-    window.addEventListener("aegis:ai-trace-path", handleAiTrace)
+    window.addEventListener("aegis:ai-trace-path", handleLegacyAiTrace)
 
     return () => {
       window.removeEventListener("aegis:focus-symbol", handleCursorFocus)
-      window.removeEventListener("aegis:ai-trace-path", handleAiTrace)
+      window.removeEventListener("aegis:ai-trace-path", handleLegacyAiTrace)
     }
-  }, [payload, showToast])
-
-  // Listen to external MCP events stream (MCP-05)
-  useEffect(() => {
-    let es: EventSource | null = null
-    try {
-      es = new EventSource("/api/v1/mcp/events")
-      es.addEventListener("mcp_tool_invoked", (evt) => {
-        try {
-          const data = JSON.parse(evt.data)
-          if (data && data.symbol) {
-            window.dispatchEvent(
-              new CustomEvent("aegis:ai-trace-path", {
-                detail: {
-                  symbolName: String(data.symbol),
-                  toolName: data.tool || "mcp_tool",
-                  status: "running",
-                },
-              }),
-            )
-          }
-        } catch {
-          // ignore parsing error
-        }
-      })
-    } catch {
-      // EventSource fallback
-    }
-
-    return () => {
-      es?.close()
-    }
-  }, [])
+  }, [payload])
 
   function handleToggleKind(kind: string) {
     setActiveKinds((prev) => {
@@ -294,7 +339,6 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
   const handleJumpToSource = useCallback(
     (node: UIGraphNode) => {
       if (!node.filePath) return
-      // If split pane is active, open in the other pane; otherwise open in current
       const targetGroup =
         splitEditor && groupId === "group2"
           ? "group1"
@@ -311,13 +355,24 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
     [splitEditor, groupId, openFileInGroup, setCursorPosition, showToast],
   )
 
-  const handleNodeClick = useCallback((node: UIGraphNode) => {
-    setSelectedNode(node)
-  }, [])
+  const handleNodeClick = useCallback(
+    (node: UIGraphNode) => {
+      setSelectedNode(node)
+      if (activeTrace) {
+        clearAiTrace()
+        setLocalTrace(null)
+      }
+    },
+    [activeTrace, clearAiTrace],
+  )
 
   const handleBackgroundClick = useCallback(() => {
     setSelectedNode(null)
-  }, [])
+    if (activeTrace) {
+      clearAiTrace()
+      setLocalTrace(null)
+    }
+  }, [activeTrace, clearAiTrace])
 
   function handleFocusNeighborhood(node: UIGraphNode) {
     setFocusedRootId(node.id)
@@ -328,7 +383,6 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
     setFocusedRootId(null)
     setScope(nextScope)
     if (nextScope === "micro" && !microPath) {
-      // Auto-detect candidate file from selected node or active editor tab
       const candidate =
         selectedNode?.filePath ||
         (group1ActiveTab && !isGraphTab(group1ActiveTab)
@@ -361,7 +415,9 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
 
   function handleSelectSymbolFromSearch(symbol: UIGraphNode) {
     setSelectedNode(symbol)
-    const exists = payload?.nodes.some((n) => n.id === symbol.id)
+    const exists = payload?.nodes.some(
+      (n) => String(n.id) === String(symbol.id),
+    )
     if (exists) {
       canvasRef.current?.focusNode(symbol.id)
     } else {
@@ -373,7 +429,6 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
     if (!splitEditor) {
       toggleSplitEditor()
     }
-    // If we are currently in group1, open code in group2, or vice versa
     const otherGroup = groupId === "group1" ? "group2" : "group1"
     if (selectedNode?.filePath) {
       openFileInGroup(selectedNode.filePath, otherGroup)
@@ -383,15 +438,22 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
   }
 
   async function handleReindexWorkspace() {
-    showToast("Triggering CodeGraph reindexing...")
+    showToast(
+      "Syncing @colbymchenry/codegraph index (.codegraph/codegraph.db)...",
+    )
     const ok = await triggerCodeGraphReindex()
     if (ok) {
-      showToast("Reindexing complete")
+      showToast("CodeGraph index synchronized")
       loadGraph()
     } else {
-      showToast("Reindexing failed")
+      showToast("CodeGraph sync failed — run `codegraph init` in terminal")
     }
   }
+
+  const traceLabel =
+    activeTrace?.symbols && activeTrace.symbols.length > 0
+      ? activeTrace.symbols.join(", ")
+      : activeTrace?.symbolName || ""
 
   return (
     <div className="flex flex-col w-full h-full min-h-0 min-w-0 bg-canvas text-ink overflow-hidden select-none">
@@ -422,27 +484,27 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
         </div>
       )}
 
-      {/* Scope & Breadcrumb Status Bar */}
+      {/* Scope & Provider AI Trace Status Bar */}
       <div
         className={`flex items-center justify-between px-3 py-1 border-b text-[11px] transition-colors duration-200 select-none ${
-          aiTraceInfo
-            ? aiTraceInfo.status === "completed" ||
-              aiTraceInfo.status === "done"
+          activeTrace && traceLabel
+            ? activeTrace.status === "completed" ||
+              activeTrace.status === "done"
               ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-300"
-              : aiTraceInfo.status === "error"
+              : activeTrace.status === "error"
                 ? "bg-red-950/40 border-red-500/30 text-red-300"
                 : "bg-pink-950/40 border-pink-500/30 text-pink-300"
             : "bg-surface border-line text-ink-muted"
         }`}
       >
         <div className="flex items-center gap-2 overflow-hidden">
-          {aiTraceInfo ? (
+          {activeTrace && traceLabel ? (
             <div className="flex items-center gap-1.5 shrink-0">
               <span className="relative flex h-2 w-2">
-                {aiTraceInfo.status === "completed" ||
-                aiTraceInfo.status === "done" ? (
+                {activeTrace.status === "completed" ||
+                activeTrace.status === "done" ? (
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-                ) : aiTraceInfo.status === "error" ? (
+                ) : activeTrace.status === "error" ? (
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
                 ) : (
                   <>
@@ -451,57 +513,34 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
                   </>
                 )}
               </span>
-              <Icon
-                className={
-                  aiTraceInfo.status === "completed" ||
-                  aiTraceInfo.status === "done"
-                    ? "text-emerald-400"
-                    : aiTraceInfo.status === "error"
-                      ? "text-red-400"
-                      : "text-pink-400"
-                }
-                name={
-                  aiTraceInfo.status === "completed" ||
-                  aiTraceInfo.status === "done"
-                    ? "check"
-                    : aiTraceInfo.status === "error"
-                      ? "warning"
-                      : "zap"
-                }
-                size={12}
-              />
-              <span className="font-semibold text-ink">
-                {aiTraceInfo.status === "completed" ||
-                aiTraceInfo.status === "done"
-                  ? "AI Read Success:"
-                  : aiTraceInfo.status === "error"
-                    ? "Symbol Unindexed:"
-                    : "AI Reading MCP:"}
-              </span>
-              <span className="font-mono px-1.5 py-0.2 rounded font-bold bg-canvas border border-line text-ink">
-                {aiTraceInfo.symbolName}
-              </span>
-              {aiTraceInfo.toolName && (
-                <span className="text-[10px] text-ink-muted">
-                  via {aiTraceInfo.toolName}
+              {activeTrace.provider && (
+                <span className="font-mono uppercase text-[9.5px] px-1.5 py-0.2 rounded bg-canvas border border-line text-accent font-bold">
+                  {activeTrace.provider}
                 </span>
               )}
-              {aiTraceInfo.status === "error" && (
-                <button
-                  className="ml-1 px-1.5 py-0.2 rounded bg-accent text-accent-contrast text-[10px] font-medium hover:opacity-90 cursor-pointer"
-                  onClick={handleReindexWorkspace}
-                  type="button"
-                >
-                  Re-index
-                </button>
+              <span className="font-semibold text-ink">
+                {activeTrace.status === "completed" ||
+                activeTrace.status === "done"
+                  ? "Explored:"
+                  : activeTrace.status === "error"
+                    ? "Unindexed:"
+                    : "Exploring MCP:"}
+              </span>
+              <span className="font-mono px-1.5 py-0.2 rounded font-bold bg-canvas border border-line text-ink">
+                {traceLabel}
+              </span>
+              {activeTrace.toolName && (
+                <span className="text-[10px] text-ink-muted font-mono">
+                  ({activeTrace.toolName})
+                </span>
               )}
               <button
                 className="ml-1 text-ink-muted hover:text-ink cursor-pointer p-0.5"
                 onClick={() => {
-                  setAiTraceSymbol(null)
-                  setAiTraceInfo(null)
+                  clearAiTrace()
+                  setLocalTrace(null)
                 }}
-                title="Dismiss AI status"
+                title="Dismiss AI trace highlight"
                 type="button"
               >
                 <Icon name="close" size={10} />
@@ -511,35 +550,30 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
             <>
               <span className="w-1.5 h-1.5 rounded-full bg-accent" />
               <span>
-                Neighborhood Scope:{" "}
+                Subgraph Scope:{" "}
                 <strong className="text-ink font-mono">
                   {selectedNode?.name}
                 </strong>
               </span>
-              {payload && payload.nodes.length <= 1 && !loading && (
-                <span className="text-warning text-[10px] ml-1">
-                  (Standalone symbol: 0 callers & 0 calls in visible graph)
-                </span>
-              )}
             </>
           ) : scope === "micro" ? (
             <>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               <span>
-                Micro AST Scope:{" "}
+                File Graph Scope:{" "}
                 <strong className="text-ink font-mono">
                   {microPath || "Active File"}
                 </strong>
               </span>
               <span className="text-[10px] text-ink-muted">
-                ({payload?.nodes.length || 0} symbols in file)
+                ({payload?.nodes.length || 0} nodes)
               </span>
             </>
           ) : (
             <>
               <span className="w-1.5 h-1.5 rounded-full bg-accent" />
               <span>
-                Macro Workspace Scope:{" "}
+                .codegraph/codegraph.db:{" "}
                 <strong className="text-ink font-mono">
                   {payload?.nodes.length || 0}
                 </strong>{" "}
@@ -551,7 +585,7 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
               </span>
               {payload?.truncated && (
                 <span className="text-accent text-[10px] ml-1 font-medium">
-                  (Capped at {macroLimit} for visual clarity)
+                  (Capped at {macroLimit})
                 </span>
               )}
             </>
@@ -579,7 +613,7 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
               type="button"
             >
               <Icon name="folder" size={11} />
-              <span>Back to Macro Workspace</span>
+              <span>Back to Workspace Graph</span>
             </button>
           ) : (
             payload?.truncated && (
@@ -625,7 +659,7 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
               name="refresh"
               size={18}
             />
-            <span>Analyzing CodeGraph relationships...</span>
+            <span>Loading .codegraph/codegraph.db relationships...</span>
           </div>
         ) : !payload || payload.nodes.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center p-6 text-center gap-3 text-ink-muted">
@@ -633,12 +667,17 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
               <Icon className="text-accent" name="zap" size={24} />
             </div>
             <div className="font-semibold text-ink text-sm">
-              No Graph Nodes Discovered
+              No CodeGraph Index Found (.codegraph/codegraph.db)
             </div>
             <p className="text-xs max-w-sm leading-relaxed">
-              {scope === "micro" && microPath
-                ? `No code symbols or relationships recorded for ${microPath}.`
-                : "Open a workspace folder or trigger indexing to visualize structural relationships."}
+              Initialize{" "}
+              <code className="font-mono text-ink">
+                @colbymchenry/codegraph
+              </code>{" "}
+              in this workspace to build the SQLite knowledge graph and enable
+              live{" "}
+              <code className="font-mono text-accent">codegraph_explore</code>{" "}
+              visual tracing.
             </p>
             <button
               className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-accent text-accent-contrast font-medium hover:opacity-90 transition-opacity cursor-pointer text-xs"
@@ -646,14 +685,14 @@ export default function GraphViewer({ filename, groupId }: GraphViewerProps) {
               type="button"
             >
               <Icon name="refresh" size={13} />
-              <span>Index Workspace</span>
+              <span>Run codegraph init / sync</span>
             </button>
           </div>
         ) : (
           <GraphCanvas
             activeKinds={activeKinds}
-            aiTraceInfo={aiTraceInfo}
-            aiTraceSymbol={aiTraceSymbol}
+            aiTraceInfo={activeTrace}
+            aiTraceSymbol={traceLabel || null}
             edges={payload.edges}
             layout={layout}
             nodes={payload.nodes}

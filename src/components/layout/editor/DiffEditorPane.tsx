@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbenchStore, useShallow } from "../../../store"
 import { parseGitDiffTab } from "../../../utils/gitDiffTab"
+import { callMcpTool } from "../../../utils/codegraphApi"
 import type { GitDiffResult } from "../../../types/workbench"
 import { CMEditor, type CMEditorHandle } from "./CMEditor"
 
@@ -67,6 +68,47 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
   const [diffData, setDiffData] = useState<GitDiffResult | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [impactCallers, setImpactCallers] = useState<Array<{
+    callerName: string
+    filePath: string
+    lineNumber: number
+  }>>([])
+  const [impactSymbols, setImpactSymbols] = useState<string[]>([])
+  const [impactOpen, setImpactOpen] = useState(false)
+
+  useEffect(() => {
+    if (!file || commit) return
+    let cancelled = false
+    callMcpTool("get_diff_impact", { staged })
+      .then((res: any) => {
+        if (cancelled || !res?.content?.[0]?.text) return
+        try {
+          const parsed = JSON.parse(res.content[0].text)
+          const syms = (parsed.changedSymbols || [])
+            .filter(
+              (s: any) =>
+                !s.filePath ||
+                s.filePath === file ||
+                file.endsWith("/" + s.filePath) ||
+                s.filePath.endsWith("/" + file),
+            )
+            .map((s: any) => s.name as string)
+          const callers = (parsed.affectedCallers || []) as Array<{
+            callerName: string
+            filePath: string
+            lineNumber: number
+          }>
+          setImpactSymbols(Array.from(new Set(syms)))
+          setImpactCallers(callers)
+        } catch {
+          // ignore
+        }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [file, staged, commit, gitDiffVersion])
 
   const editorRef = useRef<CMEditorHandle>(null)
 
@@ -187,6 +229,66 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
               <span className="text-error font-semibold">-{deletions}</span>
             )}
           </div>
+
+          {(impactSymbols.length > 0 || impactCallers.length > 0) && (
+            <div className="relative ml-2">
+              <button
+                type="button"
+                onClick={() => setImpactOpen((v) => !v)}
+                className="flex items-center gap-1 px-2 py-0.5 rounded bg-warning/15 border border-warning/40 text-warning text-[10px] font-medium cursor-pointer hover:bg-warning/25"
+                title="Click to inspect CodeGraph callers affected by this diff"
+              >
+                <Icon name="zap" size={10} />
+                <span>
+                  {impactSymbols.length} symbol
+                  {impactSymbols.length !== 1 ? "s" : ""} ·{" "}
+                  {impactCallers.length} caller
+                  {impactCallers.length !== 1 ? "s" : ""} affected
+                </span>
+              </button>
+              {impactOpen && (
+                <div className="absolute left-0 top-full mt-1 w-72 max-h-56 overflow-y-auto rounded-md bg-surface-raised border border-line shadow-xl z-50 p-2 text-[11px]">
+                  <div className="font-semibold text-ink mb-1">
+                    CodeGraph Diff Impact
+                  </div>
+                  {impactSymbols.length > 0 && (
+                    <div className="text-[10px] text-ink-muted mb-1.5">
+                      Modified:{" "}
+                      <span className="font-mono text-ink">
+                        {impactSymbols.join(", ")}
+                      </span>
+                    </div>
+                  )}
+                  {impactCallers.length === 0 ? (
+                    <div className="text-[10px] text-ink-muted italic">
+                      No external callers affected.
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      {impactCallers.map((c, idx) => (
+                        <button
+                          key={`${c.filePath}-${c.lineNumber}-${idx}`}
+                          type="button"
+                          onClick={() => {
+                            openFileInPane(c.filePath)
+                            setImpactOpen(false)
+                          }}
+                          className="w-full text-left px-2 py-1 rounded hover:bg-surface-hover flex items-center justify-between gap-2 cursor-pointer"
+                        >
+                          <span className="font-mono text-accent truncate">
+                            ← {c.callerName}
+                          </span>
+                          <span className="text-[10px] text-ink-muted truncate">
+                            {c.filePath.split("/").pop()}:{c.lineNumber}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Toolbar Actions */}

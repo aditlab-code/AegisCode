@@ -22,6 +22,8 @@ export function ActivityRail() {
     theme,
     toggleTheme,
     showToast,
+    activeTab,
+    openFileInPane,
   } = useWorkbenchStore(
     useShallow((s) => ({
       activeActivity: s.activeActivity,
@@ -33,6 +35,8 @@ export function ActivityRail() {
       theme: s.theme,
       toggleTheme: s.toggleTheme,
       showToast: s.showToast,
+      activeTab: s.activeTab,
+      openFileInPane: s.openFileInPane,
     })),
   )
 
@@ -65,6 +69,15 @@ export function ActivityRail() {
             <Icon name={icon} size={21} />
           </IconButton>
         ))}
+        <IconButton
+          active={Boolean(activeTab && activeTab.startsWith("codegraph:"))}
+          label="Visual CodeGraph (Cmd+G)"
+          onClick={() => {
+            openFileInPane("codegraph:workspace")
+          }}
+        >
+          <Icon name="zap" size={20} />
+        </IconButton>
       </div>
       <div className="activity-bottom">
         <IconButton

@@ -11,6 +11,7 @@ import {
 } from "../../../utils/gitConflict"
 import { CMEditor, type CMEditorHandle } from "./CMEditor"
 import { EditorContextMenu } from "./EditorContextMenu"
+import { fetchActiveFileGraph } from "../../../utils/codegraphApi"
 
 interface CodePaneProps {
   paneId: "primary" | "secondary"
@@ -66,6 +67,9 @@ export function CodePane({
     openFileInPane,
     cursorPosition,
     selection,
+    sendChatMessage,
+    setChatOpen,
+    showToast,
   } = useWorkbenchStore(
     useShallow((s) => ({
       buffer: s.fileBuffers[filename],
@@ -90,6 +94,9 @@ export function CodePane({
       openFileInPane: s.openFileInPane,
       cursorPosition: s.cursorPosition,
       selection: s.selection,
+      sendChatMessage: s.sendChatMessage,
+      setChatOpen: s.setChatOpen,
+      showToast: s.showToast,
     })),
   )
 
@@ -106,10 +113,25 @@ export function CodePane({
   const renderWhitespace = settings?.editor?.renderWhitespace ?? "selection"
 
   const paneRef = useRef<HTMLDivElement>(null)
+  const inlineInputRef = useRef<HTMLInputElement>(null)
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
   } | null>(null)
+  const [inlineAiOpen, setInlineAiOpen] = useState(false)
+  const [inlineAiPrompt, setInlineAiPrompt] = useState("")
+  const [inlineAiSubmitting, setInlineAiSubmitting] = useState(false)
+
+  useEffect(() => {
+    function handleOpenInlineAi() {
+      if (!isFocused) return
+      setInlineAiOpen((prev) => !prev)
+      setTimeout(() => inlineInputRef.current?.focus(), 30)
+    }
+    window.addEventListener("aegis:inline-ai-prompt", handleOpenInlineAi)
+    return () =>
+      window.removeEventListener("aegis:inline-ai-prompt", handleOpenInlineAi)
+  }, [isFocused])
   const content = buffer?.content ?? ""
   const isDirty = buffer?.isDirty ?? false
   const lines = useMemo(() => content.split("\n"), [content])
@@ -128,6 +150,58 @@ export function CodePane({
   ) => {
     const newContent = resolveConflict(content, region, choice)
     updateFileContent(filename, newContent)
+  }
+
+  const handleInlineAiSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const instruction = inlineAiPrompt.trim()
+    if (!instruction || inlineAiSubmitting) return
+    setInlineAiSubmitting(true)
+
+    const targetLine = cursorPosition.line || 1
+    const selStart = selection?.startLine || Math.max(1, targetLine - 10)
+    const selEnd = selection?.endLine || Math.min(lines.length, targetLine + 15)
+    const snippet =
+      selection?.selectedText?.trim() ||
+      lines.slice(selStart - 1, selEnd).join("\n")
+
+    let symbolContext = ""
+    try {
+      const graph = await fetchActiveFileGraph(filename)
+      if (graph && graph.nodes.length > 0) {
+        const enclosing = graph.nodes.find(
+          (n) => targetLine >= n.lineStart && targetLine <= n.lineEnd,
+        )
+        if (enclosing) {
+          symbolContext = `\nEnclosing AST Symbol: ${enclosing.kind} \`${enclosing.name}\` (L${enclosing.lineStart}-L${enclosing.lineEnd})${
+            enclosing.signature ? `\nSignature: \`${enclosing.signature}\`` : ""
+          }`
+        }
+      }
+    } catch {
+      // ignore if codegraph unavailable
+    }
+
+    const formattedPrompt = `[Inline Edit · ${filename}:L${selStart}-${selEnd}]${symbolContext}\nInstruction: ${instruction}\n\nProvide the updated code block using \`\`\`lang:${filename} format so it can be applied directly.`
+    setChatOpen(true)
+    sendChatMessage(formattedPrompt, [
+      {
+        id: `inline-${filename}-${Date.now()}`,
+        type: "selection",
+        path: filename,
+        lineRange: `L${selStart}-L${selEnd}`,
+        content: snippet,
+        charCount: snippet.length,
+        estimatedTokens: Math.ceil(snippet.length / 4),
+        mode: "selection",
+      },
+    ])
+    setInlineAiSubmitting(false)
+    setInlineAiPrompt("")
+    setInlineAiOpen(false)
+    showToast(
+      `Dispatched inline AI edit for ${filename} (L${selStart}-L${selEnd})`,
+    )
   }
 
   const [scrollInfo, setScrollInfo] = useState({
@@ -293,6 +367,52 @@ export function CodePane({
             Read-Only
           </span>
         </div>
+      )}
+
+      {inlineAiOpen && (
+        <form
+          onSubmit={handleInlineAiSubmit}
+          className="flex items-center gap-2 px-3 py-1.5 bg-surface-raised border-b border-accent/50 text-xs shadow-md z-20"
+        >
+          <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-accent/15 text-accent font-mono text-[10px] font-semibold shrink-0">
+            <Icon name="sparkle" size={11} />
+            <span>
+              AI Edit ·{" "}
+              {selection?.selectedText
+                ? `L${selection.startLine}-L${selection.endLine}`
+                : `Ln ${cursorPosition.line}`}
+            </span>
+          </span>
+          <input
+            ref={inlineInputRef}
+            type="text"
+            value={inlineAiPrompt}
+            onChange={(e) => setInlineAiPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.stopPropagation()
+                setInlineAiOpen(false)
+              }
+            }}
+            placeholder="Ask Aegis AI to refactor, document, or fix code at cursor... (Enter to send, Esc to close)"
+            className="flex-1 bg-canvas px-2.5 py-1 rounded border border-line focus:border-accent outline-none text-xs text-ink placeholder:text-ink-muted"
+          />
+          <button
+            type="submit"
+            disabled={!inlineAiPrompt.trim() || inlineAiSubmitting}
+            className="px-2.5 py-1 rounded bg-accent text-accent-contrast font-medium text-[11px] hover:opacity-90 disabled:opacity-40 cursor-pointer shrink-0"
+          >
+            {inlineAiSubmitting ? "Sending..." : "Generate (⌘I)"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setInlineAiOpen(false)}
+            className="p-1 text-ink-muted hover:text-ink cursor-pointer"
+            title="Close Inline AI (Esc)"
+          >
+            <Icon name="close" size={12} />
+          </button>
+        </form>
       )}
 
       {conflictRegions.length > 0 && (
