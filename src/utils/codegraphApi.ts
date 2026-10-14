@@ -1,3 +1,11 @@
+import {
+  fetchFileCode,
+  fetchStats,
+  searchSymbols,
+  triggerInit,
+  triggerReindex,
+} from "../services/codegraphApi"
+
 const API_BASE = ""
 
 export interface UIGraphNode {
@@ -134,27 +142,18 @@ export function extractCodeGraphTraceTargets(
     ? withoutMcpPrefix.replace(/^codegraph:/i, "codegraph_")
     : withoutMcpPrefix
 
-  const isColbyTool =
+  const isCodeGraph =
     cleanToolName === "codegraph_explore" ||
     cleanToolName === "codegraph_node" ||
     cleanToolName === "codegraph_search" ||
     cleanToolName === "codegraph_callers" ||
     cleanToolName === "codegraph_callees" ||
     cleanToolName === "codegraph_impact" ||
+    cleanToolName === "codegraph_affected" ||
     cleanToolName === "codegraph_files" ||
-    cleanToolName === "codegraph_status"
+    cleanToolName === "codegraph_status" ||
+    cleanToolName === "codegraph_context"
 
-  const baseLegacy = cleanToolName.replace(/^codegraph_/i, "")
-  const isLegacyTool =
-    baseLegacy === "get_file_outline" ||
-    baseLegacy === "get_symbol_definition" ||
-    baseLegacy === "find_callers" ||
-    baseLegacy === "find_callees" ||
-    baseLegacy === "query_subgraph" ||
-    baseLegacy === "read_symbol_body" ||
-    baseLegacy === "get_diff_impact"
-
-  const isCodeGraph = isColbyTool || isLegacyTool
   if (!isCodeGraph) {
     return {
       isCodeGraph: false,
@@ -258,14 +257,39 @@ export async function fetchExploreSubgraph(
 export async function fetchActiveFileGraph(
   filePath: string,
 ): Promise<UIGraphPayload | null> {
-  try {
-    const res = await fetch(
-      `${API_BASE}/api/v1/codegraph/file?path=${encodeURIComponent(filePath)}`,
-    )
-    if (!res.ok) return null
-    return await res.json()
-  } catch {
-    return null
+  const cleanPath = filePath.replace(/^\/+/, "")
+  const data = await fetchFileCode(cleanPath)
+  if (!data) return null
+
+  const nodes: UIGraphNode[] = (data.outline?.items || []).map((it: any) => ({
+    id: it.id,
+    name: it.name,
+    qualifiedName: it.qualifiedName || it.name,
+    kind: it.kind,
+    signature: it.signature || "",
+    filePath: it.file || cleanPath,
+    lineStart: it.line,
+    lineEnd: it.endLine,
+    isActive: false,
+  }))
+
+  const edges: UIGraphEdge[] = (data.calls?.items || []).map(
+    (call: any, idx: number) => ({
+      id: idx + 1,
+      sourceId: call.from,
+      targetId: call.to,
+      relation: call.kind || "calls",
+      line: call.line || 0,
+    }),
+  )
+
+  return {
+    rootId: cleanPath,
+    nodes,
+    edges,
+    truncated: false,
+    total: nodes.length,
+    engine: "colbymchenry/codegraph",
   }
 }
 
@@ -287,36 +311,43 @@ export async function searchGraphSymbols(
   query: string,
   limit = 20,
 ): Promise<UIGraphNode[]> {
-  try {
-    const res = await fetch(
-      `${API_BASE}/api/v1/codegraph/symbols/search?q=${encodeURIComponent(query)}&limit=${limit}`,
-    )
-    if (!res.ok) return []
-    return await res.json()
-  } catch {
-    return []
-  }
+  const items = await searchSymbols(query)
+  return items.slice(0, limit).map((it: any) => ({
+    id: it.id,
+    name: it.name,
+    qualifiedName: it.qualifiedName || it.name,
+    kind: it.kind,
+    signature: it.signature || "",
+    filePath: it.file || "",
+    lineStart: it.line,
+    lineEnd: it.endLine,
+    isActive: false,
+  }))
 }
 
 export async function fetchCodeGraphStatus(): Promise<GraphStatus | null> {
-  try {
-    const res = await fetch(`${API_BASE}/api/v1/codegraph/status`)
-    if (!res.ok) return null
-    return await res.json()
-  } catch {
-    return null
+  const data = await fetchStats()
+  if (!data) return null
+
+  return {
+    workspaceRoot: data.project?.root || data.workspaceRoot || "",
+    workspaceHash: data.project?.name || "",
+    dbPath: data.index?.backend || "",
+    totalFiles: data.graph?.files || data.files || 0,
+    totalSymbols: data.graph?.nodes || data.nodes || 0,
+    totalEdges: data.graph?.edges || data.edges || 0,
+    isIndexing: data.index?.state === "indexing" || data.state === "indexing",
+    lastIndexedAt: data.index?.lastIndexedAt || data.lastIndexedAt || 0,
+    engine: "colbymchenry/codegraph",
   }
 }
 
+export async function triggerCodeGraphInit(): Promise<boolean> {
+  return await triggerInit()
+}
+
 export async function triggerCodeGraphReindex(): Promise<boolean> {
-  try {
-    const res = await fetch(`${API_BASE}/api/v1/codegraph/reindex`, {
-      method: "POST",
-    })
-    return res.ok
-  } catch {
-    return false
-  }
+  return await triggerReindex()
 }
 
 export async function fetchMcpTools(): Promise<McpToolDefinition[]> {

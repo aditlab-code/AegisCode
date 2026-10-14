@@ -4,151 +4,101 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
-
-	"github.com/aditwicaksono/aegiscode/server/internal/codegraph"
+	"sync"
 )
 
-// Server coordinates MCP protocol request handling against the CodeGraph engine.
+// Server coordinates MCP protocol request handling.
 type Server struct {
-	engine *codegraph.Engine
-	tools  []Tool
+	mu            sync.RWMutex
+	workspaceRoot string
+	tools         []Tool
+	bridge        *Bridge
 }
 
-// NewServer creates a new MCP Server backed by the given CodeGraph engine.
-func NewServer(engine *codegraph.Engine) *Server {
-	s := &Server{
-		engine: engine,
+// NewServer creates a new MCP Server for the given workspace root.
+func NewServer(workspaceRoot ...string) *Server {
+	ws := ""
+	if len(workspaceRoot) > 0 {
+		ws = workspaceRoot[0]
 	}
-	s.registerTools()
+	s := &Server{
+		workspaceRoot: ws,
+		tools:         make([]Tool, 0),
+	}
+	if ws != "" {
+		s.bridge = NewBridge(ws)
+	}
 	return s
 }
 
-// registerTools defines the 7 progressive disclosure tools exposed to MCP clients.
-func (s *Server) registerTools() {
-	s.tools = []Tool{
-		{
-			Name:        "get_file_outline",
-			Description: "Retrieve compact outline of all functions, classes, interfaces, and methods in a file without bodies (< 150 tokens).",
-			InputSchema: ToolInputSchema{
-				Type: "object",
-				Properties: map[string]PropertyDef{
-					"file_path": {
-						Type:        "string",
-						Description: "Relative workspace file path (e.g. 'server/internal/api/api.go')",
-					},
-				},
-				Required: []string{"file_path"},
-			},
-		},
-		{
-			Name:        "get_symbol_definition",
-			Description: "Retrieve symbol signature, line range, and docstrings (< 80 tokens).",
-			InputSchema: ToolInputSchema{
-				Type: "object",
-				Properties: map[string]PropertyDef{
-					"name": {
-						Type:        "string",
-						Description: "Symbol name to look up",
-					},
-					"file_hint": {
-						Type:        "string",
-						Description: "Optional file path substring to disambiguate identical symbol names",
-					},
-				},
-				Required: []string{"name"},
-			},
-		},
-		{
-			Name:        "find_callers",
-			Description: "Find all inbound callers of a function or method across the workspace (default limit 15, guardrailed against high-fanout bloat).",
-			InputSchema: ToolInputSchema{
-				Type: "object",
-				Properties: map[string]PropertyDef{
-					"function_name": {
-						Type:        "string",
-						Description: "Target function or method name",
-					},
-					"limit": {
-						Type:        "integer",
-						Description: "Maximum callers to return (default 15, max 100)",
-					},
-				},
-				Required: []string{"function_name"},
-			},
-		},
-		{
-			Name:        "find_callees",
-			Description: "Find all outbound functions called by a function or method.",
-			InputSchema: ToolInputSchema{
-				Type: "object",
-				Properties: map[string]PropertyDef{
-					"function_name": {
-						Type:        "string",
-						Description: "Source function name",
-					},
-					"file_hint": {
-						Type:        "string",
-						Description: "Optional file path substring",
-					},
-					"limit": {
-						Type:        "integer",
-						Description: "Maximum callees to return (default 15)",
-					},
-				},
-				Required: []string{"function_name"},
-			},
-		},
-		{
-			Name:        "query_subgraph",
-			Description: "Execute a surgical 2-hop BFS dependency subgraph exploration around a symbol (< 400 tokens).",
-			InputSchema: ToolInputSchema{
-				Type: "object",
-				Properties: map[string]PropertyDef{
-					"root_symbol": {
-						Type:        "string",
-						Description: "Root symbol name",
-					},
-					"depth": {
-						Type:        "integer",
-						Description: "Traversal depth (clamped to max 2 hops)",
-					},
-				},
-				Required: []string{"root_symbol"},
-			},
-		},
-		{
-			Name:        "read_symbol_body",
-			Description: "Read the exact source implementation body lines of a symbol from disk.",
-			InputSchema: ToolInputSchema{
-				Type: "object",
-				Properties: map[string]PropertyDef{
-					"name": {
-						Type:        "string",
-						Description: "Symbol name",
-					},
-					"file_path": {
-						Type:        "string",
-						Description: "Relative file path containing the symbol",
-					},
-				},
-				Required: []string{"name", "file_path"},
-			},
-		},
-		{
-			Name:        "get_diff_impact",
-			Description: "Graph-augmented Git diff impact analysis: maps modified line hunks to changed symbols and all directly affected caller functions.",
-			InputSchema: ToolInputSchema{
-				Type: "object",
-				Properties: map[string]PropertyDef{
-					"staged": {
-						Type:        "boolean",
-						Description: "Analyze staged changes if true, unstaged if false",
-					},
-				},
-			},
-		},
+// SetWorkspace updates the active workspace root and informs the underlying bridge.
+func (s *Server) SetWorkspace(ws string) {
+	s.mu.Lock()
+	s.workspaceRoot = ws
+	if s.bridge == nil && ws != "" {
+		s.bridge = NewBridge(ws)
 	}
+	b := s.bridge
+	s.mu.Unlock()
+
+	if b != nil {
+		b.SetWorkspace(ws)
+	}
+}
+
+// Workspace returns the active workspace root.
+func (s *Server) Workspace() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.workspaceRoot
+}
+
+// RegisterTool adds a tool to the server's local tool registry.
+func (s *Server) RegisterTool(tool Tool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tools = append(s.tools, tool)
+}
+
+// Tools returns all tools from the registered list and native bridge.
+func (s *Server) Tools() []Tool {
+	s.mu.RLock()
+	b := s.bridge
+	local := make([]Tool, len(s.tools))
+	copy(local, s.tools)
+	s.mu.RUnlock()
+
+	if b != nil {
+		bridgeTools := b.Tools()
+		if len(bridgeTools) > 0 {
+			seen := make(map[string]bool)
+			for _, t := range local {
+				seen[t.Name] = true
+			}
+			for _, t := range bridgeTools {
+				if !seen[t.Name] {
+					local = append(local, t)
+					seen[t.Name] = true
+				}
+			}
+		}
+	}
+	return local
+}
+
+// Close terminates the client bridge process if running.
+func (s *Server) Close() error {
+	s.mu.Lock()
+	b := s.bridge
+	s.bridge = nil
+	s.mu.Unlock()
+
+	if b != nil {
+		return b.Close()
+	}
+	return nil
 }
 
 // HandleRequest processes a JSON-RPC request and returns the corresponding response.
@@ -173,9 +123,10 @@ func (s *Server) HandleRequest(ctx context.Context, req *JSONRPCRequest) *JSONRP
 				ProtocolVersion: "2024-11-05",
 				Capabilities: ServerCapabilities{
 					Tools: &ToolsCapability{ListChanged: false},
+					Roots: &RootsCapability{ListChanged: true},
 				},
 				ServerInfo: ServerInfo{
-					Name:    "aegiscode-codegraph",
+					Name:    "aegiscode-mcp",
 					Version: "1.0.0",
 				},
 			},
@@ -188,12 +139,30 @@ func (s *Server) HandleRequest(ctx context.Context, req *JSONRPCRequest) *JSONRP
 			Result:  map[string]any{},
 		}
 
+	case "roots/list":
+		ws := s.Workspace()
+		roots := make([]WorkspaceRoot, 0)
+		if ws != "" {
+			name := filepath.Base(ws)
+			roots = append(roots, WorkspaceRoot{
+				URI:  "file://" + ws,
+				Name: name,
+			})
+		}
+		return &JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result: RootsListResult{
+				Roots: roots,
+			},
+		}
+
 	case "tools/list":
 		return &JSONRPCResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
 			Result: ListToolsResult{
-				Tools: s.tools,
+				Tools: s.Tools(),
 			},
 		}
 
@@ -268,133 +237,29 @@ func (s *Server) ExecuteTool(ctx context.Context, name string, args map[string]a
 	return sb.String(), nil
 }
 
-// callTool executes the specified tool against the CodeGraph engine.
+// callTool executes the specified tool against registered tool handlers or delegates to the bridge.
 func (s *Server) callTool(ctx context.Context, name string, args map[string]any) (*CallToolResult, error) {
-	if s.engine == nil {
-		return nil, fmt.Errorf("codegraph engine is dormant (no active workspace)")
-	}
-
 	if args == nil {
 		args = make(map[string]any)
 	}
 
 	cleanName := strings.TrimPrefix(name, "mcp__codegraph__")
 	cleanName = strings.TrimPrefix(cleanName, "codegraph:")
-	cleanName = strings.TrimPrefix(cleanName, "codegraph_")
 
-	var resultData any
-	var err error
-
-	switch cleanName {
-	case "get_file_outline":
-		filePath, _ := args["file_path"].(string)
-		if filePath == "" {
-			filePath, _ = args["rel_path"].(string)
+	// Auto-inject projectPath if omitted
+	if _, ok := args["projectPath"]; !ok || args["projectPath"] == "" {
+		if ws := s.Workspace(); ws != "" {
+			args["projectPath"] = ws
 		}
-		if filePath == "" {
-			filePath, _ = args["path"].(string)
-		}
-		if strings.TrimSpace(filePath) == "" {
-			return nil, fmt.Errorf("argument 'file_path' is required")
-		}
-		resultData, err = s.engine.GetFileOutline(ctx, filePath)
-
-	case "get_symbol_definition":
-		symName, _ := args["name"].(string)
-		if symName == "" {
-			symName, _ = args["symbol_name"].(string)
-		}
-		fileHint, _ := args["file_hint"].(string)
-		if strings.TrimSpace(symName) == "" {
-			return nil, fmt.Errorf("argument 'name' is required")
-		}
-		resultData, err = s.engine.GetSymbolDefinition(ctx, symName, fileHint)
-
-	case "find_callers":
-		fnName, _ := args["function_name"].(string)
-		limit := 15
-		if lVal, ok := args["limit"].(float64); ok {
-			limit = int(lVal)
-		} else if lVal, ok := args["limit"].(int); ok {
-			limit = lVal
-		}
-		if strings.TrimSpace(fnName) == "" {
-			return nil, fmt.Errorf("argument 'function_name' is required")
-		}
-		resultData, err = s.engine.FindCallers(ctx, fnName, limit)
-
-	case "find_callees", "get_dependencies":
-		fnName, _ := args["function_name"].(string)
-		fileHint, _ := args["file_hint"].(string)
-		limit := 15
-		if lVal, ok := args["limit"].(float64); ok {
-			limit = int(lVal)
-		} else if lVal, ok := args["limit"].(int); ok {
-			limit = lVal
-		}
-		if strings.TrimSpace(fnName) == "" {
-			return nil, fmt.Errorf("argument 'function_name' is required")
-		}
-		resultData, err = s.engine.FindCallees(ctx, fnName, fileHint, limit)
-
-	case "query_subgraph":
-		rootSym, _ := args["root_symbol"].(string)
-		depth := 2
-		if dVal, ok := args["depth"].(float64); ok {
-			depth = int(dVal)
-		} else if dVal, ok := args["depth"].(int); ok {
-			depth = dVal
-		}
-		if strings.TrimSpace(rootSym) == "" {
-			return nil, fmt.Errorf("argument 'root_symbol' is required")
-		}
-		resultData, err = s.engine.QuerySubgraph(ctx, rootSym, depth)
-
-	case "read_symbol_body":
-		symName, _ := args["name"].(string)
-		if symName == "" {
-			symName, _ = args["symbol_name"].(string)
-		}
-		filePath, _ := args["file_path"].(string)
-		if filePath == "" {
-			filePath, _ = args["rel_path"].(string)
-		}
-		if strings.TrimSpace(symName) == "" || strings.TrimSpace(filePath) == "" {
-			return nil, fmt.Errorf("arguments 'name' and 'file_path' are required")
-		}
-		var body string
-		body, err = s.engine.ReadSymbolBody(ctx, symName, filePath)
-		if err == nil {
-			return &CallToolResult{
-				Content: []ContentItem{
-					{Type: "text", Text: body},
-				},
-			}, nil
-		}
-
-	case "get_diff_impact":
-		staged := false
-		if sVal, ok := args["staged"].(bool); ok {
-			staged = sVal
-		}
-		resultData, err = s.engine.GetDiffImpact(ctx, staged)
-
-	default:
-		return nil, fmt.Errorf("unknown tool: %s", name)
 	}
 
-	if err != nil {
-		return nil, err
+	s.mu.RLock()
+	b := s.bridge
+	s.mu.RUnlock()
+
+	if b != nil {
+		return b.CallTool(ctx, cleanName, args)
 	}
 
-	jsonBytes, mErr := json.Marshal(resultData)
-	if mErr != nil {
-		return nil, fmt.Errorf("failed to format result: %w", mErr)
-	}
-
-	return &CallToolResult{
-		Content: []ContentItem{
-			{Type: "text", Text: string(jsonBytes)},
-		},
-	}, nil
+	return nil, fmt.Errorf("tool %q is unavailable (mcp bridge not initialized)", cleanName)
 }

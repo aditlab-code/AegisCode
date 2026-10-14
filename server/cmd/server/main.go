@@ -18,8 +18,6 @@ import (
 	"time"
 
 	"github.com/aditwicaksono/aegiscode/server/internal/api"
-	"github.com/aditwicaksono/aegiscode/server/internal/codegraph"
-	"github.com/aditwicaksono/aegiscode/server/internal/lsp"
 	"github.com/aditwicaksono/aegiscode/server/internal/mcp"
 	"github.com/aditwicaksono/aegiscode/server/internal/platform"
 	"github.com/aditwicaksono/aegiscode/server/internal/store"
@@ -198,8 +196,12 @@ func main() {
 		_ = server.Debug().Terminate()
 	}
 
-	if err := server.Supervisor().StopAll(ctx); err != nil {
+	if server.Supervisor().StopAll(ctx); err != nil {
 		log.Printf("Supervisor StopAll error: %v", err)
+	}
+
+	if server.Codegraph() != nil {
+		_ = server.Codegraph().Close()
 	}
 
 	if err := httpServer.Shutdown(ctx); err != nil {
@@ -226,22 +228,11 @@ func runMCPServer(args []string) {
 		absWs = wsPath
 	}
 
-	ws, err := workspace.NewManager(absWs)
-	if err != nil {
+	if _, err := workspace.NewManager(absWs); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to initialize workspace: %v\n", err)
 		os.Exit(1)
 	}
-	lspMgr := lsp.NewManager(absWs)
-	defer lspMgr.Close()
-
-	eng, err := codegraph.NewEngine(ws, lspMgr)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to initialize codegraph engine: %v\n", err)
-		os.Exit(1)
-	}
-	defer eng.Close()
-
-	srv := mcp.NewServer(eng)
+	srv := mcp.NewServer(absWs)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 

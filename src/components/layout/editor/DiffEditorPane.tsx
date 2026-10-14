@@ -2,9 +2,9 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbenchStore, useShallow } from "../../../store"
 import { parseGitDiffTab } from "../../../utils/gitDiffTab"
-import { callMcpTool } from "../../../utils/codegraphApi"
 import type { GitDiffResult } from "../../../types/workbench"
 import { CMEditor, type CMEditorHandle } from "./CMEditor"
+import { fetchFileCode } from "../../../services/codegraphApi"
 
 interface DiffEditorPaneProps {
   groupId: "group1" | "group2"
@@ -79,30 +79,20 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
   useEffect(() => {
     if (!file || commit) return
     let cancelled = false
-    callMcpTool("get_diff_impact", { staged })
-      .then((res: any) => {
-        if (cancelled || !res?.content?.[0]?.text) return
-        try {
-          const parsed = JSON.parse(res.content[0].text)
-          const syms = (parsed.changedSymbols || [])
-            .filter(
-              (s: any) =>
-                !s.filePath ||
-                s.filePath === file ||
-                file.endsWith("/" + s.filePath) ||
-                s.filePath.endsWith("/" + file),
-            )
-            .map((s: any) => s.name as string)
-          const callers = (parsed.affectedCallers || []) as Array<{
-            callerName: string
-            filePath: string
-            lineNumber: number
-          }>
-          setImpactSymbols(Array.from(new Set(syms)))
-          setImpactCallers(callers)
-        } catch {
-          // ignore
-        }
+    const cleanPath = file.replace(/^\/+/, "")
+    fetchFileCode(cleanPath)
+      .then((data) => {
+        if (cancelled || !data) return
+        const syms = (data.outline?.items || []).map(
+          (s: any) => s.name as string,
+        )
+        const callers = (data.calls?.items || []).map((c: any) => ({
+          callerName: c.to || c.from || "caller",
+          filePath: cleanPath,
+          lineNumber: c.line || 1,
+        }))
+        setImpactSymbols(Array.from(new Set(syms)))
+        setImpactCallers(callers)
       })
       .catch(() => {})
     return () => {

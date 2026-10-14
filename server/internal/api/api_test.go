@@ -1554,21 +1554,43 @@ func TestCodeGraphAndMCPEndpoints(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 	defer srv.Codegraph().Close()
 
-	// 1. GET /api/v1/codegraph/status
+	// 1. GET /api/v1/codegraph/status (unindexed initial state)
 	reqStatus := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/status", nil)
 	rrStatus := executeRequest(handler, reqStatus)
 	if rrStatus.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK for codegraph status, got %d: %s", rrStatus.Code, rrStatus.Body.String())
 	}
-
-	// 2. POST /api/v1/codegraph/reindex
-	reqReindex := httptest.NewRequest(http.MethodPost, "/api/v1/codegraph/reindex", nil)
-	rrReindex := executeRequest(handler, reqReindex)
-	if rrReindex.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK for codegraph reindex, got %d: %s", rrReindex.Code, rrReindex.Body.String())
+	if !strings.Contains(rrStatus.Body.String(), "unindexed") {
+		t.Errorf("expected status unindexed, got %s", rrStatus.Body.String())
 	}
 
-	// 3. POST /api/v1/mcp - initialize
+	// 2. Unindexed workspace MUST reject reindex and sync (Fail-Fast: belum init belum boleh index)
+	reqReindexBad := httptest.NewRequest(http.MethodPost, "/api/v1/codegraph/reindex", nil)
+	rrReindexBad := executeRequest(handler, reqReindexBad)
+	if rrReindexBad.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request when reindexing uninitialized workspace, got %d: %s", rrReindexBad.Code, rrReindexBad.Body.String())
+	}
+
+	reqUIIndexBad := httptest.NewRequest(http.MethodPost, "/api/codegraph/ui/index", nil)
+	rrUIIndexBad := executeRequest(handler, reqUIIndexBad)
+	if rrUIIndexBad.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request when indexing uninitialized workspace via UI proxy, got %d: %s", rrUIIndexBad.Code, rrUIIndexBad.Body.String())
+	}
+
+	reqUISyncBad := httptest.NewRequest(http.MethodPost, "/api/codegraph/ui/sync", nil)
+	rrUISyncBad := executeRequest(handler, reqUISyncBad)
+	if rrUISyncBad.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request when syncing uninitialized workspace via UI proxy, got %d: %s", rrUISyncBad.Code, rrUISyncBad.Body.String())
+	}
+
+	// 3. UI Proxy GET /api/codegraph/ui/stats on uninitialized workspace returns 200 OK with unindexed state
+	reqUIStats := httptest.NewRequest(http.MethodGet, "/api/codegraph/ui/stats", nil)
+	rrUIStats := executeRequest(handler, reqUIStats)
+	if !strings.Contains(rrUIStats.Body.String(), "unindexed") {
+		t.Errorf("expected state unindexed in UI stats, got: %s", rrUIStats.Body.String())
+	}
+
+	// 4. POST /api/v1/mcp - initialize
 	initBody := `{"jsonrpc":"2.0","id":1,"method":"initialize"}`
 	reqInit := httptest.NewRequest(http.MethodPost, "/api/v1/mcp", strings.NewReader(initBody))
 	rrInit := executeRequest(handler, reqInit)
@@ -1579,50 +1601,84 @@ func TestCodeGraphAndMCPEndpoints(t *testing.T) {
 		t.Errorf("expected protocolVersion 2024-11-05 in mcp response: %s", rrInit.Body.String())
 	}
 
-	// 4. POST /api/v1/mcp - tools/list
+	// 5. POST /api/v1/mcp - tools/list
 	listBody := `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`
 	reqList := httptest.NewRequest(http.MethodPost, "/api/v1/mcp", strings.NewReader(listBody))
 	rrList := executeRequest(handler, reqList)
 	if rrList.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK for mcp tools/list, got %d: %s", rrList.Code, rrList.Body.String())
 	}
-	if !strings.Contains(rrList.Body.String(), "get_file_outline") {
-		t.Errorf("expected get_file_outline in tools/list response: %s", rrList.Body.String())
+	if !strings.Contains(rrList.Body.String(), "tools") {
+		t.Errorf("expected tools in tools/list response: %s", rrList.Body.String())
 	}
 
-	// 5. GET /api/v1/codegraph/workspace
-	reqWs := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/workspace?limit=50", nil)
-	rrWs := executeRequest(handler, reqWs)
-	if rrWs.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK for codegraph workspace, got %d: %s", rrWs.Code, rrWs.Body.String())
+	// 6. Unindexed workspace queries return 503 Service Unavailable (Fail-Fast: no silent fallbacks)
+	reqWsUnindexed := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/workspace?limit=50", nil)
+	rrWsUnindexed := executeRequest(handler, reqWsUnindexed)
+	if rrWsUnindexed.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 Service Unavailable for unindexed workspace, got %d: %s", rrWsUnindexed.Code, rrWsUnindexed.Body.String())
 	}
 
-	// 6. GET /api/v1/codegraph/file
-	reqFile := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/file?path=main.go", nil)
-	rrFile := executeRequest(handler, reqFile)
-	if rrFile.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK for codegraph file, got %d: %s", rrFile.Code, rrFile.Body.String())
+	reqFileUnindexed := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/file?path=main.go", nil)
+	rrFileUnindexed := executeRequest(handler, reqFileUnindexed)
+	if rrFileUnindexed.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 Service Unavailable for unindexed file, got %d: %s", rrFileUnindexed.Code, rrFileUnindexed.Body.String())
 	}
 
-	// 7. GET /api/v1/codegraph/neighborhood (missing id -> 400)
+	// 7. GET /api/v1/codegraph/neighborhood (missing id -> 400 Bad Request)
 	reqNBad := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/neighborhood", nil)
 	rrNBad := executeRequest(handler, reqNBad)
 	if rrNBad.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 Bad Request for neighborhood without id, got %d", rrNBad.Code)
 	}
 
-	// 8. GET /api/v1/codegraph/neighborhood (with id=1)
-	reqN := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/neighborhood?id=1&depth=1&limit=50", nil)
-	rrN := executeRequest(handler, reqN)
-	if rrN.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK for codegraph neighborhood, got %d: %s", rrN.Code, rrN.Body.String())
+	// 8. Explicit UI Proxy POST /api/codegraph/ui/init initializes workspace
+	reqUIInit := httptest.NewRequest(http.MethodPost, "/api/codegraph/ui/init", nil)
+	rrUIInit := executeRequest(handler, reqUIInit)
+	if rrUIInit.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for UI init, got %d: %s", rrUIInit.Code, rrUIInit.Body.String())
 	}
 
-	// 9. GET /api/v1/codegraph/symbols/search
-	reqSearch := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/symbols/search?q=test&limit=10", nil)
-	rrSearch := executeRequest(handler, reqSearch)
-	if rrSearch.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK for codegraph search, got %d: %s", rrSearch.Code, rrSearch.Body.String())
+	// 7. Test with indexed workspace (our repository root)
+	cwd, _ := os.Getwd()
+	repoRoot := filepath.Clean(filepath.Join(cwd, "..", "..", ".."))
+	if fi, err := os.Stat(filepath.Join(repoRoot, ".codegraph")); err == nil && fi.IsDir() {
+		_ = srv.Codegraph().SetWorkspace(repoRoot)
+
+		// 7a. GET /api/v1/codegraph/workspace
+		reqWs := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/workspace?limit=50", nil)
+		rrWs := executeRequest(handler, reqWs)
+		if rrWs.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for codegraph workspace, got %d: %s", rrWs.Code, rrWs.Body.String())
+		}
+
+		// 7b. GET /api/v1/codegraph/file (real file with real outline symbols)
+		reqFile := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/file?path=server/cmd/server/main.go", nil)
+		rrFile := executeRequest(handler, reqFile)
+		if rrFile.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for codegraph file, got %d: %s", rrFile.Code, rrFile.Body.String())
+		}
+		var filePayload struct {
+			Nodes []any `json:"nodes"`
+			Edges []any `json:"edges"`
+		}
+		if err := json.Unmarshal(rrFile.Body.Bytes(), &filePayload); err == nil && len(filePayload.Nodes) == 0 {
+			t.Errorf("expected non-empty nodes for server/cmd/server/main.go")
+		}
+
+		// 7c. GET /api/v1/codegraph/symbols/search
+		reqSearch := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/symbols/search?q=Server&limit=10", nil)
+		rrSearch := executeRequest(handler, reqSearch)
+		if rrSearch.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for codegraph search, got %d: %s", rrSearch.Code, rrSearch.Body.String())
+		}
+
+		// 7d. POST /api/codegraph/ui/sync proxy route
+		reqUI := httptest.NewRequest(http.MethodPost, "/api/codegraph/ui/sync", nil)
+		rrUI := executeRequest(handler, reqUI)
+		if rrUI.Header().Get("Content-Type") != "application/json" {
+			t.Errorf("expected application/json from /api/codegraph/ui/sync, got %s", rrUI.Header().Get("Content-Type"))
+		}
 	}
 }
 

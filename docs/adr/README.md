@@ -21,6 +21,7 @@ This directory catalogs the **Architecture Decision Records (ADRs)** for **Aegis
 | **[0011](0011-zustand-modular-slices-and-zero-breaking-bridge.md)** | Zustand Modular Slices & Bridge | Frontend State | `Accepted` | Splits monolithic frontend store into cohesive slices while preserving backwards compatibility. |
 | **[0012](0012-zero-freeze-architecture-go-first-offloading-and-web-workers.md)** | Zero-Freeze Architecture | Performance | `Accepted` | Offloads heavy AST indexing, graph layouts, and stream parsing to Go backend and Web Workers. |
 | **[0013](0013-embedded-pure-go-sqlite-and-fts5-search.md)** | Embedded Pure-Go SQLite & FTS5 | Storage & Search | `Accepted` | Replaces fragmented flat-files with transactional pure-Go SQLite (`modernc.org/sqlite`) in WAL mode with FTS5. |
+| **[0014](0014-native-colbymchenry-codegraph-and-vantagecraft-ui.md)** | Native CodeGraph & VantageCraft UI | AI & Code Intelligence | `Accepted` | Replaces custom Go extractors with native `@colbymchenry/codegraph` daemon, reverse proxy, and VantageCraft 6-view UI. |
 
 ---
 
@@ -39,10 +40,13 @@ This directory catalogs the **Architecture Decision Records (ADRs)** for **Aegis
 - **[ADR 0013: Embedded Pure-Go SQLite Engine and FTS5 Search](0013-embedded-pure-go-sqlite-and-fts5-search.md)**
 - Historical context: [ADR 0002](0002-app-data-directory-and-legacy-migration.md), [ADR 0007](0007-non-destructive-shadow-migration.md), [ADR 0009](0009-append-only-chat-graph-ledger.md)
 
-### 4. Debugging & Developer Tools
+### 4. Code Intelligence, AI & MCP Tools
+- **[ADR 0014: Native CodeGraph Runtime and VantageCraft UI Integration](0014-native-colbymchenry-codegraph-and-vantagecraft-ui.md)**
+
+### 5. Debugging & Developer Tools
 - **[ADR 0010: Bundled DAP Delve Debugger](0010-bundled-dap-delve-debugger.md)**
 
-### 5. Frontend Architecture & Responsiveness
+### 6. Frontend Architecture & Responsiveness
 - **[ADR 0008: Typed Contract Generation](0008-typed-contract-generation.md)**
 - **[ADR 0011: Zustand Modular Slices and Zero-Breaking Bridge](0011-zustand-modular-slices-and-zero-breaking-bridge.md)**
 - **[ADR 0012: Zero-Freeze Architecture: Go-First Offloading and Web Workers](0012-zero-freeze-architecture-go-first-offloading-and-web-workers.md)**

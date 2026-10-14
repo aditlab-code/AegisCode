@@ -1,68 +1,63 @@
-# Visual CodeGraph Navigation
+# VantageCraft CodeGraph Visual Guide
 
-AegisCode includes an interactive **Visual CodeGraph** canvas powered by **Cytoscape.js**. It turns your codebase's Abstract Syntax Tree (AST) into a live, explorable structural map.
-
----
-
-## 1. Opening & Navigating the CodeGraph
-
-Open the CodeGraph panel by clicking the graph icon (`🕸️`) in the Activity Bar or pressing `Cmd + G` / `Ctrl + G`.
-
-### Canvas Controls
-* **Pan**: Click and drag on empty canvas space.
-* **Zoom**: Use the scroll wheel or trackpad pinch gesture.
-* **Fit to Screen**: Click the **Fit** button (`⛶`) to re-center and fit the entire graph into view.
-* **Filter by Kind**: Use the filter dropdown to isolate functions, structs, interfaces, or variables.
-* **Symbol Search**: Type into the search input at the top of the canvas to quickly locate and center on any symbol.
+AegisCode features a high-performance **VantageCraft CodeGraph Architecture** powered by native `@colbymchenry/codegraph` daemon engine and a Zero-Freeze Web Worker layout pipeline. Instead of generic unstructured node webs, AegisCode organizes codebase exploration into **six specialized views**.
 
 ---
 
-## 2. Layout Modes: Dagre vs CoSE
+## 1. Opening CodeGraph
 
-AegisCode provides two complementary graph layout algorithms:
-
-### 1. Hierarchical Layout (Dagre)
-* **Purpose**: Visualizes call flows, architectural layering, and dependency direction.
-* **Structure**: Nodes are organized top-to-bottom or left-to-right according to caller/callee or importer/imported hierarchies.
-* **Best For**: Understanding execution pipelines (e.g., HTTP Handler -> Service -> Store -> Database).
-
-### 2. Clustered Layout (CoSE - Compound Spring Embedder)
-* **Purpose**: Reveals natural architectural cohesion and tightly-coupled symbol communities.
-* **Structure**: Nodes attract and repel using physics-based force simulation, clustering related symbols into visual modules.
-* **Best For**: Discovering module boundaries, domain clusters, and refactoring targets.
+Open the CodeGraph panel by:
+- Clicking the CodeGraph tab in the Editor or Activity Bar.
+- Selecting **View: Open CodeGraph** from the Command Palette (`Cmd + Shift + P` / `Ctrl + Shift + P`).
+- Clicking on any CodeGraph trace badge generated during AI Chat interactions.
 
 ---
 
-## 3. Visual Symbol Taxonomy
+## 2. The 6 VantageCraft Views
 
-Nodes in the CodeGraph are color-coded and badged according to their AST symbol classification:
+```mermaid
+flowchart TD
+    E[1. Entrypoints & Programs] --> S[2. Execution Steps]
+    E --> M[3. Architecture Map]
+    S --> F[4. Directed Flow & Trails]
+    E --> SC[5. Screens & Events]
+    F --> D[6. Bounded FileCode Drawer]
+```
 
-| Symbol Kind | Visual Color | Badge | Description |
-| :--- | :--- | :---: | :--- |
-| **Function / Method** | Sky Blue | `fn` | Executable functions, constructors, and receiver methods |
-| **Struct / Class** | Emerald Green | `struct` | Concrete data models and object structures |
-| **Interface** | Amber / Orange | `intf` | Abstract contracts, type definitions, and protocol bounds |
-| **Variable / Constant**| Slate Purple | `var` | Global variables, enum constants, and exported singletons |
-| **File Node** | Neutral Gray | `file` | Parent file containing the symbols |
+### 1. Entrypoints & Program Explorer
+- **Landing View**: Grouped catalog of HTTP Routes & APIs, UI Screens, Main Binaries, Hub Symbols, and Test Suites.
+- Displays HTTP methods (`GET`, `POST`, `PUT`, `DELETE`), framework annotations (Gin, Express, Next.js, etc.), and dependent counts.
+- Clicking any entrypoint opens its **Execution Steps View**.
+
+### 2. Execution Steps View
+- **Spine Tree**: Sequential execution flow starting from a chosen anchor function or route.
+- **Tier Classification**: Color-coded tiers (`Handler/Controller` $\rightarrow$ `Service/Logic` $\rightarrow$ `Repository/Store` $\rightarrow$ `External/IO/DB`).
+- **Branch Guards (`when`)**: Displays boolean guard pills (`if`, `switch`, `try/catch`) required to enter a call branch.
+- **Side Effects Badges**: Labeled pills for database operations (`DB Read`, `DB Write`), network calls, and event emissions.
+- **Synthesized Hops**: Dashed connectors highlighting dynamic runtime bridges.
+
+### 3. Architecture Map View
+- **Macro Module Graph**: Compound directory and package visualization.
+- **Zero-Freeze Offloading**: Layouts (Dagre/ELK) are calculated inside a Web Worker off the main thread.
+- **Proportional Weight**: Edge thickness scales with the number of cross-module calls and declared imports.
+- **Toggles**: Quickly isolate or hide test suites and tool-generated files.
+
+### 4. Directed Flow & Trails View
+- **3-Column Focused Blast Radius**: Upstream Callers (Left) $\rightarrow$ Focused Symbol (Center) $\rightarrow$ Downstream Callees (Right).
+- **Source Window Cards**: Displays 7-line code snippets centered around the connecting call site.
+- **Dynamic Boundary Detection**: Flags runtime dispatch boundaries and unresolved dynamic callbacks.
+
+### 5. Screens & Events View
+- **UI Screen Transitions**: Interactive state machine mapping frontend pages/screens to routes and backend handlers.
+- **Triggers & Events**: Inspects user gestures (`onClick`, `onPress`) and their downstream API dispatch targets.
+
+### 6. Bounded FileCode & Symbol Drawer
+- **Fast Bounded Inspection**: Inspects function line ranges, file outlines, and intra-file call arcs without loading multi-megabyte source files into the graph canvas.
+- **Jump to Editor**: Opens the file in `CMEditor.tsx` at the exact line and column.
 
 ---
 
-## 4. Jump-to-Source & Editor Cursor Synchronization
+## 3. Freshness & Synchronization
 
-The CodeGraph is deeply integrated with the active CodeMirror editor:
-
-### Double-Click: Jump to Source
-* **Double-clicking** any node immediately opens the defining file in the editor and jumps your cursor to the exact line and column where the symbol is declared.
-
-### Editor Cursor Focus
-* When you place your cursor inside a function or struct in the editor, the CodeGraph automatically highlights the corresponding node with a pulsing halo, showing you where you are in the broader architecture in real-time.
-
----
-
-## 5. Live AI Trace Event Highlighting
-
-When an AI Assistant tool call queries the CodeGraph via MCP (e.g. `get_symbol_definition`, `find_callers`, or `query_subgraph`), the CodeGraph illuminates the queried nodes in real-time:
-
-* **Active Glow**: Nodes accessed by the AI pulse with an accent color.
-* **Trace Path**: Edges traversed during dependency or caller lookups light up sequentially.
-* **Auditing**: You can visually inspect exactly which parts of your codebase the AI examined to formulate its answers.
+- **Fast Git Sync**: The top bar includes a **Sync** button for incremental index synchronization of modified files via Git diff.
+- **Re-index**: Triggers a clean 4-phase re-index across the entire workspace repository.

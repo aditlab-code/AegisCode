@@ -4,49 +4,31 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/aditwicaksono/aegiscode/server/internal/codegraph"
-	"github.com/aditwicaksono/aegiscode/server/internal/workspace"
 )
 
-func setupTestServer(t *testing.T) (*Server, *codegraph.Engine) {
-	tmpDir := t.TempDir()
-	ws, err := workspace.NewManager(tmpDir)
-	if err != nil {
-		t.Fatalf("NewManager failed: %v", err)
-	}
-
-	src := []byte(`package math
-
-// Multiply returns product.
-func Multiply(a, b int) int {
-	return a * b
-}
-
-func Square(x int) int {
-	return Multiply(x, x)
-}
-`)
-	_ = os.WriteFile(filepath.Join(tmpDir, "math.go"), src, 0644)
-
-	eng, err := codegraph.NewEngine(ws, nil)
-	if err != nil {
-		t.Fatalf("NewEngine failed: %v", err)
-	}
-	_ = eng.IndexFile(context.Background(), "math.go")
-
-	srv := NewServer(eng)
-	return srv, eng
+func setupTestServer(t *testing.T) *Server {
+	srv := NewServer()
+	srv.RegisterTool(Tool{
+		Name:        "codegraph_explore",
+		Description: "Explore an area: relevant symbols' source + call paths in one shot",
+		InputSchema: ToolInputSchema{
+			Type: "object",
+			Properties: map[string]PropertyDef{
+				"query": {
+					Type:        "string",
+					Description: "Area, symbol, or concept to explore",
+				},
+			},
+			Required: []string{"query"},
+		},
+	})
+	return srv
 }
 
 func TestMCPInitializeAndToolsList(t *testing.T) {
-	srv, eng := setupTestServer(t)
-	defer eng.Close()
-
+	srv := setupTestServer(t)
 	ctx := context.Background()
 
 	// 1. Initialize
@@ -75,53 +57,13 @@ func TestMCPInitializeAndToolsList(t *testing.T) {
 		t.Fatalf("unexpected error on tools/list: %v", listResp.Error)
 	}
 	listResult, ok := listResp.Result.(ListToolsResult)
-	if !ok || len(listResult.Tools) != 7 {
-		t.Errorf("expected 7 registered tools, got %d", len(listResult.Tools))
-	}
-}
-
-func TestMCPToolCalls(t *testing.T) {
-	srv, eng := setupTestServer(t)
-	defer eng.Close()
-
-	ctx := context.Background()
-
-	// 1. get_file_outline
-	callOutline := &JSONRPCRequest{
-		JSONRPC: "2.0",
-		ID:      10,
-		Method:  "tools/call",
-		Params:  json.RawMessage(`{"name": "get_file_outline", "arguments": {"file_path": "math.go"}}`),
-	}
-	resp := srv.HandleRequest(ctx, callOutline)
-	if resp.Error != nil {
-		t.Fatalf("tool call error: %v", resp.Error)
-	}
-	callResult := resp.Result.(*CallToolResult)
-	if len(callResult.Content) == 0 || !strings.Contains(callResult.Content[0].Text, "Multiply") {
-		t.Errorf("expected Multiply in outline output: %+v", callResult)
-	}
-
-	// 2. find_callers
-	callCallers := &JSONRPCRequest{
-		JSONRPC: "2.0",
-		ID:      11,
-		Method:  "tools/call",
-		Params:  json.RawMessage(`{"name": "find_callers", "arguments": {"function_name": "Multiply", "limit": 10}}`),
-	}
-	resp = srv.HandleRequest(ctx, callCallers)
-	if resp.Error != nil {
-		t.Fatalf("tool call error: %v", resp.Error)
-	}
-	callResult = resp.Result.(*CallToolResult)
-	if len(callResult.Content) == 0 || !strings.Contains(callResult.Content[0].Text, "Square") {
-		t.Errorf("expected Square in callers output: %+v", callResult)
+	if !ok || len(listResult.Tools) != 1 {
+		t.Errorf("expected 1 registered tool, got %d", len(listResult.Tools))
 	}
 }
 
 func TestRunStdio(t *testing.T) {
-	srv, eng := setupTestServer(t)
-	defer eng.Close()
+	srv := setupTestServer(t)
 
 	input := `{"jsonrpc": "2.0", "id": 1, "method": "initialize"}
 {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}
@@ -152,31 +94,43 @@ func TestRunStdio(t *testing.T) {
 	}
 }
 
-func TestExecuteToolAndPrefixNormalization(t *testing.T) {
-	srv, eng := setupTestServer(t)
-	defer eng.Close()
-
+func TestMCPRootsList(t *testing.T) {
+	srv := NewServer("/tmp/project-alpha")
 	ctx := context.Background()
 
-	// 1. Prefix mcp__codegraph__ + parameter alias rel_path
-	out1, err := srv.ExecuteTool(ctx, "mcp__codegraph__get_file_outline", map[string]any{
-		"rel_path": "math.go",
-	})
-	if err != nil {
-		t.Fatalf("ExecuteTool with prefix failed: %v", err)
+	// 1. Initialize declares roots capability
+	initReq := &JSONRPCRequest{
+		JSONRPC: "2.0",
+		ID:      1,
+		Method:  "initialize",
 	}
-	if !strings.Contains(out1, "Multiply") {
-		t.Errorf("expected Multiply in outline output, got: %s", out1)
+	initResp := srv.HandleRequest(ctx, initReq)
+	if initResp.Error != nil {
+		t.Fatalf("unexpected error on initialize: %v", initResp.Error)
+	}
+	initResult := initResp.Result.(InitializeResult)
+	if initResult.Capabilities.Roots == nil || !initResult.Capabilities.Roots.ListChanged {
+		t.Errorf("expected roots capability with listChanged: true, got %+v", initResult.Capabilities.Roots)
 	}
 
-	// 2. Prefix codegraph: + get_symbol_definition alias symbol_name
-	out2, err := srv.ExecuteTool(ctx, "codegraph:get_symbol_definition", map[string]any{
-		"symbol_name": "Multiply",
-	})
-	if err != nil {
-		t.Fatalf("ExecuteTool with colon prefix failed: %v", err)
+	// 2. roots/list returns the configured workspace root
+	rootsReq := &JSONRPCRequest{
+		JSONRPC: "2.0",
+		ID:      2,
+		Method:  "roots/list",
 	}
-	if !strings.Contains(out2, "Multiply") {
-		t.Errorf("expected Multiply definition, got: %s", out2)
+	rootsResp := srv.HandleRequest(ctx, rootsReq)
+	if rootsResp.Error != nil {
+		t.Fatalf("unexpected error on roots/list: %v", rootsResp.Error)
+	}
+	rootsResult, ok := rootsResp.Result.(RootsListResult)
+	if !ok || len(rootsResult.Roots) != 1 {
+		t.Fatalf("expected 1 root, got: %+v", rootsResp.Result)
+	}
+	if rootsResult.Roots[0].URI != "file:///tmp/project-alpha" {
+		t.Errorf("expected URI file:///tmp/project-alpha, got %s", rootsResult.Roots[0].URI)
+	}
+	if rootsResult.Roots[0].Name != "project-alpha" {
+		t.Errorf("expected Name project-alpha, got %s", rootsResult.Roots[0].Name)
 	}
 }

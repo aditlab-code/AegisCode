@@ -58,9 +58,15 @@ type ToolsCapability struct {
 	ListChanged bool `json:"listChanged"`
 }
 
+// RootsCapability indicates workspace roots support.
+type RootsCapability struct {
+	ListChanged bool `json:"listChanged"`
+}
+
 // ServerCapabilities defines server capabilities returned during initialization.
 type ServerCapabilities struct {
 	Tools *ToolsCapability `json:"tools,omitempty"`
+	Roots *RootsCapability `json:"roots,omitempty"`
 }
 
 // InitializeResult is the payload returned for "initialize".
@@ -111,4 +117,15 @@ type ContentItem struct {
 type CallToolResult struct {
 	Content []ContentItem `json:"content"`
 	IsError bool          `json:"isError,omitempty"`
+}
+
+// WorkspaceRoot represents a single filesystem root in the MCP protocol.
+type WorkspaceRoot struct {
+	URI  string `json:"uri"`
+	Name string `json:"name,omitempty"`
+}
+
+// RootsListResult is the payload returned for "roots/list".
+type RootsListResult struct {
+	Roots []WorkspaceRoot `json:"roots"`
 }

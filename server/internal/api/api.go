@@ -39,7 +39,7 @@ type Server struct {
 	store      *store.Store
 	debug      *debug.Manager
 	lsp        *lsp.Manager
-	codegraph  *codegraph.Engine
+	codegraph  *codegraph.Manager
 	mcp        *mcp.Server
 	pairing      *PairingManager
 	logMu        sync.RWMutex
@@ -76,6 +76,8 @@ func NewServer(ws *workspace.Manager, picker platform.FolderPicker, customStore 
 		store:      st,
 		debug:      debug.NewManager(),
 		lsp:        lsp.NewManager(rootPath),
+		codegraph:  codegraph.NewManager(rootPath),
+		mcp:        mcp.NewServer(rootPath),
 		pairing:    NewPairingManager(8080),
 		logSubs:    make(map[chan LogEvent]struct{}),
 		workerSubs: make(map[chan supervisor.CrashEvent]struct{}),
@@ -90,12 +92,6 @@ func NewServer(ws *workspace.Manager, picker platform.FolderPicker, customStore 
 			s.lsp.SetCustomServers(cfg.LspServers)
 		}
 	}
-	if ws != nil {
-		if cg, err := codegraph.NewEngine(ws, s.lsp); err == nil {
-			s.codegraph = cg
-			s.mcp = mcp.NewServer(cg)
-		}
-	}
 	return s
 }
 
@@ -104,8 +100,8 @@ func (s *Server) Pairing() *PairingManager {
 	return s.pairing
 }
 
-// Codegraph returns the active CodeGraph Knowledge Engine.
-func (s *Server) Codegraph() *codegraph.Engine {
+// Codegraph returns the active CodeGraph Manager.
+func (s *Server) Codegraph() *codegraph.Manager {
 	return s.codegraph
 }
 
@@ -373,11 +369,15 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/mcp/rpc", s.handleMCP)
 	mux.HandleFunc("/api/v1/mcp/events", s.handleMCPEvents)
 	mux.HandleFunc("/api/v1/codegraph/status", s.handleCodeGraphStatus)
+	mux.HandleFunc("/api/v1/codegraph/init", s.handleCodeGraphInit)
 	mux.HandleFunc("/api/v1/codegraph/reindex", s.handleCodeGraphReindex)
 	mux.HandleFunc("/api/v1/codegraph/neighborhood", s.handleCodeGraphNeighborhood)
 	mux.HandleFunc("/api/v1/codegraph/file", s.handleCodeGraphFile)
 	mux.HandleFunc("/api/v1/codegraph/workspace", s.handleCodeGraphWorkspace)
 	mux.HandleFunc("/api/v1/codegraph/symbols/search", s.handleCodeGraphSymbolsSearch)
+	if s.codegraph != nil {
+		mux.Handle("/api/codegraph/ui/", s.codegraph.ProxyHandler())
+	}
 
 	// System Management
 	mux.HandleFunc("/api/v1/system/shutdown", s.handleSystemShutdown)
@@ -458,6 +458,9 @@ func (s *Server) handleWorkspaceOpen(w http.ResponseWriter, r *http.Request) {
 	if s.codegraph != nil {
 		_ = s.codegraph.SetWorkspace(absPath)
 	}
+	if s.mcp != nil {
+		s.mcp.SetWorkspace(absPath)
+	}
 	jsonResponse(w, http.StatusOK, OpenWorkspaceResponse{
 		Status:   "ok",
 		RootPath: absPath,
@@ -482,6 +485,9 @@ func (s *Server) handleWorkspaceClose(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.codegraph != nil {
 		_ = s.codegraph.SetWorkspace("")
+	}
+	if s.mcp != nil {
+		s.mcp.SetWorkspace("")
 	}
 	jsonResponse(w, http.StatusOK, CloseWorkspaceResponse{
 		Status: "closed",
@@ -524,6 +530,9 @@ func (s *Server) handleWorkspacePickFolder(w http.ResponseWriter, r *http.Reques
 	}
 	if s.codegraph != nil {
 		_ = s.codegraph.SetWorkspace(absPath)
+	}
+	if s.mcp != nil {
+		s.mcp.SetWorkspace(absPath)
 	}
 	jsonResponse(w, http.StatusOK, PickFolderResponse{
 		Status:   "ok",
@@ -3006,7 +3015,7 @@ func (s *Server) handleCodeGraphStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.codegraph == nil {
-		jsonResponse(w, http.StatusOK, codegraph.GraphStatus{})
+		jsonResponse(w, http.StatusOK, map[string]any{"status": "unindexed"})
 		return
 	}
 
@@ -3018,13 +3027,35 @@ func (s *Server) handleCodeGraphStatus(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, http.StatusOK, st)
 }
 
+func (s *Server) handleCodeGraphInit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.codegraph == nil {
+		jsonError(w, http.StatusServiceUnavailable, "codegraph manager not initialized")
+		return
+	}
+
+	if err := s.codegraph.Init(r.Context()); err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	jsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 func (s *Server) handleCodeGraphReindex(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	if s.codegraph == nil {
-		jsonError(w, http.StatusServiceUnavailable, "codegraph engine not initialized")
+		jsonError(w, http.StatusServiceUnavailable, "codegraph manager not initialized")
+		return
+	}
+
+	if !s.codegraph.IsIndexed() {
+		jsonError(w, http.StatusBadRequest, "workspace is not initialized. Run init first")
 		return
 	}
 
@@ -3040,46 +3071,37 @@ func (s *Server) handleCodeGraphNeighborhood(w http.ResponseWriter, r *http.Requ
 		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if s.codegraph == nil || s.codegraph.UIService() == nil {
-		jsonResponse(w, http.StatusOK, codegraph.UIGraphPayload{
-			Nodes: make([]codegraph.UIGraphNode, 0),
-			Edges: make([]codegraph.UIGraphEdge, 0),
-		})
+	if s.codegraph == nil {
+		jsonError(w, http.StatusServiceUnavailable, "codegraph manager not initialized")
 		return
 	}
 
 	idStr := strings.TrimSpace(r.URL.Query().Get("id"))
 	symbolParam := strings.TrimSpace(r.URL.Query().Get("symbol"))
-	if idStr == "" && symbolParam == "" {
+	target := symbolParam
+	if target == "" {
+		target = idStr
+	}
+	if target == "" {
 		jsonError(w, http.StatusBadRequest, "id or symbol parameter required")
 		return
 	}
 
-	target := idStr
-	if target == "" {
-		target = symbolParam
-	}
-
-	depth := 1
-	if dStr := r.URL.Query().Get("depth"); dStr != "" {
-		if d, err := strconv.Atoi(dStr); err == nil {
-			depth = d
-		}
-	}
-
-	limit := 50
-	if lStr := r.URL.Query().Get("limit"); lStr != "" {
-		if l, err := strconv.Atoi(lStr); err == nil {
-			limit = l
-		}
-	}
-
-	payload, err := s.codegraph.UIService().GetSymbolNeighborhoodByTarget(r.Context(), target, depth, limit)
+	body, statusCode, err := s.codegraph.FetchAPI(r.Context(), "flow?symbols="+url.QueryEscape(target))
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, err.Error())
+		jsonError(w, statusCode, err.Error())
 		return
 	}
-	jsonResponse(w, http.StatusOK, payload)
+	if statusCode != http.StatusOK {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(statusCode)
+		_, _ = w.Write(body)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
 }
 
 func (s *Server) handleCodeGraphFile(w http.ResponseWriter, r *http.Request) {
@@ -3087,26 +3109,91 @@ func (s *Server) handleCodeGraphFile(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if s.codegraph == nil || s.codegraph.UIService() == nil {
-		jsonResponse(w, http.StatusOK, codegraph.UIGraphPayload{
-			Nodes: make([]codegraph.UIGraphNode, 0),
-			Edges: make([]codegraph.UIGraphEdge, 0),
-		})
+	if s.codegraph == nil {
+		jsonError(w, http.StatusServiceUnavailable, "codegraph manager not initialized")
 		return
 	}
 
-	path := r.URL.Query().Get("path")
+	path := strings.TrimSpace(r.URL.Query().Get("path"))
 	if path == "" {
 		jsonError(w, http.StatusBadRequest, "path parameter required")
 		return
 	}
 
-	payload, err := s.codegraph.UIService().GetActiveFileGraph(r.Context(), path)
+	cleanPath := strings.TrimPrefix(path, "/")
+	body, statusCode, err := s.codegraph.FetchAPI(r.Context(), "filecode/"+cleanPath)
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, err.Error())
+		jsonError(w, statusCode, err.Error())
 		return
 	}
-	jsonResponse(w, http.StatusOK, payload)
+	if statusCode != http.StatusOK {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(statusCode)
+		_, _ = w.Write(body)
+		return
+	}
+
+	var native struct {
+		Outline struct {
+			Total int `json:"total"`
+			Items []struct {
+				ID        string `json:"id"`
+				Name      string `json:"name"`
+				Kind      string `json:"kind"`
+				File      string `json:"file"`
+				Line      int    `json:"line"`
+				EndLine   int    `json:"endLine"`
+				Signature string `json:"signature"`
+			} `json:"items"`
+		} `json:"outline"`
+		Calls struct {
+			Total int `json:"total"`
+			Items []struct {
+				From string `json:"from"`
+				To   string `json:"to"`
+				Kind string `json:"kind"`
+				Line int    `json:"line"`
+			} `json:"items"`
+		} `json:"calls"`
+	}
+	if err := json.Unmarshal(body, &native); err != nil {
+		jsonError(w, http.StatusInternalServerError, "failed to parse codegraph filecode: "+err.Error())
+		return
+	}
+
+	nodes := make([]map[string]any, 0, len(native.Outline.Items))
+	for _, item := range native.Outline.Items {
+		nodes = append(nodes, map[string]any{
+			"id":        item.ID,
+			"name":      item.Name,
+			"kind":      item.Kind,
+			"filePath":  item.File,
+			"lineStart": item.Line,
+			"lineEnd":   item.EndLine,
+			"signature": item.Signature,
+			"isActive":  false,
+		})
+	}
+
+	edges := make([]map[string]any, 0, len(native.Calls.Items))
+	for idx, call := range native.Calls.Items {
+		edges = append(edges, map[string]any{
+			"id":       idx + 1,
+			"sourceId": call.From,
+			"targetId": call.To,
+			"relation": call.Kind,
+			"line":     call.Line,
+		})
+	}
+
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"rootId":    cleanPath,
+		"nodes":     nodes,
+		"edges":     edges,
+		"truncated": false,
+		"total":     len(nodes),
+		"engine":    "colbymchenry/codegraph",
+	})
 }
 
 func (s *Server) handleCodeGraphWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -3114,27 +3201,26 @@ func (s *Server) handleCodeGraphWorkspace(w http.ResponseWriter, r *http.Request
 		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if s.codegraph == nil || s.codegraph.UIService() == nil {
-		jsonResponse(w, http.StatusOK, codegraph.UIGraphPayload{
-			Nodes: make([]codegraph.UIGraphNode, 0),
-			Edges: make([]codegraph.UIGraphEdge, 0),
-		})
+	if s.codegraph == nil {
+		jsonError(w, http.StatusServiceUnavailable, "codegraph manager not initialized")
 		return
 	}
 
-	limit := 50
-	if lStr := r.URL.Query().Get("limit"); lStr != "" {
-		if l, err := strconv.Atoi(lStr); err == nil {
-			limit = l
-		}
-	}
-
-	payload, err := s.codegraph.UIService().GetWorkspaceGraph(r.Context(), limit)
+	body, statusCode, err := s.codegraph.FetchAPI(r.Context(), "map")
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, err.Error())
+		jsonError(w, statusCode, err.Error())
 		return
 	}
-	jsonResponse(w, http.StatusOK, payload)
+	if statusCode != http.StatusOK {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(statusCode)
+		_, _ = w.Write(body)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
 }
 
 func (s *Server) handleCodeGraphSymbolsSearch(w http.ResponseWriter, r *http.Request) {
@@ -3142,23 +3228,59 @@ func (s *Server) handleCodeGraphSymbolsSearch(w http.ResponseWriter, r *http.Req
 		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if s.codegraph == nil || s.codegraph.UIService() == nil {
-		jsonResponse(w, http.StatusOK, make([]codegraph.UIGraphNode, 0))
+	if s.codegraph == nil {
+		jsonError(w, http.StatusServiceUnavailable, "codegraph manager not initialized")
 		return
 	}
 
-	q := r.URL.Query().Get("q")
-	limit := 20
-	if lStr := r.URL.Query().Get("limit"); lStr != "" {
-		if l, err := strconv.Atoi(lStr); err == nil {
-			limit = l
-		}
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if query == "" {
+		jsonError(w, http.StatusBadRequest, "q parameter required")
+		return
 	}
 
-	nodes, err := s.codegraph.UIService().SearchSymbols(r.Context(), q, limit)
+	body, statusCode, err := s.codegraph.FetchAPI(r.Context(), "search?q="+url.QueryEscape(query))
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, err.Error())
+		jsonError(w, statusCode, err.Error())
 		return
+	}
+	if statusCode != http.StatusOK {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(statusCode)
+		_, _ = w.Write(body)
+		return
+	}
+
+	var nativeSearch struct {
+		Results struct {
+			Items []struct {
+				ID        string `json:"id"`
+				Name      string `json:"name"`
+				Kind      string `json:"kind"`
+				File      string `json:"file"`
+				Line      int    `json:"line"`
+				EndLine   int    `json:"endLine"`
+				Signature string `json:"signature"`
+			} `json:"items"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(body, &nativeSearch); err != nil {
+		jsonError(w, http.StatusInternalServerError, "failed to parse codegraph search results: "+err.Error())
+		return
+	}
+
+	nodes := make([]map[string]any, 0, len(nativeSearch.Results.Items))
+	for _, item := range nativeSearch.Results.Items {
+		nodes = append(nodes, map[string]any{
+			"id":        item.ID,
+			"name":      item.Name,
+			"kind":      item.Kind,
+			"filePath":  item.File,
+			"lineStart": item.Line,
+			"lineEnd":   item.EndLine,
+			"signature": item.Signature,
+			"isActive":  false,
+		})
 	}
 	jsonResponse(w, http.StatusOK, nodes)
 }

@@ -87,144 +87,164 @@ func StreamChat(ctx context.Context, req StreamChatRequest, sendEvent EventSende
 	return engine.StreamChat(ctx, req, sendEvent)
 }
 
-// GetCodeGraphOpenAITools returns CodeGraph tool specifications in OpenAI function calling format.
+// GetCodeGraphOpenAITools returns native @colbymchenry/codegraph tool specifications in OpenAI function calling format.
 func GetCodeGraphOpenAITools() []map[string]any {
 	return []map[string]any{
 		{
 			"type": "function",
 			"function": map[string]any{
-				"name":        "get_file_outline",
-				"description": "Retrieve compact outline of all functions, classes, interfaces, and methods in a file without bodies (< 150 tokens).",
+				"name":        "codegraph_explore",
+				"description": "Proportional token codebase exploration and call graph discovery across symbols, files, or questions.",
 				"parameters": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"file_path": map[string]any{
+						"query": map[string]any{
 							"type":        "string",
-							"description": "Relative workspace file path",
-						},
-					},
-					"required": []string{"file_path"},
-				},
-			},
-		},
-		{
-			"type": "function",
-			"function": map[string]any{
-				"name":        "get_symbol_definition",
-				"description": "Retrieve symbol signature, line range, and docstrings (< 80 tokens).",
-				"parameters": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"name": map[string]any{
-							"type":        "string",
-							"description": "Symbol name",
-						},
-						"file_hint": map[string]any{
-							"type":        "string",
-							"description": "Optional file path substring",
-						},
-					},
-					"required": []string{"name"},
-				},
-			},
-		},
-		{
-			"type": "function",
-			"function": map[string]any{
-				"name":        "find_callers",
-				"description": "Find all inbound callers of a function or method across the workspace (< 150 tokens).",
-				"parameters": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"function_name": map[string]any{
-							"type":        "string",
-							"description": "Function or method name",
-						},
-						"limit": map[string]any{
-							"type":        "integer",
-							"description": "Max callers to return (default 15)",
-						},
-					},
-					"required": []string{"function_name"},
-				},
-			},
-		},
-		{
-			"type": "function",
-			"function": map[string]any{
-				"name":        "find_callees",
-				"description": "Find all outbound functions called by a function or method.",
-				"parameters": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"function_name": map[string]any{
-							"type":        "string",
-							"description": "Function name",
-						},
-						"file_hint": map[string]any{
-							"type":        "string",
-							"description": "Optional file path substring",
-						},
-					},
-					"required": []string{"function_name"},
-				},
-			},
-		},
-		{
-			"type": "function",
-			"function": map[string]any{
-				"name":        "query_subgraph",
-				"description": "Execute a surgical 2-hop BFS dependency subgraph exploration around a symbol (< 400 tokens).",
-				"parameters": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"root_symbol": map[string]any{
-							"type":        "string",
-							"description": "Root symbol name",
+							"description": "Natural language question, file name, or symbol names to explore",
 						},
 						"depth": map[string]any{
 							"type":        "integer",
-							"description": "Traversal depth (clamped to max 2 hops)",
+							"description": "Exploration traversal depth (default 3)",
 						},
 					},
-					"required": []string{"root_symbol"},
+					"required": []string{"query"},
 				},
 			},
 		},
 		{
 			"type": "function",
 			"function": map[string]any{
-				"name":        "read_symbol_body",
-				"description": "Read the exact source implementation body lines of a symbol from disk.",
+				"name":        "codegraph_node",
+				"description": "Retrieve full symbol definition, qualified name, hierarchy, and 3-hop blast radius.",
 				"parameters": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"name": map[string]any{
+						"nodeId": map[string]any{
 							"type":        "string",
-							"description": "Symbol name",
-						},
-						"file_path": map[string]any{
-							"type":        "string",
-							"description": "Relative file path",
+							"description": "Symbol node identifier",
 						},
 					},
-					"required": []string{"name", "file_path"},
+					"required": []string{"nodeId"},
 				},
 			},
 		},
 		{
 			"type": "function",
 			"function": map[string]any{
-				"name":        "get_diff_impact",
-				"description": "Graph-augmented Git diff impact analysis: maps modified line hunks to changed symbols and caller topology.",
+				"name":        "codegraph_search",
+				"description": "Search symbols and identifiers across the workspace using BM25 / FTS5 ranking.",
 				"parameters": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"staged": map[string]any{
-							"type":        "boolean",
-							"description": "Analyze staged changes if true, unstaged if false",
+						"query": map[string]any{
+							"type":        "string",
+							"description": "Symbol search query",
+						},
+						"limit": map[string]any{
+							"type":        "integer",
+							"description": "Max results to return (default 20)",
 						},
 					},
+					"required": []string{"query"},
+				},
+			},
+		},
+		{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "codegraph_callers",
+				"description": "Find all direct and indirect upstream callers reaching a target function or method.",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"symbol": map[string]any{
+							"type":        "string",
+							"description": "Target symbol name",
+						},
+						"limit": map[string]any{
+							"type":        "integer",
+							"description": "Max callers to return (default 20)",
+						},
+					},
+					"required": []string{"symbol"},
+				},
+			},
+		},
+		{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "codegraph_callees",
+				"description": "Find all direct downstream functions and dependencies called by a target symbol.",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"symbol": map[string]any{
+							"type":        "string",
+							"description": "Target symbol name",
+						},
+						"limit": map[string]any{
+							"type":        "integer",
+							"description": "Max callees to return (default 20)",
+						},
+					},
+					"required": []string{"symbol"},
+				},
+			},
+		},
+		{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "codegraph_flow",
+				"description": "Analyze directed call paths between symbols with dynamic dispatch detection.",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"from": map[string]any{
+							"type":        "string",
+							"description": "Source symbol name",
+						},
+						"to": map[string]any{
+							"type":        "string",
+							"description": "Target destination symbol name",
+						},
+						"symbols": map[string]any{
+							"type":        "array",
+							"items":       map[string]any{"type": "string"},
+							"description": "Ordered symbols along the flow path",
+						},
+					},
+				},
+			},
+		},
+		{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "codegraph_impact",
+				"description": "Analyze blast radius of symbol changes across files and dependent modules.",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"symbol": map[string]any{
+							"type":        "string",
+							"description": "Modified symbol name",
+						},
+						"depth": map[string]any{
+							"type":        "integer",
+							"description": "Impact traversal depth (default 2)",
+						},
+					},
+					"required": []string{"symbol"},
+				},
+			},
+		},
+		{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "codegraph_status",
+				"description": "Retrieve CodeGraph SQLite WAL database index status, language breakdown, and freshness.",
+				"parameters": map[string]any{
+					"type":       "object",
+					"properties": map[string]any{},
 				},
 			},
 		},

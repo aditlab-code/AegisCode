@@ -313,8 +313,8 @@ func TestConversationIDAndToolMetadataPreservation(t *testing.T) {
 				ToolCalls: []ToolCallItem{
 					{
 						ID:         "tc-1",
-						Name:       "get_file_outline",
-						Summary:    "Viewing outline for server.go",
+						Name:       "codegraph_node",
+						Summary:    "Viewing node for server.go",
 						Status:     "error",
 						TargetFile: "server/server.go",
 						Output:     "file outline failure details",
@@ -383,7 +383,7 @@ func TestConversationIDAndToolMetadataPreservation(t *testing.T) {
 	if tc.ID != "tc-1" {
 		t.Errorf("expected tc.ID 'tc-1', got '%s'", tc.ID)
 	}
-	if tc.Summary != "Viewing outline for server.go" {
+	if tc.Summary != "Viewing node for server.go" {
 		t.Errorf("expected tc.Summary preserved, got '%s'", tc.Summary)
 	}
 	if tc.Status != "error" {

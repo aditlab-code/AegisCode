@@ -1,45 +1,94 @@
 #!/usr/bin/env node
 import { execSync, spawnSync } from "node:child_process"
+import fs from "node:fs"
+import path from "node:path"
+import os from "node:os"
 
 console.log("\n=======================================================")
 console.log(" AegisCode · @colbymchenry/codegraph MCP Installer")
 console.log("=======================================================")
 
-// 1. Ensure @colbymchenry/codegraph is installed globally
+const homedir = os.homedir()
+const aegisMcpDir = path.join(homedir, ".aegiscode", "mcp")
+const localBinPath = path.join(
+  aegisMcpDir,
+  "node_modules",
+  ".bin",
+  process.platform === "win32" ? "codegraph.cmd" : "codegraph",
+)
+
+function resolveCodegraph() {
+  const globalCheck = spawnSync("which", ["codegraph"], { encoding: "utf8" })
+  if (globalCheck.status === 0 && globalCheck.stdout.trim()) {
+    return globalCheck.stdout.trim()
+  }
+  if (fs.existsSync(localBinPath)) {
+    return localBinPath
+  }
+  return null
+}
+
+// 1. Ensure @colbymchenry/codegraph is installed
 console.log("\n[1/3] Checking @colbymchenry/codegraph CLI...")
-const cgCheck = spawnSync("which", ["codegraph"], { encoding: "utf8" })
-if (cgCheck.status !== 0 || !cgCheck.stdout.trim()) {
-  console.log("Installing @colbymchenry/codegraph globally via npm...")
+let bin = resolveCodegraph()
+
+if (!bin) {
+  console.log("Attempting to install @colbymchenry/codegraph globally...")
   try {
     execSync("npm install -g @colbymchenry/codegraph@latest", {
       stdio: "inherit",
     })
+    bin = resolveCodegraph()
   } catch (err) {
-    console.error("❌ Failed to install @colbymchenry/codegraph:", err.message)
-    process.exit(1)
+    console.warn("Global install failed. Falling back to ~/.aegiscode/mcp/ ...")
+    try {
+      fs.mkdirSync(aegisMcpDir, { recursive: true })
+      execSync(
+        "npm install --prefix " +
+          aegisMcpDir +
+          " @colbymchenry/codegraph@latest",
+        {
+          stdio: "inherit",
+        },
+      )
+      bin = resolveCodegraph()
+    } catch (fallbackErr) {
+      console.error(
+        "❌ Failed to install @colbymchenry/codegraph:",
+        fallbackErr.message,
+      )
+      process.exit(1)
+    }
   }
-} else {
-  console.log(`✓ Found codegraph CLI at ${cgCheck.stdout.trim()}`)
+}
+
+// Verification step
+console.log(`✓ Located codegraph executable at: ${bin}`)
+try {
+  const ver = execSync(`"${bin}" --version`, { encoding: "utf8" }).trim()
+  console.log(`✓ Verified @colbymchenry/codegraph version: ${ver}`)
+} catch (verErr) {
+  console.error("❌ Failed to verify codegraph binary:", verErr.message)
+  process.exit(1)
 }
 
 // 2. Wire up all detected AI agents (Claude Code, Cursor, Antigravity, OpenCode, Gemini CLI, Codex)
-// and initialize the current workspace's .codegraph/codegraph.db index
 console.log(
-  "\n[2/3] Wiring @colbymchenry/codegraph MCP to AI agents & indexing workspace...",
+  "\n[2/3] Wiring @colbymchenry/codegraph MCP to AI agents & initializing index...",
 )
 try {
-  execSync("codegraph install --yes --init", {
+  execSync(`"${bin}" install --yes --init`, {
     cwd: process.cwd(),
     stdio: "inherit",
     env: {
       ...process.env,
       CODEGRAPH_MCP_TOOLS:
-        "explore,node,search,callers,callees,impact,files,status",
+        "explore,context,node,callers,callees,impact,affected,search,flow,status",
     },
   })
-  console.log("✓ Agents wired and .codegraph/codegraph.db initialized")
+  console.log("✓ Agents wired and index initialized")
 } catch (err) {
-  console.warn("⚠️  codegraph install note:", err.message)
+  console.warn("⚠️  codegraph install notice:", err.message)
 }
 
 // 3. Print MCP configuration summary
@@ -49,12 +98,12 @@ const sampleConfig = {
   mcpServers: {
     codegraph: {
       type: "stdio",
-      command: "codegraph",
+      command: bin,
       args: ["serve", "--mcp"],
       alwaysLoad: true,
       env: {
         CODEGRAPH_MCP_TOOLS:
-          "explore,node,search,callers,callees,impact,files,status",
+          "explore,context,node,callers,callees,impact,affected,search,flow,status",
       },
     },
   },

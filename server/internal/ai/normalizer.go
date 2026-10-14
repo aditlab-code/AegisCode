@@ -94,49 +94,50 @@ func GenerateSummary(name, targetFile string, args map[string]any) string {
 			return "Code search: " + SanitizeString(q)
 		}
 		return "Code search"
-	case "get_file_outline":
-		f := targetFile
-		if f == "" {
-			if fp, ok := args["file_path"].(string); ok {
-				f = fp
-			}
+	case "explore":
+		if q, ok := args["query"].(string); ok && strings.TrimSpace(q) != "" {
+			return "Exploring: " + SanitizeString(q)
 		}
-		if f != "" {
-			return "Outlining " + SanitizeString(f)
+		return "Exploring codebase"
+	case "node":
+		if sym, ok := args["name"].(string); ok && strings.TrimSpace(sym) != "" {
+			return "Inspecting symbol: " + SanitizeString(sym)
 		}
-		return "Outlining file symbols"
-	case "get_symbol_definition":
-		sym, _ := args["name"].(string)
-		if sym != "" {
-			return "Looking up definition of " + SanitizeString(sym)
+		if f, ok := args["file"].(string); ok && strings.TrimSpace(f) != "" {
+			return "Reading file: " + SanitizeString(f)
 		}
-		return "Looking up symbol definition"
-	case "find_callers":
-		fn, _ := args["function_name"].(string)
-		if fn != "" {
-			return "Finding callers of " + SanitizeString(fn)
+		return "Inspecting symbol"
+	case "search":
+		if q, ok := args["query"].(string); ok && strings.TrimSpace(q) != "" {
+			return "Searching symbols: " + SanitizeString(q)
+		}
+		return "Searching symbols"
+	case "callers":
+		if sym, ok := args["symbol"].(string); ok && strings.TrimSpace(sym) != "" {
+			return "Finding callers of " + SanitizeString(sym)
 		}
 		return "Finding symbol callers"
-	case "find_callees":
-		fn, _ := args["function_name"].(string)
-		if fn != "" {
-			return "Finding callees of " + SanitizeString(fn)
+	case "callees":
+		if sym, ok := args["symbol"].(string); ok && strings.TrimSpace(sym) != "" {
+			return "Finding callees of " + SanitizeString(sym)
 		}
 		return "Finding symbol callees"
-	case "query_subgraph":
-		sym, _ := args["root_symbol"].(string)
-		if sym != "" {
-			return "Exploring subgraph for " + SanitizeString(sym)
+	case "impact":
+		if sym, ok := args["symbol"].(string); ok && strings.TrimSpace(sym) != "" {
+			return "Analyzing impact of " + SanitizeString(sym)
 		}
-		return "Exploring dependency subgraph"
-	case "read_symbol_body":
-		sym, _ := args["name"].(string)
-		if sym != "" {
-			return "Reading body of " + SanitizeString(sym)
+		return "Analyzing symbol impact"
+	case "affected":
+		return "Finding affected tests"
+	case "files":
+		return "Listing indexed files"
+	case "status":
+		return "Checking CodeGraph status"
+	case "context":
+		if task, ok := args["task"].(string); ok && strings.TrimSpace(task) != "" {
+			return "Building context for: " + SanitizeString(task)
 		}
-		return "Reading symbol body"
-	case "get_diff_impact":
-		return "Analyzing Git diff impact"
+		return "Building task context"
 	default:
 		return name
 	}

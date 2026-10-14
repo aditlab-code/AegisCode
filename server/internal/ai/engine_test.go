@@ -281,11 +281,11 @@ func TestClaudeEngineMultiTurnToolExecution(t *testing.T) {
 		if turnCount == 1 {
 			// Turn 1: model returns tool_use block
 			fmt.Fprintf(w, "event: content_block_start\n")
-			fmt.Fprintf(w, "data: {\"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"toolu_test\", \"name\": \"get_file_outline\"}}\n\n")
+			fmt.Fprintf(w, "data: {\"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"toolu_test\", \"name\": \"codegraph_explore\"}}\n\n")
 			flusher.Flush()
 
 			fmt.Fprintf(w, "event: content_block_delta\n")
-			fmt.Fprintf(w, "data: {\"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"file_path\\\": \\\"main.go\\\"}\"}}\n\n")
+			fmt.Fprintf(w, "data: {\"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"main.go\\\"}\"}}\n\n")
 			flusher.Flush()
 
 			fmt.Fprintf(w, "event: content_block_stop\n")
@@ -315,7 +315,7 @@ func TestClaudeEngineMultiTurnToolExecution(t *testing.T) {
 		BaseURL: server.URL,
 		APIKey:  "sk-ant-test-key",
 		ToolExecutor: func(ctx context.Context, name string, args map[string]any) (string, error) {
-			if name == "get_file_outline" && args["file_path"] == "main.go" {
+			if name == "codegraph_explore" && args["query"] == "main.go" {
 				toolExecuted = true
 				return `{"symbols": ["main"]}`, nil
 			}
