@@ -6,6 +6,7 @@ import {
   type WireScreenLink,
 } from "../../services/codegraphApi"
 import { useCodeGraphStore } from "../../store/slices/codegraphSlice"
+import { useWorkbenchStore } from "../../store"
 import { Icon } from "../ui/Icon"
 
 export function ScreensEventsView() {
@@ -16,32 +17,34 @@ export function ScreensEventsView() {
 
   const openEntrypointSteps = useCodeGraphStore((s) => s.openEntrypointSteps)
   const openFileCode = useCodeGraphStore((s) => s.openFileCode)
+  const setActiveView = useCodeGraphStore((s) => s.setActiveView)
+  const currentWorkspace = useWorkbenchStore((s) => s.rootPath)
 
-  useEffect(() => {
+  const loadScreens = () => {
     const ac = new AbortController()
     setLoading(true)
     setError(null)
 
-    fetchScreens(ac.signal)
+    fetchScreens(ac.signal, currentWorkspace)
       .then((res) => {
-        if (!res) {
-          setError("No screen transitions found in this project.")
-        } else {
-          setData(res)
-          if (res.screens.length > 0) {
-            setSelectedScreenId(res.entry || res.screens[0].id)
-          }
+        setData(res)
+        if (res.screens && res.screens.length > 0) {
+          setSelectedScreenId(res.entry || res.screens[0].id)
         }
       })
       .catch((err) => {
         if (err.name !== "AbortError") {
-          setError(String(err))
+          setError(err instanceof Error ? err.message : String(err))
         }
       })
       .finally(() => setLoading(false))
 
     return () => ac.abort()
-  }, [])
+  }
+
+  useEffect(() => {
+    return loadScreens()
+  }, [currentWorkspace])
 
   if (loading) {
     return (
@@ -56,11 +59,38 @@ export function ScreensEventsView() {
     return (
       <div className="flex h-full flex-col items-center justify-center p-8 text-center bg-canvas">
         <Icon name="code" size={32} className="text-ink-muted mb-2" />
-        <p className="text-ink font-medium mb-1">No Screen Transitions Found</p>
-        <p className="text-xs text-ink-muted max-w-md">
-          {error ||
-            "This project does not define UI page/screen navigations (such as Expo Router or React Router)."}
+        <p className="text-ink font-medium mb-1">
+          {error ? "Failed to Load Screens" : "No Multi-Screen Transitions"}
         </p>
+        <p className="text-xs text-ink-muted max-w-md mb-4">
+          {error ||
+            "This project is a web application with standard Next.js App Router components without multi-screen navigation state stacks (such as Expo Router or React Navigation)."}
+        </p>
+        <div className="flex items-center gap-2">
+          {error ? (
+            <button
+              onClick={loadScreens}
+              className="px-3 py-1.5 rounded bg-surface-raised border border-line text-xs font-medium text-ink hover:bg-surface-hover transition-colors"
+            >
+              Retry
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={() => setActiveView("entrypoints")}
+                className="px-3 py-1.5 rounded bg-accent text-canvas hover:bg-accent/90 text-xs font-medium transition-colors"
+              >
+                Browse Web Routes
+              </button>
+              <button
+                onClick={() => setActiveView("map")}
+                className="px-3 py-1.5 rounded bg-surface-raised border border-line text-xs font-medium text-ink hover:bg-surface-hover transition-colors"
+              >
+                View Architecture Map
+              </button>
+            </>
+          )}
+        </div>
       </div>
     )
   }

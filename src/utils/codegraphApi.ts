@@ -36,7 +36,7 @@ export interface UIGraphPayload {
   edges: UIGraphEdge[]
   truncated: boolean
   total: number
-  engine?: "colbymchenry/codegraph" | "aegis-fallback"
+  engine?: "colbymchenry/codegraph"
 }
 
 export interface GraphStatus {
@@ -220,45 +220,12 @@ export function extractCodeGraphTraceTargets(
   }
 }
 
-export async function fetchSymbolNeighborhood(
-  symbolId: string | number,
-  depth = 1,
-  limit = 60,
-): Promise<UIGraphPayload | null> {
-  try {
-    const encoded = encodeURIComponent(String(symbolId))
-    const res = await fetch(
-      `${API_BASE}/api/v1/codegraph/neighborhood?id=${encoded}&depth=${depth}&limit=${limit}`,
-    )
-    if (!res.ok) return null
-    return await res.json()
-  } catch {
-    return null
-  }
-}
-
-export async function fetchExploreSubgraph(
-  symbols: string[],
-  limit = 60,
-): Promise<UIGraphPayload | null> {
-  if (!symbols || symbols.length === 0) return null
-  try {
-    const q = encodeURIComponent(symbols.join(" "))
-    const res = await fetch(
-      `${API_BASE}/api/v1/codegraph/neighborhood?symbol=${q}&depth=2&limit=${limit}`,
-    )
-    if (!res.ok) return null
-    return await res.json()
-  } catch {
-    return null
-  }
-}
-
 export async function fetchActiveFileGraph(
   filePath: string,
+  workspace?: string,
 ): Promise<UIGraphPayload | null> {
   const cleanPath = filePath.replace(/^\/+/, "")
-  const data = await fetchFileCode(cleanPath)
+  const data = await fetchFileCode(cleanPath, undefined, workspace)
   if (!data) return null
 
   const nodes: UIGraphNode[] = (data.outline?.items || []).map((it: any) => ({
@@ -293,25 +260,12 @@ export async function fetchActiveFileGraph(
   }
 }
 
-export async function fetchWorkspaceGraph(
-  limit = 50,
-): Promise<UIGraphPayload | null> {
-  try {
-    const res = await fetch(
-      `${API_BASE}/api/v1/codegraph/workspace?limit=${limit}`,
-    )
-    if (!res.ok) return null
-    return await res.json()
-  } catch {
-    return null
-  }
-}
-
 export async function searchGraphSymbols(
   query: string,
   limit = 20,
+  workspace?: string,
 ): Promise<UIGraphNode[]> {
-  const items = await searchSymbols(query)
+  const items = await searchSymbols(query, undefined, workspace)
   return items.slice(0, limit).map((it: any) => ({
     id: it.id,
     name: it.name,
@@ -325,72 +279,84 @@ export async function searchGraphSymbols(
   }))
 }
 
-export async function fetchCodeGraphStatus(): Promise<GraphStatus | null> {
-  const data = await fetchStats()
+export async function fetchCodeGraphStatus(
+  workspace?: string,
+): Promise<GraphStatus | null> {
+  const data = await fetchStats(undefined, workspace)
   if (!data) return null
 
   return {
     workspaceRoot: data.project?.root || data.workspaceRoot || "",
     workspaceHash: data.project?.name || "",
     dbPath: data.index?.backend || "",
-    totalFiles: data.graph?.files || data.files || 0,
-    totalSymbols: data.graph?.nodes || data.nodes || 0,
-    totalEdges: data.graph?.edges || data.edges || 0,
+    totalFiles: data.graph?.files ?? data.files ?? 0,
+    totalSymbols: data.graph?.nodes ?? data.nodes ?? 0,
+    totalEdges: data.graph?.edges ?? data.edges ?? 0,
     isIndexing: data.index?.state === "indexing" || data.state === "indexing",
     lastIndexedAt: data.index?.lastIndexedAt || data.lastIndexedAt || 0,
     engine: "colbymchenry/codegraph",
   }
 }
 
-export async function triggerCodeGraphInit(): Promise<boolean> {
-  return await triggerInit()
+export async function triggerCodeGraphInit(
+  workspace?: string,
+): Promise<boolean> {
+  return await triggerInit(workspace)
 }
 
-export async function triggerCodeGraphReindex(): Promise<boolean> {
-  return await triggerReindex()
+export async function triggerCodeGraphReindex(
+  workspace?: string,
+): Promise<boolean> {
+  return await triggerReindex(workspace)
 }
 
 export async function fetchMcpTools(): Promise<McpToolDefinition[]> {
-  try {
-    const res = await fetch(`${API_BASE}/api/v1/mcp`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/list",
-      }),
-    })
-    if (!res.ok) return []
-    const data = await res.json()
-    return data.result?.tools || []
-  } catch {
-    return []
+  const res = await fetch(`${API_BASE}/api/v1/mcp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/list",
+    }),
+  })
+  if (!res.ok) {
+    throw new Error(
+      `Failed to fetch MCP tools: HTTP ${res.status} ${res.statusText}`,
+    )
   }
+  const data = await res.json()
+  if (data.error) {
+    throw new Error(data.error.message || JSON.stringify(data.error))
+  }
+  return data.result?.tools || []
 }
 
 export async function callMcpTool(
   toolName: string,
   toolArgs: Record<string, unknown> = {},
 ): Promise<unknown> {
-  try {
-    const res = await fetch(`${API_BASE}/api/v1/mcp`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: Date.now(),
-        method: "tools/call",
-        params: {
-          name: toolName,
-          arguments: toolArgs,
-        },
-      }),
-    })
-    if (!res.ok) return { error: `HTTP ${res.status}` }
-    const data = await res.json()
-    return data.result || data.error || data
-  } catch (err: unknown) {
-    return { error: err instanceof Error ? err.message : String(err) }
+  const res = await fetch(`${API_BASE}/api/v1/mcp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: Date.now(),
+      method: "tools/call",
+      params: {
+        name: toolName,
+        arguments: toolArgs,
+      },
+    }),
+  })
+  if (!res.ok) {
+    throw new Error(
+      `MCP tool call failed: HTTP ${res.status} ${res.statusText}`,
+    )
   }
+  const data = await res.json()
+  if (data.error) {
+    throw new Error(data.error.message || JSON.stringify(data.error))
+  }
+  return data.result || data
 }

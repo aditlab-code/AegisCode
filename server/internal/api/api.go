@@ -371,12 +371,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/codegraph/status", s.handleCodeGraphStatus)
 	mux.HandleFunc("/api/v1/codegraph/init", s.handleCodeGraphInit)
 	mux.HandleFunc("/api/v1/codegraph/reindex", s.handleCodeGraphReindex)
-	mux.HandleFunc("/api/v1/codegraph/neighborhood", s.handleCodeGraphNeighborhood)
 	mux.HandleFunc("/api/v1/codegraph/file", s.handleCodeGraphFile)
-	mux.HandleFunc("/api/v1/codegraph/workspace", s.handleCodeGraphWorkspace)
 	mux.HandleFunc("/api/v1/codegraph/symbols/search", s.handleCodeGraphSymbolsSearch)
+	mux.HandleFunc("/api/codegraph/entrypoints", s.handleCodeGraphEntrypoints)
+	mux.HandleFunc("/api/v1/codegraph/entrypoints", s.handleCodeGraphEntrypoints)
 	if s.codegraph != nil {
 		mux.Handle("/api/codegraph/ui/", s.codegraph.ProxyHandler())
+		mux.Handle("/api/codegraph/", s.codegraph.ProxyHandler())
 	}
 
 	// System Management
@@ -3066,44 +3067,6 @@ func (s *Server) handleCodeGraphReindex(w http.ResponseWriter, r *http.Request) 
 	jsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (s *Server) handleCodeGraphNeighborhood(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	if s.codegraph == nil {
-		jsonError(w, http.StatusServiceUnavailable, "codegraph manager not initialized")
-		return
-	}
-
-	idStr := strings.TrimSpace(r.URL.Query().Get("id"))
-	symbolParam := strings.TrimSpace(r.URL.Query().Get("symbol"))
-	target := symbolParam
-	if target == "" {
-		target = idStr
-	}
-	if target == "" {
-		jsonError(w, http.StatusBadRequest, "id or symbol parameter required")
-		return
-	}
-
-	body, statusCode, err := s.codegraph.FetchAPI(r.Context(), "flow?symbols="+url.QueryEscape(target))
-	if err != nil {
-		jsonError(w, statusCode, err.Error())
-		return
-	}
-	if statusCode != http.StatusOK {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(statusCode)
-		_, _ = w.Write(body)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(body)
-}
-
 func (s *Server) handleCodeGraphFile(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -3196,33 +3159,6 @@ func (s *Server) handleCodeGraphFile(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleCodeGraphWorkspace(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	if s.codegraph == nil {
-		jsonError(w, http.StatusServiceUnavailable, "codegraph manager not initialized")
-		return
-	}
-
-	body, statusCode, err := s.codegraph.FetchAPI(r.Context(), "map")
-	if err != nil {
-		jsonError(w, statusCode, err.Error())
-		return
-	}
-	if statusCode != http.StatusOK {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(statusCode)
-		_, _ = w.Write(body)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(body)
-}
-
 func (s *Server) handleCodeGraphSymbolsSearch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -3285,6 +3221,74 @@ func (s *Server) handleCodeGraphSymbolsSearch(w http.ResponseWriter, r *http.Req
 	jsonResponse(w, http.StatusOK, nodes)
 }
 
+func (s *Server) handleCodeGraphEntrypoints(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.codegraph == nil {
+		jsonError(w, http.StatusServiceUnavailable, "codegraph manager not initialized")
+		return
+	}
 
+	workspacePath := strings.TrimSpace(r.URL.Query().Get("workspace"))
+	if workspacePath == "" {
+		workspacePath = strings.TrimSpace(r.URL.Query().Get("path"))
+	}
+	if workspacePath != "" && workspacePath != s.codegraph.Workspace() {
+		s.codegraph.SetWorkspace(workspacePath)
+		if s.mcp != nil {
+			s.mcp.SetWorkspace(workspacePath)
+		}
+	}
 
+	if !s.codegraph.IsIndexed() {
+		jsonError(w, http.StatusServiceUnavailable, "workspace is not initialized with CodeGraph")
+		return
+	}
+
+	body, statusCode, err := s.codegraph.FetchAPI(r.Context(), "entrypoints")
+	if err != nil {
+		// Attempt fallback via MCP bridge if daemon direct fetch fails
+		if s.mcp != nil {
+			result, mcpErr := s.mcp.CallTool(r.Context(), "codegraph_explore", map[string]any{
+				"path": s.codegraph.Workspace(),
+			})
+			if mcpErr == nil && result != nil && !result.IsError && len(result.Content) > 0 && result.Content[0].Type == "text" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(result.Content[0].Text))
+				return
+			}
+		}
+		jsonError(w, statusCode, fmt.Sprintf("failed to retrieve entrypoints from CodeGraph daemon: %v", err))
+		return
+	}
+
+	if statusCode != http.StatusOK {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(statusCode)
+		_, _ = w.Write(body)
+		return
+	}
+
+	// Unwrap MCP envelope if present in body
+	var mcpEnvelope struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+		IsError bool `json:"isError"`
+	}
+	if err := json.Unmarshal(body, &mcpEnvelope); err == nil && len(mcpEnvelope.Content) > 0 && mcpEnvelope.Content[0].Type == "text" && mcpEnvelope.Content[0].Text != "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(mcpEnvelope.Content[0].Text))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
+}
 

@@ -98,6 +98,20 @@ func (m *Manager) IsIndexed() bool {
 	return err == nil && fi.IsDir()
 }
 
+// HasDaemonSocket reports whether a POSIX daemon Unix domain socket is present in the workspace.
+func (m *Manager) HasDaemonSocket() bool {
+	m.mu.RLock()
+	ws := m.workspaceRoot
+	m.mu.RUnlock()
+
+	if ws == "" || runtime.GOOS == "windows" {
+		return false
+	}
+	sockPath := filepath.Join(ws, ".codegraph", "daemon.sock")
+	fi, err := os.Stat(sockPath)
+	return err == nil && (fi.Mode()&os.ModeSocket != 0 || fi.Mode().IsRegular())
+}
+
 // findFreePort locates an unused ephemeral TCP port.
 func findFreePort() (int, error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -193,33 +207,47 @@ func (m *Manager) EnsureRunning() error {
 	targetURL, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", port))
 	m.proxy = newReverseProxy(targetURL)
 
-	// Liveness readiness probe in background or synchronous poll with short timeout
+	// Liveness readiness probe with premature process exit detection
+	processDone := make(chan error, 1)
 	go func() {
-		_ = cmd.Wait()
+		err := cmd.Wait()
 		m.mu.Lock()
 		m.running = false
 		m.ready = false
 		m.mu.Unlock()
+		processDone <- err
 	}()
 
-	// Wait up to 3 seconds for readiness
+	// Wait up to 3 seconds for readiness probe on /api/stats
 	probeURL := fmt.Sprintf("http://127.0.0.1:%d/api/stats", port)
 	client := &http.Client{Timeout: 300 * time.Millisecond}
 	deadline := time.Now().Add(3 * time.Second)
+	isReady := false
 
 	for time.Now().Before(deadline) {
+		select {
+		case err := <-processDone:
+			m.stopProcessLocked()
+			return fmt.Errorf("codegraph daemon exited unexpectedly during startup: %v", err)
+		default:
+		}
+
 		time.Sleep(80 * time.Millisecond)
 		resp, err := client.Get(probeURL)
 		if err == nil {
 			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
-				m.ready = true
+				isReady = true
 				break
 			}
 		}
 	}
 
-	// Even if /api/stats readiness timed out, mark ready = true so proxy attempts can proceed
+	if !isReady {
+		m.stopProcessLocked()
+		return fmt.Errorf("codegraph daemon readiness probe timed out after 3s on port %d", port)
+	}
+
 	m.ready = true
 	return nil
 }

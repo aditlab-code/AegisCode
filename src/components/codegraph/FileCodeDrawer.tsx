@@ -14,6 +14,7 @@ export function FileCodeDrawer() {
   const inspectSymbolFlow = useCodeGraphStore((s) => s.inspectSymbolFlow)
 
   const openFileInPane = useWorkbenchStore((s) => s.openFileInPane)
+  const currentWorkspace = useWorkbenchStore((s) => s.rootPath)
 
   const [data, setData] = useState<WireFileCodePayload | null>(null)
   const [loading, setLoading] = useState(false)
@@ -25,25 +26,19 @@ export function FileCodeDrawer() {
     setLoading(true)
     setError(null)
 
-    fetchFileCode(fileCodeTarget.file, ac.signal)
+    fetchFileCode(fileCodeTarget.file, ac.signal, currentWorkspace)
       .then((res) => {
-        if (!res) {
-          setError(
-            `Could not load bounded file code for ${fileCodeTarget.file}`,
-          )
-        } else {
-          setData(res)
-        }
+        setData(res)
       })
       .catch((err) => {
         if (err.name !== "AbortError") {
-          setError(String(err))
+          setError(err instanceof Error ? err.message : String(err))
         }
       })
       .finally(() => setLoading(false))
 
     return () => ac.abort()
-  }, [fileCodeTarget?.file])
+  }, [fileCodeTarget?.file, currentWorkspace])
 
   if (!fileCodeTarget) return null
 

@@ -346,10 +346,13 @@ func (b *Bridge) CallTool(ctx context.Context, name string, args map[string]any)
 	cleanName := strings.TrimPrefix(name, "mcp__codegraph__")
 	cleanName = strings.TrimPrefix(cleanName, "codegraph:")
 
-	// Auto-inject projectPath if not provided
-	if _, ok := args["projectPath"]; !ok || args["projectPath"] == "" {
-		if ws := b.getWorkspace(); ws != "" {
+	// Auto-inject projectPath and path if not provided
+	if ws := b.getWorkspace(); ws != "" {
+		if _, ok := args["projectPath"]; !ok || args["projectPath"] == "" {
 			args["projectPath"] = ws
+		}
+		if _, ok := args["path"]; !ok || args["path"] == "" {
+			args["path"] = ws
 		}
 	}
 

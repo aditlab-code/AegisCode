@@ -62,29 +62,23 @@ func (s *Server) RegisterTool(tool Tool) {
 	s.tools = append(s.tools, tool)
 }
 
-// Tools returns all tools from the registered list and native bridge.
+// Tools returns native bridge tools when available, falling back to local registry.
 func (s *Server) Tools() []Tool {
 	s.mu.RLock()
 	b := s.bridge
-	local := make([]Tool, len(s.tools))
-	copy(local, s.tools)
 	s.mu.RUnlock()
 
 	if b != nil {
 		bridgeTools := b.Tools()
 		if len(bridgeTools) > 0 {
-			seen := make(map[string]bool)
-			for _, t := range local {
-				seen[t.Name] = true
-			}
-			for _, t := range bridgeTools {
-				if !seen[t.Name] {
-					local = append(local, t)
-					seen[t.Name] = true
-				}
-			}
+			return bridgeTools
 		}
 	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	local := make([]Tool, len(s.tools))
+	copy(local, s.tools)
 	return local
 }
 
@@ -246,10 +240,13 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]any)
 	cleanName := strings.TrimPrefix(name, "mcp__codegraph__")
 	cleanName = strings.TrimPrefix(cleanName, "codegraph:")
 
-	// Auto-inject projectPath if omitted
-	if _, ok := args["projectPath"]; !ok || args["projectPath"] == "" {
-		if ws := s.Workspace(); ws != "" {
+	// Auto-inject projectPath and path if omitted
+	if ws := s.Workspace(); ws != "" {
+		if _, ok := args["projectPath"]; !ok || args["projectPath"] == "" {
 			args["projectPath"] = ws
+		}
+		if _, ok := args["path"]; !ok || args["path"] == "" {
+			args["path"] = ws
 		}
 	}
 

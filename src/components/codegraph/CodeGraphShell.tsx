@@ -12,6 +12,7 @@ import {
   useCodeGraphStore,
   type CodeGraphView,
 } from "../../store/slices/codegraphSlice"
+import { useWorkbenchStore } from "../../store"
 import { EntrypointsView } from "./EntrypointsView"
 import { StepsView } from "./StepsView"
 import { ArchitectureMapView } from "./ArchitectureMapView"
@@ -27,6 +28,7 @@ export function CodeGraphShell() {
   const popBreadcrumb = useCodeGraphStore((s) => s.popBreadcrumb)
   const fileCodeTarget = useCodeGraphStore((s) => s.fileCodeTarget)
   const inspectSymbolFlow = useCodeGraphStore((s) => s.inspectSymbolFlow)
+  const rootPath = useWorkbenchStore((s) => s.rootPath)
 
   const [stats, setStats] = useState<WireStats | null>(null)
   const [statsLoading, setStatsLoading] = useState(true)
@@ -37,7 +39,7 @@ export function CodeGraphShell() {
   const [showSearchDropdown, setShowSearchDropdown] = useState(false)
 
   const loadStats = () => {
-    fetchStats()
+    fetchStats(undefined, rootPath)
       .then((st) => {
         if (st) {
           setStats(st)
@@ -65,7 +67,7 @@ export function CodeGraphShell() {
     loadStats()
     const timer = setInterval(loadStats, 15000)
     return () => clearInterval(timer)
-  }, [])
+  }, [rootPath])
 
   // Debounced search
   useEffect(() => {
@@ -77,7 +79,7 @@ export function CodeGraphShell() {
 
     const timer = setTimeout(() => {
       setIsSearching(true)
-      searchSymbols(searchQuery.trim())
+      searchSymbols(searchQuery.trim(), undefined, rootPath)
         .then((res) => {
           setSearchResults(res.slice(0, 8))
           setShowSearchDropdown(true)
@@ -86,7 +88,7 @@ export function CodeGraphShell() {
     }, 200)
 
     return () => clearTimeout(timer)
-  }, [searchQuery])
+  }, [searchQuery, rootPath])
 
   const isUnindexed =
     !stats ||
@@ -96,7 +98,11 @@ export function CodeGraphShell() {
 
   const handleInit = async () => {
     setSyncing(true)
-    await triggerInit()
+    try {
+      await triggerInit(rootPath)
+    } catch {
+      // Handled by next stats refresh
+    }
     loadStats()
     setSyncing(false)
   }
@@ -104,7 +110,11 @@ export function CodeGraphShell() {
   const handleSync = async () => {
     if (isUnindexed) return
     setSyncing(true)
-    await triggerSync()
+    try {
+      await triggerSync(rootPath)
+    } catch {
+      // Handled by next stats refresh
+    }
     loadStats()
     setSyncing(false)
   }
@@ -112,7 +122,11 @@ export function CodeGraphShell() {
   const handleReindex = async () => {
     if (isUnindexed) return
     setSyncing(true)
-    await triggerReindex()
+    try {
+      await triggerReindex(rootPath)
+    } catch {
+      // Handled by next stats refresh
+    }
     loadStats()
     setSyncing(false)
   }
@@ -234,9 +248,9 @@ export function CodeGraphShell() {
           {stats && (
             <div className="text-[11px] font-mono text-ink-muted flex items-center gap-1.5 mr-1">
               <span className="inline-block h-2 w-2 rounded-full bg-success" />
-              <span>{stats.nodes || 0} nodes</span>
+              <span>{stats.graph?.nodes ?? stats.nodes ?? 0} nodes</span>
               <span>·</span>
-              <span>{stats.edges || 0} edges</span>
+              <span>{stats.graph?.edges ?? stats.edges ?? 0} edges</span>
             </div>
           )}
 

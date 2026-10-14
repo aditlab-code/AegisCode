@@ -1613,7 +1613,7 @@ func TestCodeGraphAndMCPEndpoints(t *testing.T) {
 	}
 
 	// 6. Unindexed workspace queries return 503 Service Unavailable (Fail-Fast: no silent fallbacks)
-	reqWsUnindexed := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/workspace?limit=50", nil)
+	reqWsUnindexed := httptest.NewRequest(http.MethodGet, "/api/codegraph/ui/map", nil)
 	rrWsUnindexed := executeRequest(handler, reqWsUnindexed)
 	if rrWsUnindexed.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503 Service Unavailable for unindexed workspace, got %d: %s", rrWsUnindexed.Code, rrWsUnindexed.Body.String())
@@ -1625,31 +1625,44 @@ func TestCodeGraphAndMCPEndpoints(t *testing.T) {
 		t.Fatalf("expected 503 Service Unavailable for unindexed file, got %d: %s", rrFileUnindexed.Code, rrFileUnindexed.Body.String())
 	}
 
-	// 7. GET /api/v1/codegraph/neighborhood (missing id -> 400 Bad Request)
-	reqNBad := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/neighborhood", nil)
-	rrNBad := executeRequest(handler, reqNBad)
-	if rrNBad.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 Bad Request for neighborhood without id, got %d", rrNBad.Code)
+	reqEntrypointsUnindexed := httptest.NewRequest(http.MethodGet, "/api/codegraph/entrypoints", nil)
+	rrEntrypointsUnindexed := executeRequest(handler, reqEntrypointsUnindexed)
+	if rrEntrypointsUnindexed.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 Service Unavailable for unindexed entrypoints, got %d: %s", rrEntrypointsUnindexed.Code, rrEntrypointsUnindexed.Body.String())
 	}
 
-	// 8. Explicit UI Proxy POST /api/codegraph/ui/init initializes workspace
+	// 7. Explicit UI Proxy POST /api/codegraph/ui/init initializes workspace
 	reqUIInit := httptest.NewRequest(http.MethodPost, "/api/codegraph/ui/init", nil)
 	rrUIInit := executeRequest(handler, reqUIInit)
 	if rrUIInit.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK for UI init, got %d: %s", rrUIInit.Code, rrUIInit.Body.String())
 	}
 
-	// 7. Test with indexed workspace (our repository root)
+	// 8. Test with indexed workspace (our repository root)
 	cwd, _ := os.Getwd()
 	repoRoot := filepath.Clean(filepath.Join(cwd, "..", "..", ".."))
 	if fi, err := os.Stat(filepath.Join(repoRoot, ".codegraph")); err == nil && fi.IsDir() {
 		_ = srv.Codegraph().SetWorkspace(repoRoot)
 
-		// 7a. GET /api/v1/codegraph/workspace
-		reqWs := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/workspace?limit=50", nil)
+		// 8a. GET /api/codegraph/ui/map
+		reqWs := httptest.NewRequest(http.MethodGet, "/api/codegraph/ui/map", nil)
 		rrWs := executeRequest(handler, reqWs)
 		if rrWs.Code != http.StatusOK {
-			t.Fatalf("expected 200 OK for codegraph workspace, got %d: %s", rrWs.Code, rrWs.Body.String())
+			t.Fatalf("expected 200 OK for codegraph map, got %d: %s", rrWs.Code, rrWs.Body.String())
+		}
+
+		// 8b. GET /api/codegraph/entrypoints
+		reqEp := httptest.NewRequest(http.MethodGet, "/api/codegraph/entrypoints", nil)
+		rrEp := executeRequest(handler, reqEp)
+		if rrEp.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for codegraph entrypoints, got %d: %s", rrEp.Code, rrEp.Body.String())
+		}
+
+		// 8c. GET /api/v1/codegraph/entrypoints
+		reqEpV1 := httptest.NewRequest(http.MethodGet, "/api/v1/codegraph/entrypoints", nil)
+		rrEpV1 := executeRequest(handler, reqEpV1)
+		if rrEpV1.Code != http.StatusOK {
+			t.Fatalf("expected 200 OK for codegraph v1 entrypoints, got %d: %s", rrEpV1.Code, rrEpV1.Body.String())
 		}
 
 		// 7b. GET /api/v1/codegraph/file (real file with real outline symbols)

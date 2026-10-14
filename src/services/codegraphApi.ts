@@ -524,28 +524,224 @@ export const CODEGRAPH_ROUTES = {
     `/api/codegraph/ui/search?q=${encodeURIComponent(query)}`,
 } as const
 
+function buildEndpointUrl(
+  baseUrl: string,
+  params?: URLSearchParams,
+  workspace?: string,
+): string {
+  const p = params ? new URLSearchParams(params) : new URLSearchParams()
+  if (workspace) {
+    p.set("workspace", workspace)
+  }
+  const qs = p.toString()
+  return qs ? `${baseUrl}?${qs}` : baseUrl
+}
+
+async function fetchCodeGraphJson<T>(
+  endpoint: string,
+  options?: RequestInit,
+  endpointLabel = "API",
+): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(endpoint, options)
+  } catch (err: any) {
+    if (err?.name === "AbortError") {
+      throw err
+    }
+    throw new Error(
+      `CodeGraph network error: ${err?.message || `Failed to reach CodeGraph ${endpointLabel}`}`,
+    )
+  }
+
+  if (!res.ok) {
+    let errorDetail = `HTTP ${res.status}: ${res.statusText || "Daemon Request Failed"}`
+    try {
+      const errBody = await res.json()
+      if (errBody && typeof errBody.error === "string") {
+        errorDetail = errBody.error
+      }
+    } catch {
+      // Body not JSON
+    }
+    throw new Error(errorDetail)
+  }
+
+  return (await res.json()) as T
+}
+
 export async function fetchStats(
   signal?: AbortSignal,
-): Promise<WireStats | null> {
-  try {
-    const res = await fetch(CODEGRAPH_ROUTES.STATS, { signal })
-    if (res.ok) return await res.json()
-    return null
-  } catch {
-    return null
+  workspace?: string,
+): Promise<WireStats> {
+  const endpoint = buildEndpointUrl(
+    CODEGRAPH_ROUTES.STATS,
+    undefined,
+    workspace,
+  )
+  return await fetchCodeGraphJson<WireStats>(endpoint, { signal }, "Stats")
+}
+
+/**
+ * Normalizes raw payload from @colbymchenry/codegraph entrypoints daemon.
+ * Unpacks MCP tool envelopes if present, verifies native keys,
+ * and guarantees safe arrays without silent swallowing.
+ */
+export function normalizeEntrypointsPayload(raw: unknown): WireEntryPoints {
+  if (!raw || typeof raw !== "object") {
+    throw new Error(
+      "Invalid CodeGraph entrypoints response: payload must be an object",
+    )
+  }
+
+  let data = raw as Record<string, any>
+
+  // Unpack MCP CallToolResult envelope if wrapped in { content: [{ type: "text", text: "..." }] }
+  if (Array.isArray(data.content) && data.content.length > 0) {
+    const textItem = data.content.find(
+      (c: any) => c && c.type === "text" && typeof c.text === "string",
+    )
+    if (textItem) {
+      try {
+        data = JSON.parse(textItem.text)
+      } catch (e) {
+        throw new Error(
+          `Failed to parse MCP envelope text JSON: ${
+            e instanceof Error ? e.message : String(e)
+          }`,
+        )
+      }
+    }
+  }
+
+  // Check if explicit error returned in payload
+  if (data.error && typeof data.error === "string") {
+    throw new Error(data.error)
+  }
+
+  // Native colbymchenry frameworks array
+  const frameworks: string[] = Array.isArray(data.frameworks)
+    ? data.frameworks
+    : []
+
+  // Native colbymchenry routes
+  const rawRoutes = data.routes || {}
+  const rawRouteItems = rawRoutes.items || {}
+  const routeItemList = Array.isArray(rawRouteItems.items)
+    ? rawRouteItems.items
+    : Array.isArray(rawRouteItems)
+      ? rawRouteItems
+      : []
+
+  const routes = {
+    routed: Boolean(rawRoutes.routed),
+    routeCount:
+      typeof rawRoutes.routeCount === "number"
+        ? rawRoutes.routeCount
+        : routeItemList.length,
+    items: {
+      total:
+        typeof rawRouteItems.total === "number"
+          ? rawRouteItems.total
+          : routeItemList.length,
+      shown:
+        typeof rawRouteItems.shown === "number"
+          ? rawRouteItems.shown
+          : routeItemList.length,
+      truncated: Boolean(rawRouteItems.truncated),
+      items: routeItemList,
+    },
+  }
+
+  // Native colbymchenry files
+  const rawFiles = data.files || {}
+  const fileItems = Array.isArray(rawFiles.items)
+    ? rawFiles.items
+    : Array.isArray(rawFiles)
+      ? rawFiles
+      : []
+  const files = {
+    total:
+      typeof rawFiles.total === "number" ? rawFiles.total : fileItems.length,
+    shown:
+      typeof rawFiles.shown === "number" ? rawFiles.shown : fileItems.length,
+    truncated: Boolean(rawFiles.truncated),
+    items: fileItems,
+  }
+
+  // Native colbymchenry tests
+  const rawTests = data.tests || {}
+  const testItems = Array.isArray(rawTests.items)
+    ? rawTests.items
+    : Array.isArray(rawTests)
+      ? rawTests
+      : []
+  const tests = {
+    total:
+      typeof rawTests.total === "number" ? rawTests.total : testItems.length,
+    shown:
+      typeof rawTests.shown === "number" ? rawTests.shown : testItems.length,
+    truncated: Boolean(rawTests.truncated),
+    items: testItems,
+  }
+
+  // Native colbymchenry hubs
+  const rawHubs = data.hubs || {}
+  const hubItems = Array.isArray(rawHubs.items)
+    ? rawHubs.items
+    : Array.isArray(rawHubs)
+      ? rawHubs
+      : []
+  const hubs = {
+    total: typeof rawHubs.total === "number" ? rawHubs.total : hubItems.length,
+    shown: typeof rawHubs.shown === "number" ? rawHubs.shown : hubItems.length,
+    truncated: Boolean(rawHubs.truncated),
+    items: hubItems,
+  }
+
+  // Native colbymchenry index & timing
+  const rawIndex = data.index || {}
+  const index = {
+    lastIndexedAt:
+      typeof rawIndex.lastIndexedAt === "number"
+        ? rawIndex.lastIndexedAt
+        : null,
+    files: typeof rawIndex.files === "number" ? rawIndex.files : files.total,
+  }
+
+  const rawTiming = data.timing || {}
+  const timing = {
+    elapsedMs:
+      typeof rawTiming.elapsedMs === "number" ? rawTiming.elapsedMs : 0,
+    cached: Boolean(rawTiming.cached),
+  }
+
+  return {
+    frameworks,
+    routes,
+    files,
+    tests,
+    hubs,
+    index,
+    timing,
   }
 }
 
 export async function fetchEntrypoints(
   signal?: AbortSignal,
-): Promise<WireEntryPoints | null> {
-  try {
-    const res = await fetch(CODEGRAPH_ROUTES.ENTRYPOINTS, { signal })
-    if (!res.ok) return null
-    return await res.json()
-  } catch {
-    return null
-  }
+  workspace?: string,
+): Promise<WireEntryPoints> {
+  const endpoint = buildEndpointUrl(
+    CODEGRAPH_ROUTES.ENTRYPOINTS,
+    undefined,
+    workspace,
+  )
+  const raw = await fetchCodeGraphJson<unknown>(
+    endpoint,
+    { signal },
+    "Entrypoints",
+  )
+  return normalizeEntrypointsPayload(raw)
 }
 
 export interface StepsOptions {
@@ -558,22 +754,20 @@ export async function fetchSteps(
   anchor: string,
   options?: StepsOptions,
   signal?: AbortSignal,
-): Promise<WireStepsPayload | null> {
-  try {
-    const params = new URLSearchParams()
-    params.set("anchor", anchor)
-    if (options?.depth) params.set("depth", String(options.depth))
-    if (options?.limit) params.set("limit", String(options.limit))
-    if (options?.through) params.set("through", "1")
+  workspace?: string,
+): Promise<WireStepsPayload> {
+  const params = new URLSearchParams()
+  params.set("anchor", anchor)
+  if (options?.depth) params.set("depth", String(options.depth))
+  if (options?.limit) params.set("limit", String(options.limit))
+  if (options?.through) params.set("through", "1")
 
-    const res = await fetch(`${CODEGRAPH_ROUTES.STEPS}?${params.toString()}`, {
-      signal,
-    })
-    if (!res.ok) return null
-    return await res.json()
-  } catch {
-    return null
-  }
+  const endpoint = buildEndpointUrl(CODEGRAPH_ROUTES.STEPS, params, workspace)
+  return await fetchCodeGraphJson<WireStepsPayload>(
+    endpoint,
+    { signal },
+    "Steps",
+  )
 }
 
 export interface MapOptions {
@@ -584,20 +778,18 @@ export interface MapOptions {
 export async function fetchMap(
   options?: MapOptions,
   signal?: AbortSignal,
-): Promise<WireMapPayload | null> {
-  try {
-    const params = new URLSearchParams()
-    if (options?.root) params.set("root", options.root)
-    if (options?.depth) params.set("depth", String(options.depth))
+  workspace?: string,
+): Promise<WireMapPayload> {
+  const params = new URLSearchParams()
+  if (options?.root) params.set("root", options.root)
+  if (options?.depth) params.set("depth", String(options.depth))
 
-    const res = await fetch(`${CODEGRAPH_ROUTES.MAP}?${params.toString()}`, {
-      signal,
-    })
-    if (!res.ok) return null
-    return await res.json()
-  } catch {
-    return null
-  }
+  const endpoint = buildEndpointUrl(CODEGRAPH_ROUTES.MAP, params, workspace)
+  return await fetchCodeGraphJson<WireMapPayload>(
+    endpoint,
+    { signal },
+    "Architecture Map",
+  )
 }
 
 export interface FlowQueryParam {
@@ -609,101 +801,118 @@ export interface FlowQueryParam {
 export async function fetchFlow(
   query: FlowQueryParam,
   signal?: AbortSignal,
-): Promise<WireFlowPayload | null> {
-  try {
-    const params = new URLSearchParams()
-    if (query.from && query.to) {
-      params.set("from", query.from)
-      params.set("to", query.to)
-    } else if (query.symbols && query.symbols.length > 0) {
-      params.set("symbols", query.symbols.join(","))
-    }
-
-    const res = await fetch(`${CODEGRAPH_ROUTES.FLOW}?${params.toString()}`, {
-      signal,
-    })
-    if (!res.ok) return null
-    return await res.json()
-  } catch {
-    return null
+  workspace?: string,
+): Promise<WireFlowPayload> {
+  const params = new URLSearchParams()
+  if (query.from && query.to) {
+    params.set("from", query.from)
+    params.set("to", query.to)
+  } else if (query.symbols && query.symbols.length > 0) {
+    params.set("symbols", query.symbols.join(","))
   }
+
+  const endpoint = buildEndpointUrl(CODEGRAPH_ROUTES.FLOW, params, workspace)
+  return await fetchCodeGraphJson<WireFlowPayload>(endpoint, { signal }, "Flow")
 }
 
 export async function fetchScreens(
   signal?: AbortSignal,
-): Promise<WireScreensPayload | null> {
-  try {
-    const res = await fetch(CODEGRAPH_ROUTES.SCREENS, { signal })
-    if (!res.ok) return null
-    return await res.json()
-  } catch {
-    return null
-  }
+  workspace?: string,
+): Promise<WireScreensPayload> {
+  const endpoint = buildEndpointUrl(
+    CODEGRAPH_ROUTES.SCREENS,
+    undefined,
+    workspace,
+  )
+  return await fetchCodeGraphJson<WireScreensPayload>(
+    endpoint,
+    { signal },
+    "Screens",
+  )
 }
 
 export async function fetchFileCode(
   filePath: string,
   signal?: AbortSignal,
-): Promise<WireFileCodePayload | null> {
-  try {
-    const res = await fetch(CODEGRAPH_ROUTES.FILECODE(filePath), { signal })
-    if (!res.ok) return null
-    return await res.json()
-  } catch {
-    return null
-  }
+  workspace?: string,
+): Promise<WireFileCodePayload> {
+  const baseUrl = CODEGRAPH_ROUTES.FILECODE(filePath)
+  const endpoint = buildEndpointUrl(baseUrl, undefined, workspace)
+  return await fetchCodeGraphJson<WireFileCodePayload>(
+    endpoint,
+    { signal },
+    "FileCode",
+  )
 }
 
 export async function fetchNode(
   id: string,
   signal?: AbortSignal,
-): Promise<WireNodeDetail | null> {
-  try {
-    const res = await fetch(CODEGRAPH_ROUTES.NODE(id), { signal })
-    if (!res.ok) return null
-    return await res.json()
-  } catch {
-    return null
-  }
+  workspace?: string,
+): Promise<WireNodeDetail> {
+  const baseUrl = CODEGRAPH_ROUTES.NODE(id)
+  const endpoint = buildEndpointUrl(baseUrl, undefined, workspace)
+  return await fetchCodeGraphJson<WireNodeDetail>(endpoint, { signal }, "Node")
 }
 
 export async function searchSymbols(
   q: string,
   signal?: AbortSignal,
+  workspace?: string,
 ): Promise<WireNodeRef[]> {
-  try {
-    const res = await fetch(CODEGRAPH_ROUTES.SEARCH(q), { signal })
-    if (!res.ok) return []
-    const data = await res.json()
-    return Array.isArray(data) ? data : data?.results || data?.items || []
-  } catch {
-    return []
-  }
+  const params = new URLSearchParams()
+  params.set("q", q)
+  const endpoint = buildEndpointUrl(
+    `${CODEGRAPH_ROUTES.BASE}/search`,
+    params,
+    workspace,
+  )
+  const data = await fetchCodeGraphJson<any>(endpoint, { signal }, "Search")
+  return Array.isArray(data) ? data : data?.results || data?.items || []
 }
 
-export async function triggerInit(): Promise<boolean> {
-  try {
-    const res = await fetch(CODEGRAPH_ROUTES.INIT, { method: "POST" })
-    return res.ok
-  } catch {
-    return false
+export async function triggerInit(workspace?: string): Promise<boolean> {
+  const endpoint = buildEndpointUrl(CODEGRAPH_ROUTES.INIT, undefined, workspace)
+  const res = await fetch(endpoint, { method: "POST" })
+  if (!res.ok) {
+    let errorDetail = `HTTP ${res.status}: ${res.statusText || "Init Failed"}`
+    try {
+      const b = await res.json()
+      if (b?.error) errorDetail = b.error
+    } catch {}
+    throw new Error(errorDetail)
   }
+  return true
 }
 
-export async function triggerSync(): Promise<boolean> {
-  try {
-    const res = await fetch(CODEGRAPH_ROUTES.SYNC, { method: "POST" })
-    return res.ok
-  } catch {
-    return false
+export async function triggerSync(workspace?: string): Promise<boolean> {
+  const endpoint = buildEndpointUrl(CODEGRAPH_ROUTES.SYNC, undefined, workspace)
+  const res = await fetch(endpoint, { method: "POST" })
+  if (!res.ok) {
+    let errorDetail = `HTTP ${res.status}: ${res.statusText || "Sync Failed"}`
+    try {
+      const b = await res.json()
+      if (b?.error) errorDetail = b.error
+    } catch {}
+    throw new Error(errorDetail)
   }
+  return true
 }
 
-export async function triggerReindex(): Promise<boolean> {
-  try {
-    const res = await fetch(CODEGRAPH_ROUTES.INDEX, { method: "POST" })
-    return res.ok
-  } catch {
-    return false
+export async function triggerReindex(workspace?: string): Promise<boolean> {
+  const endpoint = buildEndpointUrl(
+    CODEGRAPH_ROUTES.INDEX,
+    undefined,
+    workspace,
+  )
+  const res = await fetch(endpoint, { method: "POST" })
+  if (!res.ok) {
+    let errorDetail = `HTTP ${res.status}: ${res.statusText || "Reindex Failed"}`
+    try {
+      const b = await res.json()
+      if (b?.error) errorDetail = b.error
+    } catch {}
+    throw new Error(errorDetail)
   }
+  return true
 }

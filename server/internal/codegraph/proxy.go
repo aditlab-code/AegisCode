@@ -1,10 +1,13 @@
 package codegraph
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -14,21 +17,65 @@ func newReverseProxy(target *url.URL) *httputil.ReverseProxy {
 	originalDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
 		originalDirector(req)
-		// Rewrite `/api/codegraph/ui/*` path to `/api/*`
+		// Rewrite `/api/codegraph/ui/*`, `/api/codegraph/*`, or `/api/v1/codegraph/*` path to `/api/*`
 		if strings.HasPrefix(req.URL.Path, "/api/codegraph/ui/") {
 			req.URL.Path = "/api/" + strings.TrimPrefix(req.URL.Path, "/api/codegraph/ui/")
 		} else if req.URL.Path == "/api/codegraph/ui" {
 			req.URL.Path = "/api"
+		} else if strings.HasPrefix(req.URL.Path, "/api/codegraph/") {
+			req.URL.Path = "/api/" + strings.TrimPrefix(req.URL.Path, "/api/codegraph/")
+		} else if req.URL.Path == "/api/codegraph" {
+			req.URL.Path = "/api"
+		} else if strings.HasPrefix(req.URL.Path, "/api/v1/codegraph/") {
+			req.URL.Path = "/api/" + strings.TrimPrefix(req.URL.Path, "/api/v1/codegraph/")
 		}
 		req.Host = target.Host
 	}
+
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		if resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get("Content-Type"), "json") {
+			bodyBytes, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return err
+			}
+			_ = resp.Body.Close()
+
+			var mcpEnvelope struct {
+				Content []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				} `json:"content"`
+				IsError bool `json:"isError"`
+			}
+			if err := json.Unmarshal(bodyBytes, &mcpEnvelope); err == nil && len(mcpEnvelope.Content) > 0 && mcpEnvelope.Content[0].Type == "text" && mcpEnvelope.Content[0].Text != "" {
+				unwrapped := []byte(mcpEnvelope.Content[0].Text)
+				resp.Body = io.NopCloser(bytes.NewReader(unwrapped))
+				resp.ContentLength = int64(len(unwrapped))
+				resp.Header.Set("Content-Length", strconv.Itoa(len(unwrapped)))
+				resp.Header.Set("Content-Type", "application/json")
+				return nil
+			}
+
+			resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		}
+		return nil
+	}
+
 	return proxy
 }
 
-// ProxyHandler handles all requests routed to `/api/codegraph/ui/*`.
+// ProxyHandler handles all requests routed to `/api/codegraph/ui/*` and `/api/codegraph/*`.
 func (m *Manager) ProxyHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+
+		wsQuery := strings.TrimSpace(r.URL.Query().Get("workspace"))
+		if wsQuery == "" {
+			wsQuery = strings.TrimSpace(r.URL.Query().Get("path"))
+		}
+		if wsQuery != "" && wsQuery != m.Workspace() {
+			m.SetWorkspace(wsQuery)
+		}
 
 		cleanPath := strings.TrimSuffix(r.URL.Path, "/")
 

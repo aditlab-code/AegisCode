@@ -121,7 +121,7 @@ export const useCodeGraphStore = create<CodeGraphState>((set, get) => ({
     set({
       activeView: "flow",
       selectedSymbol: { id, name },
-      flowQuery: { symbols: [name] },
+      flowQuery: { from: name, to: "" },
       breadcrumbs: crumbs,
     })
   },

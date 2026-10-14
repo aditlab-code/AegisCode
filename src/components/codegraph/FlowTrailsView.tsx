@@ -9,6 +9,7 @@ import {
   type LayoutNode,
 } from "../../workers/codegraphLayout.worker"
 import { useCodeGraphStore } from "../../store/slices/codegraphSlice"
+import { useWorkbenchStore } from "../../store"
 import { Icon } from "../ui/Icon"
 
 export function FlowTrailsView() {
@@ -16,13 +17,14 @@ export function FlowTrailsView() {
   const flowQuery = useCodeGraphStore((s) => s.flowQuery)
   const openFileCode = useCodeGraphStore((s) => s.openFileCode)
   const inspectSymbolFlow = useCodeGraphStore((s) => s.inspectSymbolFlow)
+  const currentWorkspace = useWorkbenchStore((s) => s.rootPath)
 
-  const [fromQuery, setFromQuery] = useState(flowQuery?.from || "")
+  const [fromQuery, setFromQuery] = useState(
+    flowQuery?.from || selectedSymbol?.name || "",
+  )
   const [toQuery, setToQuery] = useState(flowQuery?.to || "")
   const [symbolQuery, setSymbolQuery] = useState(
-    flowQuery?.symbols
-      ? flowQuery.symbols.join(" ")
-      : selectedSymbol?.name || "Server",
+    flowQuery?.symbols ? flowQuery.symbols.join(" ") : "",
   )
 
   const [data, setData] = useState<WireFlowPayload | null>(null)
@@ -30,7 +32,37 @@ export function FlowTrailsView() {
   const [error, setError] = useState<string | null>(null)
   const [selectedFlowIndex, setSelectedFlowIndex] = useState(0)
 
+  useEffect(() => {
+    if (flowQuery?.from) {
+      setFromQuery(flowQuery.from)
+      setToQuery(flowQuery.to || "")
+      setSymbolQuery("")
+    } else if (flowQuery?.symbols) {
+      setSymbolQuery(flowQuery.symbols.join(" "))
+      setFromQuery("")
+      setToQuery("")
+    } else if (selectedSymbol?.name) {
+      setFromQuery(selectedSymbol.name)
+      setToQuery("")
+      setSymbolQuery("")
+    }
+  }, [selectedSymbol, flowQuery])
+
   const handleSearch = () => {
+    const activeSymbols = symbolQuery.split(/\s+/).filter(Boolean)
+
+    if (fromQuery && !toQuery) {
+      setData(null)
+      setError(null)
+      return
+    }
+
+    if ((!fromQuery || !toQuery) && activeSymbols.length < 2) {
+      setData(null)
+      setError(null)
+      return
+    }
+
     const ac = new AbortController()
     setLoading(true)
     setError(null)
@@ -38,28 +70,26 @@ export function FlowTrailsView() {
     const q =
       fromQuery && toQuery
         ? { from: fromQuery, to: toQuery }
-        : { symbols: symbolQuery.split(/\s+/).filter(Boolean) }
+        : { symbols: activeSymbols }
 
-    fetchFlow(q, ac.signal)
+    fetchFlow(q, ac.signal, currentWorkspace)
       .then((res) => {
-        if (!res) {
-          setError("No call flow found matching the query.")
-        } else {
-          setData(res)
-          setSelectedFlowIndex(0)
-        }
+        setData(res)
+        setSelectedFlowIndex(0)
       })
       .catch((err) => {
         if (err.name !== "AbortError") {
-          setError(String(err))
+          setError(err instanceof Error ? err.message : String(err))
         }
       })
       .finally(() => setLoading(false))
+
+    return () => ac.abort()
   }
 
   useEffect(() => {
-    handleSearch()
-  }, [selectedSymbol])
+    return handleSearch()
+  }, [fromQuery, toQuery, symbolQuery, currentWorkspace])
 
   const activeFlow: WireFlow | null = data?.flows?.[selectedFlowIndex] || null
 
@@ -124,7 +154,15 @@ export function FlowTrailsView() {
             className="flex-1 rounded bg-surface-raised border border-line px-2.5 py-1 text-xs text-ink placeholder-ink-muted focus:outline-none focus:border-accent"
           />
           <button
-            onClick={handleSearch}
+            onClick={() => {
+              if (fromQuery && !toQuery) {
+                setError(
+                  "Please specify a target symbol in 'To symbol...' to calculate flow path.",
+                )
+              } else {
+                handleSearch()
+              }
+            }}
             className="px-3 py-1 rounded bg-accent-soft text-accent hover:bg-accent hover:text-canvas text-xs font-medium transition-colors"
           >
             Trace
@@ -158,13 +196,51 @@ export function FlowTrailsView() {
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent mb-3" />
             <p className="text-sm">Tracing shortest call flow path...</p>
           </div>
+        ) : fromQuery && !toQuery ? (
+          <div className="flex h-64 flex-col items-center justify-center text-center">
+            <Icon name="code" size={32} className="text-accent mb-2" />
+            <p className="text-ink font-medium mb-1">
+              Origin Symbol Selected:{" "}
+              <span className="font-mono text-accent">{fromQuery}</span>
+            </p>
+            <p className="text-xs text-ink-muted max-w-md">
+              Enter a destination symbol in &quot;To symbol...&quot; above and
+              click Trace to discover connected execution call pathways.
+            </p>
+          </div>
+        ) : !fromQuery &&
+          !toQuery &&
+          symbolQuery.split(/\s+/).filter(Boolean).length < 2 ? (
+          <div className="flex h-64 flex-col items-center justify-center text-center">
+            <Icon name="code" size={32} className="text-ink-muted mb-2" />
+            <p className="text-ink font-medium mb-1">Direct Call Flow Tracer</p>
+            <p className="text-xs text-ink-muted max-w-md">
+              Enter starting and target symbols above (e.g. LandingHeroSection →
+              LandingTelemetryRibbon) or two space-separated symbols to trace
+              directed execution flows.
+            </p>
+          </div>
         ) : error || !activeFlow ? (
           <div className="flex h-64 flex-col items-center justify-center text-center">
             <Icon name="error" size={32} className="text-warning mb-2" />
             <p className="text-ink font-medium mb-1">Flow Not Found</p>
-            <p className="text-xs text-ink-muted max-w-md">
-              {error || "No connected path discovered."}
+            <p className="text-xs text-ink-muted max-w-md mb-2">
+              {data?.reason ||
+                error ||
+                "No connected path discovered between these symbols."}
             </p>
+            {data?.unresolved && data.unresolved.length > 0 && (
+              <p className="text-[11px] text-ink-muted font-mono mb-4">
+                Unresolved symbol: {data.unresolved.join(", ")} (not callable in
+                index)
+              </p>
+            )}
+            <button
+              onClick={handleSearch}
+              className="px-3 py-1.5 rounded bg-surface-raised border border-line text-xs font-medium text-ink hover:bg-surface-hover transition-colors"
+            >
+              Retry
+            </button>
           </div>
         ) : (
           <div className="space-y-6 max-w-5xl mx-auto">

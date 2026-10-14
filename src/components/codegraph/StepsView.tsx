@@ -6,6 +6,7 @@ import {
   type WireStepLink,
 } from "../../services/codegraphApi"
 import { useCodeGraphStore } from "../../store/slices/codegraphSlice"
+import { useWorkbenchStore } from "../../store"
 import { Icon } from "../ui/Icon"
 
 export function StepsView() {
@@ -13,6 +14,7 @@ export function StepsView() {
   const openFileCode = useCodeGraphStore((s) => s.openFileCode)
   const inspectSymbolFlow = useCodeGraphStore((s) => s.inspectSymbolFlow)
   const setActiveView = useCodeGraphStore((s) => s.setActiveView)
+  const currentWorkspace = useWorkbenchStore((s) => s.rootPath)
 
   const [data, setData] = useState<WireStepsPayload | null>(null)
   const [loading, setLoading] = useState(false)
@@ -21,29 +23,29 @@ export function StepsView() {
 
   const anchorId = selectedEntrypoint?.id || "main"
 
-  useEffect(() => {
+  const loadSteps = () => {
     if (!anchorId) return
     const ac = new AbortController()
     setLoading(true)
     setError(null)
 
-    fetchSteps(anchorId, { depth, limit: 120 }, ac.signal)
+    fetchSteps(anchorId, { depth, limit: 120 }, ac.signal, currentWorkspace)
       .then((res) => {
-        if (!res) {
-          setError(`No execution steps found from anchor '${anchorId}'.`)
-        } else {
-          setData(res)
-        }
+        setData(res)
       })
       .catch((err) => {
         if (err.name !== "AbortError") {
-          setError(String(err))
+          setError(err instanceof Error ? err.message : String(err))
         }
       })
       .finally(() => setLoading(false))
 
     return () => ac.abort()
-  }, [anchorId, depth])
+  }
+
+  useEffect(() => {
+    return loadSteps()
+  }, [anchorId, depth, currentWorkspace])
 
   if (!selectedEntrypoint) {
     return (
@@ -83,12 +85,20 @@ export function StepsView() {
         <Icon name="error" size={32} className="text-warning mb-2" />
         <p className="text-ink font-medium mb-1">Steps Walk Failed</p>
         <p className="text-xs text-ink-muted max-w-md mb-4">{error}</p>
-        <button
-          onClick={() => setActiveView("entrypoints")}
-          className="px-3 py-1.5 rounded bg-surface-raised border border-line text-xs text-ink-soft hover:text-ink transition-colors"
-        >
-          Return to Entrypoints
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={loadSteps}
+            className="px-3 py-1.5 rounded bg-surface-raised border border-line text-xs font-medium text-ink hover:bg-surface-hover transition-colors"
+          >
+            Retry
+          </button>
+          <button
+            onClick={() => setActiveView("entrypoints")}
+            className="px-3 py-1.5 rounded bg-surface-raised border border-line text-xs text-ink-soft hover:text-ink transition-colors"
+          >
+            Return to Entrypoints
+          </button>
+        </div>
       </div>
     )
   }

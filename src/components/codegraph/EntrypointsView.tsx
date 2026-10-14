@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import {
   fetchEntrypoints,
   type WireEntryPoints,
@@ -7,6 +7,7 @@ import {
   type WireEntryTest,
   type WireEntryHub,
 } from "../../services/codegraphApi"
+import { useWorkbenchStore } from "../../store"
 import { useCodeGraphStore } from "../../store/slices/codegraphSlice"
 import { Icon } from "../ui/Icon"
 
@@ -17,36 +18,42 @@ export function EntrypointsView() {
   const [activeTab, setActiveTab] =
     useState<"routes" | "files" | "tests" | "hubs">("routes")
 
+  const rootPath = useWorkbenchStore((s) => s.rootPath)
   const openEntrypointSteps = useCodeGraphStore((s) => s.openEntrypointSteps)
   const openFileCode = useCodeGraphStore((s) => s.openFileCode)
   const inspectSymbolFlow = useCodeGraphStore((s) => s.inspectSymbolFlow)
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
     const ac = new AbortController()
     setLoading(true)
     setError(null)
 
-    fetchEntrypoints(ac.signal)
+    fetchEntrypoints(ac.signal, rootPath)
       .then((res) => {
-        if (!res) {
-          setError("Failed to retrieve entrypoints from CodeGraph daemon.")
-        } else {
-          setData(res)
-          // Default tab: if routes exist, routes; otherwise files
-          if (!res.routes.routed && res.files.items.length > 0) {
-            setActiveTab("files")
-          }
+        setData(res)
+        setError(null)
+        // Default tab: if routes exist, routes; otherwise files
+        if (!res.routes?.routed && (res.files?.items?.length ?? 0) > 0) {
+          setActiveTab("files")
         }
       })
       .catch((err) => {
-        if (err.name !== "AbortError") {
-          setError(String(err))
+        if (err?.name !== "AbortError") {
+          setError(
+            err?.message ||
+              "Failed to retrieve entrypoints from CodeGraph daemon.",
+          )
         }
       })
       .finally(() => setLoading(false))
 
     return () => ac.abort()
-  }, [])
+  }, [rootPath])
+
+  useEffect(() => {
+    const cleanup = loadData()
+    return cleanup
+  }, [loadData])
 
   if (loading) {
     return (
@@ -62,9 +69,16 @@ export function EntrypointsView() {
       <div className="flex h-full flex-col items-center justify-center p-8 text-center bg-canvas">
         <Icon name="error" size={32} className="text-warning mb-2" />
         <p className="text-ink font-medium mb-1">Entrypoints Unavailable</p>
-        <p className="text-xs text-ink-muted max-w-md">
+        <p className="text-xs text-ink-muted max-w-md mb-4 font-mono break-words">
           {error || "No entrypoints found."}
         </p>
+        <button
+          onClick={loadData}
+          className="px-3 py-1.5 rounded bg-accent text-canvas hover:bg-accent-hover transition-colors text-xs font-medium flex items-center gap-1.5 shadow-sm"
+        >
+          <Icon name="refresh" size={13} />
+          <span>Retry</span>
+        </button>
       </div>
     )
   }

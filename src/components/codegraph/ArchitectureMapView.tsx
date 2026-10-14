@@ -11,6 +11,7 @@ import {
   type MapLayoutResponse,
 } from "../../workers/codegraphLayout.worker"
 import { useCodeGraphStore } from "../../store/slices/codegraphSlice"
+import { useWorkbenchStore } from "../../store"
 import { Icon } from "../ui/Icon"
 
 export function ArchitectureMapView() {
@@ -28,6 +29,7 @@ export function ArchitectureMapView() {
   const filters = useCodeGraphStore((s) => s.filters)
   const setFilters = useCodeGraphStore((s) => s.setFilters)
   const openFileCode = useCodeGraphStore((s) => s.openFileCode)
+  const currentWorkspace = useWorkbenchStore((s) => s.rootPath)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const [zoom, setZoom] = useState(1)
@@ -35,28 +37,28 @@ export function ArchitectureMapView() {
   const [isDragging, setIsDragging] = useState(false)
   const dragStart = useRef({ x: 0, y: 0 })
 
-  useEffect(() => {
+  const loadMap = () => {
     const ac = new AbortController()
     setLoading(true)
     setError(null)
 
-    fetchMap({}, ac.signal)
+    fetchMap({}, ac.signal, currentWorkspace)
       .then((res) => {
-        if (!res) {
-          setError("Architecture map could not be loaded.")
-        } else {
-          setData(res)
-        }
+        setData(res)
       })
       .catch((err) => {
         if (err.name !== "AbortError") {
-          setError(String(err))
+          setError(err instanceof Error ? err.message : String(err))
         }
       })
       .finally(() => setLoading(false))
 
     return () => ac.abort()
-  }, [])
+  }
+
+  useEffect(() => {
+    return loadMap()
+  }, [currentWorkspace])
 
   // Calculate layout whenever data or filters change
   useEffect(() => {
@@ -141,7 +143,13 @@ export function ArchitectureMapView() {
         <p className="text-ink font-medium mb-1">
           Architecture Map Unavailable
         </p>
-        <p className="text-xs text-ink-muted max-w-md">{error}</p>
+        <p className="text-xs text-ink-muted max-w-md mb-4">{error}</p>
+        <button
+          onClick={loadMap}
+          className="px-3 py-1.5 rounded bg-surface-raised border border-line text-xs font-medium text-ink hover:bg-surface-hover transition-colors"
+        >
+          Retry
+        </button>
       </div>
     )
   }
