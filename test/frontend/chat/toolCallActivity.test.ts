@@ -26,6 +26,7 @@ describe("ToolCallActivity parseToolCall", () => {
     expect(parsed.secondary).toBe("Build workspace project")
     expect(parsed.command).toBe("rtk npm run build")
     expect(parsed.output).toBe("Build passed with 0 errors")
+    expect(parsed.protocol).toBe("shell")
   })
 
   it("parses view_file into Read action with file icon and base name target with line range", () => {
@@ -45,6 +46,7 @@ describe("ToolCallActivity parseToolCall", () => {
     expect(parsed.actionIcon).toBe("file")
     expect(parsed.target).toBe("workspaceApi.ts · L10-50")
     expect(parsed.fullTarget).toBe("/root/src/utils/workspaceApi.ts")
+    expect(parsed.protocol).toBe("native")
   })
 
   it("parses write_to_file and replace_file_content into Edit action with edit icon", () => {
@@ -257,6 +259,37 @@ describe("ToolCallActivity parseToolCall", () => {
     expect(parsed.actionLabel).toBe("Explore")
     expect(parsed.actionIcon).toBe("zap")
     expect(parsed.target).toBe("StreamChat AntigravityEngine")
+    expect(parsed.protocol).toBe("mcp")
+    expect(parsed.serverName).toBe("codegraph")
+  })
+
+  it("parses bare codegraph_callers and codegraph_node with protocol mcp", () => {
+    const callersItem: ToolCallItem = {
+      id: "tc-cg-2",
+      name: "codegraph_callers",
+      status: "success",
+      args: {
+        symbol: "StreamChat",
+      },
+    }
+    const callersParsed = parseToolCall(callersItem)
+    expect(callersParsed.actionLabel).toBe("Callers")
+    expect(callersParsed.protocol).toBe("mcp")
+    expect(callersParsed.serverName).toBe("codegraph")
+    expect(callersParsed.target).toBe("StreamChat")
+
+    const nodeItem: ToolCallItem = {
+      id: "tc-cg-3",
+      name: "codegraph_node",
+      status: "success",
+      args: {
+        name: "AntigravityEngine",
+      },
+    }
+    const nodeParsed = parseToolCall(nodeItem)
+    expect(nodeParsed.actionLabel).toBe("Node")
+    expect(nodeParsed.protocol).toBe("mcp")
+    expect(nodeParsed.serverName).toBe("codegraph")
   })
 
   it("extracts trace targets accurately from multi-symbol queries and filters stop words", () => {

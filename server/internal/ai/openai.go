@@ -174,6 +174,7 @@ func (e *OpenAIEngine) StreamChat(ctx context.Context, req StreamChatRequest, se
 
 	// 4. Construct conversation messages history and multi-turn execution loop
 	messages := []map[string]any{
+		{"role": "system", "content": FormatCodeGraphSystemInstruction()},
 		{"role": "user", "content": prompt},
 	}
 

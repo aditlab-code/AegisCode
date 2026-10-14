@@ -77,7 +77,7 @@ console.log(
   "\n[2/3] Wiring @colbymchenry/codegraph MCP to AI agents & initializing index...",
 )
 try {
-  execSync(`"${bin}" install --yes --init`, {
+  execSync(`"${bin}" install --yes --location=global --init`, {
     cwd: process.cwd(),
     stdio: "inherit",
     env: {

@@ -214,7 +214,7 @@ func GetSessionTranscript(conversationID string) ([]store.ChatMessage, error) {
 			messages = append(messages, store.ChatMessage{
 				ID:        fmt.Sprintf("msg-%d", entry.StepIndex),
 				Role:      "user",
-				Text:      entry.Content,
+				Text:      UnwrapUserPrompt(entry.Content),
 				Timestamp: parseTimestamp(entry.CreatedAt),
 			})
 		} else if entry.Type == "PLANNER_RESPONSE" {
@@ -357,7 +357,8 @@ func StreamChatAntigravity(ctx context.Context, req StreamChatRequest, sendEvent
 		args = append(args, "--model", effectiveModel)
 	}
 
-	args = append(args, "-p", prompt)
+	effectivePrompt := WrapPromptWithSystemContext(prompt)
+	args = append(args, "-p", effectivePrompt)
 
 	cmd := exec.CommandContext(ctx, binary, args...)
 

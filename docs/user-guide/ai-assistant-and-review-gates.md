@@ -72,12 +72,33 @@ flowchart TD
 
 You can configure any of the following providers under **Settings -> AI Engine**:
 
-| Provider | Gateway Type | Reasoning Traces | Tool Calling |
+| Provider | Gateway Type | Reasoning Traces | CodeGraph MCP Tools |
 | :--- | :--- | :---: | :---: |
+| **Antigravity CLI (`agy`)** | Local Subprocess Runner | Supported | Supported (In-Memory Context) |
+| **Anthropic Claude** | Messages API (REST/SSE) + CLI Fallback | Supported | Supported (Native Function Schema) |
+| **OpenAI / OpenRouter / DeepSeek** | Chat Completions SSE | Supported | Supported (OpenAI Function Calling) |
 | **Google Gemini** | Direct REST / SSE | Supported | Supported |
-| **Anthropic Claude** | Streaming Messages API |  Upcoming |  Upcoming |
-| **OpenAI / OpenRouter / DeepSeek** | Chat Completions SSE | Supported | Supported |
-| **Local Ollama** | Localhost Endpoint | Upcoming | Upcoming |
-| **Antigravity CLI (`agy`)** | Local Subprocess Runner | Supported | Supported |
+| **Local Ollama / OpenCode** | Localhost Endpoint | Supported | Supported |
 
 All providers funnel their responses through the same Review Gate pipeline, guaranteeing uniform safety across all models.
+
+---
+
+## 4. Model Context Protocol (MCP) in AI Drawer & Zero-Lag Execution
+
+When an AI provider executes CodeGraph tools to explore your codebase, AegisCode formats the interactions cleanly in the AI Drawer:
+
+```text
++-------------------------------------------------------------+
+| [MCP] [Explore]  server/internal/ai/engine.go        [Open] |
+| ⮟ Protocol: Model Context Protocol (codegraph)              |
+|   Query: "StreamChat AntigravityEngine"                     |
+|   Result: 30 symbols, 5 callers mapped (< 250 tokens)       |
++-------------------------------------------------------------+
+```
+
+### Protocol Badging & Navigation:
+1. **Explicit `[MCP]` Pill Badge**: Immediately distinguishes structured MCP tool calls from local shell executions (`run_command`) and standard file operations.
+2. **Instant `[Open]` Navigation (Zero-Lag)**: Clicking `[Open]` jumps directly to the target file in the main editor. AegisCode intentionally omits forced editor splitting inside chat cards, eliminating CSS Grid reflow and UI freezing during streaming.
+3. **In-Memory System Context (Zero Repo Pollution)**: AegisCode dynamically wraps prompts with `<system_context>` instructions in-memory during Go core dispatch. Your workspace `AGENTS.md` remains strictly untouched and read-only.
+

@@ -52,3 +52,21 @@ AegisCode exposes both raw MCP tool endpoints and the VantageCraft UI reverse pr
 - `POST /api/v1/mcp`: Standard MCP JSON-RPC 2.0 endpoint for agentic requests (`tools/list`, `tools/call`, `initialize`).
 - `GET /api/v1/mcp/events`: Server-Sent Events (SSE) stream for real-time indexing status and tool execution updates.
 - `GET /api/codegraph/ui/*`: High-speed reverse proxy routing directly to the background `codegraph ui` daemon.
+
+---
+
+## 5. AI Drawer MCP Badging & Zero-Repo-Pollution Runtime
+
+### In-Memory Runtime Context Injection
+AegisCode enforces CodeGraph MCP precedence without touching or polluting user repository files:
+- **`FormatCodeGraphSystemInstruction()`**: Generates markdown rules mandating `codegraph_explore` before shell tools when `.codegraph/` is detected.
+- **`WrapPromptWithSystemContext()`**: Injects `<system_context>` and `<user_request>` in-memory during dispatch to CLI engines (`agy`, `claude`) and prepends system messages in OpenAI/Claude HTTP payloads.
+- **Workspace Protection**: `AGENTS.md` in the workspace root is treated as strictly read-only / user-domain.
+- **Global Wiring**: `npm run mcp:install` uses `codegraph install --yes --location=global --init` to configure agent profiles in the user's home directory.
+
+### Visual Badging & Lag-Free Navigation
+In `ToolCallActivity.tsx`:
+- Tools matching `codegraph_*` or `mcp__*` are parsed with `protocol: "mcp"` and `serverName: "codegraph"`.
+- A semantic `[MCP]` badge pill (`bg-accent/15 text-accent border border-accent/30 font-mono text-[9px] px-1 py-0.5`) is rendered on the activity card.
+- Forced split buttons have been eliminated in favor of direct `[Open]` navigation, guaranteeing 0ms latency and zero CSS grid reflow during AI streaming.
+

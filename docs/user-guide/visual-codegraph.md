@@ -9,7 +9,9 @@ AegisCode features a high-performance **VantageCraft CodeGraph Architecture** po
 Open the CodeGraph panel by:
 - Clicking the CodeGraph tab in the Editor or Activity Bar.
 - Selecting **View: Open CodeGraph** from the Command Palette (`Cmd + Shift + P` / `Ctrl + Shift + P`).
-- Clicking on any CodeGraph trace badge generated during AI Chat interactions.
+- Clicking the MCP status indicator pill in the Status Bar.
+
+*(Note: CodeGraph Studio opens independently in its own view, preserving editor layout and eliminating chat drawer split lag).*
 
 ---
 

@@ -44,8 +44,8 @@ mindmap
       modernc.org/sqlite
       Instant Startup &lt; 100ms
     Native MCP Server
-      JSON-RPC 2.0
-      7 Disclosure Tools
+      JSON-RPC 2.0 Bridge
+      10 Intelligence Tools
       Token-Efficient &lt; 150 Tokens
     Bundled Delve DAP
       Zero-Config Debugging
@@ -56,18 +56,19 @@ mindmap
       Auto-Save on Blur
       Multi-Tab PTY Terminal
     Zero-Repo Pollution
-      Storage in ~/.aegis/
-      No dot-files in repos
+      Storage in ~/.aegiscode/
+      In-Memory AI Context
       Git-Driven Review Gates
 ```
 
 * **Zero-CGO Pure-Go Core**: Compiles seamlessly on macOS, Linux, and Windows with `CGO_ENABLED=0`. Powered by pure-Go SQLite (`modernc.org/sqlite`) in WAL mode with FTS5 instant search.
-* **Native Model Context Protocol (MCP)**: Native stdio JSON-RPC 2.0 runner exposing 7 progressive disclosure tools (`get_file_outline`, `get_symbol_definition`, `query_subgraph`, etc.) keeping AI context overhead under 150 tokens.
+* **Native Model Context Protocol (MCP)**: Native stdio JSON-RPC 2.0 bridge to `@colbymchenry/codegraph` exposing 10 progressive disclosure tools (`codegraph_explore`, `codegraph_node`, `codegraph_callers`, `codegraph_callees`, `codegraph_flow`, `codegraph_impact`, `codegraph_affected`, `codegraph_search`, `codegraph_context`, `codegraph_status`) keeping AI context overhead under 150 tokens.
 * **Bundled Delve DAP Debugger**: Zero-config Go debugging with Delve (`dlv`). Set gutter breakpoints, inspect variable scopes, view active call stacks, and control execution with floating controls.
 * **Zero-Freeze Editor & PTY Terminal**: Lightning-fast CodeMirror 6 with smart dirty buffer management and auto-save on blur, paired with multi-tab `@xterm/xterm` pseudoterminals over WebSockets.
-* **Interactive Cytoscape CodeGraph**: Live graph visualization supporting Hierarchical (Dagre) and Clustered (CoSE) layouts, symbol search, jump-to-source on double-click, and real-time AI tracing.
+* **VantageCraft CodeGraph Studio**: Multi-view architectural studio powered by native SQLite WAL backend featuring Entrypoints & APIs, Execution Steps, Directed Flow & Trails, Screens & Events, and Bounded Inspection.
+* **AI Drawer with Visual [MCP] Badges & Zero-Lag**: Real-time visual distinction between MCP tools, Native File ops, and Shell execution. Zero DOM lag through instant `[Open]` editor jumps without forced split layout thrashing.
 * **Git-Driven Review Gates**: Every modification proposed by an AI agent is verified through an interactive line-by-line diff inspector before touching disk.
-* **Zero-Repo Pollution**: All app configs, chats, and workspace graph indices are strictly contained within `~/.aegis/` (`aegis.db` and `graphs/<hash>.db`). No hidden dotfiles in your project repos.
+* **Zero-Repo Pollution**: All app configs, chats, and global metadata reside in `~/.aegiscode/`. AI runtime instructions are injected in-memory without polluting repository `AGENTS.md` files.
 
 ---
 
@@ -77,10 +78,10 @@ mindmap
 flowchart TD
     subgraph UI ["Frontend Studio (React 19 + Tailwind v4)"]
         Editor["CodeMirror 6 Editor"]
-        Chat["AI Assistant Studio & Review Gates"]
+        Chat["AI Assistant Studio [MCP] & Review Gates"]
         Terminal["xterm.js PTY Terminals"]
         DebugUI["DAP Debugger View"]
-        GraphUI["Cytoscape CodeGraph Canvas"]
+        GraphUI["VantageCraft CodeGraph Studio"]
     end
 
     subgraph Core ["Go Core Server (Single Executable, Zero-CGO)"]
@@ -88,27 +89,28 @@ flowchart TD
         API["REST & SSE Engine"]
         WS["WebSocket Terminal Hub"]
         DAP["DAP Delve Client"]
-        MCP["Native MCP Engine"]
+        MCP["Native MCP Bridge"]
         DB[("Embedded SQLite (WAL + FTS5)")]
     end
 
-    subgraph Subprocesses ["Sandboxed Subprocesses"]
+    subgraph Subprocesses ["Sandboxed Subprocesses & Daemons"]
         PTY["Shell (bash/zsh)"]
         DLV["Delve Debugger (dlv)"]
-        AI["Antigravity CLI / LLMs"]
+        AI["Antigravity CLI / LLM Gateways"]
+        CGDaemon["@colbymchenry/codegraph Daemon (.codegraph/codegraph.db)"]
     end
 
     Editor <-->|REST / Auto-Save| API
-    Chat <-->|SSE Stream| API
+    Chat <-->|SSE Stream / In-Memory Context| API
     Terminal <-->|WebSocket| WS
     DebugUI <-->|REST| DAP
-    GraphUI <-->|REST / SSE| API
+    GraphUI <-->|REST / SSE Reverse Proxy| API
     
     API --> DB
     WS --> PTY
     DAP --> DLV
     API --> AI
-    MCP <--> API
+    MCP <-->|stdio JSON-RPC| CGDaemon
 ```
 
 ---
@@ -139,10 +141,13 @@ cd AegisCode
 npm install
 npm run build
 
-# 3. Compile standalone single binary (Zero-CGO)
+# 3. Setup global CodeGraph MCP for AI agents (Claude, Cursor, Antigravity)
+npm run mcp:install
+
+# 4. Compile standalone single binary (Zero-CGO)
 npm run build:binary
 
-# 4. Launch the binary
+# 5. Launch the binary
 ./bin/aegiscode-darwin-arm64 --open
 ```
 

@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -352,3 +353,146 @@ func TestClaudeEngineMultiTurnToolExecution(t *testing.T) {
 		t.Errorf("expected 1 final tool call in message, got %d", finalToolCallCount)
 	}
 }
+
+func TestFormatCodeGraphSystemInstruction(t *testing.T) {
+	instruction := FormatCodeGraphSystemInstruction()
+	if instruction == "" {
+		t.Fatalf("expected non-empty instruction")
+	}
+	if !strings.Contains(instruction, "CodeGraph") {
+		t.Errorf("expected instruction to mention CodeGraph")
+	}
+	if !strings.Contains(instruction, "codegraph_explore") {
+		t.Errorf("expected instruction to mention codegraph_explore")
+	}
+	if !strings.Contains(instruction, "Progressive Disclosure") {
+		t.Errorf("expected instruction to mention Progressive Disclosure")
+	}
+}
+
+func TestWrapPromptWithSystemContext(t *testing.T) {
+	// Empty prompt
+	if got := WrapPromptWithSystemContext(""); got != "" {
+		t.Errorf("expected empty string for empty prompt, got %q", got)
+	}
+
+	// Normal prompt
+	userPrompt := "Explain how the router works"
+	wrapped := WrapPromptWithSystemContext(userPrompt)
+	if !strings.HasPrefix(wrapped, "<system_context>\n") {
+		t.Errorf("expected wrapped prompt to start with <system_context>, got: %q", wrapped)
+	}
+	if !strings.Contains(wrapped, "<user_request>\n"+userPrompt+"\n</user_request>") {
+		t.Errorf("expected wrapped prompt to contain <user_request> block with prompt")
+	}
+
+	// Avoid double-wrapping
+	doubleWrapped := WrapPromptWithSystemContext(wrapped)
+	if doubleWrapped != wrapped {
+		t.Errorf("expected double wrapping to be a no-op")
+	}
+}
+
+func TestUnwrapUserPrompt(t *testing.T) {
+	rawPrompt := "Refactor auth middleware"
+	wrapped := WrapPromptWithSystemContext(rawPrompt)
+	unwrapped := UnwrapUserPrompt(wrapped)
+	if unwrapped != rawPrompt {
+		t.Errorf("expected %q, got %q", rawPrompt, unwrapped)
+	}
+
+	// Already clean prompt
+	if UnwrapUserPrompt(rawPrompt) != rawPrompt {
+		t.Errorf("expected clean prompt to be unchanged")
+	}
+}
+
+func TestOpenAISystemInstructionInjection(t *testing.T) {
+	var capturedMessages []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+			if msgs, ok := body["messages"].([]any); ok {
+				for _, m := range msgs {
+					if mm, ok := m.(map[string]any); ok {
+						capturedMessages = append(capturedMessages, mm)
+					}
+				}
+			}
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		fmt.Fprintf(w, "data: {\"choices\": [{\"delta\": {\"content\": \"Done\"}}]}\n\n")
+		flusher.Flush()
+		fmt.Fprintf(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	engine := &OpenAIEngine{Provider: "openai"}
+	req := StreamChatRequest{
+		Prompt:  "Analyze code",
+		BaseURL: server.URL,
+		Model:   "gpt-4o-mini",
+	}
+
+	err := engine.StreamChat(context.Background(), req, func(string, any) error { return nil })
+	if err != nil {
+		t.Fatalf("StreamChat unexpected error: %v", err)
+	}
+
+	if len(capturedMessages) < 2 {
+		t.Fatalf("expected at least 2 messages, got %d", len(capturedMessages))
+	}
+	if capturedMessages[0]["role"] != "system" {
+		t.Errorf("expected first message role to be system, got %v", capturedMessages[0]["role"])
+	}
+	content, _ := capturedMessages[0]["content"].(string)
+	if !strings.Contains(content, "CodeGraph") {
+		t.Errorf("expected system content to mention CodeGraph, got %q", content)
+	}
+	if capturedMessages[1]["role"] != "user" || capturedMessages[1]["content"] != "Analyze code" {
+		t.Errorf("expected second message to be user prompt, got: %+v", capturedMessages[1])
+	}
+}
+
+func TestClaudeSystemInstructionInjection(t *testing.T) {
+	var capturedSystem string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+			if sys, ok := body["system"].(string); ok {
+				capturedSystem = sys
+			}
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		fmt.Fprintf(w, "event: content_block_delta\n")
+		fmt.Fprintf(w, "data: {\"delta\": {\"type\": \"text_delta\", \"text\": \"Done\"}}\n\n")
+		flusher.Flush()
+		fmt.Fprintf(w, "event: message_stop\n")
+		fmt.Fprintf(w, "data: {}\n\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	engine := &ClaudeEngine{}
+	req := StreamChatRequest{
+		Prompt:  "Analyze code",
+		BaseURL: server.URL,
+		APIKey:  "sk-ant-test",
+	}
+
+	err := engine.StreamChat(context.Background(), req, func(string, any) error { return nil })
+	if err != nil {
+		t.Fatalf("StreamChat unexpected error: %v", err)
+	}
+
+	if capturedSystem == "" {
+		t.Fatalf("expected non-empty system prompt in Claude request")
+	}
+	if !strings.Contains(capturedSystem, "CodeGraph") {
+		t.Errorf("expected Claude system parameter to mention CodeGraph, got %q", capturedSystem)
+	}
+}
+

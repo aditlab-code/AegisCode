@@ -265,3 +265,45 @@ func GetCodeGraphClaudeTools() []map[string]any {
 	}
 	return claudeTools
 }
+
+// FormatCodeGraphSystemInstruction returns runtime guidance for AI models on using CodeGraph tools.
+func FormatCodeGraphSystemInstruction() string {
+	return `## CodeGraph Exploration Protocol
+
+In repositories indexed by CodeGraph (where a .codegraph/ directory exists at the repo root), prioritize CodeGraph tools before using grep/find/cat or reading entire source files:
+- Use codegraph_explore with symbol names, file paths, or architectural questions to retrieve verbatim source and call graphs in one turn.
+- Apply Progressive Disclosure: examine outlines/signatures first, assess caller/callee blast radius, and view full function bodies only when actively refactoring.
+- Maintain surgical, minimal changes and preserve existing codebase conventions.`
+}
+
+// WrapPromptWithSystemContext wraps a user prompt with CodeGraph system instructions in-memory, avoiding repo pollution.
+func WrapPromptWithSystemContext(userPrompt string) string {
+	trimmed := strings.TrimSpace(userPrompt)
+	if trimmed == "" {
+		return ""
+	}
+	// Avoid double-wrapping if already present
+	if strings.Contains(trimmed, "<system_context>") {
+		return trimmed
+	}
+	return fmt.Sprintf("<system_context>\n%s\n</system_context>\n\n<user_request>\n%s\n</user_request>", FormatCodeGraphSystemInstruction(), trimmed)
+}
+
+// UnwrapUserPrompt extracts the original user prompt if it was wrapped in <user_request>...</user_request>.
+func UnwrapUserPrompt(text string) string {
+	const startTag = "<user_request>\n"
+	const endTag = "\n</user_request>"
+	startIdx := strings.Index(text, startTag)
+	if startIdx != -1 {
+		rest := text[startIdx+len(startTag):]
+		endIdx := strings.LastIndex(rest, endTag)
+		if endIdx != -1 {
+			return strings.TrimSpace(rest[:endIdx])
+		}
+		if simpleEnd := strings.LastIndex(rest, "</user_request>"); simpleEnd != -1 {
+			return strings.TrimSpace(rest[:simpleEnd])
+		}
+	}
+	return text
+}
+

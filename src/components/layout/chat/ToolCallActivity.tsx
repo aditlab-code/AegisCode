@@ -3,8 +3,6 @@ import { Icon } from "../../ui/Icon"
 import type { ToolCallItem, IconName } from "../../../types/workbench"
 import { cleanFilePath } from "../../../utils/workspaceApi"
 import { fetchChatBlob } from "../../../utils/storeApi"
-import { useWorkbenchStore } from "../../../store"
-import { extractCodeGraphTraceTargets } from "../../../utils/codegraphApi"
 
 export interface ParsedToolCall {
   actionLabel: string
@@ -19,6 +17,8 @@ export interface ParsedToolCall {
   error?: string
   rawArgs?: Record<string, any>
   linesCount?: number
+  protocol?: "mcp" | "native" | "shell"
+  serverName?: string
 }
 
 /**
@@ -77,6 +77,7 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
       output: sanitizeOutput(tc.output, tc.preview),
       blobRef: tc.blobRef,
       rawArgs: sanitizeRawArgs(tc.args),
+      protocol: "shell",
     }
   }
 
@@ -134,6 +135,7 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
       output: sanitizeOutput(tc.output, tc.preview),
       blobRef: tc.blobRef,
       rawArgs: sanitizeRawArgs(tc.args),
+      protocol: "native",
     }
   }
 
@@ -194,6 +196,7 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
       blobRef: tc.blobRef,
       rawArgs: sanitizeRawArgs(tc.args),
       linesCount,
+      protocol: "native",
     }
   }
 
@@ -214,11 +217,15 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
       output: sanitizeOutput(tc.output, tc.preview),
       blobRef: tc.blobRef,
       rawArgs: sanitizeRawArgs(tc.args),
+      protocol: "native",
     }
   }
+
   // 5. @colbymchenry/codegraph MCP tools (codegraph_explore, codegraph_node, codegraph_search, etc.)
-  const rawCg = rawName.replace(/^mcp__codegraph__/i, "")
-  if (
+  const rawCg = rawName
+    .replace(/^mcp__codegraph__/i, "")
+    .replace(/^codegraph[:_]/i, "codegraph_")
+  const isCgTool =
     rawCg === "codegraph_explore" ||
     rawCg === "codegraph_node" ||
     rawCg === "codegraph_search" ||
@@ -228,8 +235,11 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
     rawCg === "codegraph_affected" ||
     rawCg === "codegraph_files" ||
     rawCg === "codegraph_status" ||
-    rawCg === "codegraph_context"
-  ) {
+    rawCg === "codegraph_context" ||
+    rawCg === "codegraph_flow" ||
+    rawName.startsWith("mcp__")
+
+  if (isCgTool) {
     const q = String(
       args.query ||
         args.symbol ||
@@ -250,6 +260,7 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
       codegraph_files: "Files",
       codegraph_status: "Status",
       codegraph_context: "Context",
+      codegraph_flow: "Flow",
     }
     return {
       actionLabel: labelMap[rawCg] || "CodeGraph",
@@ -261,10 +272,12 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
       output: sanitizeOutput(tc.output, tc.preview),
       blobRef: tc.blobRef,
       rawArgs: sanitizeRawArgs(tc.args),
+      protocol: "mcp",
+      serverName: "codegraph",
     }
   }
 
-  // 5. Fallback for other tools
+  // 6. Fallback for other tools
   const formattedName = name
     .replace(/_/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase())
@@ -278,6 +291,7 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
     output: sanitizeOutput(tc.output, tc.preview),
     blobRef: tc.blobRef,
     rawArgs: sanitizeRawArgs(tc.args),
+    protocol: rawName.startsWith("mcp__") ? "mcp" : "native",
   }
 }
 
@@ -307,43 +321,6 @@ export const ToolCallActivityCard = memo(function ToolCallActivityCard({
       navigator.clipboard.writeText(parsed.output)
       setCopiedOutput(true)
       setTimeout(() => setCopiedOutput(false), 2000)
-    }
-  }
-
-  const parsedTraceInfo = useMemo(
-    () =>
-      extractCodeGraphTraceTargets(
-        toolCall.name || "",
-        toolCall.args,
-        toolCall.targetFile || parsed.targetFile,
-      ),
-    [toolCall.name, toolCall.args, toolCall.targetFile, parsed.targetFile],
-  )
-  const isCodeGraphTool = parsedTraceInfo.isCodeGraph
-
-  const handleInspectInGraph = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    const state = useWorkbenchStore.getState()
-    const graphTab = parsedTraceInfo.filePath
-      ? `codegraph:${parsedTraceInfo.filePath}`
-      : "codegraph:workspace"
-
-    if (!state.splitEditor) {
-      state.toggleSplitEditor()
-    }
-    state.openFileInGroup(graphTab, "group2")
-
-    if (parsedTraceInfo.symbols.length > 0) {
-      state.triggerAiTrace({
-        symbols: parsedTraceInfo.symbols,
-        symbolName: parsedTraceInfo.primarySymbol,
-        rawQuery: parsedTraceInfo.rawQuery,
-        filePath: parsedTraceInfo.filePath,
-        toolName: parsedTraceInfo.cleanToolName,
-        provider: state.activeProvider,
-        model: state.activeModel,
-        status: "running",
-      })
     }
   }
 
@@ -382,6 +359,16 @@ export const ToolCallActivityCard = memo(function ToolCallActivityCard({
           <span className="shrink-0 px-1 py-0.5 rounded text-[9.5px] font-mono text-ink-muted bg-surface-raised border border-line">
             #{stepNumber}
             {totalSteps ? `/${totalSteps}` : ""}
+          </span>
+        )}
+
+        {/* MCP protocol pill badge */}
+        {parsed.protocol === "mcp" && (
+          <span
+            className="shrink-0 px-1 py-0.5 rounded text-[9px] font-mono font-bold bg-accent/15 text-accent border border-accent/30 flex items-center gap-0.5 select-none"
+            title="Model Context Protocol (MCP) Tool"
+          >
+            <span>MCP</span>
           </span>
         )}
 
@@ -441,19 +428,6 @@ export const ToolCallActivityCard = memo(function ToolCallActivityCard({
           </button>
         )}
 
-        {/* Quick Inspect in Graph button for CodeGraph tools */}
-        {isCodeGraphTool && (
-          <button
-            type="button"
-            className="shrink-0 px-1.5 py-0.5 rounded text-[10px] text-accent hover:bg-surface-raised border border-line cursor-pointer flex items-center gap-1"
-            onClick={handleInspectInGraph}
-            title="Inspect in CodeGraph visual studio"
-          >
-            <Icon name="zap" size={10} />
-            <span>Graph</span>
-          </button>
-        )}
-
         {/* Expand toggle chevron */}
         <button
           type="button"
@@ -469,6 +443,18 @@ export const ToolCallActivityCard = memo(function ToolCallActivityCard({
 
       {isOpen && (
         <div className="tool-call-details p-2 border-t border-line bg-canvas/60 text-xs flex flex-col gap-2">
+          {/* Protocol metadata for MCP tools */}
+          {parsed.protocol === "mcp" && (
+            <div className="flex items-center gap-1.5 p-1.5 rounded bg-surface border border-line text-[10.5px]">
+              <span className="font-semibold text-accent uppercase tracking-wider text-[9.5px]">
+                Protocol:
+              </span>
+              <span className="font-mono text-ink-soft">
+                Model Context Protocol ({parsed.serverName || "codegraph"})
+              </span>
+            </div>
+          )}
+
           {/* Detailed Target / Command */}
           {parsed.command && (
             <div className="flex flex-col gap-1">

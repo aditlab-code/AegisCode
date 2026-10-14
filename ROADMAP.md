@@ -22,8 +22,8 @@ flowchart LR
 - [x] Native macOS Cocoa/Swift WKWebView wrapper and `.dmg` packaging.
 - [x] DAP Debugger with bundled Delve (`dlv`) orchestration and UI scopes.
 - [x] Terminal PTY runner over WebSockets with xterm.js and viewport auto-fit.
-- [x] Model Context Protocol (MCP) server with 7 progressive disclosure tools.
-- [x] Interactive Cytoscape CodeGraph viewer with Hierarchical & Clustered layouts.
+- [x] Model Context Protocol (MCP) server with 7 progressive disclosure tools and native `@colbymchenry/codegraph` bridge.
+- [x] VantageCraft 6-View CodeGraph Studio (Entrypoints, Steps, Map, Flow, Screens, FileCode). *(Note: Legacy flat Cytoscape graph viewer and custom Go AST extractors are `[DEPRECATED & REMOVED]` per ADR 0014 & ADR 0015).*
 - [x] AI Assistant Studio with Antigravity CLI (`agy`), Claude, and OpenAI SSE streams.
 - [x] Git-driven Review Gates for safe line-by-line file application.
 
@@ -51,8 +51,8 @@ flowchart LR
   - **Rust**: Integrated `rust-analyzer` management with auto-download and background diagnostics.
   - **TypeScript / JavaScript**: Embedded `vtsls` or `typescript-language-server` integration.
   - **Python**: Lightweight `pyright` / `basedpyright` support.
-- [ ] **Enhanced AST CodeGraph Ingestion**:
-  - Multi-language AST symbol extraction via tree-sitter or native language parsers.
+- [ ] **Polyglot Code Intelligence & Tree-Sitter Synthesizers**:
+  - *(Note: Custom in-process Go AST extractors are `[DEPRECATED & SUPERSEDED]` by native `@colbymchenry/codegraph` Tree-sitter & Rust kernel multi-language engine).*
   - Cross-language dependency graph resolution (e.g. Go backend calling Python microservice or React frontend calling Go API).
 
 ---

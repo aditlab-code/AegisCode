@@ -6,22 +6,21 @@ AegisCode utilizes an embedded, zero-CGO, pure-Go SQLite relational engine (`mod
 
 ## 1. Database Partitioning Strategy
 
-Storage is cleanly partitioned across two tiers to ensure strict project isolation and zero repository pollution:
+Storage is cleanly partitioned across two tiers to ensure strict project isolation and zero repository pollution (per ADR-0002 and ADR-0014):
 
 ```text
-~/.aegis/
+~/.aegiscode/
 ├── aegis.db                   # [Global Tier] System configs, chat ledgers, blobs, and chat FTS
-└── graphs/
-    ├── a1b2c3d4e5f6.db        # [Project Tier] Workspace AST code symbols and dependency graph
-    └── 7e8d9c0b1a2f.db        # [Project Tier] Workspace B AST code symbols and dependency graph
+├── mcp/                       # [Runtime Tier] Managed MCP daemon runtimes
+└── ipc/                       # [IPC Tier] Unix domain sockets for worker supervision
 ```
 
-* **Global Tier (`aegis.db`)**: Houses user preferences, session metadata, dialog history, content-addressed blob payloads, and cross-session search indices.
-* **Project Tier (`graphs/<workspace_hash>.db`)**: Scoped per project workspace, keyed by the 16-character SHA-256 hash of the cleaned workspace root path (`ComputeWorkspaceHash`). If a user deletes or renames a project, its graph cache can be discarded without touching global conversation records.
+* **Global Tier (`~/.aegiscode/aegis.db`)**: Houses user preferences, session metadata, dialog history, content-addressed blob payloads, and cross-session search indices.
+* **Workspace Intelligence Tier (`<workspace>/.codegraph/codegraph.db`)**: High-performance SQLite database in WAL mode managed out-of-process by `@colbymchenry/codegraph`, indexing all AST symbols, call hierarchies, and Git diff freshness.
 
 ---
 
-## 2. Global Database Schema (`~/.aegis/aegis.db`)
+## 2. Global Database Schema (`~/.aegiscode/aegis.db`)
 
 ### Connection PRAGMAs
 ```sql

@@ -4,7 +4,7 @@ This directory catalogs the **Architecture Decision Records (ADRs)** for **Aegis
 
 ---
 
-## 📑 ADR Catalog (ADR 0001 – ADR 0013)
+## 📑 ADR Catalog (ADR 0001 – ADR 0015)
 
 | ADR | Title | Category | Status | One-Sentence Summary |
 | :---: | :--- | :--- | :---: | :--- |
@@ -22,6 +22,7 @@ This directory catalogs the **Architecture Decision Records (ADRs)** for **Aegis
 | **[0012](0012-zero-freeze-architecture-go-first-offloading-and-web-workers.md)** | Zero-Freeze Architecture | Performance | `Accepted` | Offloads heavy AST indexing, graph layouts, and stream parsing to Go backend and Web Workers. |
 | **[0013](0013-embedded-pure-go-sqlite-and-fts5-search.md)** | Embedded Pure-Go SQLite & FTS5 | Storage & Search | `Accepted` | Replaces fragmented flat-files with transactional pure-Go SQLite (`modernc.org/sqlite`) in WAL mode with FTS5. |
 | **[0014](0014-native-colbymchenry-codegraph-and-vantagecraft-ui.md)** | Native CodeGraph & VantageCraft UI | AI & Code Intelligence | `Accepted` | Replaces custom Go extractors with native `@colbymchenry/codegraph` daemon, reverse proxy, and VantageCraft 6-view UI. |
+| **[0015](0015-native-codegraph-contract-alignment-and-zero-swallow.md)** | Native CodeGraph Contract Alignment & Zero Swallow | Code Intelligence & Resilience | `Accepted` | Aligns Go proxy contracts, unwraps MCP envelopes, decommissions legacy routes, and enforces zero silent swallow. |
 
 ---
 
@@ -42,6 +43,7 @@ This directory catalogs the **Architecture Decision Records (ADRs)** for **Aegis
 
 ### 4. Code Intelligence, AI & MCP Tools
 - **[ADR 0014: Native CodeGraph Runtime and VantageCraft UI Integration](0014-native-colbymchenry-codegraph-and-vantagecraft-ui.md)**
+- **[ADR 0015: Native CodeGraph Contract Alignment and Zero-Swallow Error Handling](0015-native-codegraph-contract-alignment-and-zero-swallow.md)**
 
 ### 5. Debugging & Developer Tools
 - **[ADR 0010: Bundled DAP Delve Debugger](0010-bundled-dap-delve-debugger.md)**

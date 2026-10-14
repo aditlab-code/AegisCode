@@ -162,6 +162,7 @@ func (e *ClaudeEngine) StreamChat(ctx context.Context, req StreamChatRequest, se
 		reqBody := map[string]any{
 			"model":      model,
 			"messages":   messages,
+			"system":     FormatCodeGraphSystemInstruction(),
 			"max_tokens": 4096,
 			"stream":     true,
 			"tools":      GetCodeGraphClaudeTools(),
@@ -452,7 +453,8 @@ func streamClaudeCLI(ctx context.Context, binary, convID, model, prompt, workspa
 		Type:           "start",
 		ConversationID: convID,
 	})
-	args := []string{"-p", prompt, "--output-format", "stream-json", "--verbose"}
+	effectivePrompt := WrapPromptWithSystemContext(prompt)
+	args := []string{"-p", effectivePrompt, "--output-format", "stream-json", "--verbose"}
 	if model != "" {
 		args = append(args, "--model", model)
 	}
