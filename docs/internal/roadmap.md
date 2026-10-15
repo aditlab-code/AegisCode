@@ -1,0 +1,595 @@
+# AegisCode Engineering Roadmap
+
+> **Objective**: Milestone progression and delivery tracking for AegisCode.  
+> **Lifecycle**: Tracks implementation from the initial lightweight frontend wireframe to the full cross-platform Go backend, bundled DAP debugging, and tablet multi-screen remote companion.
+
+---
+
+## Milestone Progress Overview
+
+| Phase | Milestone Name | Status | Focus Area |
+| :--- | :--- | :--- | :--- |
+| **Phase 1** | Shell Layout & Column Componentization | ✅ Completed | Master layout shell, CSS modularity, Tailwind v4 tokens |
+| **Phase 2** | Workbench Text Editor & Interactive Buffers | ✅ Completed | Multi-pane groups, buffer editing, tabs DND, linter, 2px active tab |
+| **Phase 3** | Explorer, Workspace CRUD, & Git Controls | ✅ Completed | Tree traversal, inline CRUD, regex search/replace, Git UI |
+| **Phase 4** | Status Bar & Diagnostics Engine | ✅ Completed | Dynamic cursor Ln/Col, language detection, problem popover |
+| **Phase 5** | AppDrawer AEGIS AI Agent & Session Hub | ✅ Completed | Multi-session chat, slash autocomplete, provider selector |
+| **Special** | UI Dark/Light Theme & Modular Palettes | ✅ Completed | ActivityRail toggle, modular JSON palettes (Default, Atom, Tokyo Night) |
+| **Special** | Settings Registry, Core IDE Preferences & Editor Polish | ✅ Completed | Decoupled schema registry, wildcard exclude, GPU cursor blinking, wrap column |
+| **Phase 6** | Go Core Server, Pure-Go SQLite, AI Agent Bridge, DAP Debugger & CodeGraph MCP | ✅ Completed (6.1–6.15 ✅) | Cross-platform Go binary & embed.FS, supervisor, Pure-Go SQLite, AI agent bridge, DAP/Delve, Zero-Freeze Offloading, FTS5 Search, CodeGraph MCP Engine & Interactive Graph Studio |
+| **Phase 7** | Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`) | 🟡 Active (Sub-Phase 7.1, 7.1b, 7.1c ✅, 7.2–7.3 ⚪) | Multi-format tab viewers (Images, Markdown, PDF, Big Data CSV), vector canvas wireframing |
+| **Phase 8** | Research Workshop & Data Science Studio | ⚪ Planned | LaTeX + PDF sync, BibTeX, Python/R dataframes, Biblioshiny |
+| **Phase 9** | Web-Based Remote Pairing & Tablet Companion | ⚪ Deferred (Final) | LAN pairing, web preview host, touch-optimized editor mode |
+
+---
+
+## Detailed Milestone Specifications
+
+### Phase 1: Shell Layout & Column Componentization
+- **Status**: ✅ Completed
+- **Objectives**:
+  - Modularize the monolithic layout into decoupled components under [`src/components/layout/`](../../src/components/layout).
+  - Implement co-located CSS files per layout module (`header.css`, `sidebar.css`, `editor.css`, `bottom-panel.css`, `chat.css`, `status-bar.css`).
+  - Establish Tailwind CSS v4 `@theme` design tokens in [`src/styles/tokens.css`](../../src/styles/tokens.css) with zero arbitrary hex colors.
+  - Implement reusable UI primitives (`Icon`, `IconButton`, `Toast`) under [`src/components/ui/`](../../src/components/ui).
+
+---
+
+### Phase 2: Workbench Text Editor & Interactive Buffers
+- **Status**: ✅ Completed
+- **Deliverables**:
+  - **Dual Independent Window Groups**: Split editor panes (Group 1 & Group 2) with draggable sash splitter.
+  - **Drag-and-Drop Tabs (DND)**: Tab reordering and cross-group dragging using HTML5 native Drag and Drop.
+  - **Custom Code Buffer Engine**: Line numbering gutter, active line highlighting, auto-indentation, dirty unsaved indicator, 2px active accent tab indicator bar.
+  - **Client-Side Syntax Linter**: In-browser heuristic linter supporting TypeScript/JavaScript, Python, C++, and JSON.
+  - **Editor Navigation & Find**: Floating in-editor find widget (`Ctrl+F`), breadcrumb bar, and minimap overview.
+- **Exit Criteria**: Editing code in multiple open buffers feels instantaneous, tabs transfer reliably between panes, and linting feedback updates with zero UI lag.
+
+---
+
+### Phase 3: Explorer, Workspace CRUD, & Git Controls
+- **Status**: ✅ Completed
+- **Deliverables**:
+  - **Explorer File Tree**: Nested directory view with folder collapse/expand, indent guidelines, and hidden files toggle.
+  - **Inline File CRUD**: Create file, create folder, inline rename, delete file, and right-click context menu (Copy Path, Copy Relative Path).
+  - **Search & Replace Engine (VS Code Parity)**: Live workspace regex search and granular replace engine (single match, per-file, workspace-wide) with inline chevron toggle, embedded replace-all icon, keyword match highlighting (`.match-highlight`), hover-only action buttons (`group-hover`), clean root path formatting, and automatic search refresh backed directly by the Go backend server.
+  - **Source Control Git UI**: Staged and unstaged file lists, commit message input with Ctrl+Enter shortcut, branch graph visualization, and action triggers (commit, push, pull).
+- **Exit Criteria**: Complete file tree management works seamlessly in memory and binds cleanly to backend workspace APIs once connected.
+
+---
+
+### Phase 4: Status Bar & Diagnostics Engine
+- **Status**: ✅ Completed
+- **Deliverables**:
+  - Dynamic line and column cursor reporting (`Ln X, Col Y`).
+  - Automatic language detection based on active file extension.
+  - Interactive Git branch switcher and checkout popover with filter search and branch creation (`BranchPopover.tsx`).
+  - Cloud synchronization status button with push/pull indicator (`↓behind ↑ahead`).
+  - Diagnostics error and warning counter linking to the Problems view, with empty state handling (`ProblemsPopover.tsx`).
+  - **Dynamic Status Bar Controls (Zero Hardcoding)**:
+    - **Indentation (`Spaces: {tabSize}`)**: Dynamic reactive binding with editor configuration; clicking toggles indentation (2 ↔ 4 spaces) with confirmation toast; synchronized across Settings Modal and Sidebar.
+    - **Encoding (`UTF-8`)**: Dynamic active document encoding indicator.
+    - **Local Server Connection (`Local: Connected / Offline`)**: Dynamic backend health ping to Go Core Server (`/api/v1/workspace/info`) with live colored dot indicator (`--color-success` / `--color-error`) and click-to-reconnect/status check.
+  - **Integrated Notification Center & Toast History**:
+    - Automatic bidirectional bridge between transient toast notifications (`showToast`) and Notification Center history (`notifications`, max 30 in-memory items).
+    - Popover features: Clean empty state (`No notifications`), header actions (`Mark all read`, `Clear all`), scrollable list, and per-item dismiss action (`NotificationsPopover.tsx`).
+    - Popover dismiss interaction: Global click-outside listener and `Escape` key handling.
+- **Exit Criteria**: Status bar remains responsive, eliminates all mock/hardcoded elements, cleanly records workspace notification events, and updates smoothly during rapid typing and editor pane switches.
+
+---
+
+### Phase 5: AppDrawer AEGIS AI Agent & Session Hub
+- **Status**: ✅ Completed
+- **Deliverables**:
+  - **Session Management**: Master-detail session sidebar showing historical conversations, active thread selection, and new chat creation.
+  - **Cascading Model Selection**: Grouped selector supporting local models and remote providers.
+  - **Autocomplete Trigger Engine**: Interactive popup on typing `/` (skills and slash commands) and `@` (workspace file references).
+  - **Message Streaming Renderer**: Markdown code block formatting, syntax highlighting, and copy-to-clipboard actions.
+- **Exit Criteria**: Autocomplete triggers reliably with keyboard navigation, streaming markdown renders without flickering, and sessions persist cleanly in memory/local storage.
+
+---
+
+### Special Milestone: UI Dark/Light Theme & Modular Palettes
+- **Status**: ✅ Completed
+- **Deliverables**:
+  - **ActivityRail Theme Toggle**: Interactive Sun/Moon icon toggle button above Settings with smooth rotation and toast confirmation.
+  - **Modular JSON Palettes**: Split theme palettes into independent JSON palette files ([`default-dark.json`](../../src/themes/default-dark.json), [`default-light.json`](../../src/themes/default-light.json), [`atom-dark.json`](../../src/themes/atom-dark.json), [`atom-light.json`](../../src/themes/atom-light.json), [`tokyo-night-dark.json`](../../src/themes/tokyo-night-dark.json), [`tokyo-night-light.json`](../../src/themes/tokyo-night-light.json)) loaded via [`themeRegistry.ts`](../../src/themes/themeRegistry.ts).
+  - **Strict 100% Hex Token Architecture**: Completely eliminated all hardcoded `rgb()` / `rgba()` values; standardized on Tailwind CSS v4 `@theme` Hex tokens with universal status tokens (`--color-error`, `--color-warning`, `--color-success`, `--color-info`, `--color-surface-overlay`).
+  - **Anti-Fatigue Ambient Gradient**: Dual-layer ambient radial glow over linear canvas in `base.css` providing eye comfort during prolonged coding sessions.
+  - **UI Design Polish**: 2px active tab accent bar, surface elevation, accent dirty dot, 13.5px / 22px code editor line height, and 11px micro-copy scale.
+
+---
+
+### Special Milestone: Settings Registry, Core IDE Preferences & Editor Polish
+- **Status**: ✅ Completed
+- **Deliverables**:
+  - **Decoupled Settings Registry Architecture**:
+    - Extracted complete schema definitions into [`settingsRegistry.ts`](../../src/components/layout/settings/settingsRegistry.ts) ([`buildSettingsSchema`](../../src/components/layout/settings/settingsRegistry.ts#L79)), reducing [`SettingsModal.tsx`](../../src/components/layout/settings/SettingsModal.tsx) by 75% down to ~240 lines.
+    - Added generic updater creator [`createSettingsUpdater`](../../src/context/core/settingsCore.ts#L321) in [`settingsCore.ts`](../../src/context/core/settingsCore.ts) to eliminate updater boilerplate.
+  - **Complete Core IDE Settings**:
+    - **Editor**: Unique `tabSize` (2, 4, 8), soft tabs `insertSpaces`, `cursorBlinking` (smooth, blink, solid), `renderWhitespace` (none, selection, all), `formatOnSave`, `accessibilityPageSize`, `wordWrap` & `wordWrapColumn`, `minimapScale` and `minimapSide`, diff editor font inheritance.
+    - **Files**: `autoSave` (off, afterDelay, onFocusChange), `autoSaveDelay`, save hygiene (`trimTrailingWhitespace`, `insertFinalNewline`, `eol`), and `files.exclude`.
+    - **Workbench**: Modular theme palette selection, Dark/Light modes, `sidebarPosition` (left, right), and `compactFolders`.
+    - **Features**: Terminal configuration (SSE, shortcut, cursor style/blinking, `fontFamily`, `lineHeight`), Source Control pagination limit, Explorer timeline commit limit, and dynamic `comments` TODO badges.
+    - **Companion (Tablet)** & **AI Agents**: Port, mDNS, pairing PIN, remote edit permissions, plus default LLM model (`agent.model`), temperature, token streaming, and context ingestion.
+  - **Hardware-Accelerated Editor UX Polish**:
+    - Real CSS `@keyframes aegis-caret-blink` and `@keyframes aegis-caret-smooth` in [`editor.css`](../../src/components/layout/editor/editor.css#L396).
+    - True character-measure wrapping via `max-width: calc(var(--editor-wrap-column, 80) * 1ch)`.
+    - Reactive minimap scale relative to active editor font size.
+  - **Zero-Dependency Wildcard Matching**:
+    - Fast wildcard matcher [`matchesExcludePattern`](../../src/components/layout/sidebar/ExplorerPanel.tsx#L105) for `files.exclude` supporting `*.log`, `*.tmp`, `**/*.ext`, and directory subpaths.
+  - **100% Tailwind Semantic Token Compliance**:
+    - Replaced all raw arbitrary escapes in [`DiffEditorPane.tsx`](../../src/components/layout/editor/DiffEditorPane.tsx) and [`SourceControlPanel.tsx`](../../src/components/layout/sidebar/SourceControlPanel.tsx) with semantic tokens (`border-line`, `bg-surface-raised`, `text-ink`, `text-accent`, etc.).
+- **Exit Criteria**: Fully verified through 32 Vitest frontend tests, Go backend tests, Vite production build, and oxfmt formatting with 0 errors.
+
+---
+
+### Phase 6: Go Core Server, Flat-File Storage, AI Agent Drawer & Bundled DAP Debugger
+- **Status**: ✅ Completed (Sub-Phases 6.1–6.15 Completed ✅)
+
+#### Sub-Phase 6.1: Live Workspace Engine & File Operations
+- **Status**: ✅ Completed
+- **Deliverables**:
+  - Direct Go backend endpoints for directory browsing, file CRUD, recursive regex search, and workspace-wide string replacement (`/api/v1/workspace/*`).
+  - Thread-safe workspace manager with path normalization and clean open/close lifecycle states.
+
+#### Sub-Phase 6.2: Native Git CLI Synchronization & In-Editor Side-by-Side Diff
+- **Status**: ✅ Completed
+- **Deliverables**:
+  - **Zero Fake Fallback**: 100% real Git CLI execution via 17 native Go backend endpoints (`/api/v1/git/*`).
+  - **Dynamic User Profile**: Dynamic extraction of user name and email from local/global `git config` without hardcoding.
+  - **VS Code Parity Source Control Sidebar**:
+    - Repositories list with active repo, branch pill (`*` dirty indicator), and sync trigger.
+    - Staged Changes and Changes collapsible lists with status code badges (`M`, `A`, `D`, `U`), line diff stats, stage/unstage/discard actions.
+    - Responsive split Commit button with chevron dropdown options (`Commit`, `Commit & Push`) and AI commit draft generator (`sparkle` button).
+    - Interactive SVG commit graph with clickable branch pills for instant branch switching.
+    - Zero fake fallback empty states ("Initialize Repository" and "Open Folder").
+  - **In-Editor Side-by-Side Git Diff (`DiffEditorPane.tsx`)**:
+    - Complete elimination of over-engineered popup modal overlays.
+    - Side-by-side comparison in the main editor pane: read-only original (HEAD/Commit) on left; live-editable working copy connected to `fileBuffers` on right (saveable via `⌘S` / `Ctrl+S`).
+    - Synchronized line scrolling and diff toolbar actions (Open File, Stage, Unstage, Discard, Close).
+    - Integrated with `EditorTabs.tsx` via `gitDiffTab.ts` (`filename (Working Tree)`, `filename (Index)`, `filename (commit)`).
+  - **Explorer Timeline Integration**: File-specific commit history in Explorer panel with one-click diff opening and commit hash copying.
+  - **Status Bar Integration**: Branch indicator with dirty state asterisk (`*`), live sync counter (`↓behind ↑ahead`), and branch switcher popover.
+
+#### Sub-Phase 6.3: Process Supervisor & Native PTY Terminal Shells
+- **Status**: ✅ Completed
+- **Deliverables**:
+  - **Native PTY Terminal Session Manager (`server/internal/terminal`)**:
+    - Cross-platform pseudo-terminal allocation via `creack/pty` supporting custom shell resolution (`zsh`, `bash`, `sh`), working directory scoping, and dynamic window resizing (`Cols`, `Rows`).
+    - Process group leadership (`Setsid`/`Setpgid`) and clean anti-orphan termination (`SIGTERM` + 50ms `SIGKILL` watchdog to `-pid` on Unix, process kill on Windows).
+  - **Real-Time PTY Streaming (`/api/v1/terminal/*`)**:
+    - Low-latency downlink streaming over Server-Sent Events (SSE) (`/api/v1/events/terminal/:sessionId`) with base64 data payloads and graceful exit notification.
+    - Synchronized stdin uplink via HTTP POST (`/api/v1/terminal/:sessionId/input`) with micro-batched typing latency and dynamic resize (`/api/v1/terminal/:sessionId/resize`).
+    - Seamlessly integrated with in-editor `TerminalView.tsx` powered by `@xterm/xterm` and `@xterm/addon-fit`.
+  - **Fail-Fast Process Supervisor (`server/internal/supervisor`)**:
+    - Robust child process supervisor for language servers (LSP), compiler CLI tools, and background worker jobs with fail-fast crash isolation ([ADR 0004](../../docs/adr/0004-worker-supervision-and-agent-isolation.md)).
+    - 5 explicit lifecycle states: `Starting`, `Running`, `Backoff`, `Crashed`, `Stopped`.
+    - Resilient restart policies: `RestartNever` and `RestartOnFailure` with exponential backoff and quota limit (max 3 retries in 30s) preventing CPU infinite spin loops.
+    - In-memory 64 KB thread-safe circular ring buffer per worker capturing combined stdout/stderr for instant post-mortem diagnostics.
+    - Diagnostic observability endpoints: `GET /api/v1/workers`, `POST /api/v1/workers`, `GET /api/v1/workers/:id`, `GET /api/v1/workers/:id/logs`, and `POST /api/v1/workers/:id/stop`.
+    - Integrated with Go server graceful teardown in `server/cmd/server/main.go` and Tasks log channel (`s.BroadcastLog`).
+
+#### Sub-Phase 6.4: Stateless/Immutable Runtime & Flat-File Data Isolation
+- **Status**: ✅ Completed
+- **Deliverables**:
+  - **Zero-DB Stateless Architecture & OS-Level Flat-File Storage (`~/.aegis/`)**:
+    - Full elimination of heavy SQLite / CGO dependencies in favor of lightweight, pure-Go standard library JSON flat-files (`os`, `encoding/json`). Preserves 100% pure-Go cross-compilation matrix (`CGO_ENABLED=0`) across macOS (arm64/amd64), Linux (amd64/arm64), and Windows (amd64) with zero external database dependencies.
+    - User-level isolation in OS home directory (`~/.aegis/` on macOS/Linux, `%APPDATA%/AegisCode/` on Windows):
+      - `~/.aegis/config.json`: Persistent user preferences, theme overrides, model configurations, and bypassed auth/API tokens.
+      - `~/.aegis/state.json`: Recent workspace paths, window state, and active session pointers.
+      - `~/.aegis/chats/<session_id>.json`: Isolated multi-session AI chat conversation histories with full messages, provider metadata, and timestamps.
+    - **Zero Repo Pollution**: Active project repositories remain 100% clean and free of database / lock files, preventing Git status clutter and accidental secret leakage.
+  - **Atomic File Writes & Crash Resistance**:
+    - Thread-safe atomic file writing pattern (temporary file write + OS kernel atomic rename) guaranteeing zero file corruption during unexpected power outages or app termination.
+  - **REST Persistence Endpoints (`/api/v1/chats/*`, `/api/v1/config`, `/api/v1/state`)**:
+    - Lightweight endpoints:
+      - `GET/POST /api/v1/config`: Read/write global configuration and token bypass metadata.
+      - `GET/POST /api/v1/state`: Read/write application state and active session pointer.
+      - `POST/DELETE /api/v1/state/recent`: Add, remove, or clear recent project paths.
+      - `GET /api/v1/chats`: List all chat session summaries.
+      - `GET/POST /api/v1/chats/:id`: Retrieve or save full chat session history.
+      - `DELETE /api/v1/chats/:id`: Delete a chat session file.
+    - Seamlessly bridges frontend Local-First caching with backend disk persistence, ensuring persistent multi-device session sync for future Tablet Companion (Phase 9).
+  - **Non-Destructive Legacy Migration ([ADR 0002](../../docs/adr/0002-app-data-directory-and-legacy-migration.md), [ADR 0007](../../docs/adr/0007-non-destructive-shadow-migration.md))**:
+    - Startup adapter detects legacy v1 artifacts (`data/settings.json`, `.aegis/auth.json`, legacy databases) and executes a non-destructive read-only shadow migration into `~/.aegis/config.json`.
+  - **Immutable Boot Configuration**:
+    - Environment variables (`WORKSPACE_ROOT`, `PORT`, `AEGIS_OPEN`) parsed into read-only Go structs at boot time; zero mutating global server state.
+  - **Verification**: 100% unit and integration test coverage (`TestStoreInitialization`, `TestConfigPersistence`, `TestAppStateAndRecentProjects`, `TestChatSessionsCRUD`, `TestSanitizeIDTraversalGuard`, `TestLegacyMigration`, and `TestStorageEndpoints`).
+
+#### Sub-Phase 6.5: Bundled DAP Debugger (Delve `dlv`) Engine
+- **Status**: ✅ Completed
+- **Deliverables**:
+  - **Supervised Delve Runner & Host Toolchain Discovery (`server/internal/debug`)**:
+    - Dynamic host Delve resolution via `exec.LookPath("dlv")`, `$GOPATH/bin/dlv`, and `$HOME/go/bin/dlv` with explicit `delve_not_found` error payload and 1-click install guidance.
+    - Out-of-process execution running `dlv dap --listen=127.0.0.1:<port>` with POSIX process group leadership (`Setsid`/`Setpgid`) and ephemeral TCP port allocation (`AllocateFreePort`).
+    - Anti-orphan process group lifecycle teardown with `SIGTERM` followed by a 250ms `SIGKILL` watchdog to `-pid`, guaranteeing zero zombie Delve processes or lingering TCP ports.
+  - **DAP Client Proxy & JSON-RPC Bridge**:
+    - Pure Go DAP client (`Client`) implementing standard `Content-Length` framing reader/writer and sequence-correlated JSON-RPC requests/events.
+    - Full protocol coverage: `initialize`, `launch`, `setBreakpoints`, `configurationDone`, `continue`, `next` (step over), `stepIn`, `stepOut`, `pause`, `threads`, `stackTrace`, `scopes`, `variables`, and `disconnect`.
+    - Thread-safe `Manager` orchestrating session lifecycle, breakpoint synchronization, and state hydration (`stackFrames`, `variables`, `stopReason`).
+  - **REST Control Endpoints & Real-Time SSE Stream**:
+    - HTTP endpoints: `POST /api/v1/debug/start`, `POST /api/v1/debug/breakpoints`, `POST /api/v1/debug/step`, `GET /api/v1/debug/state`, `POST /api/v1/debug/terminate`.
+    - Real-time SSE downlink stream (`/api/v1/events/debug`) broadcasting `debug:started`, `debug:stopped`, `debug:continued`, `debug:output`, and `debug:terminated`.
+  - **In-Editor UI & Execution Controls**:
+    - Gutter breakpoint dots and hover ghost indicators in `CodePane.tsx` with click toggling.
+    - Stopped execution line highlight with left arrow glyph and accent background.
+    - Floating `DebugToolbar.tsx` with continue (`F5`), step over (`F10`), step into (`F11`), step out (`Shift+F11`), restart, and stop (`Shift+F5`).
+    - Dedicated `DebugView.tsx` in `BottomPanel.tsx` displaying interactive Variables tree and Call Stack list with frame navigation.
+
+#### Sub-Phase 6.6: Single Cross-Platform Binary, Embedded Frontend (`embed.FS`) & Native Desktop Window
+- **Status**: ✅ Completed
+- **Deliverables**:
+  - **Embedded Frontend in Go Binary (`server/internal/web`)**:
+    - Embedded production React 19 web assets into Go binary using `//go:embed all:dist` with SPA client routing fallback.
+    - Unified HTTP routing: `/api/v1/*` routes handled by Go workspace/git/terminal APIs, all static/SPA routes served from the embedded bundle.
+    - Dynamic port auto-binding & fallback in `server/cmd/server/main.go`: binds default `8080`, and gracefully cascades across `8081..8095` if occupied.
+    - CLI options: `--port`, `--open`, `--headless`, and Windows Edge App Mode (`--app=http://...`) launch.
+  - **Native Desktop App Shell (`scripts/macos-wrapper/main.swift`)**:
+    - Ultra-lightweight native Swift/Cocoa `WKWebView` window wrapper (~88 KB binary) replacing heavyweight Electron (~200MB+ overhead).
+    - Native macOS window chrome, styled dark titlebar, Obsidian canvas backdrop (`#0d0f12`), and full window controls.
+  - **Fail-Safe Port Cleanup & Anti-Zombie Watchdog**:
+    - Robust process lifecycle supervision in Cocoa wrapper: traps `SIGTERM`, `SIGINT`, `SIGHUP`, window close delegate (`windowWillClose`), and `applicationShouldTerminateAfterLastWindowClosed` (`⌘Q`).
+    - Immediately dispatches `SIGTERM` to the child `aegiscode-server` process group, backed by a 250ms `SIGKILL` watchdog timer. Guarantees 100% clean port release with zero zombie background processes.
+  - **Cross-Platform Matrix & DMG Packaging**:
+    - Automated cross-compilation matrix script (`scripts/build-binary.js`, `npm run build:binary`) with UPX compression generating lightweight standalone binaries (~7.5 MB - 8.1 MB) across 5 targets: macOS (`darwin/arm64`, `darwin/amd64`), Linux (`linux/amd64`, `linux/arm64`), and Windows (`windows/amd64`).
+    - macOS DMG packager (`scripts/package-dmg.js`, `npm run package:dmg`) producing ready-to-mount `bin/AegisCode.dmg` installer (~3.5 MB) containing `AegisCode.app`.
+  - **UI & Brand Hygiene**:
+    - Purged legacy mock traffic lights from [`WindowControls.tsx`](../../src/components/layout/header/WindowControls.tsx) and [`header.css`](../../src/components/layout/header/header.css) in favor of native OS window controls.
+    - Purged all legacy "figma-make-app" strings; standardized official Aegis Shield SVG branding and rich OpenGraph/HTML metadata.
+  - **Verification**: 100% verified via automated frontend Vitest suite (32 tests), Go backend suite (7 suites), and live standalone DMG execution.
+
+#### Sub-Phase 6.7: UI State & Context Extractor (Frontend PWA Focus)
+- **Status**: ✅ Completed
+- **Deliverables**:
+  - **Context Extractor Core (`src/context/core/contextExtractorCore.ts`)**:
+    - Passive real-time context capture engine collecting `activeFilePath`, `selectedText` with debounced (150ms) listener in `CodePane.tsx`, and `entireBuffer`.
+    - Token ceiling estimation based on ~4 characters per token heuristic (`estimateTokens`).
+    - Character threshold guardrail (>50,000 chars falls back with truncated content and `⚠️ Truncated` warning badge).
+  - **Token Exclude Filter (`isPathExcluded`)**:
+    - Seamless filtering against exclusion patterns (`node_modules/`, `.git/`, `dist/`, `target/`, `*.log`, `*.lock`, `.DS_Store`) preventing unwanted file and artifact context bloat.
+  - **Interactive Context Chip Badges in `ChatComposer.tsx`**:
+    - Dismissible chip badges in composer showing active file, line range (e.g. `(Ln 12–45)`), and truncation alerts.
+    - `[DEPRECATED — Token Estimates Badge in Composer]`: The `~180 tokens` estimation chip badge has been deprecated and eliminated to reduce UI rendering and regex computation overhead during active typing.
+    - One-click toggle between active Selection and Full File mode.
+    - Dismiss memory state: dismissed file context remains hidden until tab switch or new active selection.
+    - Multi-context support: seamlessly merges active editor context with manual `@mentions`.
+  - **Message Context Persistence & Collapsible Banner in `ChatMessageList.tsx`**:
+    - Attached `ChatMessage.context: ContextItem[]` serialized and persisted into Go backend flat-file store (`~/.aegis/chats/<id>.json`).
+    - Collapsible `<details>` context banner in message list with file path, line range badges, total token count, and code preview snippet.
+  - **Verification**: 100% verified via 5 new regression scenarios in `test/frontend/core/workbenchCore.test.ts` (37 tests passing), covering passive extraction, 50k char guardrails, exclusion filtering, metadata persistence, and dirty flag preservation during active AI chat tab switches.
+
+#### Sub-Phase 6.8: Go API Bridge & Token Lifecycle (Auth Context & Provider Settings)
+- **Status**: ✅ Completed
+- **Deliverables**:
+  - **Global Config & Provider Schema (`server/internal/store` & `~/.aegis/config.json`)**:
+    - Thread-safe configuration reader & writer persisting `DefaultProvider`, `DefaultModel`, `ProviderKeys`, `ProviderBaseURLs`, `BypassCommands`, and `CustomModels`.
+  - **4 Unified AI Providers & Model Upgrades**:
+    1. **Antigravity**: OAuth CLI (`agy` / `antigravity`) with updated models `gemini-3.8-flash` (default) & `gemini-3.8-medium` (legacy `gemini-2.5` deprecated).
+    2. **Claude**: OAuth CLI (`claude auth`) with `claude-3.7-sonnet` and `claude-3.5-haiku`.
+    3. **OpenCode**: OpenAI-compatible HTTP gateway with configurable base URL and API key.
+    4. **OpenRouter**: Multi-gateway HTTP endpoint (`https://openrouter.ai/api/v1`) with API key.
+  - **Antigravity Zero-Config Auto-Discovery & Brain Bridge**:
+    - Automatic backend discovery engine probing `~/.gemini/oauth_creds.json`, active Google/Gemini account, token expiry status, and brain workspace directory (`~/.gemini/antigravity-cli/brain`).
+    - Settings Modal Antigravity card features live auto-discovery badge, 1-line concise hint, and zero-token latency verification.
+  - **Dynamic Custom Model Registry**:
+    - Support for user-defined arbitrary model IDs across all 4 providers via interactive Tag Chips (`+ Add` / `✕`) in Settings Modal.
+    - Seamlessly merged into provider catalogs with `[Custom]` badges via `getMergedProviderModels()`.
+  - **Upward AI Provider & Model Popover (`ChatProviderSelect.tsx` & `chat.css`)**:
+    - Replaced rigid single-provider dropdown with an upward floating popover (`bottom: calc(100% + 8px); left: 0; z-index: 100`) floating directly above the composer footer.
+    - Guaranteed zero CSS clipping by enforcing `overflow: visible` on `.composer`, `.composer-footer`, `.composer-footer-left`, and `.composer-wrapper`.
+    - Unified multi-provider menu listing all 4 providers and all their available models simultaneously, grouped by provider.
+    - Filter tabs (`[Semua]`, `[AGY]`, `[CLD]`, `[OC]`, `[OR]`) with color-coded status dots for instant single-provider filtering.
+    - Simultaneous selection: choosing any model updates both active provider and model in the current session.
+  - **Assistant Message Provider Badge (`ChatMessageList.tsx`)**:
+    - `[DEPRECATED — Assistant Header Dual Model Identifier Pill]`: Displaying repetitive model identifier pills in every assistant card header (`[gemini-3.8-flash]`) is deprecated to prevent visual clutter. Assistant response cards render distinct colored provider tags (`[AGY]`, `[CLD]`, `[OC]`, `[OR]`), while active model selection is maintained in the composer toolbar and session sidebar.
+  - **Backend AI Test Probe Engine (`POST /api/v1/ai/test` & `server/internal/ai/probe.go`)**:
+    - Fast, zero-token cost HTTP GET `/models` probes for OpenCode & OpenRouter.
+    - Safe `exec.LookPath` CLI path verification and `--version` probe with 5-second timeout for Claude.
+    - Specialized OAuth & brain folder inspection probe for Antigravity without invoking full LLM generation.
+    - Live Test Connection buttons in Settings Modal displaying real-time spinner, latency (ms), and error tooltips.
+  - **Strict Zero-Emoji & Semantic Token Compliance**:
+    - 100% SVG UI `<Icon name="..." />` components across all AI cards, buttons, badges, and warnings; zero emojis or emoticons.
+    - All colors bound to Tailwind CSS tokens (`bg-canvas`, `bg-surface`, `bg-accent-soft`, `text-ink`, `border-line`).
+  - **Chat Composer Configuration Guard**:
+    - Displays `Setup needed` warning badge when the active provider lacks credentials, redirecting users directly to the Settings Modal upon send.
+  - **Verification**: 100% verified across Go backend tests (`server/internal/ai/probe_test.go`, `server/internal/store/store_test.go`, `server/internal/api/api_test.go`) and Vitest frontend regression tests (`test/frontend/core/workbenchCore.test.ts`, 45 tests passing).
+
+#### Sub-Phase 6.9: Isolated Engine, Multi-Provider Abstraction & SSE Streaming (Backend Provider Go)
+- **Status**: ✅ Completed
+- **Deliverables**:
+  - **Multi-Provider Engine Abstraction (`server/internal/ai/engine.go`)**:
+    - Pluggable `ProviderEngine` architecture supporting dynamic routing to:
+      1. **Antigravity (`server/internal/ai/antigravity.go`)**: Native `agy` subprocess runner with NDJSON parsing and full lifecycle streaming.
+      2. **OpenCode & OpenRouter (`server/internal/ai/openai.go`)**: OpenAI-compatible HTTP SSE streaming with `OpenAIAggregator` grouping streaming delta tool call argument fragments into verified JSON.
+      3. **Claude / Anthropic (`server/internal/ai/claude.go`)**: Anthropic Messages SSE streaming with `ClaudeBlockHandler` parsing `content_block_start`, `content_block_delta`, and `content_block_stop`.
+    - Auto-injection of missing credentials (`Provider`, `Model`, `APIKey`, `BaseURL`) from persistent user configuration in `~/.aegis/config.json` (`s.store.GetConfig()`).
+  - **Antigravity CLI Subprocess Runner (`server/internal/ai/antigravity.go`)**:
+    - Direct invocation of `agy` with `--conversation <uuid>`, `--model <model>`, `--dangerously-skip-permissions`, and `-p <prompt>` within active workspace bounds.
+    - Seamless support for Antigravity NDJSON streams, thinking reasoning loops, tool call payloads, and text deltas.
+    - Graceful process termination on user abort via Go `context.Context` cancellation.
+  - **Low-Latency SSE Streaming Endpoint (`POST /api/v1/ai/chat`)**:
+    - Real-time token streaming (`text/event-stream`) emitting `start`, `thinking`, `tool_call`, `chunk`, `done`, and `error` events.
+    - Fully wired `AbortController` cancellation in React Chat Drawer triggering immediate `SIGINT/SIGTERM` on child process.
+  - **Safe Agentic Tool Call Streaming & Extraction**:
+    - Native `tool_info.parameters` and `tool_info.output` extraction from Antigravity `step_update` events, with fallback to `tool_args`.
+    - Real-time tool lifecycle tracking (`ACTIVE` -> running, `DONE` -> success) and step deduplication keyed by `step_index` (`tc-<stepIdx>`).
+    - Outer quote and whitespace normalization via `SanitizeString`, multi-key path resolution via `ExtractTargetFile` with backend anti-ghost tab guards, and human-readable summary synthesis via `GenerateSummary` (`server/internal/ai/normalizer.go`).
+    - Dynamic tool summary resolution (`toolSummary` / `toolAction`) with fallback action synthesis.
+    - Double-layer ghost tab prevention: backend guard in `ExtractTargetFile` ensuring `path !== toolName` and frontend guard in `ToolCallActivity.tsx`.
+    - Formatted line range badges (`L<start>-<end>`) on file inspection tools (`view_file`, `Read`).
+    - Tool output DOM cap (2,500 characters) preventing DOM bloating on large terminal or file reads.
+  - **Streaming Chat Zero-Freeze Performance Overhaul**:
+    - **Streaming Fast-Path Zero-Parse (`MarkdownRenderer.tsx`)**: Bypasses heavy regex AST parser during active generation (`isStreaming: true`), rendering raw text directly in a preformatted container to prevent UI freezing and DOM thrashing.
+    - **RequestAnimationFrame (40ms) Micro-Batching (`chatCore.ts`)**: Batches high-frequency text delta tokens and reasoning deltas into 40ms animation frames, cutting React re-render churn by up to 90%.
+    - **Debounced Flat-File Session Persistence**: Replaces per-token disk writes with a 3-second debounced `saveBackendChatSession` synchronization and guaranteed final flush upon stream completion, reducing disk I/O by 98%.
+    - **Thinking Windowing**: Reasoning preview windowed to trailing 3,000 characters while streaming, keeping DOM tree light during deep CoT thinking loops.
+    - **Deferred Code Block Extraction**: Postpones proposed code block regex scans until stream completion.
+  - **Dynamic Model & Multi-Provider Skill Discovery Endpoints**:
+    - `GET /api/v1/ai/models`: In-memory 5-minute cached discovery of available Antigravity models (`agy models`).
+    - `[DEPRECATED — Static Antigravity-Only Skill Discovery & Dummy Chat Messages]`: Static single-provider Antigravity discovery and hardcoded initial dummy chat messages in `chatCore.ts` are deprecated.
+    - `GET /api/v1/ai/skills?provider=...&workspace=...`: Dynamically discovers native skills per provider (`antigravity`, `claude`, `opencode`, `openrouter`) across both System (`~/.gemini`, `~/.claude`, `~/.opencode`) and Workspace (`<ws>/.gemini/skills`, `<ws>/.claude/commands`, `<ws>/.opencode/skills`, `<ws>/.skills`) hierarchies (`server/internal/ai/skills.go`).
+    - **Popover Pointer Auto-Scroll (`ChatCommandPopover.tsx`)**: Attaches item DOM references and automatically executes `scrollIntoView({ block: "nearest", inline: "nearest" })` whenever `selectedIndex` updates to keep active items visible.
+    - `GET /api/v1/ai/transcript/{id}`: Full-fidelity session rehydration from native JSON brain logs (`transcript.jsonl`), parsing user turns, thinking traces, and tool call histories.
+  - **Messenger-Style Chat Architecture & Welcome Banner (`src/components/layout/chat/`)**:
+    - **Interactive Welcome Empty State Banner**: Replaces legacy dummy messages with an active workspace pill and quick hint badges.
+    - **Messenger-Style Chat Turns**: Right-aligned user prompts (`max-width: 85%`) with accent tint; left-aligned assistant response cards (`max-width: 95%`) on neutral surface.
+    - **Thinking Process Accordion**: Collapsible reasoning view with pulsing in-progress indicator.
+    - **Interactive Tool Call Chips**: Real-time status badges, collapsible JSON args, and tool execution outputs.
+    - **Stop Generation Control**: Replaces Send button in `ChatComposer.tsx` with dedicated Stop button while generation is active.
+    - **Pre-injected `<context>` Envelope**: Automatically formats context chips into clean markdown blocks preceding the prompt.
+    - **Dedicated Error Message Cards**: Clean UI cards with diagnostic info and direct Settings link on CLI or auth errors.
+  - **Verification**: 100% verified across Go backend tests (66 tests passing) and Vitest frontend tests (79 tests passing).
+
+#### Sub-Phase 6.10: Git-Driven Review Gates (Apply & Code Manipulation)
+- **Status**: ✅ Completed
+- **Deliverables**:
+  - **Context Mentions & Lightweight Folder Support**:
+    - `[DEPRECATED — Context Token Budgeting Demotion Loop & UI Token Badge]`: The `MAX_CONTEXT_BUDGET_TOKENS = 2500` token calculation and demotion loop in `contextExtractorCore.ts` and composer token badge are deprecated and eliminated to reduce client computational overhead.
+    - **Folder / Directory Mentions (`@folder/`)**: Popover `@` allows selecting directories as well as files, displaying a folder icon and `(Dir)` badge. Context is packaged strictly as `Directory: <path>` without recursive filesystem traversal or memory dumps.
+    - Progressive density modes for file mentions: Reference Only `(Ref)`, Snippet `(Snippet)`, and Full Content `(Full)`.
+  - **Path Boundary Verification**: Strict path validation enforcing that all AI code generation targets reside within the active `rootPath` before disk writes (preventing directory traversal attacks).
+  - **Git-Backed Side-by-Side Review**:
+    - User clicks "Apply to Editor" on markdown code blocks (`ChatMessageList.tsx`), writing changes via `/api/v1/workspace/file`.
+    - Leverage Phase 6.2 real Git CLI: modifications immediately surface in [`DiffEditorPane.tsx`](../../src/components/layout/editor/DiffEditorPane.tsx) side-by-side view with synchronized scrolling.
+    - Zero redundant temporary buffer system: users accept via native Git Stage/Commit or reject via native Discard Changes.
+  - **Interactive Markdown Code Block Toolbar**:
+    - Action headers for all markdown code fences: `[Copy]` and `[Apply to Editor] / [Apply to <file>]` with `lang:filepath` target resolution.
+    - Agent multi-file modifications surface direct `[Review in Git]` navigation banner to Source Control.
+  - **Verification**: 100% verified across Go backend tests (66 tests passing) and Vitest frontend tests (79 tests passing).
+
+#### Sub-Phase 6.11: Append-Only Event Ledger & Graph Storage for AI Conversations ([ADR 0009](../../docs/adr/0009-append-only-chat-graph-ledger.md), [RFC](../../docs/rfc-append-only-chat-graph-ledger.md))
+- **Status**: ✅ Completed
+- **Deliverables**:
+  - **Decoupled Session Metadata Index (`~/.aegis/sessions.json`)**:
+    - High-performance session descriptor index enabling $O(1)$ response times for `GET /api/v1/chats` without scanning or deserializing individual chat files.
+  - **Append-Only Event Ledger (`~/.aegis/chats/<session_id>.jsonl`)**:
+    - Sequential JSONL event node storage with parent pointers (`parent: "node-id"`), replacing monolithic whole-file rewrites with true $O(1)$ appends (`os.O_APPEND|os.O_WRONLY`).
+    - Eliminates the 3-second disk write debouncing workaround in `chatCore.ts`.
+  - **Graph Lineage & Zero-Mutation Branching / Forking**:
+    - Reconstructs active dialogue threads via in-memory backtracking traversal ($O(D)$ where $D$ is branch depth).
+    - Enables retrying prompt turns and generating alternative responses without destructively mutating or truncating past conversation nodes.
+  - **Content-Addressed Payload Offloading & Instant Teardown (`~/.aegis/blobs/<session_id>_<hash>.raw`)**:
+    - Large tool execution outputs, terminal logs, and buffer reads exceeding 4 KB offloaded to raw blob files keyed by session ID and SHA-256 hash.
+    - Lightweight previews displayed in UI; full outputs loaded on-demand via `GET /api/v1/blobs/:hash` or `ToolOutputBlock`.
+    - Session teardown cleans up all associated blobs instantly via `filepath.Glob` pattern matching; background lightweight sweeper prunes any dangling orphaned blobs.
+  - **Forward Map Traversal & Periodic Checkpoint Nodes**:
+    - High-speed in-memory map mapping ($O(N)$) with $O(H)$ sub-millisecond backtracking traversal.
+    - Periodic checkpoint nodes inserted every 200 turns for deep trees, eliminating ancestor re-traversal.
+  - **Fast Tail-Reading & Boot Lazy Healing**:
+    - Reverse-seek reader (`os.SEEK_END`) loading only the trailing 30–50 nodes for instantaneous chat drawer hydration on long-running sessions.
+    - Reconciliation on Boot: compares file modification timestamp (`mtime`) with `sessions.json` `updatedAt`, executing single-line tail reads via `os.Seek` only when out-of-sync (zero full-scan overhead).
+  - **Resilience & Non-Destructive Migration**:
+    - Self-healing startup indexer resolving dual-write inconsistencies between `sessions.json` and `.jsonl` files.
+    - Non-destructive shadow migration converting legacy `chats/<id>.json` to ledger format without modifying source files ([ADR 0007](../../docs/adr/0007-non-destructive-shadow-migration.md)).
+  - **Verification**: 100% verified across Go backend tests (`TestAppendEventNodeAndBlobOffload`, `TestReverseSeekTail`, `TestReconstructChatAndBranching`, `TestDeleteSessionAndBlobs`, `TestReconcileSessionsOnBoot` in `server/internal/store/ledger_test.go`, and `TestStorageEndpoints` in `server/internal/api/api_test.go`) and Vitest frontend regression tests (`test/frontend/chat/chatGraphLedger.test.ts`, 84 tests passing).
+
+#### Sub-Phase 6.12: Zero-Freeze Architecture (Go-First Offloading & Web Workers)
+- **Status**: ✅ Completed
+- **Architecture Reference**: [ADR 0012: Zero-Freeze Architecture via Go-First Offloading and Two-Lane Web Workers](../../docs/adr/0012-zero-freeze-architecture-go-first-offloading-and-web-workers.md)
+- **Objective**: Menjamin thread utama JavaScript/React selalu bebas dari komputasi berat (*zero blocking execution*) agar rendering editor tetap terkunci di 60 FPS dan pengetikan keyboard memiliki latensi sub-5 ms, bahkan pada berkas 50.000+ baris atau repositori besar dengan puluhan ribu berkas.
+- **Deliverables**:
+  - **Two-Lane Web Worker Runtime (`src/workers/`)**:
+    - `WorkerBroker.ts`: Runtime worker terpusat mengelola Fast Lane (dedicated interactive worker untuk visual seketika tanpa antrean) dan Batch Lane (worker pool elastis untuk komputasi berat dengan prioritas antrean FIFO dan pembatalan instan via `AbortSignal`).
+    - `defineWorkerTask` & `registry.ts`: Pendaftaran task bertipe ketat (`tokenizerTask.ts`, `linterTask.ts`) yang modular dan pluggable untuk ekspansi worker baru tanpa mengubah core broker.
+  - **Go-First In-Memory Workspace Index (`server/internal/workspace/`)**:
+    - `index.go`: Indeks in-memory RAM `WorkspaceIndex` mengimplementasikan interface `IndexProvider`, tersinkronisasi otomatis dengan file watcher (`fsnotify`) secara atomic.
+    - **Weighted Subsequence Matcher**: Evaluasi query cepat dengan bonus skor basename (+100), prefix (+50), pemisah folder (+30), camelCase (+25), dan karakter berurutan (+15).
+    - **Multi-Core Parallel Chunking**: Benchmark 50.000 berkas dieksekusi dalam **1.16 ms** pada Apple M2 (< 1.5 ms target SLA).
+    - **API Endpoint**: `GET /api/v1/workspace/files/find` dengan parameter `q` dan `limit`.
+  - **Unified `offloadService` Facade (`src/utils/offloadService.ts`)**:
+    - Satu pintu masuk komputasi asinkron dengan In-Flight Request Coalescing (deduplikasi request simultan), Hash LRU Cache (FNV-1a 32-bit), dan Graceful Fallback otomatis ke main-thread idle callback.
+  - **Telemetry & Zero-Freeze SLA Guardrail (`src/utils/perfMonitor.ts` & `PerfStatusPill.tsx`)**:
+    - `PerfMonitor` berbasis `PerformanceObserver` mendeteksi Long Tasks (> 50 ms), FPS, dan event loop lag.
+    - Status bar item `PerfStatusPill.tsx`: UI pill dengan anchor popover di tengah (`left-1/2 -translate-x-1/2`), header terstandarisasi `.status-popover-header`, SVG `zap` icon (`IconName`/`Icon.tsx`), dan active highlight state (`status-button-active`).
+  - **End-to-End Module Migrations**:
+    - `Minimap.tsx`: Tokenisasi baris dialihkan ke Fast Lane worker dengan skeleton visual bar instan saat fast scroll.
+    - `createWorkspaceSlice.ts` & `WorkbenchLifecycle.ts`: Validasi sintaksis dialihkan ke Batch Lane worker dengan debounce 300 ms dan pembatalan `AbortController`.
+    - `CommandPalette.tsx`: Quick Open file search didelegasikan ke endpoint Go `/api/v1/workspace/files/find` dengan fallback lokal.
+    - `CsvViewer.tsx`: Memanfaatkan 100% Go windowing query streaming, fungsi client parse ditandai `@deprecated`.
+  - **Stability & Runtime Bugfixes**:
+    - `CMEditor.tsx`: Memperbaiki `ReferenceError: handleDefinition is not defined` dengan mengaitkan event `aegis:editor-definition` secara tepat ke `handleGoToDefinition`.
+    - `ImageViewer.tsx`: Menghilangkan browser warning `Unable to preventDefault inside passive event listener invocation` dengan memasang native wheel listener `{ passive: false }` untuk zoom & pan yang mulus.
+- **Verification**: 100% lolos verifikasi Go backend tests (`index_test.go`, `api_test.go`), 50k benchmark (1.16 ms), Vitest suite (18 test files, 180 tests passing, termasuk `offloadService.test.ts`), Vite production build (367 ms), dan oxfmt code formatting.
+
+#### Sub-Phase 6.13: Embedded Pure-Go SQLite Engine & FTS5 Search ([ADR 0013](../../docs/adr/0013-embedded-pure-go-sqlite-and-fts5-search.md))
+- **Status**: ✅ Completed
+- **Architecture Reference**: [ADR 0013: Embedded Pure-Go SQLite Engine and FTS5 Search](../../docs/adr/0013-embedded-pure-go-sqlite-and-fts5-search.md)
+- **Objective**: Menggantikan persistensi flat-file terfragmentasi (`config.json`, `state.json`, `sessions.json`, `chats/*.jsonl`, dan `blobs/`) dengan engine database tertanam berbasis pure-Go SQLite (`modernc.org/sqlite`). Menjamin transaksi ACID, konkurensi aman multi-klien (persiapan Tablet Companion Phase 9), integrasi Full-Text Search (FTS5) riwayat percakapan AI berkecepatan tinggi (< 3 ms), dan mempertahankan prinsip Zero-CGO (`CGO_ENABLED=0`).
+- **Deliverables**:
+  - **Zero-CGO Driver Integration (`modernc.org/sqlite`)**:
+    - Kompilasi murni Go tanpa GCC/Clang eksternal menjaga portabilitas cross-compile macOS, Linux, dan Windows.
+    - Konfigurasi High-Concurrency PRAGMA via DSN URI parameters (WAL Mode, `busy_timeout = 5000`, `foreign_keys = ON`, `synchronous = NORMAL`, `cache_size = -2000`).
+  - **Unified Graph-First Schema (`server/internal/store/db.go`)**:
+    - Tabel `app_config`, `app_state`, `chat_sessions`, `chat_events`, dan `blobs`.
+    - Preservasi 100% fidelitas atribut `GraphNode` (`type`, `parent_id`, `text`, `reasoning`, `tool_name`, `meta_json`) untuk mendukung forking, branching, dan traversal tanpa kehilangan data.
+  - **Full In-Database CAS Blob Storage**:
+    - Payload biner besar (> 4 KB) dari output tool dan terminal dumps disimpan langsung di tabel `blobs` (tipe BLOB) dengan skema composite primary key `(session_id, hash)` untuk menghasilkan database tunggal mandiri `~/.aegis/aegis.db` (*Zero Repo Pollution*).
+  - **High-Speed FTS5 Search Engine & API Endpoint**:
+    - Virtual table `chat_fts USING fts5` dengan trigger sinkronisasi otomatis (`AFTER INSERT`, `AFTER DELETE`, `AFTER UPDATE`).
+    - Endpoint REST `GET /api/v1/chats/search?q=<query>&limit=<n>&workspace=<path>` mengembalikan hasil terperingkat dengan snippet teks ter-highlight (`<b>...</b>`) dalam latensi < 3 ms.
+    - Sanitasi token query dengan wildcard suffix `*` (`"%s"*`) untuk mendukung prefix search instan saat mengetik.
+  - **Project-Scoped AI Chat Sessions (Option 2: Per-Workspace)**:
+    - Kolom `workspace_path TEXT NOT NULL DEFAULT ''` dan indeks `idx_chat_sessions_workspace` pada tabel `chat_sessions`.
+    - Migrasi skema self-healing pre-DDL otomatis via `pragma_table_info('chat_sessions')` untuk database eksisting.
+    - Filtering terintegrasi pada endpoint backend (`GET /api/v1/chats?workspace=...` dan `GET /api/v1/chats/search?workspace=...`).
+    - UI toggle pill interaktif `[ 📁 <Project> ]` vs `[ 🏷️ All ]` di sidebar chat (`ChatSessionSidebar.tsx`) dengan badge workspace (`tag-workspace`).
+  - **Penyelesaian 8 Gap Bugs & Self-Healing Migration**:
+    - Menyelesaikan 8 gap bugs (DSN URI pragmas, composite primary key blobs, parameterized `root_node_id`, Windows `os.Remove`, graceful `Close`, CAS offload di `SaveChat`, FTS5 prefix matching, dan dual-engine search integration).
+  - **Pembersihan Total Legacy Orphans**:
+    - Deteksi otomatis saat boot; mengimpor seluruh berkas flat-file lama (termasuk remnant dari `legacy_backup/chats`) ke SQLite dalam transaksi ACID.
+    - Mengeliminasi pembuatan folder orphan `chats/` dan `blobs/` saat boot.
+    - Purge total `~/.aegis/legacy_backup/` dan folder kosong, menghasilkan direktori `~/.aegis/` murni berisi `aegis.db` (+ WAL/SHM).
+- **Verification**: 100% lolos verifikasi Go backend tests (20/20 store tests, 12 Go packages), Vitest frontend suite (18 test files, 183 tests), Vite production build (0 errors), dan oxfmt code formatting.
+
+#### Sub-Phase 6.14: CodeGraph Knowledge Engine & Native MCP Server Bridge [SUPERSEDED & REPLACED by ADR 0014 & ADR 0015]
+- **Status**: ✅ Completed (Migrated to Native Daemon)
+- **Architecture Reference**: [ADR 0014](../../docs/adr/0014-native-colbymchenry-codegraph-and-vantagecraft-ui.md) & [ADR 0015](../../docs/adr/0015-native-codegraph-contract-alignment-and-zero-swallow.md)
+- **Architectural Transition**: In-process custom Go AST extractors (`go_extractor.go`, `ts_extractor.go`, `py_extractor.go`, `lsp_extractor.go`), indexer (`indexer.go`), and custom SQLite graph tables (`~/.aegis/graphs/*.db`) are **`[DEPRECATED & REMOVED]`**. They are superseded by the out-of-process supervised native `@colbymchenry/codegraph` daemon (Tree-sitter / Rust kernel across 30+ languages) with reverse proxying and automatic MCP envelope unwrapping (`/api/codegraph/ui/*`).
+- **Objective**: Mengeliminasi token bloat (penghematan 80%–95%), latensi, dan degradasi konteks akibat injeksi berkas mentah / raw AST dumps ke LLM. Menyediakan mesin pengetahuan graph kode berbasis pure-Go SQLite (`modernc.org/sqlite`) per-workspace di `~/.aegis/graphs/<workspace_hash>.db` dan server native Model Context Protocol (MCP) dengan transport Stdio dan HTTP JSON-RPC 2.0 yang mengekspos 5 tingkat progressive disclosure langsung ke penyedia AI AEGIS dan klien MCP eksternal.
+- **Deliverables**:
+  - **Per-Workspace Pure-Go SQLite Schema & Storage Layer (`server/internal/codegraph/db.go`, `types.go`)**:
+    - `[DEPRECATED & SUPERSEDED]`: Replaced by native `.codegraph/` repository-level relational storage managed by `@colbymchenry/codegraph`.
+  - **Multi-Language AST Extractors (`go_extractor.go`, `ts_extractor.go`, `lsp_extractor.go`)**:
+    - `[DEPRECATED & REMOVED]`: Replaced by native Tree-sitter and Rust kernel extraction in upstream daemon.
+  - **Progressive Disclosure Query Engine & Guardrails (`query.go`)**:
+    - **L0 Outline**: `GetFileOutline(ctx, relPath)` (< 150 token).
+    - **L1 Signature**: `GetSymbolDefinition(ctx, name, fileHint)` (< 80 token).
+    - **L2 Topology**: `FindCallers` (guardrail default `LIMIT 15`, `truncated: true`, dan pagination hint) dan `FindCallees`.
+    - **L3 Surgical Subgraph**: `QuerySubgraph(ctx, rootSymbol, depth)` dengan pembatasan mutlak `depth <= 2` (2-hop BFS, < 400 token).
+    - **L4 Source Body**: `ReadSymbolBody(ctx, name, relPath)` membaca baris kode implementasi exact dari disk.
+    - **Graph-Augmented Git Diff**: `GetDiffImpact(ctx, staged)` memetakan hunk baris diff ke simbol yang terpengaruh dan topologi caller pemanggilnya, mengabaikan vendor, lockfile (`go.sum`, `package-lock.json`), `node_modules`, dan file biner.
+  - **Dual-Path Ingestion Pipeline & Hot-Path LRU Cache (`indexer.go`, `cache.go`)**:
+    - In-memory 500-item thread-safe LRU cache dengan invalidasi instan saat berkas termodifikasi/terhapus.
+    - Hot-path SHA-256 checking (< 0.1 ms) di RAM Go melewati re-parsing jika hash identik.
+    - Transaksi atomik SQLite (< 5 ms) dengan serialisasi write mutex (`writeMu`).
+    - Cold-start background worker pool (hingga `runtime.NumCPU()`) untuk pemindaian repositori awal.
+    - Sinkronisasi real-time via `workspace.Manager.SubscribeEvents()`.
+  - **Native Model Context Protocol (MCP) Server & Transports (`server/internal/mcp/`)**:
+    - Server JSON-RPC 2.0 mendaftarkan 7 tools resmi: `get_file_outline`, `get_symbol_definition`, `find_callers`, `find_callees`, `query_subgraph`, `read_symbol_body`, `get_diff_impact`.
+    - Stdio Transport (`stdio.go`): Runner Stdio untuk klien MCP eksternal (Claude Desktop, Cursor, OpenCode) dengan isolasi logging ke `os.Stderr`.
+    - HTTP JSON-RPC Endpoint: `POST /api/v1/mcp`, `GET /api/v1/codegraph/status`, `POST /api/v1/codegraph/reindex`.
+    - CLI Subcommand: `aegiscode mcp [--workspace <path>]` di `server/cmd/server/main.go`.
+  - **AI AEGIS & UI AppDrawer Chat Integration**:
+    - Slash commands di `server/internal/ai/skills.go`: `/outline`, `/def`, `/callers`, `/subgraph`, `/impact`.
+    - Pendaftaran tools MCP otomatis pada payload OpenAI (`openai.go`) dan Anthropic Claude (`claude.go`).
+    - Ringkasan aksi di `normalizer.go` dan rendering timeline badges dengan SVG icon di `ToolCallActivity.tsx`.
+- **Verification**: 100% lolos verifikasi Go backend tests (36 unit tests di `codegraph`, `mcp`, dan `api`), full backend suite (169 tests passing across 14 packages), Vitest frontend suite (210 tests passing across 19 files), Vite production build (0 errors), dan oxfmt formatting.
+
+
+#### Sub-Phase 6.15: Graph MCP UI Studio & VantageCraft Integration [SUPERSEDED & REPLACED by ADR 0014 & ADR 0015]
+- **Status**: ✅ Completed (Migrated to VantageCraft 6-View Studio)
+- **Architecture Reference**: [ADR 0014](../../docs/adr/0014-native-colbymchenry-codegraph-and-vantagecraft-ui.md) & [ADR 0015](../../docs/adr/0015-native-codegraph-contract-alignment-and-zero-swallow.md)
+- **Architectural Transition**: The legacy Cytoscape.js flat graph renderer (`GraphViewer.tsx`) and legacy backend CTE routes (`/api/v1/codegraph/neighborhood`, `/api/v1/codegraph/workspace`) are **`[DEPRECATED & REMOVED]`**. They are replaced by the modular VantageCraft 6-View Architecture (`CodeGraphShell.tsx` hosting Entrypoints, Steps, Map, Flow, Screens, FileCode Drawer) with typed API service contracts (`src/services/codegraphApi.ts`), active workspace propagation, and strict zero-swallow error handling.
+- **Objective**: Menyediakan antarmuka visual on-demand untuk subsistem CodeGraph Knowledge Engine: editor tab view (`CodeGraphShell.tsx` via `ViewerPane.tsx`) yang mendukung split-screen side-by-side editing bersama buffer kode, status bar MCP popover (`McpStatusPopover.tsx`), tab diagnosa MCP di Bottom Panel (`McpPanelView.tsx`), serta sinkronisasi bidirectional real-time antara eksekusi tool AI agent dan node graf.
+- **Deliverables**:
+  - **Backend SQLite UI Service & REST Endpoints (`ui_service.go`, `ui_types.go`, `api.go`)**:
+    - `UIGraphNode`, `UIGraphEdge`, dan `UIGraphPayload` terformat siap render untuk Cytoscape.js.
+    - `GetSymbolNeighborhood`: Kueri recursive CTE untuk penelusuran graf 1-hop dan 2-hop dengan pembatasan kedalaman dan guardrail limit.
+    - `GetActiveFileGraph`: Pengambilan simbol instan dan relasi keterhubungan internal/eksternal untuk berkas yang sedang aktif.
+    - `GetWorkspaceGraph`: Simbol struktural teratas workspace berdasarkan derajat koneksi edge dengan filter pembersihan virtual environment.
+    - `SearchSymbols`: Pencarian FTS5 dan fallback LIKE untuk autocomplete simbol di toolbar graf.
+    - REST endpoints di `api.go`: `/api/v1/codegraph/neighborhood`, `/file`, `/workspace`, dan `/symbols/search`.
+  - **Integrasi LSP Bawaan & Ekstraktor Python Mandiri (`lsp_extractor.go`, `py_extractor.go`)**:
+    - Memanggil `s.lsp.SetWorkspace(absPath)` pada lifecycle workspace agar server bahasa bawaan (`gopls`, `pyright`/`pylsp`, `vtsls`) terikat ke root proyek.
+    - Ekstraktor leksikal Python mandiri untuk mengekstrak fungsi, method, class, docstrings, dan call edges (`calls`) tanpa ketergantungan subprocess eksternal.
+    - Auto-purge direktori virtual environment (`.venv`, `venv`, `site-packages`, `__pycache__`, `node_modules`) saat inisialisasi dan reindex.
+  - **Universal On-Demand Code Splitting & Tab System (`viewerTypes.ts`, `ViewerPane.tsx`, `EditorTabs.tsx`, `EditorBreadcrumbs.tsx`)**:
+    - Tipe `"graph"` pada `ViewerType`, `isGraphTab()`, dan `parseGraphTab()`.
+    - Tab graf di `EditorTabs` menggunakan ikon `"zap"` dan label nama target yang rapi.
+    - Breadcrumb root `codegraph` pada `EditorBreadcrumbs`.
+    - `GraphViewer` diimpor strictly on-demand via `React.lazy()` di `ViewerPane.tsx` (nol overhead Cytoscape pada initial bundle).
+  - **Integrasi Status Bar & Bottom Panel (`McpStatusPopover.tsx`, `McpPanelView.tsx`)**:
+    - MCP status pill dan popover di Status Bar menampilkan database SQLite aktif, metrik indeks (files, symbols, edges), aksi reindex, tombol peluncur kanvas, dan daftar tool terdaftar.
+    - Tab `"MCP"` di Bottom Panel dengan informasi protokol `2024-11-05`, DB status, quick action side-by-side split, dan interactive JSON tool tester.
+  - **Interactive Cytoscape.js Studio (`GraphCanvas.tsx`, `GraphToolbar.tsx`, `NodeInspector.tsx`, `graphTheme.ts`)**:
+    - Layout 2D Card Grid seimbang untuk node standalone/terisolasi, dan Dagre hierarchical tree untuk node berelasi.
+    - Dimensi node konsisten bergaya kartu IDE (`160px` x `40px`) dengan warna semantik (Functions: `#3B82F6`, Interfaces: `#10B981`, Classes/Types: `#8B5CF6`, Active: `#F59E0B`, AI Trace: `#EC4899`, AI Node: `#8B5CF6`).
+    - Toolbar ringkas satu baris (*single-row responsive*): Autocomplete search, filter chip jenis simbol, layout switcher (Hierarchical Flow vs Network Graph), Zoom, Fit, dan Split Screen (toggle Hop 1/2 dieliminasi demi kedalaman direct neighborhood otomatis).
+    - Slide-in `NodeInspector` drawer: badge jenis simbol, path dan nomor baris, "Jump to Source", "Focus Subgraph", preview signature, docstrings, dan daftar pemanggil/panggilan.
+  - **Sinkronisasi Bidirectional Real-Time & Live AI Trace**:
+    - **Graph ➔ Editor**: Double-click node membuka file dan langsung melakukan scroll serta positioning kursor ke baris kode target.
+    - **Editor ➔ Graph**: Navigasi definition di `CodePane.tsx` memancarkan `aegis:focus-symbol` untuk memusatkan kamera kanvas.
+    - **AI ➔ Graph**: Listener SSE real-time di `chatCore.ts` mendeteksi event `tool_call` CodeGraph/MCP dan inspeksi file secara langsung. Di kanvas graf, entitas **AI Assistant** dinamis diinjeksikan secara real-time dengan laser flow beam beranimasi menuju target kode, disusul transisi status sukses (4 detik delay) dan pelaporan error eksplisit tanpa pass silent atau mock dummy.
+  - **Pembersihan Bloat & Universal CLI Installer (`scripts/install-mcp.js`)**:
+    - Eliminasi entri zombie (`graphify`, `agent-lsp`) dari konfigurasi Antigravity CLI.
+    - CLI binary global di `~/.local/bin/aegiscode` (`aegiscode mcp`).
+    - Skrip otomatis `npm run mcp:install` untuk pendaftaran mandiri ke Antigravity, Claude Desktop, dan Cursor.
+- **Verification**: 100% lolos verifikasi Go backend tests (13 unit tests di `codegraph`), frontend Vitest suite (19 test files, 213 unit tests passing), Vite production build (0 error, chunk `GraphViewer` terpisah), dan formatting `oxfmt`.
+---
+
+### Phase 7: Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`)
+- **Status**: 🟡 Active (Sub-Phase 7.1 Completed ✅; Sub-Phases 7.2 & 7.3 Upcoming)
+- **Objectives & Deliverables**:
+  - **Sub-Phase 7.1: Multi-Viewer Tab Dispatcher & Universal On-Demand Code Splitting**:
+    - **Status**: ✅ Completed
+    - **Deliverables**:
+      - **Universal On-Demand Code Splitting Engine (`ViewerPane.tsx`)**: Full enforcement of the PWA dynamic code-splitting rule. Specialized viewer runtimes (`ImageViewer`, `MarkdownViewer`, `PdfViewer`, `CsvViewer`) and their parsing libraries are code-split via `React.lazy()` / dynamic `import()`. Main IDE initial bundle remains lean with **Zero-RAM overhead** during standard code editing.
+      - **Media Pan-Zoom Pane (`ImageViewer.tsx`)**: Static initial fit transitioning seamlessly to interactive Pan & Zoom (Pointer Events drag with `setPointerCapture` and mouse wheel) with clamped min/max zoom (0.1x to 25.0x), coordinate bounding box clamping preventing runaway infinite loops, checkerboard transparency grid toggle, dimensions and file size badges, and "Edit SVG XML" mode toggle for `.svg` files.
+      - **Live Markdown Splitter & Enhanced Toolbar (`MarkdownViewer.tsx`)**: Real-time reactive preview from `fileBuffers[filename]` with 150ms debounced sanitization preventing AST thrashing. Dual-pane synchronized scrolling with single-source mutex lock (`isSyncingScroll`) and 4px threshold delta guard eliminating Big-O ping-pong sync loops. Embedded Markdown Enhanced formatting toolbar (Bold, Italic, Headings, Lists, Tasks, Tables, Code Blocks, Quotes) and 3-mode switcher (`Code` | `Split` | `Preview`).
+      - **PDF Document Viewer (`PdfViewer.tsx`)**: Lightweight Mozilla PDF.js (`pdfjs-dist`) on-demand integration streaming pages from Go backend with HTTP `Range` headers. Virtualized page-by-page rendering avoiding $O(N)$ canvas memory spikes on large documents. Clamped zoom (50% to 300%) with active render task cancellation (`renderTask.cancel()`) preventing race conditions, and one-click dual-engine toggle (Canvas vs Native Browser Embed).
+      - **Spreadsheet & Tabular Pane (`CsvViewer.tsx`)**: RFC 4180 parser with automatic delimiter detection (comma `,`, semicolon `;`, tab `\t`) and manual override. Rebatching / pagination (50, 100, 250, 500 rows per page) preventing DOM freezing on tables with $>100$ rows or columns. Sticky column headers with sorting (numeric & alphabetical), sticky row index column, real-time search filter, text wrap toggle (`Wrap` vs `Truncate`), and `[Table | Raw Text]` mode switcher.
+      - **Go Backend Zero-Copy Streaming (`server/internal/api/api.go`)**: Dedicated `GET /api/v1/workspace/file/raw?path=...` endpoint backed by `http.ServeFile` and path boundary resolution (`m.ResolvePath`), delivering $O(1)$ memory usage, proper MIME headers, and 206 Partial Content range streaming.
+      - **Contextual Tab Icons in `EditorTabs.tsx`**: Dynamic file icon decoration (`image` for PNG/JPG/SVG, `table` for CSV/TSV, `code` for source files, `git` for diffs).
+    - **Verification**: 100% verified via automated frontend Vitest suite (17 test files, 160 tests passing), Go backend tests (`TestWorkspaceFileRaw`), Vite production build, and oxfmt code formatting.
+  - **Sub-Phase 7.1b: Frontend Refinements (Tab Explorer, Source Control, Navbar)**:
+    - **Status**: ✅ Completed
+    - **Deliverables**:
+      - **Tab Explorer "Close All Tabs"**: Global "Close All Editors" button in OPEN EDITORS header and group-level close buttons for split views, with dirty buffer confirmation safeguard.
+      - **Deterministic Directory Ordering**: Folders always render at top, followed by files, sorted alphabetically A-Z (case-insensitive) across root and nested subdirectories in Go backend (`buildSubTree`) and frontend (`flattenBackendTree`).
+      - **Dedicated Vertical Scrolling**: Resolved tree overflow with flex-column container and `.file-tree` `overflow-y: auto; overflow-x: hidden;`, ensuring smooth vertical scrolling on large workspaces.
+      - **Source Control Commit Call Back**: Quick action on each commit in Git Log to checkout any commit directly (detached HEAD) with live status updates.
+      - **Source Control Hash-to-Hash Comparison**: Backend `CompareCommits` + `GET /api/v1/git/compare` endpoint, `base` parameter in `GetDiff`, active comparison subpanel in UI with file badges (`M`, `A`, `D`), and direct diff editor launching between arbitrary hashes.
+      - **Unified Diff Smooth Scrolling**: Restored smooth full-document vertical and horizontal scrolling in unified merge view without line collapse constraints.
+      - **Git Conflict Detection & Commit Guard**: Auto-detection of merge conflict markers (`<<<<<<< HEAD`, `=======`, `>>>>>>>`) with yellow tab warning badge, commit warning banner, and disabled commit button preventing accidental commits of corrupted files.
+      - **Header Actions Iconography & Order**: Reordered toggles to Primary Sidebar -> Bottom Panel -> AI Chat Drawer with dedicated `sidebar-left` and `sidebar-right` icons.
+    - **Verification**: 100% verified via automated frontend Vitest suite (17 test files, 170 tests passing), Go backend tests (including `TestCompareCommits`), Vite production build, and oxfmt code formatting.
+  - **Sub-Phase 7.1c: Native Go Big Data CSV Query Engine (590k+ Rows, 394 Columns)**:
+    - **Status**: ✅ Completed
+    - **Deliverables**:
+      - **RFC 4180 Row Offset Indexer (`server/internal/workspace/csv.go`)**: Ultra-lightweight byte scanner in Go tracking quotes (`inQuotes`) to build row offset indices in memory. Benchmark on IEEE-CIS Fraud Detection dataset (`train_transaction.csv`: 651.7 MB, 590,540 rows, 394 columns): initial indexing in **770 ms** using only **~4.7 MB RAM** in Go (eliminating 8–11 GB browser heap crash).
+      - **Instant Random-Access Seek**: Queries for arbitrary pages (e.g. Page 50,000) seek to disk offset in **0.20 ms (< 0.0002 seconds)** via `f.Seek(rowOffsets[start], io.SeekStart)` and parse only the requested page.
+      - **Server-Side Column Windowing**: Slices columns server-side (`colOffset`, `colLimit`) so only requested column batches (e.g. `Cols 1–25 of 394`) are serialized and transferred over HTTP.
+      - **Streaming Substring Search**: Case-insensitive substring matching in Go across 590,000+ rows executing in ~150 ms with accurate total match count and pagination.
+      - **Hybrid Frontend Pipeline (`CsvViewer.tsx`)**: Automatically switches to Server-Side Big Data Engine when files are $\ge 2\text{ MB}$ or flagged with `isLarge: true`, keeping browser RAM below 50 MB while preserving instant client-side rendering for small files.
+      - **Server-Side API Contract (`GET /api/v1/workspace/csv/query`)**: Fully tested endpoint supporting `page`, `pageSize`, `colOffset`, `colLimit`, and `search`.
+    - **Verification**: 100% verified via Go backend tests (`TestCsvIndexingAndRandomSeek`, `TestCsvColumnWindowing`, `TestCsvStreamingSearch`, `TestCsvRFC4180Quotes`, `TestIeeeDatasetIfPresent` in `csv_test.go`, and `TestWorkspaceCsvQuery` in `api_test.go`), Vitest suite (17 test files, 174 tests passing), Vite production build, and oxfmt code formatting.
+  - **Sub-Phase 7.2: Vector Canvas Wireframe Studio (`tldraw`)**:
+    - Integration of `@tldraw/tldraw` infinite vector canvas engine isolated strictly inside an on-demand dynamic chunk (`tldraw-chunk.js`).
+    - **Zero-Footprint in Code Studio**: The tldraw chunk is downloaded and mounted into RAM **only** when the user opens `.canvas` or `.design` files. While editing standard code (`.go`, `.ts`, `.tsx`, `.py`), tldraw assets consume 0 MB of computer memory and 0 KB initial network bandwidth.
+    - Zero-overhead state persistence: canvas state saved as structured JSON directly through Go workspace file endpoints (`/api/v1/workspace/file`) with full Git version tracking.
+    - Wireframe UI toolkit: Rectangles, Frames (Artboards for Mobile/Desktop screens), UI buttons, input boxes, typography, arrows, and sticky annotations.
+  - **Sub-Phase 7.3: Design-to-Code & Perspective Presets**:
+    - Mode Switcher in Header bar: `Code Studio` ↔ `Design Studio` with contextual Activity Rail filtering.
+    - Token color bridge linking canvas element palettes directly to AegisCode Tailwind CSS tokens (`bg-surface`, `text-ink`, `color-accent`).
+    - AEGIS AI Drawer integration: ability to read canvas JSON nodes to suggest layout refinements or draft React/Tailwind TSX component scaffolds.
+
+---
+
+### Phase 8: Research Workshop & Data Science Studio
+- **Status**: ⚪ Planned
+- **Objectives & Deliverables**:
+  - **Sub-Phase 8.1: LaTeX Compilation & Live PDF Synchronization**:
+    - Go supervisor asynchronous job runner executing `tectonic` / `pdflatex` CLI with streaming build logs to Output Panel via SSE.
+    - Native `PdfViewerPane` powered by PDF.js, **dynamically code-split via `React.lazy()`** so PDF.js engine is only downloaded and instantiated when opening a `.pdf` file. Bidirectional SyncTeX click-to-code navigation.
+  - **Sub-Phase 8.2: BibTeX Reference Manager**:
+    - Dedicated sidebar panel and in-editor autocomplete (`\cite{...}`) backed by `.bib` file parser.
+  - **Sub-Phase 8.3: Data Science Python / R & Interactive Analytics**:
+    - Integrated DataFrame visualizer with column filtering and statistical profiling.
+    - Python environment inspector (`venv` / `uv` / `pip` package manager).
+    - Subprocess sandboxed webview iframe for R Shiny / `biblioshiny` and PLS-SEM interactive visualizations.
+
+---
+
+### Phase 9: Web-Based Remote Pairing & Tablet Companion Display
+- **Status**: ⚪ Deferred (Final Milestone)
+- **Deliverables**:
+  - **Local Network Pairing**: Go server exposes a local LAN interface with a one-time pairing token or terminal/UI QR code.
+  - **Companion View Mode (`/?mode=companion`)**:
+    - **Host Web Preview Tab**: Embedded webview displaying the application running from the workspace server, with touch-friendly refresh and navigation controls.
+    - **Focus Code Editor Tab**: Distraction-free, single-buffer touch-optimized text editor allowing tablet users to edit active code files with instant synchronization to the desktop workspace.
+  - **Realtime Sync Protocol**: WebSocket / SSE event bus keeping file buffers and cursor states synchronized between desktop and tablet.
+  - **Zero-Config Discovery & Pairing UI**:
+    - Embedded lightweight mDNS / Bonjour daemon in Go core server exposing `.local` domain (e.g. `aegis.local:8080`).
+    - Status bar pairing popover rendering local QR Code and Pair URL with one-time session token for instantaneous second-device connection.
+- **Exit Criteria**: A developer can open AegisCode on an iPad/tablet on the same Wi-Fi, run the web application preview on the tablet, and edit code buffers with zero desktop layout corruption.
