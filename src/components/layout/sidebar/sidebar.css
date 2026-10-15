@@ -923,7 +923,102 @@
 .search-input-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-line);
+  margin-bottom: 6px;
+}
+
+.search-input-row,
+.replace-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.replace-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 26px;
+  color: var(--color-ink-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.replace-toggle-btn:hover {
+  color: var(--color-ink);
+  background: var(--color-surface-hover);
+}
+
+.chevron-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease;
+}
+
+.chevron-arrow.chevron-open {
+  transform: rotate(90deg);
+}
+
+.panel-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 6px;
+  background: var(--color-canvas);
+  border: 1px solid var(--color-line-bright);
+  border-radius: 4px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+  cursor: text;
+}
+
+.panel-input:hover {
+  border-color: var(--color-ink-muted);
+  background: color-mix(in srgb, var(--color-canvas) 85%, var(--color-surface-hover));
+}
+
+.panel-input:focus-within {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent-soft);
+  background: var(--color-canvas);
+}
+
+.panel-input > svg {
+  color: var(--color-ink-muted);
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+
+.panel-input:focus-within > svg {
+  color: var(--color-accent);
+}
+
+.panel-input input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  color: var(--color-ink);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 11px;
+  font-family: inherit;
+}
+
+.panel-input input::placeholder {
+  color: var(--color-ink-muted);
+  opacity: 0.8;
 }
 
 .search-box,
@@ -932,14 +1027,24 @@
 }
 
 .search-clear-btn {
-  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
   color: var(--color-ink-muted);
   background: transparent;
+  border: 0;
+  border-radius: 2px;
   cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.12s ease, background-color 0.12s ease;
 }
 
 .search-clear-btn:hover {
   color: var(--color-ink);
+  background: var(--color-surface-hover);
 }
 
 .search-modifiers {
@@ -947,18 +1052,26 @@
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
+  margin-left: 2px;
 }
 
 .modifier-btn {
-  padding: 1px 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 3px;
   color: var(--color-ink-muted);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 2px;
+  border-radius: 3px;
   cursor: pointer;
   font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
+  user-select: none;
+  transition: all 0.12s ease;
 }
 
 .modifier-btn:hover {
@@ -972,42 +1085,20 @@
   border-color: var(--color-accent);
 }
 
-.search-input-row,
-.replace-input-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.replace-toggle-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 24px;
-  color: var(--color-ink-muted);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: color 0.15s ease;
-}
-
-.replace-toggle-btn:hover {
-  color: var(--color-ink);
-}
-
 .replace-all-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2px 4px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
   color: var(--color-ink-muted);
   background: transparent;
   border: 0;
-  border-radius: 2px;
+  border-radius: 3px;
   cursor: pointer;
-  transition: color 0.15s ease;
+  flex-shrink: 0;
+  transition: color 0.12s ease, background-color 0.12s ease;
 }
 
 .replace-all-btn:hover:not(:disabled) {

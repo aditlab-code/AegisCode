@@ -59,10 +59,10 @@ export function BranchPopover({ onClose }: BranchPopoverProps) {
       </div>
 
       {/* Filter / Search input */}
-      <div className="p-1.5 border-b border-[var(--color-line)]">
+      <div className="branch-filter-container">
         <input
           autoFocus
-          className="w-full px-2 py-1 rounded bg-[var(--color-canvas)] border border-[var(--color-line)] text-xs text-[var(--color-ink)] placeholder-[var(--color-ink-muted)] outline-none focus:border-[var(--color-accent)]"
+          className="branch-filter-input"
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter or search branch..."
           value={filter}
@@ -70,10 +70,12 @@ export function BranchPopover({ onClose }: BranchPopoverProps) {
       </div>
 
       {/* Branch list */}
-      <div className="max-h-48 overflow-y-auto py-1">
+      <div className="branch-list">
         {filteredBranches.map((b) => (
           <button
-            className={activeBranch === b.name ? "popover-row-active" : ""}
+            className={`branch-item ${
+              activeBranch === b.name ? "popover-row-active" : ""
+            }`}
             key={b.name}
             onClick={() => {
               if (activeBranch !== b.name) {
@@ -84,26 +86,26 @@ export function BranchPopover({ onClose }: BranchPopoverProps) {
             type="button"
           >
             <Icon name="branch" size={13} />
-            <span className="truncate">{b.name}</span>
-            {activeBranch === b.name && <small>current</small>}
-            {b.isRemote && <small className="opacity-60">remote</small>}
+            <span className="truncate flex-1">{b.name}</span>
+            {activeBranch === b.name && (
+              <span className="branch-badge-current">current</span>
+            )}
+            {b.isRemote && <span className="branch-badge-remote">remote</span>}
           </button>
         ))}
 
         {filteredBranches.length === 0 && (
-          <div className="px-3 py-2 text-xs text-[var(--color-ink-muted)] text-center">
-            No matching branch
-          </div>
+          <div className="branch-empty">No matching branch</div>
         )}
       </div>
 
       {/* Create new branch section */}
-      <div className="p-1.5 border-t border-[var(--color-line)]">
+      <div className="branch-create-section">
         {creating ? (
-          <div className="flex items-center gap-1.5">
+          <div className="branch-create-form">
             <input
               autoFocus
-              className="flex-1 px-2 py-1 rounded bg-[var(--color-canvas)] border border-[var(--color-line)] text-xs text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
+              className="branch-create-input"
               onChange={(e) => setNewBranchName(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleCreateBranch()
@@ -113,7 +115,7 @@ export function BranchPopover({ onClose }: BranchPopoverProps) {
               value={newBranchName}
             />
             <button
-              className="px-2 py-1 rounded bg-[var(--color-accent)] text-white text-xs font-medium cursor-pointer"
+              className="branch-create-submit"
               onClick={handleCreateBranch}
               type="button"
             >
@@ -122,7 +124,7 @@ export function BranchPopover({ onClose }: BranchPopoverProps) {
           </div>
         ) : (
           <button
-            className="w-full flex items-center justify-center gap-1.5 py-1 px-2 rounded hover:bg-[var(--color-surface-hover)] text-xs text-[var(--color-ink-soft)] font-medium transition-colors cursor-pointer"
+            className="branch-create-trigger"
             onClick={() => setCreating(true)}
             type="button"
           >
@@ -134,8 +136,12 @@ export function BranchPopover({ onClose }: BranchPopoverProps) {
 
       {/* Real metadata footer */}
       <div className="branch-meta">
-        {modifiedCount} modified file{modifiedCount === 1 ? "" : "s"} · {ahead}{" "}
-        ahead · {behind} behind
+        <span>
+          {modifiedCount} modified file{modifiedCount === 1 ? "" : "s"}
+        </span>
+        <span>
+          {ahead} ahead · {behind} behind
+        </span>
       </div>
     </div>
   )

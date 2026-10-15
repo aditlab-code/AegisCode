@@ -166,15 +166,214 @@
   font-size: 9px;
 }
 
-.branch-popover > button {
+/* Branch Switcher Popover */
+.branch-popover {
+  width: 340px;
+}
+
+.branch-filter-container {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-line);
+  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+}
+
+.branch-filter-input {
+  display: block;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  background: var(--color-canvas);
+  border: 1px solid var(--color-line-bright);
+  border-radius: 4px;
+  color: var(--color-ink);
+  font-size: 11px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.branch-filter-input::placeholder {
+  color: var(--color-ink-muted);
+  opacity: 0.8;
+}
+
+.branch-filter-input:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent-soft);
+}
+
+.branch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.branch-item {
+  display: flex;
   align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  color: var(--color-ink-soft);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  text-align: left;
+  user-select: none;
+  transition: color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
 }
 
-.branch-popover > button small {
+.branch-item:hover {
+  color: var(--color-ink);
+  background: var(--color-surface-hover);
+  border-color: var(--color-line);
+}
+
+.branch-item.popover-row-active {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  border-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
+  font-weight: 600;
+}
+
+.branch-item svg {
+  color: var(--color-ink-muted);
+  flex-shrink: 0;
+  transition: color 0.12s ease;
+}
+
+.branch-item.popover-row-active svg {
+  color: var(--color-accent);
+}
+
+.branch-badge-current {
   margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
 }
 
-.branch-meta,
+.branch-badge-remote {
+  margin-left: auto;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  color: var(--color-ink-muted);
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+}
+
+.branch-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 8px;
+  color: var(--color-ink-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.branch-create-section {
+  padding: 6px 8px;
+  border-top: 1px solid var(--color-line);
+  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+}
+
+.branch-create-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  color: var(--color-ink-soft);
+  background: transparent;
+  border: 1px dashed var(--color-line-bright);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  transition: color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.branch-create-trigger:hover {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
+
+.branch-create-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.branch-create-input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  background: var(--color-canvas);
+  border: 1px solid var(--color-line-bright);
+  border-radius: 4px;
+  color: var(--color-ink);
+  font-size: 11px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.branch-create-input:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent-soft);
+}
+
+.branch-create-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 10px;
+  color: var(--color-canvas);
+  background: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.12s ease;
+}
+
+.branch-create-submit:hover {
+  filter: brightness(1.1);
+}
+
+.branch-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--color-canvas);
+  border-top: 1px solid var(--color-line);
+  color: var(--color-ink-muted);
+  font-size: 10px;
+}
+
 .notification-footer {
   padding: 8px 10px;
   color: var(--color-ink-muted);

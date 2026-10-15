@@ -194,7 +194,6 @@ kbd {
 }
 
 .header-actions,
-.editor-actions,
 .panel-controls {
   display: flex;
   align-items: center;

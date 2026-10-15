@@ -141,8 +141,18 @@ export function EditorTabs({
     }
   }, [])
 
+  const tabListRef = useRef<HTMLDivElement>(null)
+
   const currentGroup = groupId === "group2" ? group2 : group1
   const isFocused = focusedGroup === currentGroup.id
+
+  useEffect(() => {
+    if (!tabListRef.current) return
+    const activeEl = tabListRef.current.querySelector(".editor-tab-active")
+    if (activeEl) {
+      activeEl.scrollIntoView({ block: "nearest", inline: "nearest" })
+    }
+  }, [currentGroup.activeTab])
 
   function handleDragStart(
     e: DragEvent<HTMLButtonElement>,
@@ -226,12 +236,18 @@ export function EditorTabs({
     >
       <div
         className="tab-list"
+        ref={tabListRef}
         onDragLeave={() => setIsDropTarget(false)}
         onDragOver={(e) => {
           e.preventDefault()
           setIsDropTarget(true)
         }}
         onDrop={handleTabListDrop}
+        onWheel={(e) => {
+          if (e.deltaY !== 0) {
+            e.currentTarget.scrollLeft += e.deltaY
+          }
+        }}
       >
         {currentGroup.tabs.map((tab, index) => {
           const isActive = tab === currentGroup.activeTab

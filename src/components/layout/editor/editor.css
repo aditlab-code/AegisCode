@@ -2,6 +2,8 @@
   display: grid;
   grid-template-rows: 35px 28px minmax(0, 1fr);
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .editor-empty {
@@ -74,6 +76,8 @@
   display: flex;
   align-items: stretch;
   justify-content: space-between;
+  min-width: 0;
+  overflow: hidden;
   background: color-mix(in srgb, var(--color-surface) 88%, transparent);
   border-bottom: 1px solid var(--color-line);
   transition: border-bottom-color 0.15s ease, background 0.15s ease;
@@ -94,7 +98,28 @@
 .tab-list {
   display: flex;
   align-items: stretch;
+  flex: 1 1 0%;
+  min-width: 0;
   overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.tab-list::-webkit-scrollbar {
+  display: none;
+}
+
+.editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+  height: 100%;
+  padding: 0 4px;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-line);
+  z-index: 2;
 }
 
 .editor-tab {
