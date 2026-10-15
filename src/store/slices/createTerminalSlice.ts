@@ -62,7 +62,9 @@ export const createTerminalSlice: SliceCreator<TerminalSlice> = (set, get) => {
 
     createTerminalSession: async (shellName = "zsh") => {
       try {
-        const data = await createTerminalApi(shellName)
+        const rootPath = (get() as { rootWorkspacePath?: string })
+          .rootWorkspacePath
+        const data = await createTerminalApi(shellName, rootPath || undefined)
         if (data) {
           const sessions = get().terminalSessions
           if (sessions.length === 1 && !sessions[0]?.isLive) {
@@ -120,7 +122,9 @@ export const createTerminalSlice: SliceCreator<TerminalSlice> = (set, get) => {
       }
 
       try {
-        const data = await createTerminalApi(targetShell)
+        const rootPath = (get() as { rootWorkspacePath?: string })
+          .rootWorkspacePath
+        const data = await createTerminalApi(targetShell, rootPath || undefined)
         if (data) {
           const currentSessions = get().terminalSessions
           const index = currentSessions.findIndex((s) => s.id === targetId)

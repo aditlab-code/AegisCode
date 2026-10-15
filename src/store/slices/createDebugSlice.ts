@@ -5,6 +5,7 @@ import {
   stepDebug,
   terminateDebugSession,
 } from "../../utils/debugApi"
+import { API_BASE } from "../../utils/apiBase"
 import { getTerminalRunCommand } from "../../utils/terminalRunCommand"
 
 export { getTerminalRunCommand }
@@ -52,8 +53,25 @@ export const createDebugSlice: SliceCreator<DebugSlice> = (set, get) => ({
       }
     }
 
+    const isGo = Boolean(
+      target &&
+        (target.endsWith(".go") ||
+          program?.endsWith(".go") ||
+          (!program && state.activeTab?.endsWith(".go"))),
+    )
+
     if (target && state.fileBuffers?.[target]?.isDirty) {
       await state.saveFile(target)
+    }
+
+    if (target && target.endsWith(".go") && !target.endsWith("_test.go")) {
+      const normalizedTarget = target.replace(/\\/g, "/")
+      if (normalizedTarget.includes("/")) {
+        const lastSlash = normalizedTarget.lastIndexOf("/")
+        target = normalizedTarget.slice(0, lastSlash) || "."
+      } else {
+        target = "."
+      }
     }
 
     try {
@@ -61,7 +79,7 @@ export const createDebugSlice: SliceCreator<DebugSlice> = (set, get) => ({
         ? "python"
         : target.endsWith(".cpp") || target.endsWith(".c")
           ? "cpp"
-          : target.endsWith(".go")
+          : target.endsWith(".go") || isGo
             ? "go"
             : undefined
 
@@ -210,7 +228,9 @@ export const createDebugSlice: SliceCreator<DebugSlice> = (set, get) => ({
 
   checkServerConnection: async () => {
     try {
-      const res = await fetch("/api/v1/workspace/info", { method: "GET" })
+      const res = await fetch(`${API_BASE}/api/v1/workspace/info`, {
+        method: "GET",
+      })
       const connected = res.ok
       set({ serverConnected: connected })
       return connected
@@ -222,14 +242,11 @@ export const createDebugSlice: SliceCreator<DebugSlice> = (set, get) => ({
 
   runAction: (action: string) => {
     const actionMessages: Record<string, string> = {
-      "clear-terminal": "Terminal output cleared",
-      find: `Find widget opened for ${get().activeTab}`,
       "new-file": "Untitled-1 created",
       "open-folder": "Folder picker ready",
       redo: "Nothing to redo",
       run: "Run session queued without debugging",
       "run-file": `Running ${get().activeTab}`,
-      stop: "Active run session stopped",
       undo: "Last editor action reverted",
     }
 
@@ -264,8 +281,32 @@ export const createDebugSlice: SliceCreator<DebugSlice> = (set, get) => ({
       void get().closeRootFolder()
     } else if (action === "sidebar") {
       get().toggleSidebar()
-    } else if (action === "panel" || action === "new-terminal") {
+    } else if (action === "panel") {
       get().togglePanel()
+    } else if (action === "new-terminal") {
+      get().setPanelOpen(true)
+      get().setActiveBottomTab("Terminal")
+      void get().createTerminalSession()
+    } else if (action === "clear-terminal") {
+      if (typeof get().clearTerminal === "function") {
+        get().clearTerminal()
+      } else if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("aegis:terminal-clear"))
+      }
+    } else if (action === "find") {
+      const state = get()
+      if (
+        "openFindInFocusedGroup" in state &&
+        typeof state.openFindInFocusedGroup === "function"
+      ) {
+        state.openFindInFocusedGroup(false)
+      } else if (typeof state.openFind === "function") {
+        state.openFind(state.focusedGroup, false)
+      } else if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("aegis:open-find"))
+      }
+    } else if (action === "stop") {
+      void get().terminateDebugging()
     } else if (action === "save") {
       void get().saveFile()
     } else if (action === "debug") {

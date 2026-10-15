@@ -13,6 +13,7 @@ import {
   UnsavedChangesModal,
 } from "./components/layout"
 import { Toast } from "./components/ui/Toast"
+import { FolderBrowserModal } from "./components/layout/settings/FolderBrowserModal"
 import { syncBrowserAiContext } from "./utils/browserAiSync"
 
 function BrowserAiSyncEffect() {
@@ -143,6 +144,7 @@ function AppShell() {
       </main>
       <StatusBar />
       <SettingsModal />
+      <FolderBrowserModal />
       <UnsavedChangesModal />
       {toast && <Toast message={toast} onDismiss={clearToast} />}
     </div>

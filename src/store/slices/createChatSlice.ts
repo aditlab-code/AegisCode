@@ -133,30 +133,35 @@ function computeContextItems(
   dismissedPaths: string[],
   contextModeOverrides: Record<string, "selection" | "full">,
   manualMentions: ContextItem[],
+  rootWorkspacePath?: string,
 ): ContextItem[] {
   const items: ContextItem[] = []
-  if (
-    activeTab &&
-    fileBuffers?.[activeTab]?.content &&
-    !dismissedPaths.includes(activeTab)
-  ) {
-    const activeBuffer = fileBuffers[activeTab].content
-    const mode = contextModeOverrides[activeTab]
-    const activeItem = extractEditorContext({
-      path: activeTab,
-      content: activeBuffer,
-      selectedText: selection?.selectedText,
-      selectionRange: selection
-        ? {
-            startLine: selection.startLine,
-            endLine: selection.endLine,
-          }
-        : undefined,
-      excludePatterns,
-      mode,
-    })
-    if (activeItem) {
-      items.push(activeItem)
+  if (activeTab && fileBuffers && !dismissedPaths.includes(activeTab)) {
+    const cleanTab = activeTab.replace(/^\/+/, "")
+    const normalized = rootWorkspacePath
+      ? activeTab.replace(rootWorkspacePath, "").replace(/^\/+/, "")
+      : cleanTab
+    const buf =
+      fileBuffers[activeTab] || fileBuffers[cleanTab] || fileBuffers[normalized]
+    if (buf?.content) {
+      const mode =
+        contextModeOverrides[activeTab] || contextModeOverrides[cleanTab]
+      const activeItem = extractEditorContext({
+        path: activeTab,
+        content: buf.content,
+        selectedText: selection?.selectedText,
+        selectionRange: selection
+          ? {
+              startLine: selection.startLine,
+              endLine: selection.endLine,
+            }
+          : undefined,
+        excludePatterns,
+        mode,
+      })
+      if (activeItem) {
+        items.push(activeItem)
+      }
     }
   }
   items.push(...manualMentions)
@@ -172,6 +177,7 @@ function recomputeContext(
     dismissedPaths: string[]
     contextModeOverrides: Record<string, "selection" | "full">
     manualMentions: ContextItem[]
+    rootWorkspacePath?: string
   },
   overrides?: {
     dismissedPaths?: string[]
@@ -191,6 +197,7 @@ function recomputeContext(
     dismissed,
     modeOverrides,
     mentions,
+    state.rootWorkspacePath,
   )
 }
 
@@ -787,6 +794,12 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
     manualMentions: [],
     dismissedPaths: [],
     contextModeOverrides: {},
+
+    syncContextItems: () => {
+      const state = get()
+      const items = recomputeContext(state)
+      set({ contextItems: items })
+    },
 
     dismissContextItem: (id: string) => {
       const state = get()

@@ -74,6 +74,14 @@ func (m *Manager) IsActive() bool {
 	return m.state.Active
 }
 
+// Runner returns the active debug adapter runner, if any.
+func (m *Manager) Runner() *Runner {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.runner
+}
+
+
 // Start launches a new debugging session.
 func (m *Manager) Start(ctx context.Context, req StartDebugRequest) error {
 	m.mu.RLock()
@@ -135,7 +143,11 @@ func (m *Manager) Start(ctx context.Context, req StartDebugRequest) error {
 	}
 
 	// 4. Launch target asynchronously
-	launchArgs := cfg.LaunchArgs(req.Program, req.Args, req.Env, req.Cwd)
+	targetProgram := req.Program
+	if runner != nil && runner.Target != "" {
+		targetProgram = runner.Target
+	}
+	launchArgs := cfg.LaunchArgs(targetProgram, req.Args, req.Env, req.Cwd)
 	launchSeq, launchRespCh, err := client.SendRequestAsync("launch", launchArgs)
 	if err != nil {
 		_ = m.Terminate()
@@ -166,7 +178,7 @@ func (m *Manager) Start(ctx context.Context, req StartDebugRequest) error {
 	cfgCancel()
 
 	// 7. Await launch response
-	launchCtx, launchCancel := context.WithTimeout(ctx, 15*time.Second)
+	launchCtx, launchCancel := context.WithTimeout(ctx, 30*time.Second)
 	_, err = client.WaitResponse(launchCtx, launchSeq, launchRespCh, "launch")
 	launchCancel()
 	if err != nil {

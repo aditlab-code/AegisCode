@@ -194,12 +194,16 @@
 }
 
 .editor-panes {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
+  flex: 1;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
   height: 100%;
+  overflow: hidden;
+  position: relative;
 }
-
 .editor-panes-split {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   min-height: 0;
@@ -269,6 +273,9 @@
   flex-direction: row;
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   background: color-mix(in srgb, var(--color-canvas) 96%, transparent);
 }
@@ -277,9 +284,11 @@
   display: flex;
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  width: 100%;
   height: 100%;
+  overflow: hidden;
 }
-
 
 
 /* Minimap side layout */

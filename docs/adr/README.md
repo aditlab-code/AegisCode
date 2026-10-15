@@ -4,7 +4,7 @@ This directory catalogs the **Architecture Decision Records (ADRs)** for **Aegis
 
 ---
 
-## 📑 ADR Catalog (ADR 0001 – ADR 0015)
+## 📑 ADR Catalog (ADR 0001 – ADR 0016)
 
 | ADR | Title | Category | Status | One-Sentence Summary |
 | :---: | :--- | :--- | :---: | :--- |
@@ -23,6 +23,7 @@ This directory catalogs the **Architecture Decision Records (ADRs)** for **Aegis
 | **[0013](0013-embedded-pure-go-sqlite-and-fts5-search.md)** | Embedded Pure-Go SQLite & FTS5 | Storage & Search | `Accepted` | Replaces fragmented flat-files with transactional pure-Go SQLite (`modernc.org/sqlite`) in WAL mode with FTS5. |
 | **[0014](0014-native-colbymchenry-codegraph-and-vantagecraft-ui.md)** | Native CodeGraph & VantageCraft UI | AI & Code Intelligence | `Accepted` | Replaces custom Go extractors with native `@colbymchenry/codegraph` daemon, reverse proxy, and VantageCraft 6-view UI. |
 | **[0015](0015-native-codegraph-contract-alignment-and-zero-swallow.md)** | Native CodeGraph Contract Alignment & Zero Swallow | Code Intelligence & Resilience | `Accepted` | Aligns Go proxy contracts, unwraps MCP envelopes, decommissions legacy routes, and enforces zero silent swallow. |
+| **[0016](0016-http1-socket-starvation-prevention-and-canonical-workspace-buffer-lifecycle.md)** | HTTP/1.1 Socket Starvation Prevention & Buffer Lifecycle | Networking & State Lifecycle | `Accepted` | Prevents browser 6-socket pool starvation via direct backend API_BASE, deferred SSE, and canonical buffer reconciliation. |
 
 ---
 
@@ -52,3 +53,5 @@ This directory catalogs the **Architecture Decision Records (ADRs)** for **Aegis
 - **[ADR 0008: Typed Contract Generation](0008-typed-contract-generation.md)**
 - **[ADR 0011: Zustand Modular Slices and Zero-Breaking Bridge](0011-zustand-modular-slices-and-zero-breaking-bridge.md)**
 - **[ADR 0012: Zero-Freeze Architecture: Go-First Offloading and Web Workers](0012-zero-freeze-architecture-go-first-offloading-and-web-workers.md)**
+- **[ADR 0016: HTTP/1.1 Socket Starvation Prevention, Direct Backend API Base, and Canonical Workspace Buffer Lifecycle](0016-http1-socket-starvation-prevention-and-canonical-workspace-buffer-lifecycle.md)**
+

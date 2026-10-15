@@ -48,7 +48,7 @@ export interface BackendChatSummary {
   updatedAt: number
 }
 
-const API_BASE = ""
+import { API_BASE } from "./apiBase"
 
 export async function fetchBackendConfig(): Promise<BackendConfig | null> {
   try {

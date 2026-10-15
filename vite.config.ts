@@ -20,6 +20,7 @@ export default defineConfig({
       "/api": {
         target: "http://localhost:8080",
         changeOrigin: true,
+        ws: true,
         configure: (proxy) => {
           proxy.on("error", (_err, _req, res) => {
             if (res && "writeHead" in res && !res.headersSent) {

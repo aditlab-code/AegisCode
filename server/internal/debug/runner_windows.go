@@ -5,6 +5,7 @@ package debug
 import (
 	"errors"
 	"os/exec"
+	"strconv"
 )
 
 // setProcessGroup configures Windows process creation attributes.
@@ -17,7 +18,7 @@ func terminateProcessGroup(cmd *exec.Cmd) error {
 	if cmd == nil || cmd.Process == nil {
 		return errors.New("invalid process")
 	}
-	return cmd.Process.Kill()
+	return exec.Command("taskkill", "/F", "/T", "/PID", strconv.Itoa(cmd.Process.Pid)).Run()
 }
 
 // killProcessGroup forcefully kills the process on Windows.
@@ -25,5 +26,5 @@ func killProcessGroup(cmd *exec.Cmd) error {
 	if cmd == nil || cmd.Process == nil {
 		return errors.New("invalid process")
 	}
-	return cmd.Process.Kill()
+	return exec.Command("taskkill", "/F", "/T", "/PID", strconv.Itoa(cmd.Process.Pid)).Run()
 }

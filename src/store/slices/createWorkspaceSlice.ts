@@ -394,6 +394,9 @@ export async function loadWorkspaceInternal(
         files: [],
         fileBuffers: {},
       })
+      if (typeof get().closeAllTabs === "function") {
+        get().closeAllTabs()
+      }
       try {
         window.localStorage?.removeItem("aegis_root_workspace")
       } catch (err) {
@@ -402,7 +405,11 @@ export async function loadWorkspaceInternal(
       return
     }
 
+    const prevRoot = get().rootWorkspacePath
     const normalizedRoot = normalizeWorkspacePath(info.rootPath)
+    if (prevRoot && prevRoot !== normalizedRoot) {
+      set({ fileBuffers: {} })
+    }
     try {
       window.localStorage?.setItem("aegis_root_workspace", normalizedRoot)
     } catch (err) {
@@ -414,11 +421,107 @@ export async function loadWorkspaceInternal(
       return
     }
 
+    // Map each file to its canonical workspace-relative path
+    const canonicalMap = new Map<string, string>()
+    for (const f of treeData.flatTree) {
+      if (f.type !== "folder" && f.path) {
+        canonicalMap.set(f.path, f.path)
+        const base = f.path.split("/").pop()
+        if (base && !canonicalMap.has(base)) {
+          canonicalMap.set(base, f.path)
+        }
+      }
+    }
+
+    const resolveTabCanonical = (t: string): string | null => {
+      if (!t) return null
+      if (canonicalMap.has(t)) return canonicalMap.get(t)!
+      const base = t.split("/").pop()
+      if (base && canonicalMap.has(base)) return canonicalMap.get(base)!
+      return null
+    }
+
+    // Clean up tabs in editor groups that do not belong to the newly loaded workspace
+    const g1 = get().group1
+    const g2 = get().group2
+    const validG1Tabs: string[] = []
+    for (const t of g1?.tabs || []) {
+      const canonical = resolveTabCanonical(t)
+      if (canonical && !validG1Tabs.includes(canonical)) {
+        validG1Tabs.push(canonical)
+      }
+    }
+    const validG2Tabs: string[] = []
+    for (const t of g2?.tabs || []) {
+      const canonical = resolveTabCanonical(t)
+      if (canonical && !validG2Tabs.includes(canonical)) {
+        validG2Tabs.push(canonical)
+      }
+    }
+
+    // Fallback: If no valid tabs survived, pick primary file so workspace is not empty
+    if (validG1Tabs.length === 0 && treeData.flatTree.length > 0) {
+      const preferred = [
+        "App.tsx",
+        "main.tsx",
+        "index.tsx",
+        "index.ts",
+        "main.go",
+        "main.py",
+        "index.js",
+        "README.md",
+      ]
+      let defaultTab = ""
+      for (const pref of preferred) {
+        if (canonicalMap.has(pref)) {
+          defaultTab = canonicalMap.get(pref)!
+          break
+        }
+      }
+      if (!defaultTab) {
+        const firstFile = treeData.flatTree.find(
+          (f) => f.type !== "folder" && f.path,
+        )
+        if (firstFile?.path) {
+          defaultTab = firstFile.path
+        }
+      }
+      if (defaultTab) {
+        validG1Tabs.push(defaultTab)
+      }
+    }
+
+    const activeG1 =
+      resolveTabCanonical(g1?.activeTab || "") || validG1Tabs[0] || ""
+    const activeG2 =
+      resolveTabCanonical(g2?.activeTab || "") || validG2Tabs[0] || ""
+    const allTabs = Array.from(new Set([...validG1Tabs, ...validG2Tabs]))
+
     set({
       rootWorkspacePath: normalizedRoot,
       rootWorkspaceName: info.name,
       files: treeData.flatTree,
+      group1: { ...g1, tabs: validG1Tabs, activeTab: activeG1 },
+      group2: { ...g2, tabs: validG2Tabs, activeTab: activeG2 },
+      tabs: allTabs,
+      activeTab: activeG1,
+      currentFocusedFile: activeG1 || null,
     })
+
+    // Immediately pre-fetch and await active tabs to ensure immediate buffer availability
+    const priorityTabs = [activeG1, activeG2].filter(Boolean)
+    if (priorityTabs.length > 0) {
+      await Promise.allSettled(
+        priorityTabs.map((tab) => get().fetchBufferSafely(tab)),
+      )
+    }
+
+    // Pre-fetch remaining background tabs in parallel
+    for (const tab of allTabs) {
+      if (!priorityTabs.includes(tab)) {
+        void get().fetchBufferSafely(tab)
+      }
+    }
 
     if (typeof get().refreshGit === "function") {
       void get().refreshGit()
@@ -505,15 +608,26 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
     }
   },
 
+  folderBrowserModalOpen: false,
+  openFolderBrowserModal: () => set({ folderBrowserModalOpen: true }),
+  closeFolderBrowserModal: () => set({ folderBrowserModalOpen: false }),
+
   openFolderPicker: async () => {
     try {
       const res = await pickFolderNative()
       if (res.status === "ok" && res.path) {
         await get().openRootFolder(res.path)
+        return
       }
-    } catch (err: any) {
-      console.debug("Folder picker cancelled or dismissed:", err)
+      if (res.status === "cancelled") {
+        return
+      }
+    } catch (err: unknown) {
+      console.debug("Native folder picker unavailable or error:", err)
     }
+
+    // Host/web browser fallback: open the interactive file manager modal
+    set({ folderBrowserModalOpen: true })
   },
 
   openRootFolder: async (rawPath: string) => {
@@ -521,15 +635,18 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
     if (!path) return
     try {
       await get().autoSaveDirtyBuffers()
-      if (typeof get().resetAllGroups === "function") {
-        get().resetAllGroups()
-      }
-      set({ fileBuffers: {} })
       await loadWorkspaceInternal(get, set, path)
       await get().addRecentProject(path)
+      const terminalRestart = (get() as {
+        restartTerminalSession?: () => Promise<void>
+      }).restartTerminalSession
+      if (typeof terminalRestart === "function") {
+        void terminalRestart()
+      }
       get().showToast?.(`Opened folder: ${path}`)
-    } catch (err: any) {
-      get().showToast?.(`Failed to open folder: ${err.message || String(err)}`)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      get().showToast?.(`Failed to open folder: ${msg}`)
     }
   },
 
@@ -874,35 +991,64 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
 
   ensureFileBuffer: (filename: string) => {
     if (!filename || isGraphTab(filename) || isGitDiffTab(filename)) return
-    const clean = normalizeWorkspacePath(filename, get().rootWorkspacePath)
-    if (!clean) return
-    const current = get().fileBuffers[clean]
-    if (!current) {
-      set((state) => ({
-        fileBuffers: {
-          ...state.fileBuffers,
-          [clean]: {
-            content: "",
-            savedContent: "",
-            isDirty: false,
-            language: detectLanguage(clean),
-          },
-        },
-      }))
-      return get().fetchBufferSafely(clean)
+    const base = filename.split("/").pop() || filename
+    const current = get().fileBuffers[filename] || get().fileBuffers[base]
+    if (
+      !current ||
+      (current.content === "" &&
+        !current.isDirty &&
+        !current.isLargeFile &&
+        !current.isBinary)
+    ) {
+      return get().fetchBufferSafely(filename)
     }
   },
 
   fetchBufferSafely: async (filename: string): Promise<void> => {
     if (!filename || isGraphTab(filename) || isGitDiffTab(filename)) return
-    const clean = normalizeWorkspacePath(filename, get().rootWorkspacePath)
+    let rootPath = get().rootWorkspacePath
+    if (!rootPath) {
+      try {
+        const info = await fetchWorkspaceInfo()
+        if (info?.rootPath) {
+          rootPath = normalizeWorkspacePath(info.rootPath)
+          set({ rootWorkspacePath: rootPath, rootWorkspaceName: info.name })
+        }
+      } catch {
+        // ignore if offline
+      }
+    }
+    let clean = rootPath
+      ? normalizeWorkspacePath(filename, rootPath)
+      : filename.replace(/^\/+/, "")
     if (!clean) return
+
+    const files = get().files || []
+    if (!files.some((f) => f.path === clean)) {
+      const match = files.find(
+        (f) =>
+          f.type !== "folder" &&
+          (f.path === clean ||
+            f.path?.endsWith("/" + clean) ||
+            clean.endsWith("/" + f.path) ||
+            f.name === clean ||
+            clean.split("/").pop() === f.name),
+      )
+      if (match?.path) {
+        clean = match.path
+      }
+    }
 
     try {
       const detail = await fetchFileDetailed(clean)
       const content = detail.content
+      const baseName = clean.split("/").pop() || clean
+      const rawBaseName = filename.split("/").pop() || filename
       set((state) => {
-        const existing = state.fileBuffers[clean]
+        const existing =
+          state.fileBuffers[clean] ||
+          state.fileBuffers[filename] ||
+          state.fileBuffers[baseName]
         if (existing?.isDirty) {
           return {
             fileBuffers: {
@@ -914,26 +1060,34 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
             },
           }
         }
+        const newBuf: FileBuffer = {
+          content,
+          savedContent: content,
+          isDirty: false,
+          hasDiskConflict: false,
+          isDeletedOnDisk: false,
+          language: detectLanguage(clean),
+          isLargeFile: detail.isLarge,
+          isBinary: detail.isBinary,
+          fileSize: detail.size,
+        }
         return {
           fileBuffers: {
             ...state.fileBuffers,
-            [clean]: {
-              content,
-              savedContent: content,
-              isDirty: false,
-              hasDiskConflict: false,
-              isDeletedOnDisk: false,
-              language: detectLanguage(clean),
-              isLargeFile: detail.isLarge,
-              isBinary: detail.isBinary,
-              fileSize: detail.size,
-            },
+            [clean]: newBuf,
+            [filename]: newBuf,
+            [baseName]: newBuf,
+            [rawBaseName]: newBuf,
           },
         }
       })
-      triggerOffloadedLint(clean, content, true, set, 0)
+      if (get().linterSettings.enabled && !isLspLanguage(clean)) {
+        triggerOffloadedLint(clean, content, true, set, 0)
+      }
     } catch (err) {
-      console.warn(`Failed to fetch file content for ${clean}:`, err)
+      if (typeof process === "undefined" || !process.env?.VITEST) {
+        console.warn(`Failed to fetch file content for ${clean}:`, err)
+      }
     }
   },
 

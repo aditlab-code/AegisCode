@@ -3,8 +3,7 @@ import type {
   DebugState,
   StreamDebugEvent,
 } from "../types/workbench"
-
-const API_BASE = ""
+import { API_BASE } from "./apiBase"
 
 export interface StartDebugResult {
   status: string

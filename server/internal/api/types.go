@@ -308,6 +308,26 @@ type LSPChangeRequest struct {
 	Language string `json:"language"`
 }
 
+type LSPSaveRequest struct {
+	Path     string `json:"path"`
+	Content  string `json:"content"`
+	Language string `json:"language"`
+}
+
+type LSPCloseRequest struct {
+	Path     string `json:"path"`
+	Language string `json:"language"`
+}
+
+type LSPSymbolsRequest struct {
+	Path     string `json:"path"`
+	Language string `json:"language"`
+}
+
+type LSPSymbolsResponse struct {
+	Symbols []lsp.DocumentSymbol `json:"symbols"`
+}
+
 type LSPPositionRequest struct {
 	Path      string `json:"path"`
 	Line      int    `json:"line"`

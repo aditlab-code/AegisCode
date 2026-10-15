@@ -135,9 +135,9 @@ export function EntrypointsView() {
         {frameworks.length > 0 && (
           <div className="flex items-center gap-1 text-[11px] text-ink-muted">
             <span>Framework:</span>
-            {frameworks.map((fw) => (
+            {frameworks.map((fw, idx) => (
               <span
-                key={fw}
+                key={`${fw}-${idx}`}
                 className="rounded bg-surface-raised px-1.5 py-0.5 text-ink-soft border border-line"
               >
                 {fw}
@@ -157,9 +157,9 @@ export function EntrypointsView() {
                 Roots" or "Hub Symbols".
               </div>
             ) : (
-              routes.items.items.map((route: WireRoute) => (
+              routes.items.items.map((route: WireRoute, idx: number) => (
                 <div
-                  key={route.id}
+                  key={route.id || `${route.method}-${route.path}-${idx}`}
                   className="flex items-center justify-between p-3 rounded-lg border border-line bg-surface hover:bg-surface-hover transition-colors group"
                 >
                   <div className="flex items-center gap-3 min-w-0">
@@ -221,9 +221,9 @@ export function EntrypointsView() {
 
         {activeTab === "files" && (
           <div className="space-y-2">
-            {files.items.map((file: WireEntryFile) => (
+            {files.items.map((file: WireEntryFile, idx: number) => (
               <div
-                key={file.id}
+                key={file.id || `${file.file}-${file.name}-${idx}`}
                 className="flex items-center justify-between p-3 rounded-lg border border-line bg-surface hover:bg-surface-hover transition-colors group"
               >
                 <div className="min-w-0">
@@ -259,9 +259,9 @@ export function EntrypointsView() {
 
         {activeTab === "hubs" && (
           <div className="space-y-2">
-            {hubs.items.map((hub: WireEntryHub) => (
+            {hubs.items.map((hub: WireEntryHub, idx: number) => (
               <div
-                key={hub.id}
+                key={hub.id || `${hub.file}-${hub.line}-${hub.name}-${idx}`}
                 className="flex items-center justify-between p-3 rounded-lg border border-line bg-surface hover:bg-surface-hover transition-colors group"
               >
                 <div className="min-w-0">
@@ -311,9 +311,9 @@ export function EntrypointsView() {
 
         {activeTab === "tests" && (
           <div className="space-y-2">
-            {tests.items.map((test: WireEntryTest) => (
+            {tests.items.map((test: WireEntryTest, idx: number) => (
               <div
-                key={test.id}
+                key={test.id || `${test.file}-${test.name}-${idx}`}
                 className="flex items-center justify-between p-3 rounded-lg border border-line bg-surface hover:bg-surface-hover transition-colors group"
               >
                 <div className="min-w-0">

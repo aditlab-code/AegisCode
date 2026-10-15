@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -75,5 +76,24 @@ func TestDelveRunnerLifecycle(t *testing.T) {
 	if errAfter == nil {
 		_ = connAfter.Close()
 		t.Fatalf("port %d should have been released after close", runner.Port)
+	}
+}
+
+func TestCppCompilationErrorOnMissingSource(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	cfg, ok := GetAdapter("cpp")
+	if !ok {
+		t.Fatalf("cpp adapter config not found")
+	}
+
+	// StartAdapter with a non-existent .cpp file should fail at compilation
+	_, _, err := StartAdapter(ctx, cfg, "non_existent_source.cpp", t.TempDir())
+	if err == nil {
+		t.Fatalf("expected error compiling non-existent C++ source, got nil")
+	}
+	if !strings.Contains(err.Error(), "compile") {
+		t.Fatalf("expected compilation error message, got: %v", err)
 	}
 }

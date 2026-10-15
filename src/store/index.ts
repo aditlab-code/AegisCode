@@ -22,5 +22,15 @@ export const useWorkbenchStore = create<WorkbenchStore>()(
   }),
 )
 
+declare global {
+  interface Window {
+    useWorkbenchStore?: typeof useWorkbenchStore
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.useWorkbenchStore = useWorkbenchStore
+}
+
 export * from "./types"
 export { useShallow } from "zustand/react/shallow"

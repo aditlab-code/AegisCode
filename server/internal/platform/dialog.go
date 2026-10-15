@@ -25,7 +25,9 @@ func NewNativeFolderPicker() *NativeFolderPicker {
 func (p *NativeFolderPicker) PickFolder(ctx context.Context) (string, bool, error) {
 	switch runtime.GOOS {
 	case "darwin":
-		cmd := exec.CommandContext(ctx, "osascript", "-e", `POSIX path of (choose folder with prompt "Select Project Folder:")`)
+		script := `tell application "System Events" to activate
+POSIX path of (choose folder with prompt "Select Project Folder:")`
+		cmd := exec.CommandContext(ctx, "osascript", "-e", script)
 		out, err := cmd.Output()
 		if err != nil {
 			var exitErr *exec.ExitError

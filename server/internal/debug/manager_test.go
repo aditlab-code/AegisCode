@@ -98,7 +98,7 @@ func TestDebugManagerRealLifecycle(t *testing.T) {
 	}
 
 	mgr := NewManager()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 
 	serverRoot, err := filepath.Abs("../..")

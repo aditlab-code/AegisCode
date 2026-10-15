@@ -1,4 +1,11 @@
-import { useState, useMemo, useEffect, useRef, type KeyboardEvent } from "react"
+import {
+  useState,
+  useMemo,
+  useEffect,
+  useRef,
+  useCallback,
+  type KeyboardEvent,
+} from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { useWorkbenchStore, useShallow } from "../../../store"
@@ -158,44 +165,40 @@ export function EditorFindWidget({
       ? Math.min(Math.max(0, activeMatchIndex), matches.length - 1)
       : 0
 
+  const navigateToMatch = useCallback(
+    (target: EditorMatch) => {
+      setCursorPosition({ line: target.line, col: target.col })
+      window.dispatchEvent(
+        new CustomEvent<GotoLineEventDetail>("aegis:editor-goto-line", {
+          detail: {
+            file: currentFile,
+            line: target.line,
+            col: target.col,
+            length: target.length,
+            preventFocus: true,
+          },
+        }),
+      )
+    },
+    [currentFile, setCursorPosition],
+  )
+
   function jumpToMatch(idx: number) {
     if (matches.length === 0) return
     const target = matches[idx]
     if (!target) return
     setActiveMatchIndex(idx)
-    setCursorPosition({ line: target.line, col: target.col })
-    window.dispatchEvent(
-      new CustomEvent<GotoLineEventDetail>("aegis:editor-goto-line", {
-        detail: {
-          file: currentFile,
-          line: target.line,
-          col: target.col,
-          length: target.length,
-          preventFocus: true,
-        },
-      }),
-    )
+    navigateToMatch(target)
   }
 
   useEffect(() => {
     if (isOpen && matches.length > 0 && query.trim()) {
       const target = matches[safeIndex]
       if (target) {
-        setCursorPosition({ line: target.line, col: target.col })
-        window.dispatchEvent(
-          new CustomEvent<GotoLineEventDetail>("aegis:editor-goto-line", {
-            detail: {
-              file: currentFile,
-              line: target.line,
-              col: target.col,
-              length: target.length,
-              preventFocus: true,
-            },
-          }),
-        )
+        navigateToMatch(target)
       }
     }
-  }, [isOpen, matches, safeIndex, query, currentFile, setCursorPosition])
+  }, [isOpen, matches, safeIndex, query, navigateToMatch])
 
   function handleNext() {
     if (matches.length === 0) return

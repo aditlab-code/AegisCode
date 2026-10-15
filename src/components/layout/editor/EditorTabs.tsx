@@ -251,7 +251,7 @@ export function EditorTabs({
             ? diffInfo.displayName
             : graphInfo
               ? graphInfo.displayName
-              : tab
+              : tab.split("/").pop() || tab
           const buf = isDiff
             ? fileBuffers[diffInfo?.file || ""]
             : fileBuffers[tab]

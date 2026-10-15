@@ -260,7 +260,14 @@ export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
                     key={sym.id}
                     type="button"
                     onClick={() => {
-                      setCursorPosition({ line: sym.lineStart, column: 1 })
+                      setCursorPosition({ line: sym.lineStart, col: 1 })
+                      if (typeof window !== "undefined") {
+                        window.dispatchEvent(
+                          new CustomEvent("aegis:editor-goto-line", {
+                            detail: { file, line: sym.lineStart, col: 1 },
+                          }),
+                        )
+                      }
                       setSymbolDropdownOpen(false)
                     }}
                     className="flex items-center justify-between gap-2 w-full px-2 py-1 text-left rounded hover:bg-surface-hover cursor-pointer"

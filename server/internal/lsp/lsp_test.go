@@ -84,4 +84,20 @@ func TestLSPClientTypes(t *testing.T) {
 	if uri != expected {
 		t.Fatalf("unexpected uri conversion: got %s, want %s", uri, expected)
 	}
+
+	// Test docVersions tracking
+	mgr.versionMu.Lock()
+	mgr.docVersions[uri] = 2
+	mgr.versionMu.Unlock()
+	if v := mgr.docVersions[uri]; v != 2 {
+		t.Fatalf("expected docVersion 2, got %d", v)
+	}
+
+	// Test DidClose docVersions removal
+	mgr.versionMu.Lock()
+	delete(mgr.docVersions, uri)
+	mgr.versionMu.Unlock()
+	if _, exists := mgr.docVersions[uri]; exists {
+		t.Fatalf("expected docVersion to be deleted after DidClose")
+	}
 }

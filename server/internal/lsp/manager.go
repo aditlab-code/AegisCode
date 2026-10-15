@@ -550,6 +550,41 @@ func (m *Manager) DidChange(relPath string, content string, lang string) error {
 	return client.Notify("textDocument/didChange", params)
 }
 
+// DidSave notifies the language server that a document has been saved.
+func (m *Manager) DidSave(relPath string, content string, lang string) error {
+	client, err := m.GetOrStartClient(lang)
+	if err != nil {
+		return err
+	}
+
+	uri := m.filePathToURI(relPath)
+	params := DidSaveTextDocumentParams{
+		TextDocument: TextDocumentIdentifier{URI: uri},
+		Text:         content,
+	}
+
+	return client.Notify("textDocument/didSave", params)
+}
+
+// DidClose notifies the language server that a document has closed.
+func (m *Manager) DidClose(relPath string, lang string) error {
+	client, err := m.GetOrStartClient(lang)
+	if err != nil {
+		return err
+	}
+
+	uri := m.filePathToURI(relPath)
+	m.versionMu.Lock()
+	delete(m.docVersions, uri)
+	m.versionMu.Unlock()
+
+	params := DidCloseTextDocumentParams{
+		TextDocument: TextDocumentIdentifier{URI: uri},
+	}
+
+	return client.Notify("textDocument/didClose", params)
+}
+
 // Completion queries the language server for completions at a line & character position (0-indexed).
 func (m *Manager) Completion(relPath string, line int, char int, lang string) ([]CompletionItem, error) {
 	client, err := m.GetOrStartClient(lang)

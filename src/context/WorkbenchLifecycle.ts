@@ -6,10 +6,33 @@ import {
   fetchWorkspaceTree,
   normalizeWorkspacePath,
 } from "../utils/workspaceApi"
-import { isLspLanguage } from "../utils/linter"
-import { offloadService } from "../utils/offloadService"
+import { subscribeLspDiagnostics } from "../utils/lspApi"
+import { API_BASE } from "../utils/apiBase"
 import type { WorkspaceChangeEvent, DiagnosticItem } from "../types/workbench"
-import type { LintPayload } from "../workers"
+
+function runAfterWindowLoad(cb: () => (() => void) | void): () => void {
+  if (typeof window === "undefined") return () => {}
+  let cleanup: (() => void) | void
+  let timer: NodeJS.Timeout | null = null
+
+  const start = () => {
+    cleanup = cb()
+  }
+
+  if (document.readyState === "complete") {
+    timer = setTimeout(start, 600)
+  } else {
+    const handleLoad = () => {
+      timer = setTimeout(start, 600)
+    }
+    window.addEventListener("load", handleLoad, { once: true })
+  }
+
+  return () => {
+    if (timer) clearTimeout(timer)
+    if (typeof cleanup === "function") cleanup()
+  }
+}
 
 export function useWorkbenchLifecycle() {
   const store = useWorkbenchStore
@@ -30,278 +53,293 @@ export function useWorkbenchLifecycle() {
     return () => clearInterval(timer)
   }, [store])
 
-  // 2. DAP Debugger SSE listener
+  // 1b. Auto-mount workspace on startup
   useEffect(() => {
-    if (typeof window === "undefined") return
-    const disconnect = connectDebugSSE(
-      (event) => {
-        const s = store.getState()
-        if (event.state) {
-          s.debugState = event.state
-          useWorkbenchStore.setState({
-            debugState: event.state,
-            isDebugging:
-              event.state.active ||
-              event.state.status === "running" ||
-              event.state.status === "stopped",
-          })
-          if (event.state.currentFile && event.state.currentLine) {
-            const clean = normalizeWorkspacePath(
-              event.state.currentFile,
-              s.rootWorkspacePath,
-            )
-            const targetFile = clean || event.state.currentFile
-            s.setActiveDebugLine({
-              file: targetFile,
-              line: event.state.currentLine,
-            })
-            s.openFileInPane(targetFile)
-          } else if (event.state.status === "running") {
-            s.setActiveDebugLine(null)
-          }
-        }
-        if (event.type === "debug:output" || event.output) {
-          const cat =
-            event.category === "stderr"
-              ? "stderr"
-              : event.category === "stdout"
-                ? "stdout"
-                : "info"
-          s.addDebugConsoleLog(cat, event.output || "")
-        } else if (event.type === "debug:stopped") {
-          const stopDetail = event.state?.stopReason
-            ? ` (${event.state.stopReason})`
-            : ""
-          const location = event.currentFile
-            ? ` at ${event.currentFile.split("/").pop()}:${event.currentLine || ""}`
-            : ""
-          s.addDebugConsoleLog("info", `Paused${location}${stopDetail}`)
-          if (event.currentFile && event.currentLine) {
-            const clean = normalizeWorkspacePath(
-              event.currentFile,
-              s.rootWorkspacePath,
-            )
-            const targetFile = clean || event.currentFile
-            s.setActiveDebugLine({
-              file: targetFile,
-              line: event.currentLine,
-            })
-            s.openFileInPane(targetFile)
-          }
-        } else if (event.type === "debug:continued") {
-          s.setActiveDebugLine(null)
-          s.addDebugConsoleLog("info", "Resumed execution")
-        } else if (event.type === "debug:terminated") {
-          s.setActiveDebugLine(null)
-          s.addDebugConsoleLog("info", "Debug session terminated")
-          useWorkbenchStore.setState({
-            debugState: { active: false, status: "terminated" },
-            isDebugging: false,
-          })
-        }
-      },
-      (err) => {
-        console.warn("DAP Debug SSE connection error:", err)
-      },
-    )
-    return () => {
-      disconnect()
+    const s = store.getState()
+    if (!s.rootWorkspacePath) {
+      void s.refreshWorkspace()
     }
+  }, [store])
+
+  // 2. DAP Debugger SSE listener (deferred until window load)
+  useEffect(() => {
+    return runAfterWindowLoad(() => {
+      const disconnect = connectDebugSSE(
+        (event) => {
+          const s = store.getState()
+          if (event.state) {
+            s.debugState = event.state
+            useWorkbenchStore.setState({
+              debugState: event.state,
+              isDebugging:
+                event.state.active ||
+                event.state.status === "running" ||
+                event.state.status === "stopped",
+            })
+            if (event.state.currentFile && event.state.currentLine) {
+              const clean = normalizeWorkspacePath(
+                event.state.currentFile,
+                s.rootWorkspacePath,
+              )
+              const targetFile = clean || event.state.currentFile
+              s.setActiveDebugLine({
+                file: targetFile,
+                line: event.state.currentLine,
+              })
+              s.openFileInPane(targetFile)
+            } else if (event.state.status === "running") {
+              s.setActiveDebugLine(null)
+            }
+          }
+          if (event.type === "debug:output" || event.output) {
+            const cat =
+              event.category === "stderr"
+                ? "stderr"
+                : event.category === "stdout"
+                  ? "stdout"
+                  : "info"
+            s.addDebugConsoleLog(cat, event.output || "")
+          } else if (event.type === "debug:stopped") {
+            const stopDetail = event.state?.stopReason
+              ? ` (${event.state.stopReason})`
+              : ""
+            const location = event.currentFile
+              ? ` at ${event.currentFile.split("/").pop()}:${event.currentLine || ""}`
+              : ""
+            s.addDebugConsoleLog("info", `Paused${location}${stopDetail}`)
+            if (event.currentFile && event.currentLine) {
+              const clean = normalizeWorkspacePath(
+                event.currentFile,
+                s.rootWorkspacePath,
+              )
+              const targetFile = clean || event.currentFile
+              s.setActiveDebugLine({
+                file: targetFile,
+                line: event.currentLine,
+              })
+              s.openFileInPane(targetFile)
+            }
+          } else if (event.type === "debug:continued") {
+            s.setActiveDebugLine(null)
+            s.addDebugConsoleLog("info", "Resumed execution")
+          } else if (event.type === "debug:terminated") {
+            s.setActiveDebugLine(null)
+            s.addDebugConsoleLog("info", "Debug session terminated")
+            useWorkbenchStore.setState({
+              debugState: { active: false, status: "terminated" },
+              isDebugging: false,
+            })
+          }
+        },
+        (err) => {
+          console.warn("DAP Debug SSE connection error:", err)
+        },
+      )
+      return () => {
+        disconnect()
+      }
+    })
   }, [store])
 
   // 2b. Global MCP Tool Invocation SSE Listener (/api/v1/mcp/events)
   useEffect(() => {
-    if (typeof window === "undefined" || typeof EventSource === "undefined")
-      return
-    let es: EventSource | null = null
-    let reconnectTimer: NodeJS.Timeout | null = null
+    return runAfterWindowLoad(() => {
+      let es: EventSource | null = null
+      let reconnectTimer: NodeJS.Timeout | null = null
 
-    const connectMcpSSE = () => {
-      try {
-        es = new EventSource("/api/v1/mcp/events")
-        es.addEventListener("mcp_tool_invoked", (evt) => {
-          try {
-            const data = JSON.parse(evt.data)
-            if (!data) return
-            const s = store.getState()
-            const parsed = extractCodeGraphTraceTargets(
-              String(data.tool || "codegraph_explore"),
-              data.args || { query: data.symbol || "" },
-              data.symbol ? String(data.symbol) : undefined,
-            )
-            if (parsed.symbols.length > 0) {
-              s.triggerAiTrace({
-                symbols: parsed.symbols,
-                symbolName: parsed.primarySymbol,
-                rawQuery: parsed.rawQuery,
-                filePath: parsed.filePath,
-                toolName: parsed.cleanToolName,
-                provider: data.provider || s.activeProvider,
-                model: data.model || s.activeModel,
-                status: data.status === "completed" ? "completed" : "running",
-              })
+      const connectMcpSSE = () => {
+        try {
+          es = new EventSource(`${API_BASE}/api/v1/mcp/events`)
+          es.addEventListener("mcp_tool_invoked", (evt) => {
+            try {
+              const data = JSON.parse(evt.data)
+              if (!data) return
+              const s = store.getState()
+              const parsed = extractCodeGraphTraceTargets(
+                String(data.tool || "codegraph_explore"),
+                data.args || { query: data.symbol || "" },
+                data.symbol ? String(data.symbol) : undefined,
+              )
+              if (parsed.symbols.length > 0) {
+                s.triggerAiTrace({
+                  symbols: parsed.symbols,
+                  symbolName: parsed.primarySymbol,
+                  rawQuery: parsed.rawQuery,
+                  filePath: parsed.filePath,
+                  toolName: parsed.cleanToolName,
+                  provider: data.provider || s.activeProvider,
+                  model: data.model || s.activeModel,
+                  status: data.status === "completed" ? "completed" : "running",
+                })
+              }
+            } catch {
+              // Ignore malformed SSE payload
             }
-          } catch {
-            // Ignore malformed SSE payload
+          })
+          es.onerror = () => {
+            es?.close()
+            reconnectTimer = setTimeout(connectMcpSSE, 5000)
           }
-        })
-        es.onerror = () => {
-          es?.close()
-          reconnectTimer = setTimeout(connectMcpSSE, 5000)
+        } catch {
+          // Safe fallback when offline
         }
-      } catch {
-        // Safe fallback when offline
       }
-    }
 
-    const handleTraceEvent = (e: Event) => {
-      const custom = e as CustomEvent
-      if (!custom.detail) return
-      const s = store.getState()
-      const d = custom.detail
-      if (d.status === "done" || d.status === "completed") {
-        if (s.aiTrace && s.aiTrace.status === "running") {
-          s.triggerAiTrace({ ...s.aiTrace, status: "completed" })
+      const handleTraceEvent = (e: Event) => {
+        const custom = e as CustomEvent
+        if (!custom.detail) return
+        const s = store.getState()
+        const d = custom.detail
+        if (d.status === "done" || d.status === "completed") {
+          if (s.aiTrace && s.aiTrace.status === "running") {
+            s.triggerAiTrace({ ...s.aiTrace, status: "completed" })
+          }
+          return
         }
-        return
+        if (d.symbols || d.symbolName) {
+          s.triggerAiTrace({
+            symbols: d.symbols || (d.symbolName ? [d.symbolName] : []),
+            symbolName: d.symbolName || (d.symbols ? d.symbols[0] : ""),
+            rawQuery: d.rawQuery || d.symbolName || "",
+            filePath: d.filePath,
+            toolName: d.toolName || "codegraph_explore",
+            provider: d.provider || s.activeProvider,
+            model: d.model || s.activeModel,
+            status: d.status || "running",
+          })
+        }
       }
-      if (d.symbols || d.symbolName) {
-        s.triggerAiTrace({
-          symbols: d.symbols || (d.symbolName ? [d.symbolName] : []),
-          symbolName: d.symbolName || (d.symbols ? d.symbols[0] : ""),
-          rawQuery: d.rawQuery || d.symbolName || "",
-          filePath: d.filePath,
-          toolName: d.toolName || "codegraph_explore",
-          provider: d.provider || s.activeProvider,
-          model: d.model || s.activeModel,
-          status: d.status || "running",
-        })
-      }
-    }
-    window.addEventListener("aegis:ai-trace-path", handleTraceEvent)
+      window.addEventListener("aegis:ai-trace-path", handleTraceEvent)
 
-    connectMcpSSE()
-    return () => {
-      if (reconnectTimer) clearTimeout(reconnectTimer)
-      es?.close()
-      window.removeEventListener("aegis:ai-trace-path", handleTraceEvent)
-    }
+      connectMcpSSE()
+      return () => {
+        if (reconnectTimer) clearTimeout(reconnectTimer)
+        es?.close()
+        window.removeEventListener("aegis:ai-trace-path", handleTraceEvent)
+      }
+    })
   }, [store])
 
   // 3. Real-time Workspace Disk Watcher SSE (/api/v1/events/workspace)
   useEffect(() => {
-    if (typeof window === "undefined") return
+    return runAfterWindowLoad(() => {
+      let sse: EventSource | null = null
+      let reconnectTimer: NodeJS.Timeout | null = null
+      let hasConnectedOnce = false
 
-    let sse: EventSource | null = null
-    let reconnectTimer: NodeJS.Timeout | null = null
-    let hasConnectedOnce = false
+      const connect = () => {
+        const rootPath = store.getState().rootWorkspacePath
+        if (!rootPath) return
 
-    const connect = () => {
-      const rootPath = store.getState().rootWorkspacePath
-      if (!rootPath) return
+        sse = new EventSource(`${API_BASE}/api/v1/events/workspace`)
 
-      sse = new EventSource("/api/v1/events/workspace")
-
-      sse.addEventListener("connected", () => {
-        if (hasConnectedOnce) {
-          void store.getState().refreshWorkspace()
-        }
-        hasConnectedOnce = true
-      })
-
-      sse.addEventListener("change", (e) => {
-        try {
-          const evt = JSON.parse(e.data) as WorkspaceChangeEvent
-          const { created = [], modified = [], deleted = [] } = evt
-
-          // 1. Refresh explorer tree if files were created or deleted
-          if (created.length > 0 || deleted.length > 0) {
-            fetchWorkspaceTree()
-              .then((treeData) => store.getState().setFiles(treeData.flatTree))
-              .catch((err) => console.warn("Tree refresh error:", err))
+        sse.addEventListener("connected", () => {
+          if (hasConnectedOnce) {
+            void store.getState().refreshWorkspace()
           }
+          hasConnectedOnce = true
+        })
 
-          // 2. Synchronize open buffers
-          const activeBuffers = store.getState().fileBuffers
-          const filesToReload = [...created, ...modified]
+        sse.addEventListener("change", (e) => {
+          try {
+            const evt = JSON.parse(e.data) as WorkspaceChangeEvent
+            const { created = [], modified = [], deleted = [] } = evt
 
-          for (const file of filesToReload) {
-            const buf = activeBuffers[file]
-            if (buf) {
-              if (!buf.isDirty) {
-                void store.getState().fetchBufferSafely(file)
-              } else {
-                store.getState().setFileBuffers((prev) => {
-                  const current = prev[file]
-                  if (!current) return prev
-                  return {
-                    ...prev,
-                    [file]: {
-                      ...current,
-                      hasDiskConflict: true,
-                    },
-                  }
-                })
-                store.getState().showToast(`File changed on disk: ${file}`)
-              }
+            // 1. Refresh explorer tree if files were created or deleted
+            if (created.length > 0 || deleted.length > 0) {
+              fetchWorkspaceTree()
+                .then((treeData) =>
+                  store.getState().setFiles(treeData.flatTree),
+                )
+                .catch((err) => console.warn("Tree refresh error:", err))
             }
-          }
 
-          if (deleted.length > 0) {
-            for (const file of deleted) {
+            // 2. Synchronize open buffers
+            const activeBuffers = store.getState().fileBuffers
+            const filesToReload = [...created, ...modified]
+
+            for (const file of filesToReload) {
               const buf = activeBuffers[file]
               if (buf) {
-                store.getState().setFileBuffers((prev) => {
-                  const current = prev[file]
-                  if (!current) return prev
-                  return {
-                    ...prev,
-                    [file]: {
-                      ...current,
-                      isDeletedOnDisk: true,
-                    },
-                  }
-                })
-                store.getState().showToast(`File deleted on disk: ${file}`)
+                if (!buf.isDirty) {
+                  void store.getState().fetchBufferSafely(file)
+                } else {
+                  store.getState().setFileBuffers((prev) => {
+                    const current = prev[file]
+                    if (!current) return prev
+                    return {
+                      ...prev,
+                      [file]: {
+                        ...current,
+                        hasDiskConflict: true,
+                      },
+                    }
+                  })
+                  store.getState().showToast(`File changed on disk: ${file}`)
+                }
               }
             }
-          }
 
-          // 3. Trigger git refresh
-          if (created.length > 0 || modified.length > 0 || deleted.length > 0) {
-            void store.getState().refreshGit()
+            if (deleted.length > 0) {
+              for (const file of deleted) {
+                const buf = activeBuffers[file]
+                if (buf) {
+                  store.getState().setFileBuffers((prev) => {
+                    const current = prev[file]
+                    if (!current) return prev
+                    return {
+                      ...prev,
+                      [file]: {
+                        ...current,
+                        isDeletedOnDisk: true,
+                      },
+                    }
+                  })
+                  store.getState().showToast(`File deleted on disk: ${file}`)
+                }
+              }
+            }
+
+            // 3. Trigger git refresh
+            if (
+              created.length > 0 ||
+              modified.length > 0 ||
+              deleted.length > 0
+            ) {
+              void store.getState().refreshGit()
+            }
+          } catch (err) {
+            console.error("Failed to parse workspace change event:", err)
           }
-        } catch (err) {
-          console.error("Failed to parse workspace change event:", err)
+        })
+
+        sse.onerror = (err) => {
+          console.warn("Workspace SSE stream interrupted, reconnecting:", err)
+          sse?.close()
+          reconnectTimer = setTimeout(connect, 3000)
+        }
+      }
+
+      // Connect immediately if root path is already present
+      connect()
+
+      // Also watch for root workspace path mutations
+      const unsubscribe = store.subscribe((state, prevState) => {
+        if (
+          state.rootWorkspacePath &&
+          state.rootWorkspacePath !== prevState.rootWorkspacePath
+        ) {
+          if (sse) sse.close()
+          connect()
         }
       })
 
-      sse.onerror = (err) => {
-        console.warn("Workspace SSE stream interrupted, reconnecting:", err)
-        sse?.close()
-        reconnectTimer = setTimeout(connect, 3000)
-      }
-    }
-
-    // Connect immediately if root path is already present
-    connect()
-
-    // Also watch for root workspace path mutations
-    const unsubscribe = store.subscribe((state, prevState) => {
-      if (
-        state.rootWorkspacePath &&
-        state.rootWorkspacePath !== prevState.rootWorkspacePath
-      ) {
+      return () => {
+        unsubscribe()
+        if (reconnectTimer) clearTimeout(reconnectTimer)
         if (sse) sse.close()
-        connect()
       }
     })
-
-    return () => {
-      unsubscribe()
-      if (reconnectTimer) clearTimeout(reconnectTimer)
-      if (sse) sse.close()
-    }
   }, [store])
 
   // 4. Desktop responsive viewport observer
@@ -392,51 +430,42 @@ export function useWorkbenchLifecycle() {
     return () => window.removeEventListener("blur", handleWindowBlur)
   }, [store])
 
-  // 7. Reactive Auto-Linting on focused file change
+  // 7. Compiler LSP Diagnostics SSE (/api/v1/events/lsp)
   useEffect(() => {
-    let lintTimer: NodeJS.Timeout | null = null
-    return store.subscribe((state, prevState) => {
-      if (
-        state.currentFocusedFile === prevState.currentFocusedFile &&
-        state.fileBuffers[state.currentFocusedFile || ""]?.content ===
-          prevState.fileBuffers[prevState.currentFocusedFile || ""]?.content
-      ) {
-        return
+    return runAfterWindowLoad(() => {
+      const unsub = subscribeLspDiagnostics((evt: any) => {
+        if (!evt || !evt.uri || !Array.isArray(evt.diagnostics)) return
+        let relPath = evt.uri
+        if (relPath.startsWith("file://")) {
+          relPath = relPath.slice(7)
+        }
+        const rootPath = store.getState().rootWorkspacePath
+        relPath = normalizeWorkspacePath(relPath, rootPath)
+
+        const lspDiags: DiagnosticItem[] = evt.diagnostics.map(
+          (d: any, idx: number) => ({
+            id: `lsp-${relPath}-${d.range?.start?.line ?? 0}-${idx}`,
+            title: d.message || "Compiler issue",
+            location: `${relPath}:${(d.range?.start?.line ?? 0) + 1}${
+              d.range?.start?.character !== undefined
+                ? `:${d.range.start.character + 1}`
+                : ""
+            }`,
+            type: d.severity === 1 ? "error" as const : "warning" as const,
+            source: d.source || "lsp",
+          }),
+        )
+
+        store
+          .getState()
+          .setDiagnostics((prev) => [
+            ...prev.filter((item) => !item.location.startsWith(relPath)),
+            ...lspDiags,
+          ])
+      })
+      return () => {
+        unsub()
       }
-
-      const file = state.currentFocusedFile
-      if (!file || !state.linterSettings.enabled) return
-      if (state.linterSettings.trigger !== "onType" || isLspLanguage(file))
-        return
-
-      if (lintTimer) clearTimeout(lintTimer)
-      lintTimer = setTimeout(() => {
-        const buffer = store.getState().fileBuffers[file]
-        if (!buffer) return
-        const showWarnings = store.getState().linterSettings.showWarnings
-
-        offloadService
-          .run<LintPayload, DiagnosticItem[]>({
-            task: "lint",
-            payload: { filename: file, content: buffer.content },
-            priority: "normal",
-          })
-          .then((res) => {
-            if (!res?.data) return
-            const diags = showWarnings
-              ? res.data
-              : res.data.filter((d) => d.type === "error")
-            store
-              .getState()
-              .setDiagnostics((prev) => [
-                ...prev.filter((d) => !d.location.startsWith(file)),
-                ...diags,
-              ])
-          })
-          .catch(() => {
-            // Safe ignore
-          })
-      }, 300)
     })
   }, [store])
 
@@ -558,7 +587,19 @@ export function useWorkbenchLifecycle() {
         (event.key.toLowerCase() === "l" || event.key.toLowerCase() === "i")
       ) {
         event.preventDefault()
-        window.dispatchEvent(new CustomEvent("aegis:inline-ai-prompt"))
+        const activeTab = s.activeTab || s.currentFocusedFile
+        const selection = s.selection
+        if (typeof s.syncContextItems === "function") {
+          s.syncContextItems()
+        }
+        window.dispatchEvent(
+          new CustomEvent("aegis:inline-ai-prompt", {
+            detail: {
+              file: activeTab,
+              selection,
+            },
+          }),
+        )
         return
       }
 
@@ -591,9 +632,10 @@ export function useWorkbenchLifecycle() {
       ) {
         event.preventDefault()
         s.setChatOpen(true)
-        setTimeout(() => {
-          window.dispatchEvent(new CustomEvent("aegis:focus-chat-input"))
-        }, 50)
+        if (typeof s.syncContextItems === "function") {
+          s.syncContextItems()
+        }
+        window.dispatchEvent(new CustomEvent("aegis:focus-chat-input"))
         return
       }
 

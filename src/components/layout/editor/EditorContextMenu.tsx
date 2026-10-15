@@ -101,7 +101,15 @@ export function EditorContextMenu({
 
   function handleAskAi() {
     onClose()
-    window.dispatchEvent(new CustomEvent("aegis:inline-ai-prompt"))
+    window.dispatchEvent(
+      new CustomEvent("aegis:inline-ai-prompt", {
+        detail: {
+          file: filename,
+          selection: selectedText,
+          line,
+        },
+      }),
+    )
   }
 
   return createPortal(

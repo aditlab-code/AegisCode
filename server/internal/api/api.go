@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -357,6 +358,9 @@ func (s *Server) Routes() http.Handler {
 	// Language Server Protocol (LSP) Endpoints (Core 2)
 	mux.HandleFunc("/api/v1/lsp/open", s.handleLSPOpen)
 	mux.HandleFunc("/api/v1/lsp/change", s.handleLSPChange)
+	mux.HandleFunc("/api/v1/lsp/save", s.handleLSPSave)
+	mux.HandleFunc("/api/v1/lsp/close", s.handleLSPClose)
+	mux.HandleFunc("/api/v1/lsp/symbols", s.handleLSPSymbols)
 	mux.HandleFunc("/api/v1/lsp/completion", s.handleLSPCompletion)
 	mux.HandleFunc("/api/v1/lsp/hover", s.handleLSPHover)
 	mux.HandleFunc("/api/v1/lsp/definition", s.handleLSPDefinition)
@@ -2456,7 +2460,7 @@ func (s *Server) handleDebugStart(w http.ResponseWriter, r *http.Request) {
 			jsonResponse(w, http.StatusBadRequest, map[string]any{
 				"status":  "error",
 				"code":    "file_not_found",
-				"message": fmt.Sprintf("Target executable not found: %s", req.Program),
+				"message": fmt.Sprintf("Target source or executable not found: %s", req.Program),
 			})
 			return
 		}
@@ -2513,6 +2517,25 @@ func (s *Server) handleDebugStart(w http.ResponseWriter, r *http.Request) {
 			"message": "failed to start debug session: " + err.Error(),
 		})
 		return
+	}
+	if s.supervisor != nil {
+		if r := s.debug.Runner(); r != nil && r.Cmd != nil && r.Cmd.Process != nil {
+			waitDone := make(chan error, 1)
+			go func() {
+				<-r.Done()
+				waitDone <- nil
+			}()
+			_ = s.supervisor.RegisterRunner(
+				"debug-adapter",
+				fmt.Sprintf("Debug Adapter (%s)", lang),
+				r.Path,
+				r.Cmd.Process.Pid,
+				func() error {
+					return s.debug.Terminate()
+				},
+				waitDone,
+			)
+		}
 	}
 	jsonResponse(w, http.StatusOK, map[string]any{
 		"status": "ok",
@@ -2592,6 +2615,9 @@ func (s *Server) handleDebugTerminate(w http.ResponseWriter, r *http.Request) {
 	if err := s.debug.Terminate(); err != nil {
 		jsonError(w, http.StatusInternalServerError, "failed to terminate debug session: "+err.Error())
 		return
+	}
+	if s.supervisor != nil {
+		s.supervisor.UnregisterRunner("debug-adapter")
 	}
 	jsonResponse(w, http.StatusOK, map[string]string{
 		"status": "ok",
@@ -2704,6 +2730,67 @@ func (s *Server) handleLSPChange(w http.ResponseWriter, r *http.Request) {
 		_ = s.lsp.DidChange(req.Path, req.Content, req.Language)
 	}
 	jsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleLSPSave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req LSPSaveRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	if s.lsp != nil {
+		if err := s.lsp.DidSave(req.Path, req.Content, req.Language); err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to send didSave: "+err.Error())
+			return
+		}
+	}
+	jsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleLSPClose(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req LSPCloseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	if s.lsp != nil {
+		if err := s.lsp.DidClose(req.Path, req.Language); err != nil {
+			jsonError(w, http.StatusInternalServerError, "failed to send didClose: "+err.Error())
+			return
+		}
+	}
+	jsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleLSPSymbols(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var req LSPSymbolsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request: "+err.Error())
+		return
+	}
+	if s.lsp == nil {
+		jsonResponse(w, http.StatusOK, map[string]any{"symbols": []lsp.DocumentSymbol{}})
+		return
+	}
+	symbols, err := s.lsp.DocumentSymbols(req.Path, req.Language)
+	if err != nil {
+		log.Printf("[LSP] DocumentSymbols for %s: %v", req.Path, err)
+		jsonResponse(w, http.StatusOK, map[string]any{"symbols": []lsp.DocumentSymbol{}})
+		return
+	}
+	jsonResponse(w, http.StatusOK, map[string]any{"symbols": symbols})
 }
 
 func (s *Server) handleLSPCompletion(w http.ResponseWriter, r *http.Request) {

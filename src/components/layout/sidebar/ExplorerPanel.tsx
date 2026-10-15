@@ -299,9 +299,20 @@ export function ExplorerPanel() {
   const [timelineCommits, setTimelineCommits] = useState<GitCommitNode[]>([])
   const [timelineLoading, setTimelineLoading] = useState(false)
 
-  const activeEditorFile =
+  const rawActiveFile =
     focusedGroup === "group1" ? group1.activeTab : group2.activeTab
-
+  const activeEditorFile = useMemo(() => {
+    if (!rawActiveFile) return ""
+    const match = files.find(
+      (f) =>
+        f.type !== "folder" &&
+        (f.path === rawActiveFile ||
+          f.path?.endsWith("/" + rawActiveFile) ||
+          rawActiveFile.endsWith("/" + f.path) ||
+          f.name === rawActiveFile),
+    )
+    return match?.path || rawActiveFile
+  }, [rawActiveFile, files])
   useEffect(() => {
     if (!timelineOpen || !isGitRepo) return
     let isMounted = true
@@ -611,10 +622,29 @@ export function ExplorerPanel() {
 
   // Outline symbols of active tab (CodeGraph AST enriched with local lexical fallback)
   const activeSymbols = useMemo(() => {
-    const code = fileBuffers[currentTab]?.content
+    const targetKey = activeEditorFile || currentTab
+    const baseTarget = targetKey?.split("/").pop() || ""
+    const baseCurrent = currentTab?.split("/").pop() || ""
+    const buf =
+      fileBuffers[targetKey] ||
+      fileBuffers[currentTab] ||
+      fileBuffers[baseTarget] ||
+      fileBuffers[baseCurrent] ||
+      Object.entries(fileBuffers).find(
+        ([k]) =>
+          k === targetKey ||
+          k === currentTab ||
+          (baseTarget && k.endsWith("/" + baseTarget)) ||
+          (baseCurrent && k.endsWith("/" + baseCurrent)) ||
+          k.endsWith("/" + targetKey) ||
+          targetKey.endsWith("/" + k) ||
+          k.endsWith("/" + currentTab) ||
+          currentTab.endsWith("/" + k),
+      )?.[1]
+    const code = buf?.content
     const lexical = extractSymbols(code)
     return lexical.length > 0 ? lexical : codeGraphSymbols
-  }, [fileBuffers, currentTab, codeGraphSymbols])
+  }, [fileBuffers, currentTab, activeEditorFile, codeGraphSymbols])
 
   function handleCreateSubmit() {
     const name = createName.trim()
@@ -1404,6 +1434,13 @@ export function ExplorerPanel() {
                   onClick={() => {
                     openFileInGroup(currentTab, focusedGroup)
                     setCursorPosition({ line: sym.line, col: 1 })
+                    if (typeof window !== "undefined") {
+                      window.dispatchEvent(
+                        new CustomEvent("aegis:editor-goto-line", {
+                          detail: { file: currentTab, line: sym.line, col: 1 },
+                        }),
+                      )
+                    }
                     showToast(`Jumped to ${sym.name} (line ${sym.line})`)
                   }}
                   type="button"

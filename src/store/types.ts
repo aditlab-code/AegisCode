@@ -227,6 +227,9 @@ export interface WorkspaceSlice {
   addRecentProject: (path: string) => Promise<void>
   removeRecentProject: (path: string) => Promise<void>
   clearRecentProjects: () => Promise<void>
+  folderBrowserModalOpen: boolean
+  openFolderBrowserModal: () => void
+  closeFolderBrowserModal: () => void
   openFolderPicker: () => Promise<void>
   openRootFolder: (folderPath: string) => Promise<void>
   closeRootFolder: () => Promise<void>
@@ -386,6 +389,7 @@ export interface ChatSlice {
   manualMentions: ContextItem[]
   dismissedPaths: string[]
   contextModeOverrides: Record<string, "selection" | "full">
+  syncContextItems: () => void
   dismissContextItem: (id: string) => void
   toggleContextItemMode: (id: string) => void
   addMentionContext: (path: string, isFolder?: boolean) => Promise<void>

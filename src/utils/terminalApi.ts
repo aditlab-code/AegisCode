@@ -1,8 +1,9 @@
 // Centralized API client functions for AegisCode PTY Terminal
+import { API_BASE } from "./apiBase"
 
 export async function createTerminalApi(shell = "zsh", cwd?: string) {
   try {
-    const res = await fetch("/api/v1/terminal/create", {
+    const res = await fetch(`${API_BASE}/api/v1/terminal/create`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ shell, cwd }),
@@ -31,7 +32,7 @@ export async function sendTerminalInputApi(
 ): Promise<boolean> {
   if (!sessionId || !data) return false
   try {
-    const res = await fetch(`/api/v1/terminal/${sessionId}/input`, {
+    const res = await fetch(`${API_BASE}/api/v1/terminal/${sessionId}/input`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ data }),
@@ -58,7 +59,7 @@ export async function resizeTerminalApi(
 ): Promise<boolean> {
   if (!sessionId || !cols || !rows) return false
   try {
-    const res = await fetch(`/api/v1/terminal/${sessionId}/resize`, {
+    const res = await fetch(`${API_BASE}/api/v1/terminal/${sessionId}/resize`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ cols, rows }),
@@ -81,7 +82,7 @@ export async function resizeTerminalApi(
 export async function closeTerminalApi(sessionId: string): Promise<boolean> {
   if (!sessionId) return false
   try {
-    const res = await fetch(`/api/v1/terminal/${sessionId}`, {
+    const res = await fetch(`${API_BASE}/api/v1/terminal/${sessionId}`, {
       method: "DELETE",
     })
     if (!res.ok) {

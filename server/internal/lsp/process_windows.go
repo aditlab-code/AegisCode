@@ -4,8 +4,8 @@ package lsp
 
 import (
 	"errors"
-	"os"
 	"os/exec"
+	"strconv"
 	"syscall"
 )
 
@@ -19,9 +19,5 @@ func killProcessGroup(pid int, sig syscall.Signal) error {
 	if pid <= 0 {
 		return errors.New("invalid process group pid")
 	}
-	p, err := os.FindProcess(pid)
-	if err != nil {
-		return err
-	}
-	return p.Kill()
+	return exec.Command("taskkill", "/F", "/T", "/PID", strconv.Itoa(pid)).Run()
 }

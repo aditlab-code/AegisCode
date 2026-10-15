@@ -59,7 +59,7 @@ export interface PickFolderResult {
   error?: string
 }
 
-const API_BASE = ""
+import { API_BASE } from "./apiBase"
 
 export async function fetchWorkspaceInfo(): Promise<WorkspaceInfo> {
   const res = await fetch(`${API_BASE}/api/v1/workspace/info`)

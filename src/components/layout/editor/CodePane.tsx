@@ -13,6 +13,7 @@ import { CMEditor, isSameFile, type CMEditorHandle } from "./CMEditor"
 import { EditorContextMenu } from "./EditorContextMenu"
 import { fetchActiveFileGraph } from "../../../utils/codegraphApi"
 import { streamAIChat } from "../../../utils/storeApi"
+import { normalizeWorkspacePath } from "../../../utils/workspaceApi"
 
 interface CodePaneProps {
   paneId: "primary" | "secondary"
@@ -35,6 +36,8 @@ export function CodePane({
 }: CodePaneProps) {
   const {
     buffer,
+    ensureFileBuffer,
+    rootWorkspacePath,
     updateFileContent,
     setCursorPosition,
     setSelection,
@@ -62,7 +65,14 @@ export function CodePane({
     theme,
   } = useWorkbenchStore(
     useShallow((s) => ({
-      buffer: s.fileBuffers[filename],
+      buffer:
+        s.fileBuffers[filename] ||
+        (s.rootWorkspacePath
+          ? s.fileBuffers[normalizeWorkspacePath(filename, s.rootWorkspacePath)]
+          : undefined) ||
+        s.fileBuffers[filename.split("/").pop() || ""],
+      ensureFileBuffer: s.ensureFileBuffer,
+      rootWorkspacePath: s.rootWorkspacePath,
       updateFileContent: s.updateFileContent,
       setCursorPosition: s.setCursorPosition,
       setSelection: s.setSelection,
@@ -130,6 +140,17 @@ export function CodePane({
     return () =>
       window.removeEventListener("aegis:inline-ai-prompt", handleOpenInlineAi)
   }, [isFocused])
+
+  useEffect(() => {
+    if (
+      filename &&
+      (!buffer || (buffer.content === "" && !buffer.isDirty)) &&
+      typeof ensureFileBuffer === "function"
+    ) {
+      void ensureFileBuffer(filename)
+    }
+  }, [filename, buffer, ensureFileBuffer, rootWorkspacePath])
+
   const content = buffer?.content ?? ""
   const isDirty = buffer?.isDirty ?? false
   const lines = useMemo(() => content.split("\n"), [content])
@@ -576,44 +597,54 @@ export function CodePane({
           {
             "--editor-tab-size": currentTabSize,
             "--editor-wrap-column": wordWrapColumn,
-          } as any
+          } as React.CSSProperties
         }
       >
-        <div className="code-editor-layout">
-          <CMEditor
-            ref={editorRef}
-            filename={filename}
-            content={content}
-            isReadOnly={Boolean(buffer?.isLargeFile || buffer?.isBinary)}
-            wordWrap={wordWrap}
-            tabSize={currentTabSize}
-            fontSize={editorFontSize}
-            lineHeight={editorLineHeight}
-            breakpoints={fileBreakpoints}
-            activeDebugLine={activeDebugLine}
-            diagnostics={filteredDiagnostics}
-            isDark={isDark}
-            isFocused={isFocused}
-            onChange={(newVal) => updateFileContent(filename, newVal)}
-            onCursorChange={(line, col) => setCursorPosition({ line, col })}
-            onSelectionChange={(sel) => setSelection(sel)}
-            onNavigateDefinition={(targetPath, line, col) => {
-              openFileInPane(targetPath)
-              setCursorPosition({ line, col })
-              window.dispatchEvent(
-                new CustomEvent("aegis:focus-symbol", {
-                  detail: { name: targetPath, line },
-                }),
-              )
-            }}
-            onToggleBreakpoint={(line) => toggleBreakpoint(filename, line)}
-            onSave={() => saveFile(filename)}
-            onFind={() => openFind(focusedGroup, false)}
-            formatOnSave={formatOnSave}
-            insertSpaces={insertSpaces}
-          />
-        </div>
-
+        {!buffer ? (
+          <div className="flex-1 w-full h-full flex flex-col items-center justify-center bg-canvas text-ink-muted text-xs gap-2 select-none">
+            <span className="animate-spin text-accent">
+              <Icon name="refresh" size={16} />
+            </span>
+            <span className="font-mono text-[11px]">
+              Loading {filename.split("/").pop()}...
+            </span>
+          </div>
+        ) : (
+          <div className="code-editor-layout">
+            <CMEditor
+              ref={editorRef}
+              filename={filename}
+              content={content}
+              isReadOnly={Boolean(buffer?.isLargeFile || buffer?.isBinary)}
+              wordWrap={wordWrap}
+              tabSize={currentTabSize}
+              fontSize={editorFontSize}
+              lineHeight={editorLineHeight}
+              breakpoints={fileBreakpoints}
+              activeDebugLine={activeDebugLine}
+              diagnostics={filteredDiagnostics}
+              isDark={isDark}
+              isFocused={isFocused}
+              onChange={(newVal) => updateFileContent(filename, newVal)}
+              onCursorChange={(line, col) => setCursorPosition({ line, col })}
+              onSelectionChange={(sel) => setSelection(sel)}
+              onNavigateDefinition={(targetPath, line, col) => {
+                openFileInPane(targetPath)
+                setCursorPosition({ line, col })
+                window.dispatchEvent(
+                  new CustomEvent("aegis:focus-symbol", {
+                    detail: { name: targetPath, line },
+                  }),
+                )
+              }}
+              onToggleBreakpoint={(line) => toggleBreakpoint(filename, line)}
+              onSave={() => saveFile(filename)}
+              onFind={() => openFind(focusedGroup, false)}
+              formatOnSave={formatOnSave}
+              insertSpaces={insertSpaces}
+            />
+          </div>
+        )}
         {minimapEnabled && (
           <Minimap
             clientHeight={scrollInfo.clientHeight}

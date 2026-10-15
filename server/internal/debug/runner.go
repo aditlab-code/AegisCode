@@ -107,6 +107,7 @@ type Runner struct {
 	Port     int
 	Cmd      *exec.Cmd
 	Cwd      string
+	Target   string
 	Client   *DAPClient
 	cancel   context.CancelFunc
 	doneChan chan struct{}
@@ -114,9 +115,44 @@ type Runner struct {
 
 // StartAdapter spawns a debug adapter process according to its configuration and establishes the DAP client.
 func StartAdapter(ctx context.Context, cfg DebugAdapterConfig, target, cwd string) (*Runner, *DAPClient, error) {
+	// If C/C++ source file is targeted, compile it with debug info before passing to lldb-dap
+	ext := strings.ToLower(filepath.Ext(target))
+	isCppSource := ext == ".c" || ext == ".cpp" || ext == ".cc" || ext == ".cxx"
+	if cfg.Language == "cpp" || isCppSource {
+		if isCppSource {
+			compiler := "clang++"
+			if ext == ".c" {
+				compiler = "clang"
+			}
+			targetSrc := target
+			if !filepath.IsAbs(targetSrc) && cwd != "" {
+				targetSrc = filepath.Join(cwd, targetSrc)
+			}
+			targetBin := strings.TrimSuffix(targetSrc, filepath.Ext(targetSrc))
+			if runtime.GOOS == "windows" {
+				targetBin += ".exe"
+			} else {
+				targetBin += ".out"
+			}
+			compileCmd := exec.CommandContext(ctx, compiler, "-g", "-O0", targetSrc, "-o", targetBin)
+			if cwd != "" {
+				compileCmd.Dir = cwd
+			}
+			var compileErr bytes.Buffer
+			compileCmd.Stderr = &compileErr
+			if err := compileCmd.Run(); err != nil {
+				errMsg := strings.TrimSpace(compileErr.String())
+				if errMsg != "" {
+					return nil, nil, fmt.Errorf("failed to compile C/C++ source (%s): %s", err, errMsg)
+				}
+				return nil, nil, fmt.Errorf("failed to compile C/C++ source: %w", err)
+			}
+			target = targetBin
+		}
+	}
+
 	var binPath string
 	var err error
-
 	if cfg.Language == "go" {
 		binPath, err = FindDelve()
 		if err != nil {
@@ -166,6 +202,7 @@ func StartAdapter(ctx context.Context, cfg DebugAdapterConfig, target, cwd strin
 		Port:     port,
 		Cmd:      cmd,
 		Cwd:      cwd,
+		Target:   target,
 		cancel:   sessionCancel,
 		doneChan: make(chan struct{}),
 	}
@@ -309,3 +346,9 @@ func (r *Runner) Close() error {
 	<-r.doneChan
 	return nil
 }
+
+// Done returns the channel that signals when the runner process exits.
+func (r *Runner) Done() <-chan struct{} {
+	return r.doneChan
+}
+

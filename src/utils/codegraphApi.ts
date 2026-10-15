@@ -6,7 +6,7 @@ import {
   triggerReindex,
 } from "../services/codegraphApi"
 
-const API_BASE = ""
+import { API_BASE } from "./apiBase"
 
 export interface UIGraphNode {
   id: string | number
@@ -220,43 +220,69 @@ export function extractCodeGraphTraceTargets(
   }
 }
 
+const CODEGRAPH_SUPPORTED_EXTENSIONS: Record<string, true> = {
+  ts: true,
+  tsx: true,
+  js: true,
+  jsx: true,
+  go: true,
+  py: true,
+  rs: true,
+  c: true,
+  cpp: true,
+  cc: true,
+  cxx: true,
+  h: true,
+  hpp: true,
+}
+
 export async function fetchActiveFileGraph(
   filePath: string,
   workspace?: string,
 ): Promise<UIGraphPayload | null> {
   const cleanPath = filePath.replace(/^\/+/, "")
-  const data = await fetchFileCode(cleanPath, undefined, workspace)
-  if (!data) return null
+  const ext = cleanPath.split(".").pop()?.toLowerCase() || ""
+  if (!CODEGRAPH_SUPPORTED_EXTENSIONS[ext]) {
+    return null
+  }
 
-  const nodes: UIGraphNode[] = (data.outline?.items || []).map((it: any) => ({
-    id: it.id,
-    name: it.name,
-    qualifiedName: it.qualifiedName || it.name,
-    kind: it.kind,
-    signature: it.signature || "",
-    filePath: it.file || cleanPath,
-    lineStart: it.line,
-    lineEnd: it.endLine,
-    isActive: false,
-  }))
+  try {
+    const data = await fetchFileCode(cleanPath, undefined, workspace)
+    if (!data || !data.outline?.items?.length) return null
 
-  const edges: UIGraphEdge[] = (data.calls?.items || []).map(
-    (call: any, idx: number) => ({
-      id: idx + 1,
-      sourceId: call.from,
-      targetId: call.to,
-      relation: call.kind || "calls",
-      line: call.line || 0,
-    }),
-  )
+    const nodes: UIGraphNode[] = (data.outline.items || []).map((it) => ({
+      id: it.id,
+      name: it.name,
+      qualifiedName: it.qualifiedName || it.name,
+      kind: it.kind,
+      signature: it.signature || "",
+      filePath: it.file || cleanPath,
+      lineStart: it.line,
+      lineEnd: it.endLine,
+      isActive: false,
+    }))
 
-  return {
-    rootId: cleanPath,
-    nodes,
-    edges,
-    truncated: false,
-    total: nodes.length,
-    engine: "colbymchenry/codegraph",
+    const edges: UIGraphEdge[] = (data.calls?.items || []).map(
+      (call, idx: number) => ({
+        id: idx + 1,
+        sourceId: call.from,
+        targetId: call.to,
+        relation: call.kind || "calls",
+        line: call.line || 0,
+      }),
+    )
+
+    return {
+      rootId: cleanPath,
+      nodes,
+      edges,
+      truncated: false,
+      total: nodes.length,
+      engine: "colbymchenry/codegraph",
+    }
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === "AbortError") throw err
+    return null
   }
 }
 

@@ -1380,6 +1380,43 @@ func TestLSPEndpoints(t *testing.T) {
 	if resp4.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp4.StatusCode)
 	}
+
+	// 5. LSP Save
+	saveBody := `{"path":"main.go","content":"package main\nfunc main(){}","language":"go"}`
+	resp5, err := http.Post(ts.URL+"/api/v1/lsp/save", "application/json", strings.NewReader(saveBody))
+	if err != nil {
+		t.Fatalf("failed to post lsp/save: %v", err)
+	}
+	defer resp5.Body.Close()
+	if resp5.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp5.StatusCode)
+	}
+
+	// 6. LSP Symbols
+	symbolsBody := `{"path":"main.go","language":"go"}`
+	resp6, err := http.Post(ts.URL+"/api/v1/lsp/symbols", "application/json", strings.NewReader(symbolsBody))
+	if err != nil {
+		t.Fatalf("failed to post lsp/symbols: %v", err)
+	}
+	defer resp6.Body.Close()
+	if resp6.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp6.StatusCode)
+	}
+	var symRes LSPSymbolsResponse
+	if err := json.NewDecoder(resp6.Body).Decode(&symRes); err != nil {
+		t.Fatalf("failed to decode symbols response: %v", err)
+	}
+
+	// 7. LSP Close
+	closeBody := `{"path":"main.go","language":"go"}`
+	resp7, err := http.Post(ts.URL+"/api/v1/lsp/close", "application/json", strings.NewReader(closeBody))
+	if err != nil {
+		t.Fatalf("failed to post lsp/close: %v", err)
+	}
+	defer resp7.Body.Close()
+	if resp7.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp7.StatusCode)
+	}
 }
 
 func TestWorkspaceFileRaw(t *testing.T) {

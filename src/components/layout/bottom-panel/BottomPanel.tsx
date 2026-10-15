@@ -21,6 +21,8 @@ import { OutputView } from "./OutputView"
 import { DebugConsoleView } from "./DebugConsoleView"
 import { McpPanelView } from "./McpPanelView"
 
+import { API_BASE } from "../../../utils/apiBase"
+
 const TerminalView = lazy(() => import("./TerminalView"))
 
 export function BottomPanel() {
@@ -151,7 +153,7 @@ export function BottomPanel() {
   )
 
   useEffect(() => {
-    const sse = new EventSource("/api/v1/events/logs")
+    const sse = new EventSource(`${API_BASE}/api/v1/events/logs`)
     sse.addEventListener("log", (event) => {
       try {
         const data = JSON.parse(event.data) as {
