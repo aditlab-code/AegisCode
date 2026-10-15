@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { DEFAULT_APP_SETTINGS } from "@/context/core/settingsCore"
+import { DEFAULT_APP_SETTINGS } from "@/store/slices/createSettingsSlice"
 import {
   matchesExcludePattern,
   extractSymbols,

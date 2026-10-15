@@ -2,6 +2,7 @@ import { useState, useCallback } from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { useWorkbenchStore, useShallow } from "../../../store"
+import type { GotoLineEventDetail } from "../../../types/workbench"
 
 interface BreakpointEntry {
   file: string
@@ -21,6 +22,7 @@ export function DebugSidePanel() {
     toggleBreakpoint,
     clearBreakpoints,
     setActiveDebugLine,
+    focusedGroup,
   } = useWorkbenchStore(
     useShallow((s) => ({
       debugState: s.debugState,
@@ -34,12 +36,22 @@ export function DebugSidePanel() {
       toggleBreakpoint: s.toggleBreakpoint,
       clearBreakpoints: s.clearBreakpoints,
       setActiveDebugLine: s.setActiveDebugLine,
+      focusedGroup: s.focusedGroup,
     })),
   )
 
   const [variablesOpen, setVariablesOpen] = useState(true)
   const [callStackOpen, setCallStackOpen] = useState(true)
   const [breakpointsOpen, setBreakpointsOpen] = useState(true)
+  const [expandedVarKeys, setExpandedVarKeys] =
+    useState<Record<string, boolean>>({})
+
+  const toggleVarExpand = useCallback((key: string) => {
+    setExpandedVarKeys((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }))
+  }, [])
 
   const stackFrames = debugState.stackFrames || []
   const variables = debugState.variables || []
@@ -63,19 +75,28 @@ export function DebugSidePanel() {
 
   const handleNavigateBreakpoint = useCallback(
     (file: string, line: number) => {
-      openFileInGroup(file)
-      setActiveDebugLine({ file, line })
+      openFileInGroup(file, focusedGroup)
+      window.dispatchEvent(
+        new CustomEvent<GotoLineEventDetail>("aegis:editor-goto-line", {
+          detail: { file, line, col: 1 },
+        }),
+      )
     },
-    [openFileInGroup, setActiveDebugLine],
+    [openFileInGroup, focusedGroup],
   )
 
   const handleNavigateFrame = useCallback(
     (file: string, line: number) => {
       if (!file) return
-      openFileInGroup(file)
+      openFileInGroup(file, focusedGroup)
       setActiveDebugLine({ file, line })
+      window.dispatchEvent(
+        new CustomEvent<GotoLineEventDetail>("aegis:editor-goto-line", {
+          detail: { file, line, col: 1 },
+        }),
+      )
     },
-    [openFileInGroup, setActiveDebugLine],
+    [openFileInGroup, focusedGroup, setActiveDebugLine],
   )
 
   return (
@@ -184,24 +205,40 @@ export function DebugSidePanel() {
                   : "No variables in scope"}
               </p>
             ) : (
-              variables.map((v, i) => (
-                <div
-                  key={`${v.name}-${i}`}
-                  className="flex items-baseline gap-2 px-1.5 py-0.5 rounded hover:bg-surface-hover text-ink"
-                >
-                  <span className="text-accent font-semibold shrink-0">
-                    {v.name}:
-                  </span>
-                  {v.type && (
-                    <span className="text-ink-muted text-[10px] shrink-0">
-                      ({v.type})
+              variables.map((v, i) => {
+                const varKey = `${v.name}-${i}`
+                const isExpanded = Boolean(expandedVarKeys[varKey])
+                return (
+                  <div
+                    key={varKey}
+                    onClick={() => toggleVarExpand(varKey)}
+                    className="flex items-baseline gap-2 px-1.5 py-0.5 rounded hover:bg-surface-hover text-ink cursor-pointer select-text transition-colors"
+                    title={
+                      isExpanded
+                        ? "Click to collapse"
+                        : `Click to expand: ${v.value}`
+                    }
+                  >
+                    <span className="text-accent font-semibold shrink-0">
+                      {v.name}:
                     </span>
-                  )}
-                  <span className="text-ink truncate font-mono" title={v.value}>
-                    {v.value}
-                  </span>
-                </div>
-              ))
+                    {v.type && (
+                      <span className="text-ink-muted text-[10px] shrink-0">
+                        ({v.type})
+                      </span>
+                    )}
+                    <span
+                      className={`text-ink font-mono ${
+                        isExpanded
+                          ? "break-all whitespace-pre-wrap"
+                          : "truncate"
+                      }`}
+                    >
+                      {v.value}
+                    </span>
+                  </div>
+                )
+              })
             )}
           </div>
         )}

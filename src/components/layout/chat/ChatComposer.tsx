@@ -61,11 +61,23 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
 
   const isProviderConfigured = useCallback(() => {
     if (!settings?.agent) return true
-    if (activeProvider === "openrouter") {
-      return Boolean(settings.agent.providerKeys?.openrouter?.trim())
+    const provider = activeProvider as string
+    const keys = settings.agent.providerKeys || {}
+
+    if (provider === "claude") {
+      return Boolean(keys.claude?.trim() || keys.anthropic?.trim())
     }
-    if (activeProvider === "opencode") {
-      return Boolean(settings.agent.providerKeys?.opencode?.trim())
+    if (provider === "openai") {
+      return Boolean(keys.openai?.trim())
+    }
+    if (provider === "gemini") {
+      return Boolean(keys.gemini?.trim() || keys.google?.trim())
+    }
+    if (provider === "openrouter") {
+      return Boolean(keys.openrouter?.trim())
+    }
+    if (provider === "opencode") {
+      return Boolean(keys.opencode?.trim())
     }
     return true
   }, [activeProvider, settings])

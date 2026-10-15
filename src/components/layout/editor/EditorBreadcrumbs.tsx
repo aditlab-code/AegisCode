@@ -264,7 +264,11 @@ export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
                       if (typeof window !== "undefined") {
                         window.dispatchEvent(
                           new CustomEvent("aegis:editor-goto-line", {
-                            detail: { file, line: sym.lineStart, col: 1 },
+                            detail: {
+                              file: currentFile,
+                              line: sym.lineStart,
+                              col: 1,
+                            },
                           }),
                         )
                       }

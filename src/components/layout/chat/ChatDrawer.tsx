@@ -10,7 +10,7 @@ import {
   DEFAULT_CHAT_EXPANDED_WIDTH,
   MIN_CHAT_EXPANDED_WIDTH,
   COLLAPSE_CHAT_EXPANDED_THRESHOLD,
-} from "../../../context/core/layoutCore"
+} from "../../../store/slices/createLayoutSlice"
 import { ChatHeader } from "./ChatHeader"
 import { ChatMessageList } from "./ChatMessageList"
 import { ChatComposer } from "./ChatComposer"

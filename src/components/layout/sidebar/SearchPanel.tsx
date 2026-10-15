@@ -1,13 +1,14 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
-import { useWorkbenchStore, useShallow } from "../../../store"
+import { useWorkbenchStore, useShallow } from "@/store"
 import {
   searchWorkspace,
   replaceAllWorkspace,
   fetchFileContent,
   saveWorkspaceFile,
 } from "../../../utils/workspaceApi"
+import type { GotoLineEventDetail } from "../../../types/workbench"
 
 interface MatchItem {
   filename: string
@@ -532,6 +533,27 @@ export function SearchPanel() {
                               line: match.lineNumber,
                               col: match.column,
                             })
+                            if (typeof window !== "undefined") {
+                              const detail: GotoLineEventDetail = {
+                                file: match.filename,
+                                line: match.lineNumber,
+                                col: match.column,
+                              }
+                              window.dispatchEvent(
+                                new CustomEvent<GotoLineEventDetail>(
+                                  "aegis:editor-goto-line",
+                                  { detail },
+                                ),
+                              )
+                              setTimeout(() => {
+                                window.dispatchEvent(
+                                  new CustomEvent<GotoLineEventDetail>(
+                                    "aegis:editor-goto-line",
+                                    { detail },
+                                  ),
+                                )
+                              }, 50)
+                            }
                             showToast(
                               `Jumped to ${match.filename} [Ln ${match.lineNumber}]`,
                             )

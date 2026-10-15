@@ -8,7 +8,7 @@ import {
 } from "react"
 import { createPortal } from "react-dom"
 import { Icon } from "../../ui/Icon"
-import { useWorkbenchStore, useShallow } from "../../../store"
+import { useWorkbenchStore, useShallow } from "@/store"
 import type {
   FileItem,
   GitCommitNode,
@@ -358,6 +358,11 @@ export function ExplorerPanel() {
     null,
   )
   const [createName, setCreateName] = useState("")
+  const [parentFolder, setParentFolder] = useState<string | null>(null)
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
+
+  // Guard ref for race conditions on inline create/rename blur vs Enter/Escape
+  const isSubmittingRef = useRef(false)
 
   // Inline rename state
   const [renamingFile, setRenamingFile] = useState<string | null>(null)
@@ -479,6 +484,14 @@ export function ExplorerPanel() {
 
   const handleCollapseAllFolders = useCallback(() => {
     setExpandedFolders({})
+  }, [])
+
+  useEffect(() => {
+    const handleCollapse = () => setExpandedFolders({})
+    window.addEventListener("aegis:explorer-collapse-all", handleCollapse)
+    return () => {
+      window.removeEventListener("aegis:explorer-collapse-all", handleCollapse)
+    }
   }, [])
 
   const excludePatterns = settings?.files?.exclude ?? []
@@ -646,36 +659,90 @@ export function ExplorerPanel() {
     return lexical.length > 0 ? lexical : codeGraphSymbols
   }, [fileBuffers, currentTab, activeEditorFile, codeGraphSymbols])
 
-  function handleCreateSubmit() {
+  const handleCreateSubmit = useCallback(() => {
+    if (isSubmittingRef.current) return
+    isSubmittingRef.current = true
+
     const name = createName.trim()
     if (name && creatingType) {
-      createFile(name, creatingType === "folder")
-      expandParents(name)
+      const cleanParent = parentFolder ? parentFolder.replace(/\/+$/, "") : ""
+      let finalName = name
+      if (cleanParent && !name.startsWith(cleanParent + "/")) {
+        finalName = `${cleanParent}/${name.replace(/^\/+/, "")}`
+      }
+      createFile(finalName, creatingType === "folder")
+      expandParents(finalName)
     }
     setCreatingType(null)
     setCreateName("")
-  }
+    setParentFolder(null)
 
-  function handleRenameSubmit(oldName: string) {
-    const next = renameValue.trim()
-    if (next && next !== oldName) {
-      renameFile(oldName, next)
-    }
+    setTimeout(() => {
+      isSubmittingRef.current = false
+    }, 50)
+  }, [createName, creatingType, parentFolder, createFile, expandParents])
+
+  const handleCreateCancel = useCallback(() => {
+    isSubmittingRef.current = true
+    setCreatingType(null)
+    setCreateName("")
+    setParentFolder(null)
+    setTimeout(() => {
+      isSubmittingRef.current = false
+    }, 50)
+  }, [])
+
+  const handleRenameSubmit = useCallback(
+    (oldName: string) => {
+      if (isSubmittingRef.current) return
+      isSubmittingRef.current = true
+
+      const next = renameValue.trim()
+      if (next && next !== oldName) {
+        renameFile(oldName, next)
+      }
+      setRenamingFile(null)
+      setRenameValue("")
+
+      setTimeout(() => {
+        isSubmittingRef.current = false
+      }, 50)
+    },
+    [renameValue, renameFile],
+  )
+
+  const handleRenameCancel = useCallback(() => {
+    isSubmittingRef.current = true
     setRenamingFile(null)
     setRenameValue("")
-  }
+    setTimeout(() => {
+      isSubmittingRef.current = false
+    }, 50)
+  }, [])
 
   function handleRowContextMenu(e: MouseEvent, file: FileItem) {
     e.preventDefault()
     e.stopPropagation()
-    // Calculate position clamped securely to window viewport
+    const isFolder = file.type === "folder" || file.icon === "folder"
     const menuWidth = 180
-    const menuHeight = 210
+    const menuHeight = isFolder ? 270 : 210
     const winWidth = typeof window !== "undefined" ? window.innerWidth : 1280
     const winHeight = typeof window !== "undefined" ? window.innerHeight : 800
     const x = Math.max(8, Math.min(e.clientX, winWidth - menuWidth - 8))
     const y = Math.max(8, Math.min(e.clientY, winHeight - menuHeight - 8))
     setContextMenu({ x, y, file })
+  }
+
+  function handleContextMenuCreate(type: "file" | "folder", folder: FileItem) {
+    const folderPath = folder.path || folder.label
+    isSubmittingRef.current = false
+    setParentFolder(folderPath)
+    setSelectedFolder(folderPath)
+    setCreatingType(type)
+    setCreateName("")
+    setWorkspaceOpen(true)
+    setExpandedFolders((prev) => ({ ...prev, [folderPath]: true }))
+    setContextMenu(null)
   }
 
   function handleCopyFullPath(file: FileItem) {
@@ -701,6 +768,7 @@ export function ExplorerPanel() {
   }
 
   function triggerRename(file: FileItem) {
+    isSubmittingRef.current = false
     setRenamingFile(file.path || file.label)
     setRenameValue(file.label)
     setContextMenu(null)
@@ -940,6 +1008,14 @@ export function ExplorerPanel() {
           <button
             className="action-icon-btn"
             onClick={() => {
+              isSubmittingRef.current = false
+              setParentFolder(selectedFolder)
+              if (selectedFolder) {
+                setExpandedFolders((prev) => ({
+                  ...prev,
+                  [selectedFolder]: true,
+                }))
+              }
               setCreatingType("file")
               setCreateName("")
               setWorkspaceOpen(true)
@@ -952,6 +1028,14 @@ export function ExplorerPanel() {
           <button
             className="action-icon-btn"
             onClick={() => {
+              isSubmittingRef.current = false
+              setParentFolder(selectedFolder)
+              if (selectedFolder) {
+                setExpandedFolders((prev) => ({
+                  ...prev,
+                  [selectedFolder]: true,
+                }))
+              }
               setCreatingType("folder")
               setCreateName("")
               setWorkspaceOpen(true)
@@ -1084,7 +1168,17 @@ export function ExplorerPanel() {
           {creatingType && (
             <div
               className="file-row file-create-row"
-              style={{ paddingLeft: "24px" }}
+              style={{
+                paddingLeft: `${
+                  24 +
+                  (parentFolder
+                    ? ((files.find((f) => (f.path || f.label) === parentFolder)
+                        ?.depth ?? -1) +
+                        1) *
+                      14
+                    : 0)
+                }px`,
+              }}
             >
               <span
                 className={
@@ -1099,14 +1193,31 @@ export function ExplorerPanel() {
               <input
                 autoFocus
                 className="inline-input"
-                onBlur={handleCreateSubmit}
+                onBlur={() => {
+                  if (!isSubmittingRef.current) {
+                    handleCreateSubmit()
+                  }
+                }}
                 onChange={(e) => setCreateName(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") handleCreateSubmit()
-                  if (e.key === "Escape") setCreatingType(null)
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    handleCreateSubmit()
+                  } else if (e.key === "Escape") {
+                    e.preventDefault()
+                    handleCreateCancel()
+                  }
                 }}
                 placeholder={
-                  creatingType === "folder" ? "folder-name" : "filename.ts"
+                  parentFolder
+                    ? `${parentFolder}/${
+                        creatingType === "folder"
+                          ? "folder-name"
+                          : "filename.ts"
+                      }`
+                    : creatingType === "folder"
+                      ? "folder-name"
+                      : "filename.ts"
                 }
                 value={createName}
               />
@@ -1145,20 +1256,24 @@ export function ExplorerPanel() {
                 gitStatusMap.get(normalizePath(file.label))
               : null
 
+            const isSelected = selectedFolder === fileKey
+
             return (
               <div
                 className={`file-row ${isCurrent ? "file-active" : ""} ${
                   isContextTarget ? "file-context-active" : ""
-                } ${isHidden ? "file-muted" : ""} ${
-                  isDropTarget ? "file-drop-target" : ""
-                }`}
+                } ${isSelected ? "file-selected" : ""} ${
+                  isHidden ? "file-muted" : ""
+                } ${isDropTarget ? "file-drop-target" : ""}`}
                 draggable={!isRenaming}
                 key={fileKey}
                 onClick={() => {
                   if (isRenaming) return
                   if (isFolder) {
+                    setSelectedFolder(fileKey)
                     toggleFolder(fileKey)
                   } else {
+                    setSelectedFolder(null)
                     openFileInGroup(fileKey, focusedGroup)
                   }
                 }}
@@ -1246,12 +1361,21 @@ export function ExplorerPanel() {
                   <input
                     autoFocus
                     className="inline-input"
-                    onBlur={() => handleRenameSubmit(fileKey)}
+                    onBlur={() => {
+                      if (!isSubmittingRef.current) {
+                        handleRenameSubmit(fileKey)
+                      }
+                    }}
                     onChange={(e) => setRenameValue(e.target.value)}
                     onClick={(e) => e.stopPropagation()}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") handleRenameSubmit(fileKey)
-                      if (e.key === "Escape") setRenamingFile(null)
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        handleRenameSubmit(fileKey)
+                      } else if (e.key === "Escape") {
+                        e.preventDefault()
+                        handleRenameCancel()
+                      }
                     }}
                     value={renameValue}
                   />
@@ -1301,6 +1425,32 @@ export function ExplorerPanel() {
             style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
           >
             <div className="context-menu-header">{contextMenu.file.label}</div>
+            {(contextMenu.file.type === "folder" ||
+              contextMenu.file.icon === "folder") && (
+              <>
+                <button
+                  className="context-menu-item"
+                  onClick={() =>
+                    handleContextMenuCreate("file", contextMenu.file)
+                  }
+                  type="button"
+                >
+                  <Icon name="code" size={12} />
+                  <span>New File</span>
+                </button>
+                <button
+                  className="context-menu-item"
+                  onClick={() =>
+                    handleContextMenuCreate("folder", contextMenu.file)
+                  }
+                  type="button"
+                >
+                  <Icon name="plus" size={12} />
+                  <span>New Folder</span>
+                </button>
+                <div className="context-menu-separator" />
+              </>
+            )}
             <button
               className="context-menu-item"
               onClick={() => handleCopyName(contextMenu.file)}

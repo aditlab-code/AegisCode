@@ -43,6 +43,7 @@ type Server struct {
 	codegraph  *codegraph.Manager
 	mcp        *mcp.Server
 	pairing      *PairingManager
+	eventHub     *EventHub
 	logMu        sync.RWMutex
 	logSubs      map[chan LogEvent]struct{}
 	workerMu     sync.RWMutex
@@ -80,6 +81,7 @@ func NewServer(ws *workspace.Manager, picker platform.FolderPicker, customStore 
 		codegraph:  codegraph.NewManager(rootPath),
 		mcp:        mcp.NewServer(rootPath),
 		pairing:    NewPairingManager(8080),
+		eventHub:   NewEventHub(),
 		logSubs:    make(map[chan LogEvent]struct{}),
 		workerSubs: make(map[chan supervisor.CrashEvent]struct{}),
 		mcpSubs:    make(map[chan map[string]any]struct{}),
@@ -93,7 +95,13 @@ func NewServer(ws *workspace.Manager, picker platform.FolderPicker, customStore 
 			s.lsp.SetCustomServers(cfg.LspServers)
 		}
 	}
+	s.initEventHubBridges()
 	return s
+}
+
+// EventHub returns the active centralized event broker.
+func (s *Server) EventHub() *EventHub {
+	return s.eventHub
 }
 
 // Pairing returns the companion pairing and session manager.
@@ -133,6 +141,10 @@ func (s *Server) SetShutdownChannel(ch chan struct{}) {
 
 // BroadcastWorkerCrash dispatches a structured crash event to worker event subscribers.
 func (s *Server) BroadcastWorkerCrash(evt supervisor.CrashEvent) {
+	if s.eventHub != nil {
+		s.eventHub.Publish("workers", "crash", evt)
+	}
+
 	s.workerMu.RLock()
 	defer s.workerMu.RUnlock()
 
@@ -156,6 +168,10 @@ func (s *Server) BroadcastLog(channel, message, level string) {
 		Message:   message,
 		Timestamp: time.Now().Format("15:04:05"),
 		Level:     level,
+	}
+
+	if s.eventHub != nil {
+		s.eventHub.Publish("logs", "log", evt)
 	}
 
 	s.logMu.RLock()
@@ -326,6 +342,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/events/logs", s.handleLogsEvents)
 	mux.HandleFunc("/api/v1/events/workspace", s.handleWorkspaceEvents)
 	mux.HandleFunc("/api/v1/events/workers", s.handleWorkerEvents)
+	mux.HandleFunc("/api/v1/events", s.handleUnifiedEvents)
 
 	// Worker Supervisor API endpoints
 	mux.HandleFunc("/api/v1/workers", s.handleWorkersList)
@@ -3003,6 +3020,11 @@ func (s *Server) broadcastMCPEvent(tool string, args map[string]any) {
 		"args":      args,
 		"timestamp": time.Now().Unix(),
 	}
+
+	if s.eventHub != nil {
+		s.eventHub.Publish("mcp", "tool_invoked", evt)
+	}
+
 	s.mcpMu.RLock()
 	defer s.mcpMu.RUnlock()
 	for ch := range s.mcpSubs {
@@ -3010,6 +3032,51 @@ func (s *Server) broadcastMCPEvent(tool string, args map[string]any) {
 		case ch <- evt:
 		default:
 		}
+	}
+}
+
+// BroadcastMCPEvent dispatches an MCP tool call event to MCP subscribers and the unified event hub.
+func (s *Server) BroadcastMCPEvent(tool string, args map[string]any) {
+	s.broadcastMCPEvent(tool, args)
+}
+
+// initEventHubBridges connects workspace changes, debug events, and LSP diagnostics to the unified event hub.
+func (s *Server) initEventHubBridges() {
+	if s.eventHub == nil {
+		return
+	}
+
+	if s.ws != nil {
+		wsCh, _ := s.ws.SubscribeEvents()
+		go func() {
+			for evt := range wsCh {
+				if s.eventHub != nil {
+					s.eventHub.Publish("workspace", "change", evt)
+				}
+			}
+		}()
+	}
+
+	if s.debug != nil {
+		dbgCh, _ := s.debug.Subscribe()
+		go func() {
+			for evt := range dbgCh {
+				if s.eventHub != nil {
+					s.eventHub.Publish("debug", evt.Type, evt)
+				}
+			}
+		}()
+	}
+
+	if s.lsp != nil {
+		lspCh, _ := s.lsp.SubscribeDiagnostics()
+		go func() {
+			for diag := range lspCh {
+				if s.eventHub != nil {
+					s.eventHub.Publish("lsp", "diagnostics", diag)
+				}
+			}
+		}()
 	}
 }
 

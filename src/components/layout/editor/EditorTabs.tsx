@@ -50,6 +50,8 @@ export function EditorTabs({
     rootWorkspacePath,
     setActiveActivity,
     setSidebarOpen,
+    pinnedTabs,
+    togglePinTab,
   } = useWorkbenchStore(
     useShallow((s) => ({
       group1: s.group1,
@@ -73,25 +75,14 @@ export function EditorTabs({
       rootWorkspacePath: s.rootWorkspacePath,
       setActiveActivity: s.setActiveActivity,
       setSidebarOpen: s.setSidebarOpen,
+      pinnedTabs: s.pinnedTabs,
+      togglePinTab: s.togglePinTab,
     })),
   )
 
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [isDropTarget, setIsDropTarget] = useState(false)
   const [contextMenu, setContextMenu] = useState<ContextMenuData | null>(null)
-  const [pinnedTabs, setPinnedTabs] = useState<Set<string>>(() => new Set())
-
-  const togglePinTab = (tabName: string) => {
-    setPinnedTabs((prev) => {
-      const next = new Set(prev)
-      if (next.has(tabName)) {
-        next.delete(tabName)
-      } else {
-        next.add(tabName)
-      }
-      return next
-    })
-  }
   const [runMenuOpen, setRunMenuOpen] = useState(false)
   const [preferredRunMode, setPreferredRunMode] =
     useState<"terminal" | "debug">(() => {
@@ -541,7 +532,7 @@ export function EditorTabs({
               className="context-menu-item"
               onClick={() => {
                 const others = currentGroup.tabs.filter(
-                  (t) => t !== contextMenu.tab,
+                  (t) => t !== contextMenu.tab && !pinnedTabs.has(t),
                 )
                 for (const t of others) {
                   closeTabInGroup(currentGroup.id, t)
@@ -556,8 +547,10 @@ export function EditorTabs({
             <button
               className="context-menu-item"
               onClick={() => {
-                const all = [...currentGroup.tabs]
-                for (const t of all) {
+                const toClose = currentGroup.tabs.filter(
+                  (t) => !pinnedTabs.has(t),
+                )
+                for (const t of toClose) {
                   closeTabInGroup(currentGroup.id, t)
                 }
                 setContextMenu(null)

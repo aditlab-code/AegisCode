@@ -121,34 +121,21 @@ export function BottomPanel() {
   }, [resetBottomPanelHeight])
 
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
-  const [newShell, setNewShell] = useState<string>("zsh")
+  const [newShell, setNewShell] = useState<string>(() =>
+    typeof navigator !== "undefined" &&
+    /(win32|win64|windows|wow64)/i.test(
+      navigator.userAgent || navigator.platform || "",
+    )
+      ? "powershell"
+      : "zsh",
+  )
   const [outputChannel, setOutputChannel] = useState<OutputChannel>("Server")
   const [outputLogs, setOutputLogs] = useState<Record<OutputChannel, string[]>>(
     {
-      Server: [
-        "[10:38:00] AegisCode Go Core Server connected on http://localhost:8080",
-        "[10:38:00] PTY Process Supervisor and SSE event pipelines active",
-      ],
-      Linter: [
-        "[10:42:08] Starting incremental lint across 5 language profiles",
-        "[10:42:08] TypeScript · ESLint adapter ready",
-        "[10:42:08] JavaScript · ESLint adapter ready",
-        "[10:42:08] Python · Ruff adapter ready",
-        "[10:42:08] JSON · parser ready",
-        "[10:42:08] C++ · clang-tidy adapter ready",
-      ],
-      Tasks: [
-        "[10:40:02] [vite] vite v8.3.4 building client environment for production...",
-        "[10:40:03] [server] Local development server running at http://localhost:4173/",
-        "[10:40:03] [watcher] File watcher active on src/ directory",
-        "[10:40:04] [ready] Dev server ready in 312 ms",
-      ],
-      Git: [
-        "[10:39:15] git status --short",
-        "[10:39:15]  M src/App.tsx",
-        "[10:39:15]  M src/index.css",
-        "[10:39:16] On branch main: Your branch is up to date with 'origin/main'.",
-      ],
+      Server: [],
+      Linter: [],
+      Tasks: [],
+      Git: [],
     },
   )
 
@@ -294,6 +281,9 @@ export function BottomPanel() {
                   <option value="bash">bash</option>
                   <option value="fish">fish</option>
                   <option value="sh">sh</option>
+                  <option value="pwsh">pwsh</option>
+                  <option value="powershell">powershell</option>
+                  <option value="cmd">cmd</option>
                 </select>
                 <IconButton
                   label={`New ${newShell} session`}

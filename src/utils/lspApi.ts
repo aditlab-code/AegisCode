@@ -58,6 +58,15 @@ export async function notifyLspOpen(
   }
 }
 
+export interface LspDocumentSymbol {
+  name: string
+  detail?: string
+  kind: number
+  range: LspRange
+  selectionRange: LspRange
+  children?: LspDocumentSymbol[]
+}
+
 export async function notifyLspChange(
   path: string,
   content: string,
@@ -71,6 +80,55 @@ export async function notifyLspChange(
     })
   } catch (err) {
     // Graceful background sync failure
+  }
+}
+
+export async function notifyLspDidSave(
+  path: string,
+  content: string,
+  language: string,
+): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/api/v1/lsp/save`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, content, language }),
+    })
+  } catch (err) {
+    // Graceful background sync failure
+  }
+}
+
+export async function notifyLspDidClose(
+  path: string,
+  language: string,
+): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/api/v1/lsp/close`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, language }),
+    })
+  } catch (err) {
+    // Graceful background sync failure
+  }
+}
+
+export async function fetchLspSymbols(
+  path: string,
+  language: string,
+): Promise<LspDocumentSymbol[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/lsp/symbols`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, language }),
+    })
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.symbols || []
+  } catch (err) {
+    return []
   }
 }
 

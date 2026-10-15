@@ -164,7 +164,13 @@ function computeContextItems(
       }
     }
   }
-  items.push(...manualMentions)
+  const seenIds = new Set(items.map((i) => i.id))
+  for (const mention of manualMentions) {
+    if (!seenIds.has(mention.id)) {
+      items.push(mention)
+      seenIds.add(mention.id)
+    }
+  }
   return items
 }
 

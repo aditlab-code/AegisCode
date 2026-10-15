@@ -70,4 +70,58 @@ describe("validateSyntax JS/TS delimiter and token handling", () => {
       ),
     ).toBe(true)
   })
+
+  describe("Python syntax validation and multi-line headers", () => {
+    it("does not report false errors for multi-line function signatures", () => {
+      const code = `
+def calculate_metrics(
+    records: list,
+    threshold: float = 0.5,
+    tag: str = "metric (default)"
+):
+    return len(records)
+`
+      const diags = validateSyntax("model.py", code)
+      const errors = diags.filter((d) => d.type === "error")
+      expect(errors).toHaveLength(0)
+    })
+
+    it("does not report false errors for multi-line if statements with parentheses", () => {
+      const code = `
+if (
+    user.is_active and
+    user.role == "admin"
+):
+    proceed()
+`
+      const diags = validateSyntax("auth.py", code)
+      const errors = diags.filter((d) => d.type === "error")
+      expect(errors).toHaveLength(0)
+    })
+
+    it("reports real syntax error when multi-line function header misses colon", () => {
+      const broken = `
+def broken_fn(
+    a: int,
+    b: int
+)
+    return a + b
+`
+      const diags = validateSyntax("broken.py", broken)
+      const errors = diags.filter(
+        (d) => d.type === "error" && d.title.includes("expected ':'"),
+      )
+      expect(errors.length).toBeGreaterThan(0)
+    })
+
+    it("reports real syntax error when single-line def misses colon", () => {
+      const broken = `def simple(x)`
+      const diags = validateSyntax("broken.py", broken)
+      expect(
+        diags.some(
+          (d) => d.type === "error" && d.title.includes("expected ':'"),
+        ),
+      ).toBe(true)
+    })
+  })
 })

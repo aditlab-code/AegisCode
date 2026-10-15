@@ -2,21 +2,25 @@ import { useCallback, useRef } from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { ResizeSash } from "../../ui/ResizeSash"
-import { useWorkbenchStore, useShallow } from "../../../store"
+import { useWorkbenchStore, useShallow } from "@/store"
 import {
   DEFAULT_SIDEBAR_WIDTH,
   MIN_SIDEBAR_WIDTH,
   MAX_SIDEBAR_WIDTH,
   COLLAPSE_SIDEBAR_THRESHOLD,
-} from "../../../context/core/layoutCore"
+} from "@/store/slices/createLayoutSlice"
+import type { ActivityType } from "../../../types/workbench"
 import { ExplorerPanel } from "./ExplorerPanel"
 import { SearchPanel } from "./SearchPanel"
 import { SourceControlPanel } from "./SourceControlPanel"
 import { DebugSidePanel } from "./DebugSidePanel"
 
-export function Sidebar() {
+export function Sidebar({ activeActivity: overrideActivity }: {
+  activeActivity?: ActivityType
+} = {}) {
+  const storeActivity = useWorkbenchStore((s) => s.activeActivity)
+  const activeActivity = overrideActivity ?? storeActivity
   const {
-    activeActivity,
     sidebarWidth,
     setSidebarWidth,
     resetSidebarWidth,
@@ -25,7 +29,6 @@ export function Sidebar() {
     chatDrawerWidth,
   } = useWorkbenchStore(
     useShallow((s) => ({
-      activeActivity: s.activeActivity,
       sidebarWidth: s.sidebarWidth,
       setSidebarWidth: s.setSidebarWidth,
       resetSidebarWidth: s.resetSidebarWidth,
@@ -84,14 +87,26 @@ export function Sidebar() {
     }
   }, [setSidebarOpen, setSidebarWidth])
 
+  const handlePanelAction = useCallback(() => {
+    if (activeActivity === "Explorer") {
+      useWorkbenchStore.getState().refreshWorkspace?.()
+      window.dispatchEvent(new CustomEvent("aegis:explorer-collapse-all"))
+    }
+  }, [activeActivity])
+
   return (
     <aside className="side-panel">
-      <div className="panel-title">
-        <span>{activeActivity}</span>
-        <IconButton label={`More ${activeActivity} actions`}>
-          <Icon name="more" />
-        </IconButton>
-      </div>
+      {activeActivity !== "Source Control" && (
+        <div className="panel-title">
+          <span>{activeActivity}</span>
+          <IconButton
+            label={`More ${activeActivity} actions`}
+            onClick={handlePanelAction}
+          >
+            <Icon name="more" />
+          </IconButton>
+        </div>
+      )}
 
       {activeActivity === "Explorer" && <ExplorerPanel />}
       {activeActivity === "Search" && <SearchPanel />}

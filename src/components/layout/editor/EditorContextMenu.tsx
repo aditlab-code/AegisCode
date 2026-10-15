@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react"
 import { createPortal } from "react-dom"
 import { Icon } from "../../ui/Icon"
 import { useWorkbenchStore } from "../../../store"
-import type { IconName } from "../../../types/workbench"
+import type { ContextItem, IconName } from "../../../types/workbench"
 
 interface EditorContextMenuProps {
   x: number
@@ -110,6 +110,55 @@ export function EditorContextMenu({
         },
       }),
     )
+
+    const store = useWorkbenchStore.getState()
+    store.setChatOpen(true)
+
+    if (selectedText && selectedText.trim().length > 0) {
+      const lineCount = selectedText.split("\n").length
+      const endLine = line > 0 ? line + lineCount - 1 : 1
+      const lineRangeStr =
+        line > 0
+          ? lineCount > 1
+            ? `Ln ${line}–${endLine}`
+            : `Ln ${line}`
+          : undefined
+
+      store.setSelection({
+        startLine: line > 0 ? line : 1,
+        endLine,
+        selectedText,
+      })
+
+      const snippetItem: ContextItem = {
+        id: `ctx-${filename}-selection`,
+        type: "selection",
+        path: filename,
+        lineRange: lineRangeStr,
+        content: selectedText,
+        charCount: selectedText.length,
+        estimatedTokens: Math.max(1, Math.ceil(selectedText.length / 4)),
+        mode: "selection",
+      }
+
+      const curMentions = store.manualMentions || []
+      const nextMentions = [
+        ...curMentions.filter((m) => m.id !== snippetItem.id),
+        snippetItem,
+      ]
+
+      useWorkbenchStore.setState((s) => ({
+        manualMentions: nextMentions,
+        contextModeOverrides: {
+          ...s.contextModeOverrides,
+          [filename]: "selection",
+        },
+      }))
+
+      if (typeof store.syncContextItems === "function") {
+        store.syncContextItems()
+      }
+    }
   }
 
   return createPortal(

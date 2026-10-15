@@ -64,41 +64,41 @@ export function CodePane({
     showToast,
     theme,
   } = useWorkbenchStore(
-    useShallow((s) => ({
-      buffer:
-        s.fileBuffers[filename] ||
-        (s.rootWorkspacePath
-          ? s.fileBuffers[normalizeWorkspacePath(filename, s.rootWorkspacePath)]
-          : undefined) ||
-        s.fileBuffers[filename.split("/").pop() || ""],
-      ensureFileBuffer: s.ensureFileBuffer,
-      rootWorkspacePath: s.rootWorkspacePath,
-      updateFileContent: s.updateFileContent,
-      setCursorPosition: s.setCursorPosition,
-      setSelection: s.setSelection,
-      diagnostics: s.diagnostics,
-      setFocusedPane: s.setFocusedPane,
-      saveFile: s.saveFile,
-      revertFile: s.revertFile,
-      tabs: s.tabs,
-      setSecondaryActiveTab: s.setSecondaryActiveTab,
-      minimapEnabled: s.minimapEnabled,
-      minimapScale: s.minimapScale,
-      openFind: s.openFind,
-      focusedGroup: s.focusedGroup,
-      tabSize: s.tabSize,
-      settings: s.settings,
-      fileBreakpoints: s.breakpoints[filename] ?? EMPTY_BREAKPOINTS,
-      toggleBreakpoint: s.toggleBreakpoint,
-      activeDebugLine: s.activeDebugLine,
-      openFileInPane: s.openFileInPane,
-      cursorPosition: s.cursorPosition,
-      selection: s.selection,
-      sendChatMessage: s.sendChatMessage,
-      setChatOpen: s.setChatOpen,
-      showToast: s.showToast,
-      theme: s.theme,
-    })),
+    useShallow((s) => {
+      const clean = s.rootWorkspacePath
+        ? normalizeWorkspacePath(filename, s.rootWorkspacePath)
+        : filename
+      return {
+        buffer: s.fileBuffers[clean] || s.fileBuffers[filename],
+        ensureFileBuffer: s.ensureFileBuffer,
+        rootWorkspacePath: s.rootWorkspacePath,
+        updateFileContent: s.updateFileContent,
+        setCursorPosition: s.setCursorPosition,
+        setSelection: s.setSelection,
+        diagnostics: s.diagnostics,
+        setFocusedPane: s.setFocusedPane,
+        saveFile: s.saveFile,
+        revertFile: s.revertFile,
+        tabs: s.tabs,
+        setSecondaryActiveTab: s.setSecondaryActiveTab,
+        minimapEnabled: s.minimapEnabled,
+        minimapScale: s.minimapScale,
+        openFind: s.openFind,
+        focusedGroup: s.focusedGroup,
+        tabSize: s.tabSize,
+        settings: s.settings,
+        fileBreakpoints: s.breakpoints[filename] ?? EMPTY_BREAKPOINTS,
+        toggleBreakpoint: s.toggleBreakpoint,
+        activeDebugLine: s.activeDebugLine,
+        openFileInPane: s.openFileInPane,
+        cursorPosition: s.cursorPosition,
+        selection: s.selection,
+        sendChatMessage: s.sendChatMessage,
+        setChatOpen: s.setChatOpen,
+        showToast: s.showToast,
+        theme: s.theme,
+      }
+    }),
   )
 
   const isDark = theme !== "light"
@@ -144,7 +144,12 @@ export function CodePane({
   useEffect(() => {
     if (
       filename &&
-      (!buffer || (buffer.content === "" && !buffer.isDirty)) &&
+      (!buffer ||
+        buffer.status === "idle" ||
+        (buffer.content === "" &&
+          !buffer.isDirty &&
+          buffer.status !== "ready" &&
+          buffer.status !== "loading")) &&
       typeof ensureFileBuffer === "function"
     ) {
       void ensureFileBuffer(filename)
@@ -600,7 +605,7 @@ export function CodePane({
           } as React.CSSProperties
         }
       >
-        {!buffer ? (
+        {!buffer || buffer.status === "loading" ? (
           <div className="flex-1 w-full h-full flex flex-col items-center justify-center bg-canvas text-ink-muted text-xs gap-2 select-none">
             <span className="animate-spin text-accent">
               <Icon name="refresh" size={16} />

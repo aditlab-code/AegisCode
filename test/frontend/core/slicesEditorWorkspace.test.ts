@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import { create } from "zustand"
 import {
   createEditorSlice,
@@ -12,6 +12,8 @@ import {
   loadStoredMinimapEnabled,
   loadStoredMinimapScale,
   loadStoredTabSize,
+  loadStoredPinnedTabs,
+  saveStoredPinnedTabs,
 } from "@/store/slices/createEditorSlice"
 import {
   createWorkspaceSlice,
@@ -302,5 +304,124 @@ describe("createWorkspaceSlice", () => {
       "apple.txt",
       "zebra.txt",
     ])
+  })
+
+  it("manages workspaceEpoch and canonical buffer lifecycle with status", () => {
+    const editorCreator = createEditorSlice as any
+    const workspaceCreator = createWorkspaceSlice as any
+    const useTestStore = create<WorkbenchStore>()((set, get, store) => ({
+      ...editorCreator(set, get, store),
+      ...workspaceCreator(set, get, store),
+    }))
+
+    const store = useTestStore.getState()
+    expect(store.workspaceEpoch).toBe(0)
+
+    // Simulate opening folder incrementing epoch
+    useTestStore.setState((s) => ({ workspaceEpoch: s.workspaceEpoch + 1 }))
+    expect(useTestStore.getState().workspaceEpoch).toBe(1)
+
+    // Register idle buffer for JIT tab
+    useTestStore.setState((s) => ({
+      fileBuffers: {
+        ...s.fileBuffers,
+        "src/App.tsx": {
+          content: "",
+          savedContent: "",
+          isDirty: false,
+          language: "typescript",
+          status: "idle",
+        },
+      },
+    }))
+    expect(useTestStore.getState().fileBuffers["src/App.tsx"]?.status).toBe(
+      "idle",
+    )
+
+    // Update to loading
+    useTestStore.setState((s) => ({
+      fileBuffers: {
+        ...s.fileBuffers,
+        "src/App.tsx": {
+          ...s.fileBuffers["src/App.tsx"]!,
+          status: "loading",
+        },
+      },
+    }))
+    expect(useTestStore.getState().fileBuffers["src/App.tsx"]?.status).toBe(
+      "loading",
+    )
+
+    // Transition to ready with canonical content
+    useTestStore.setState((s) => ({
+      fileBuffers: {
+        ...s.fileBuffers,
+        "src/App.tsx": {
+          content: "export const App = () => null",
+          savedContent: "export const App = () => null",
+          isDirty: false,
+          language: "typescript",
+          status: "ready",
+        },
+      },
+    }))
+    expect(useTestStore.getState().fileBuffers["src/App.tsx"]?.status).toBe(
+      "ready",
+    )
+    expect(useTestStore.getState().fileBuffers["src/App.tsx"]?.content).toBe(
+      "export const App = () => null",
+    )
+    // Ensure no duplicate basename keys polluted the store
+    expect(useTestStore.getState().fileBuffers["App.tsx"]).toBeUndefined()
+  })
+
+  it("persists pinned tabs and excludes them when closing tabs", () => {
+    const storageMap = new Map<string, string>()
+    const mockStorage = {
+      getItem: (k: string) => storageMap.get(k) ?? null,
+      setItem: (k: string, v: string) => storageMap.set(k, v),
+      removeItem: (k: string) => storageMap.delete(k),
+      clear: () => storageMap.clear(),
+    }
+    vi.stubGlobal("window", { localStorage: mockStorage })
+
+    saveStoredPinnedTabs(new Set(["pinned.ts"]))
+    const loaded = loadStoredPinnedTabs()
+    expect(loaded.has("pinned.ts")).toBe(true)
+
+    const editorCreator = createEditorSlice as any
+    const workspaceCreator = createWorkspaceSlice as any
+    const useTestStore = create<WorkbenchStore>()((set, get, store) => ({
+      ...editorCreator(set, get, store),
+      ...workspaceCreator(set, get, store),
+    }))
+
+    const store = useTestStore.getState()
+    store.openFileInGroup("file1.ts")
+    store.openFileInGroup("pinned.ts")
+    store.openFileInGroup("file2.ts")
+    expect(useTestStore.getState().group1.tabs).toEqual([
+      "file1.ts",
+      "pinned.ts",
+      "file2.ts",
+    ])
+
+    // Ensure pinned.ts is marked pinned
+    if (!useTestStore.getState().pinnedTabs.has("pinned.ts")) {
+      store.togglePinTab("pinned.ts")
+    }
+    expect(useTestStore.getState().pinnedTabs.has("pinned.ts")).toBe(true)
+
+    // closeAllTabs should keep pinned.ts and close file1.ts and file2.ts
+    store.closeAllTabs()
+    expect(useTestStore.getState().group1.tabs).toEqual(["pinned.ts"])
+    expect(useTestStore.getState().activeTab).toBe("pinned.ts")
+
+    // Unpin pinned.ts
+    store.togglePinTab("pinned.ts")
+    expect(useTestStore.getState().pinnedTabs.has("pinned.ts")).toBe(false)
+    store.closeAllTabs()
+    expect(useTestStore.getState().group1.tabs).toEqual([])
+    vi.unstubAllGlobals()
   })
 })

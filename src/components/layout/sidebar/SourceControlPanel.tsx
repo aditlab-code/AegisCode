@@ -200,24 +200,40 @@ export function SourceControlPanel() {
       return
     }
 
-    const modifiedFiles = [
-      ...stagedChanges.map((c) => c.file),
-      ...gitChanges.map((c) => c.file),
-    ]
+    const stagedFiles = stagedChanges.map((c) => c.file)
+    const unstagedFiles = gitChanges.map((c) => c.file)
+    const allFiles = Array.from(new Set([...stagedFiles, ...unstagedFiles]))
 
-    const prefix = modifiedFiles.some((f) => f.includes("test"))
+    const prefix = allFiles.some((f) => f.includes("test"))
       ? "test"
-      : modifiedFiles.some((f) => f.endsWith(".md"))
+      : allFiles.some((f) => f.endsWith(".md") || f.includes("docs/"))
         ? "docs"
-        : "feat"
+        : allFiles.some((f) => f.includes("fix") || f.includes("bug"))
+          ? "fix"
+          : "feat"
 
-    const summary = `${prefix}: update ${modifiedFiles.slice(0, 2).join(", ")}${
-      modifiedFiles.length > 2
-        ? ` and ${modifiedFiles.length - 2} other files`
-        : ""
+    const summary = `${prefix}: update ${allFiles.slice(0, 2).join(", ")}${
+      allFiles.length > 2 ? ` and ${allFiles.length - 2} other files` : ""
     }`
 
-    setCommitMessage(summary)
+    const contextSections: string[] = []
+    if (stagedFiles.length > 0) {
+      contextSections.push(
+        `Staged files:\n${stagedFiles.map((f) => `- ${f}`).join("\n")}`,
+      )
+    }
+    if (unstagedFiles.length > 0) {
+      contextSections.push(
+        `Unstaged files:\n${unstagedFiles.map((f) => `- ${f}`).join("\n")}`,
+      )
+    }
+
+    const fullMessage =
+      contextSections.length > 0
+        ? `${summary}\n\n${contextSections.join("\n\n")}`
+        : summary
+
+    setCommitMessage(fullMessage)
     showToast("Generated commit message draft")
   }
 
@@ -1364,7 +1380,98 @@ export function SourceControlPanel() {
       {showBranchPrompt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-sm rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-4 shadow-xl">
-            <h4 className="font-semibold text-xs text-[var(--color-ink)] mb-3">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-semibold text-xs text-[var(--color-ink)]">
+                Git Branches
+              </h4>
+              <button
+                className="text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer"
+                onClick={() => setShowBranchPrompt(false)}
+                title="Close"
+                type="button"
+              >
+                <Icon name="close" size={13} />
+              </button>
+            </div>
+
+            {/* Existing Branches List */}
+            <div className="mb-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-ink-muted)]">
+                  Switch Branch ({gitBranches.length})
+                </span>
+                {activeBranch && (
+                  <span className="text-[10px] text-[var(--color-ink-muted)]">
+                    Current:{" "}
+                    <span className="font-semibold text-[var(--color-accent)]">
+                      {activeBranch}
+                    </span>
+                  </span>
+                )}
+              </div>
+              <div className="max-h-40 overflow-y-auto space-y-0.5 border border-[var(--color-line)] rounded-md p-1 bg-[var(--color-canvas)]">
+                {gitBranches.length === 0 ? (
+                  <div className="text-[11px] text-[var(--color-ink-muted)] p-2 text-center">
+                    No branches found
+                  </div>
+                ) : (
+                  gitBranches.map((branch) => {
+                    const isActive = branch === activeBranch
+                    return (
+                      <button
+                        key={branch}
+                        className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs text-left transition-colors ${
+                          isActive
+                            ? "bg-[var(--color-accent)]/15 text-[var(--color-accent)] font-medium cursor-default"
+                            : "text-[var(--color-ink)] hover:bg-[var(--color-surface-hover)] cursor-pointer"
+                        }`}
+                        disabled={isActive}
+                        onClick={() => {
+                          if (!isActive) {
+                            void checkoutBranch(branch)
+                            setShowBranchPrompt(false)
+                          }
+                        }}
+                        title={
+                          isActive
+                            ? "Current branch"
+                            : `Switch to branch "${branch}"`
+                        }
+                        type="button"
+                      >
+                        <div className="flex items-center gap-1.5 truncate">
+                          <Icon
+                            className={
+                              isActive
+                                ? "text-[var(--color-accent)]"
+                                : "text-[var(--color-ink-muted)]"
+                            }
+                            name="branch"
+                            size={12}
+                          />
+                          <span className="truncate">{branch}</span>
+                        </div>
+                        {isActive ? (
+                          <span className="flex items-center gap-1 text-[10px] font-semibold text-[var(--color-accent)] shrink-0">
+                            <Icon name="check" size={11} />
+                            current
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] shrink-0">
+                            Switch
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+
+            <div className="my-3 border-t border-[var(--color-line)]" />
+
+            {/* Create New Branch */}
+            <h4 className="font-semibold text-xs text-[var(--color-ink)] mb-2">
               Create New Branch
             </h4>
             <input

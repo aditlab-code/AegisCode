@@ -24,6 +24,8 @@ import { json } from "@codemirror/lang-json"
 import { markdown } from "@codemirror/lang-markdown"
 import { html } from "@codemirror/lang-html"
 import { css } from "@codemirror/lang-css"
+import { cpp } from "@codemirror/lang-cpp"
+import { rust } from "@codemirror/lang-rust"
 
 export interface LanguageInfo {
   ext: Extension | null
@@ -62,15 +64,15 @@ export function resolveLanguage(filename: string): LanguageInfo {
     case "css":
       return { ext: css(), id: "css" }
     case "rs":
-      return { ext: null, id: "rust" }
+      return { ext: rust(), id: "rust" }
     case "c":
     case "h":
-      return { ext: null, id: "c" }
+      return { ext: cpp(), id: "c" }
     case "cpp":
     case "cc":
     case "cxx":
     case "hpp":
-      return { ext: null, id: "cpp" }
+      return { ext: cpp(), id: "cpp" }
     default:
       return { ext: null, id: "plaintext" }
   }

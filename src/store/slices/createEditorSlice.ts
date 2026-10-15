@@ -5,7 +5,7 @@ import type {
   FindWidgetState,
   MinimapScale,
 } from "../../types/workbench"
-import type { CursorCoordinates } from "../../context/core/workspaceCore"
+import type { CursorCoordinates } from "./createWorkspaceSlice"
 import type { ConfirmCloseState } from "../../types/workbench"
 import { setBreakpoints } from "../../utils/debugApi"
 import type { EditorSlice, SliceCreator } from "../types"
@@ -191,6 +191,40 @@ export function loadStoredTabSize(): number {
   return 2
 }
 
+export function loadStoredPinnedTabs(): Set<string> {
+  try {
+    const storage =
+      typeof window !== "undefined"
+        ? window.localStorage
+        : typeof localStorage !== "undefined"
+          ? localStorage
+          : null
+    const stored = storage?.getItem("aegis_pinned_tabs")
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      if (Array.isArray(parsed)) {
+        return new Set(parsed)
+      }
+    }
+  } catch {}
+  return new Set()
+}
+
+export function saveStoredPinnedTabs(pinnedTabs: Set<string>): void {
+  try {
+    const storage =
+      typeof window !== "undefined"
+        ? window.localStorage
+        : typeof localStorage !== "undefined"
+          ? localStorage
+          : null
+    storage?.setItem(
+      "aegis_pinned_tabs",
+      JSON.stringify(Array.from(pinnedTabs)),
+    )
+  } catch {}
+}
+
 function getDerivedEditorState(
   group1: EditorGroupState,
   group2: EditorGroupState,
@@ -353,6 +387,9 @@ export const createEditorSlice: SliceCreator<EditorSlice> = (set, get) => ({
   },
 
   setActiveTabInGroup: (group: "group1" | "group2", filename: string) => {
+    if (typeof get().ensureFileBuffer === "function") {
+      void get().ensureFileBuffer(filename)
+    }
     if (group === "group2") {
       const nextG2 = setActiveTabInGroupLogic(get().group2, filename)
       set({
@@ -511,70 +548,109 @@ export const createEditorSlice: SliceCreator<EditorSlice> = (set, get) => ({
     get().closeTabInGroup(get().focusedGroup, target)
   },
   closeAllTabs: (targetGroup?: "group1" | "group2") => {
+    const pinned = get().pinnedTabs || new Set<string>()
     const groupsToCheck: ("group1" | "group2")[] = targetGroup
       ? [targetGroup]
       : get().splitEditor
         ? ["group1", "group2"]
         : ["group1"]
 
-    // Check for dirty tabs in targeted groups first
+    // Check for dirty tabs in targeted groups first (skipping pinned)
     for (const grp of groupsToCheck) {
       const gState = grp === "group1" ? get().group1 : get().group2
       for (const tab of gState.tabs) {
-        if (get().fileBuffers?.[tab]?.isDirty) {
+        if (!pinned.has(tab) && get().fileBuffers?.[tab]?.isDirty) {
           set({ confirmCloseFile: { group: grp, filename: tab } })
           return
         }
       }
     }
 
-    // No dirty tabs, clear tabs
+    // Filter out unpinned tabs
     if (!targetGroup) {
-      const g1Empty: EditorGroupState = {
+      const g1Tabs = get().group1.tabs.filter((t) => pinned.has(t))
+      const g2Tabs = get().group2.tabs.filter((t) => pinned.has(t))
+      const g1State: EditorGroupState = {
         ...get().group1,
-        tabs: [],
-        activeTab: "",
+        tabs: g1Tabs,
+        activeTab: g1Tabs.includes(get().group1.activeTab)
+          ? get().group1.activeTab
+          : g1Tabs[0] || "",
       }
-      const g2Empty: EditorGroupState = {
+      const g2State: EditorGroupState = {
         ...get().group2,
-        tabs: [],
-        activeTab: "",
+        tabs: g2Tabs,
+        activeTab: g2Tabs.includes(get().group2.activeTab)
+          ? get().group2.activeTab
+          : g2Tabs[0] || "",
       }
+      const splitEditor = g2Tabs.length > 0 && get().splitEditor
+      const focusedGroup =
+        !splitEditor && get().focusedGroup === "group2"
+          ? "group1"
+          : get().focusedGroup
       set({
-        group1: g1Empty,
-        group2: g2Empty,
-        splitEditor: false,
-        focusedGroup: "group1",
-        ...getDerivedEditorState(g1Empty, g2Empty, "group1", false),
+        group1: g1State,
+        group2: g2State,
+        splitEditor,
+        focusedGroup,
+        ...getDerivedEditorState(g1State, g2State, focusedGroup, splitEditor),
       })
     } else if (targetGroup === "group1") {
-      const g1Empty: EditorGroupState = {
+      const g1Tabs = get().group1.tabs.filter((t) => pinned.has(t))
+      const g1State: EditorGroupState = {
         ...get().group1,
-        tabs: [],
-        activeTab: "",
+        tabs: g1Tabs,
+        activeTab: g1Tabs.includes(get().group1.activeTab)
+          ? get().group1.activeTab
+          : g1Tabs[0] || "",
       }
       set({
-        group1: g1Empty,
+        group1: g1State,
         ...getDerivedEditorState(
-          g1Empty,
+          g1State,
           get().group2,
           get().focusedGroup,
           get().splitEditor,
         ),
       })
     } else {
-      const g2Empty: EditorGroupState = {
+      const g2Tabs = get().group2.tabs.filter((t) => pinned.has(t))
+      const g2State: EditorGroupState = {
         ...get().group2,
-        tabs: [],
-        activeTab: "",
+        tabs: g2Tabs,
+        activeTab: g2Tabs.includes(get().group2.activeTab)
+          ? get().group2.activeTab
+          : g2Tabs[0] || "",
       }
+      const splitEditor = g2Tabs.length > 0 && get().splitEditor
+      const focusedGroup = !splitEditor ? "group1" : get().focusedGroup
       set({
-        group2: g2Empty,
-        splitEditor: false,
-        focusedGroup: "group1",
-        ...getDerivedEditorState(get().group1, g2Empty, "group1", false),
+        group2: g2State,
+        splitEditor,
+        focusedGroup,
+        ...getDerivedEditorState(
+          get().group1,
+          g2State,
+          focusedGroup,
+          splitEditor,
+        ),
       })
     }
+  },
+
+  pinnedTabs: loadStoredPinnedTabs(),
+  togglePinTab: (filename: string) => {
+    if (!filename) return
+    const current = get().pinnedTabs
+    const next = new Set(current)
+    if (next.has(filename)) {
+      next.delete(filename)
+    } else {
+      next.add(filename)
+    }
+    saveStoredPinnedTabs(next)
+    set({ pinnedTabs: next })
   },
 
   minimapEnabled: loadStoredMinimapEnabled(),

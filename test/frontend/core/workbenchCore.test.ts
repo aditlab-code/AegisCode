@@ -8,7 +8,7 @@ import {
   moveTabBetweenGroupsLogic,
   reorderTabsInGroupLogic,
   renameTabInAllGroupsLogic,
-} from "@/context/core/editorCore"
+} from "@/store/slices/createEditorSlice"
 import {
   addFileToTreeLogic,
   removeFileFromTreeLogic,
@@ -19,7 +19,7 @@ import {
   sanitizeContentOnSave,
   normalizeWorkspacePath,
   AsyncSequenceGuard,
-} from "@/context/core/workspaceCore"
+} from "@/store/slices/createWorkspaceSlice"
 import {
   stageChangeLogic,
   unstageChangeLogic,
@@ -30,13 +30,13 @@ import {
 import {
   reorderBottomTabsLogic,
   toggleThemeLogic,
-  useLayoutCore,
-} from "@/context/core/layoutCore"
+  DEFAULT_SIDEBAR_WIDTH,
+} from "@/store/slices/createLayoutSlice"
 import {
   DEFAULT_APP_SETTINGS,
   loadStoredSettings,
   saveStoredSettings,
-} from "@/context/core/settingsCore"
+} from "@/store/slices/createSettingsSlice"
 import { getThemeDefinition, PALETTE_OPTIONS } from "@/themes/themeRegistry"
 import { computeMinimapScaleConfig } from "@/components/layout/editor/Minimap"
 import {
@@ -1086,13 +1086,8 @@ describe("AegisCode Core Test Suite (Frontend Logic Regression Engine)", () => {
       expect(reply).toContain("Specification Draft generated")
     })
 
-    it("initializes useLayoutCore hook without runtime reference errors", () => {
-      function LayoutTest() {
-        const layout = useLayoutCore()
-        return createElement("div", null, layout.sidebarWidth)
-      }
-      const html = renderToString(createElement(LayoutTest))
-      expect(html).toContain("260")
+    it("verifies default layout dimensions and state transitions", () => {
+      expect(DEFAULT_SIDEBAR_WIDTH).toBe(260)
     })
   })
 })

@@ -13,6 +13,7 @@ import {
   initialNotifications,
 } from "../../data/mockData"
 import { detectLanguage, isLspLanguage } from "../../utils/linter"
+import { notifyLspDidSave } from "../../utils/lspApi"
 import { offloadService } from "../../utils/offloadService"
 import { isGraphTab } from "../../components/layout/editor/viewers/viewerTypes"
 import { isGitDiffTab } from "../../utils/gitDiffTab"
@@ -355,6 +356,7 @@ export async function loadWorkspaceInternal(
   path?: string,
   retryCount = 0,
 ): Promise<void> {
+  const targetEpoch = get().workspaceEpoch
   const { requestId } = workspaceGuard.nextRequest()
   set({ isWorkspaceLoading: true })
 
@@ -383,7 +385,10 @@ export async function loadWorkspaceInternal(
       }
     }
 
-    if (!workspaceGuard.isCurrent(requestId)) {
+    if (
+      get().workspaceEpoch !== targetEpoch ||
+      !workspaceGuard.isCurrent(requestId)
+    ) {
       return
     }
 
@@ -417,7 +422,10 @@ export async function loadWorkspaceInternal(
     }
 
     const treeData = await fetchWorkspaceTree()
-    if (!workspaceGuard.isCurrent(requestId)) {
+    if (
+      get().workspaceEpoch !== targetEpoch ||
+      !workspaceGuard.isCurrent(requestId)
+    ) {
       return
     }
 
@@ -496,8 +504,27 @@ export async function loadWorkspaceInternal(
     const activeG2 =
       resolveTabCanonical(g2?.activeTab || "") || validG2Tabs[0] || ""
     const allTabs = Array.from(new Set([...validG1Tabs, ...validG2Tabs]))
+    const priorityTabs = [activeG1, activeG2].filter(Boolean)
 
-    set({
+    if (get().workspaceEpoch !== targetEpoch) return
+
+    // Register background tabs as idle without firing HTTP request
+    const idleBuffers: Record<string, FileBuffer> = {}
+    for (const tab of allTabs) {
+      if (!priorityTabs.includes(tab) && !get().fileBuffers[tab]) {
+        idleBuffers[tab] = {
+          content: "",
+          savedContent: "",
+          isDirty: false,
+          hasDiskConflict: false,
+          isDeletedOnDisk: false,
+          language: detectLanguage(tab),
+          status: "idle",
+        }
+      }
+    }
+
+    set((state: any) => ({
       rootWorkspacePath: normalizedRoot,
       rootWorkspaceName: info.name,
       files: treeData.flatTree,
@@ -506,22 +533,20 @@ export async function loadWorkspaceInternal(
       tabs: allTabs,
       activeTab: activeG1,
       currentFocusedFile: activeG1 || null,
-    })
+      fileBuffers: {
+        ...state.fileBuffers,
+        ...idleBuffers,
+      },
+    }))
 
     // Immediately pre-fetch and await active tabs to ensure immediate buffer availability
-    const priorityTabs = [activeG1, activeG2].filter(Boolean)
     if (priorityTabs.length > 0) {
       await Promise.allSettled(
         priorityTabs.map((tab) => get().fetchBufferSafely(tab)),
       )
     }
 
-    // Pre-fetch remaining background tabs in parallel
-    for (const tab of allTabs) {
-      if (!priorityTabs.includes(tab)) {
-        void get().fetchBufferSafely(tab)
-      }
-    }
+    if (get().workspaceEpoch !== targetEpoch) return
 
     if (typeof get().refreshGit === "function") {
       void get().refreshGit()
@@ -530,16 +555,24 @@ export async function loadWorkspaceInternal(
       void (get() as any).refreshAISkills(undefined, normalizedRoot)
     }
   } catch (err: any) {
-    if (workspaceGuard.isCurrent(requestId)) {
+    if (
+      get().workspaceEpoch === targetEpoch &&
+      workspaceGuard.isCurrent(requestId)
+    ) {
       console.warn("Workspace backend not reachable yet or error:", err)
       if (!path && retryCount < 2) {
         setTimeout(() => {
-          void loadWorkspaceInternal(get, set, undefined, retryCount + 1)
+          if (get().workspaceEpoch === targetEpoch) {
+            void loadWorkspaceInternal(get, set, undefined, retryCount + 1)
+          }
         }, 800)
       }
     }
   } finally {
-    if (workspaceGuard.isCurrent(requestId)) {
+    if (
+      get().workspaceEpoch === targetEpoch &&
+      workspaceGuard.isCurrent(requestId)
+    ) {
       set({ isWorkspaceLoading: false })
     }
   }
@@ -552,6 +585,7 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
   rootWorkspacePath: "",
   rootWorkspaceName: "AegisCode",
   isWorkspaceLoading: false,
+  workspaceEpoch: 0,
   recentProjects: loadStoredRecentProjects(),
 
   addRecentProject: async (rawPath: string) => {
@@ -633,6 +667,7 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
   openRootFolder: async (rawPath: string) => {
     const path = normalizeWorkspacePath(rawPath)
     if (!path) return
+    set({ workspaceEpoch: get().workspaceEpoch + 1 })
     try {
       await get().autoSaveDirtyBuffers()
       await loadWorkspaceInternal(get, set, path)
@@ -651,6 +686,7 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
   },
 
   closeRootFolder: async () => {
+    set({ workspaceEpoch: get().workspaceEpoch + 1 })
     try {
       await get().autoSaveDirtyBuffers()
       await closeWorkspace()
@@ -780,6 +816,9 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
       set((state) => {
         const nextBuffers = { ...state.fileBuffers }
         delete nextBuffers[name]
+        const rootPath = get().rootWorkspacePath
+        const clean = rootPath ? normalizeWorkspacePath(name, rootPath) : name
+        if (clean) delete nextBuffers[clean]
         return {
           fileBuffers: nextBuffers,
           files: removeFileFromTreeLogic(state.files, name),
@@ -804,10 +843,19 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
     })),
 
   updateFileContent: (filename: string, content: string) => {
+    const rootPath = get().rootWorkspacePath
+    const clean = rootPath
+      ? normalizeWorkspacePath(filename, rootPath)
+      : filename
+    const targetKey = get().fileBuffers[clean]
+      ? clean
+      : get().fileBuffers[filename]
+        ? filename
+        : clean
     set((state) => ({
       fileBuffers: updateBufferContentLogic(
         state.fileBuffers,
-        filename,
+        targetKey,
         content,
       ),
     }))
@@ -816,10 +864,10 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
     if (
       linterSettings.enabled &&
       linterSettings.trigger === "onType" &&
-      !isLspLanguage(filename)
+      !isLspLanguage(clean)
     ) {
       triggerOffloadedLint(
-        filename,
+        clean,
         content,
         linterSettings.showWarnings,
         set,
@@ -829,10 +877,19 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
   },
 
   syncBufferWithDisk: (filename: string, content: string) => {
+    const rootPath = get().rootWorkspacePath
+    const clean = rootPath
+      ? normalizeWorkspacePath(filename, rootPath)
+      : filename
+    const targetKey = get().fileBuffers[clean]
+      ? clean
+      : get().fileBuffers[filename]
+        ? filename
+        : clean
     set((state) => ({
       fileBuffers: syncBufferWithDiskLogic(
         state.fileBuffers,
-        filename,
+        targetKey,
         content,
       ),
     }))
@@ -843,8 +900,17 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
     options?: FileHygieneOptions,
   ): Promise<void> => {
     if (!filenameToSave) return
+    const rootPath = get().rootWorkspacePath
+    const clean = rootPath
+      ? normalizeWorkspacePath(filenameToSave, rootPath)
+      : filenameToSave
+    const targetKey = get().fileBuffers[clean]
+      ? clean
+      : get().fileBuffers[filenameToSave]
+        ? filenameToSave
+        : clean
 
-    const buf = get().fileBuffers[filenameToSave]
+    const buf = get().fileBuffers[targetKey]
     if (buf?.isLargeFile || buf?.isBinary) {
       get().showToast?.(
         "Cannot overwrite file: opened in read-only preview mode.",
@@ -858,7 +924,7 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
 
     if (buf) {
       try {
-        await saveWorkspaceFile(filenameToSave, contentToSave, false)
+        await saveWorkspaceFile(clean, contentToSave, false)
       } catch (err: any) {
         console.error("Failed to save to backend:", err)
         get().showToast?.(
@@ -869,17 +935,17 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
     }
 
     set((state) => {
-      const marked = markBufferSavedLogic(state.fileBuffers, filenameToSave)
+      const marked = markBufferSavedLogic(state.fileBuffers, targetKey)
       if (
         options &&
-        marked[filenameToSave] &&
-        contentToSave !== state.fileBuffers[filenameToSave]?.content
+        marked[targetKey] &&
+        contentToSave !== state.fileBuffers[targetKey]?.content
       ) {
         return {
           fileBuffers: {
             ...marked,
-            [filenameToSave]: {
-              ...marked[filenameToSave],
+            [targetKey]: {
+              ...marked[targetKey],
               content: contentToSave,
               savedContent: contentToSave,
               isDirty: false,
@@ -891,14 +957,17 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
     })
 
     const linterSettings = get().linterSettings
-    if (linterSettings.enabled && buf && !isLspLanguage(filenameToSave)) {
+    if (linterSettings.enabled && buf && !isLspLanguage(clean)) {
       triggerOffloadedLint(
-        filenameToSave,
+        clean,
         contentToSave,
         linterSettings.showWarnings,
         set,
         0,
       )
+    } else if (isLspLanguage(clean)) {
+      const lang = detectLanguage(clean).toLowerCase()
+      void notifyLspDidSave(clean, contentToSave, lang)
     }
 
     // Cross-slice Git refresh
@@ -906,7 +975,7 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
       void get().refreshGit()
     }
 
-    get().showToast?.(`Saved ${filenameToSave}`)
+    get().showToast?.(`Saved ${clean}`)
   },
 
   applyCodeWithReview: async (
@@ -971,34 +1040,45 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
   },
 
   revertBufferContent: (filename: string) => {
+    const rootPath = get().rootWorkspacePath
+    const clean = rootPath
+      ? normalizeWorkspacePath(filename, rootPath)
+      : filename
+    const targetKey = get().fileBuffers[clean]
+      ? clean
+      : get().fileBuffers[filename]
+        ? filename
+        : clean
     set((state) => ({
-      fileBuffers: revertBufferContentLogic(state.fileBuffers, filename),
+      fileBuffers: revertBufferContentLogic(state.fileBuffers, targetKey),
     }))
-    const buf = get().fileBuffers[filename]
+    const buf = get().fileBuffers[targetKey]
     const reverted = buf?.savedContent ?? buf?.content ?? ""
     const linterSettings = get().linterSettings
-    if (linterSettings.enabled && !isLspLanguage(filename)) {
-      triggerOffloadedLint(
-        filename,
-        reverted,
-        linterSettings.showWarnings,
-        set,
-        0,
-      )
+    if (linterSettings.enabled && !isLspLanguage(clean)) {
+      triggerOffloadedLint(clean, reverted, linterSettings.showWarnings, set, 0)
     }
-    get().showToast?.(`Reverted changes to ${filename}`)
+    get().showToast?.(`Reverted changes to ${clean}`)
   },
 
   ensureFileBuffer: (filename: string) => {
     if (!filename || isGraphTab(filename) || isGitDiffTab(filename)) return
-    const base = filename.split("/").pop() || filename
-    const current = get().fileBuffers[filename] || get().fileBuffers[base]
+    const rootPath = get().rootWorkspacePath
+    const clean = rootPath
+      ? normalizeWorkspacePath(filename, rootPath)
+      : filename.replace(/^\/+/, "")
+    const current = get().fileBuffers[clean] || get().fileBuffers[filename]
+    if (current?.status === "loading") {
+      return
+    }
     if (
       !current ||
+      current.status === "idle" ||
       (current.content === "" &&
         !current.isDirty &&
         !current.isLargeFile &&
-        !current.isBinary)
+        !current.isBinary &&
+        current.status !== "ready")
     ) {
       return get().fetchBufferSafely(filename)
     }
@@ -1039,23 +1119,49 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
       }
     }
 
+    const currentEpoch = get().workspaceEpoch
+    const existing = get().fileBuffers[clean]
+    if (!existing) {
+      set((state) => ({
+        fileBuffers: {
+          ...state.fileBuffers,
+          [clean]: {
+            content: "",
+            savedContent: "",
+            isDirty: false,
+            hasDiskConflict: false,
+            isDeletedOnDisk: false,
+            language: detectLanguage(clean),
+            status: "loading",
+          },
+        },
+      }))
+    } else if (existing.status !== "ready" && existing.status !== "loading") {
+      set((state) => ({
+        fileBuffers: {
+          ...state.fileBuffers,
+          [clean]: {
+            ...existing,
+            status: "loading",
+          },
+        },
+      }))
+    }
+
     try {
       const detail = await fetchFileDetailed(clean)
+      if (get().workspaceEpoch !== currentEpoch) return
       const content = detail.content
-      const baseName = clean.split("/").pop() || clean
-      const rawBaseName = filename.split("/").pop() || filename
       set((state) => {
-        const existing =
-          state.fileBuffers[clean] ||
-          state.fileBuffers[filename] ||
-          state.fileBuffers[baseName]
-        if (existing?.isDirty) {
+        const existingBuf = state.fileBuffers[clean]
+        if (existingBuf?.isDirty) {
           return {
             fileBuffers: {
               ...state.fileBuffers,
               [clean]: {
-                ...existing,
+                ...existingBuf,
                 hasDiskConflict: true,
+                status: "ready",
               },
             },
           }
@@ -1070,14 +1176,12 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
           isLargeFile: detail.isLarge,
           isBinary: detail.isBinary,
           fileSize: detail.size,
+          status: "ready",
         }
         return {
           fileBuffers: {
             ...state.fileBuffers,
             [clean]: newBuf,
-            [filename]: newBuf,
-            [baseName]: newBuf,
-            [rawBaseName]: newBuf,
           },
         }
       })
@@ -1085,6 +1189,26 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
         triggerOffloadedLint(clean, content, true, set, 0)
       }
     } catch (err) {
+      if (get().workspaceEpoch !== currentEpoch) return
+      set((state) => {
+        const existingBuf = state.fileBuffers[clean]
+        return {
+          fileBuffers: {
+            ...state.fileBuffers,
+            [clean]: {
+              ...(existingBuf || {
+                content: "",
+                savedContent: "",
+                isDirty: false,
+                hasDiskConflict: false,
+                isDeletedOnDisk: false,
+                language: detectLanguage(clean),
+              }),
+              status: "error",
+            },
+          },
+        }
+      })
       if (typeof process === "undefined" || !process.env?.VITEST) {
         console.warn(`Failed to fetch file content for ${clean}:`, err)
       }

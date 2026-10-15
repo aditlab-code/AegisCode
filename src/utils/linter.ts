@@ -361,6 +361,33 @@ function validateJSOrTS(
   }
 }
 
+function countUnquotedParens(text: string): number {
+  let count = 0
+  let inString: string | null = null
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (inString) {
+      if (ch === "\\" && i + 1 < text.length) {
+        i++ // skip escape
+      } else if (ch === inString) {
+        inString = null
+      }
+    } else {
+      if (ch === '"' || ch === "'") {
+        inString = ch
+      } else if (ch === "(" || ch === "[" || ch === "{") {
+        count++
+      } else if (ch === ")" || ch === "]" || ch === "}") {
+        count--
+      } else if (ch === "#") {
+        // Comment starts, rest of line is ignored
+        break
+      }
+    }
+  }
+  return count
+}
+
 function validatePython(
   filename: string,
   lines: string[],
@@ -380,18 +407,43 @@ function validatePython(
     "with",
   ]
 
+  let inBlockHeader = false
+  let openParenCount = 0
+
   lines.forEach((lineText, idx) => {
     const lineNum = idx + 1
     const trimmed = lineText.trim()
     if (!trimmed || trimmed.startsWith("#")) return
 
-    // Check block header ending with colon
-    for (const kw of blockKeywords) {
-      if (
-        trimmed === kw ||
-        trimmed.startsWith(kw + " ") ||
-        trimmed.startsWith(kw + "(")
-      ) {
+    const lineParens = countUnquotedParens(trimmed)
+
+    if (!inBlockHeader) {
+      for (const kw of blockKeywords) {
+        if (
+          trimmed === kw ||
+          trimmed.startsWith(kw + " ") ||
+          trimmed.startsWith(kw + "(")
+        ) {
+          openParenCount += lineParens
+          if (trimmed.endsWith("\\") || openParenCount > 0) {
+            inBlockHeader = true
+          } else if (!trimmed.endsWith(":")) {
+            diagnostics.push({
+              id: `${filename}-py-colon-${lineNum}`,
+              title: `SyntaxError: expected ':' at end of statement`,
+              location: `${filename} [${lineNum}, ${lineText.length}]`,
+              type: "error",
+              source: "flake8",
+            })
+          }
+          break
+        }
+      }
+    } else {
+      openParenCount += lineParens
+      if (openParenCount <= 0 && !trimmed.endsWith("\\")) {
+        inBlockHeader = false
+        openParenCount = 0
         if (!trimmed.endsWith(":")) {
           diagnostics.push({
             id: `${filename}-py-colon-${lineNum}`,
@@ -401,7 +453,6 @@ function validatePython(
             source: "flake8",
           })
         }
-        break
       }
     }
 

@@ -38,7 +38,7 @@ import type {
   AgentSettings,
   CompanionSettings,
 } from "../types/workbench"
-import type { CursorCoordinates } from "../context/core/workspaceCore"
+import type { CursorCoordinates } from "./slices/createWorkspaceSlice"
 import type { ConfirmCloseState } from "../types/workbench"
 import type { AiTraceState } from "../utils/codegraphApi"
 
@@ -160,6 +160,8 @@ export interface EditorSlice {
   tabs: string[]
   closeTab: (tabToClose?: string) => void
   closeAllTabs: (group?: "group1" | "group2") => void
+  pinnedTabs: Set<string>
+  togglePinTab: (filename: string) => void
   minimapEnabled: boolean
   setMinimapEnabled: (val: boolean | ((prev: boolean) => boolean)) => void
   toggleMinimap: () => void
@@ -223,6 +225,7 @@ export interface WorkspaceSlice {
   rootWorkspacePath: string
   rootWorkspaceName: string
   isWorkspaceLoading: boolean
+  workspaceEpoch: number
   recentProjects: string[]
   addRecentProject: (path: string) => Promise<void>
   removeRecentProject: (path: string) => Promise<void>

@@ -1,10 +1,13 @@
 import { describe, it, expect } from "vitest"
 import { resolveLanguage } from "../../../src/components/layout/editor/cmTheme"
 import { isLspLanguage, detectLanguage } from "../../../src/utils/linter"
-import type {
-  LspCompletionItem,
-  LspLocation,
-  LspTextEdit,
+import {
+  notifyLspDidSave,
+  notifyLspDidClose,
+  fetchLspSymbols,
+  type LspCompletionItem,
+  type LspLocation,
+  type LspTextEdit,
 } from "../../../src/utils/lspApi"
 
 describe("LSP Integration & Language Resolution", () => {
@@ -21,6 +24,12 @@ describe("LSP Integration & Language Resolution", () => {
     expect(resolveLanguage("style.css").id).toBe("css")
     expect(resolveLanguage("data.json").id).toBe("json")
     expect(resolveLanguage("unknown.xyz").id).toBe("plaintext")
+
+    // Verify active syntax parser extensions are loaded
+    expect(resolveLanguage("lib.rs").ext).not.toBeNull()
+    expect(resolveLanguage("native.cpp").ext).not.toBeNull()
+    expect(resolveLanguage("header.h").ext).not.toBeNull()
+    expect(resolveLanguage("unknown.xyz").ext).toBeNull()
   })
 
   it("identifies LSP-supported languages to eliminate heuristic regex conflicts", () => {
@@ -162,5 +171,63 @@ describe("LSP Integration & Language Resolution", () => {
     expect(sorted[0].newText).toBe("edit0")
     expect(sorted[1].newText).toBe("edit1")
     expect(sorted[2].newText).toBe("edit2")
+  })
+
+  it("dispatches didSave, didClose, and fetchSymbols requests to LSP backend", async () => {
+    const fetchCalls: any[] = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = ((async (url: string, init?: RequestInit) => {
+      fetchCalls.push({
+        url: String(url),
+        method: init?.method || "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+      })
+      if (String(url).endsWith("/api/v1/lsp/symbols")) {
+        return {
+          ok: true,
+          json: async () => ({
+            symbols: [
+              {
+                name: "MySymbol",
+                kind: 12,
+                range: {
+                  start: { line: 0, character: 0 },
+                  end: { line: 10, character: 0 },
+                },
+                selectionRange: {
+                  start: { line: 0, character: 0 },
+                  end: { line: 0, character: 8 },
+                },
+              },
+            ],
+          }),
+        } as Response
+      }
+      return { ok: true, json: async () => ({ status: "ok" }) } as Response
+    }) as any)
+
+    try {
+      await notifyLspDidSave("main.go", "package main\n", "go")
+      expect(fetchCalls[0].url).toContain("/api/v1/lsp/save")
+      expect(fetchCalls[0].body).toEqual({
+        path: "main.go",
+        content: "package main\n",
+        language: "go",
+      })
+
+      await notifyLspDidClose("main.go", "go")
+      expect(fetchCalls[1].url).toContain("/api/v1/lsp/close")
+      expect(fetchCalls[1].body).toEqual({
+        path: "main.go",
+        language: "go",
+      })
+
+      const symbols = await fetchLspSymbols("main.go", "go")
+      expect(fetchCalls[2].url).toContain("/api/v1/lsp/symbols")
+      expect(symbols).toHaveLength(1)
+      expect(symbols[0].name).toBe("MySymbol")
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 })

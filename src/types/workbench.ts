@@ -157,6 +157,8 @@ export interface EditorGroupState {
   activeTab: string
 }
 
+export type BufferStatus = "idle" | "loading" | "ready" | "error"
+
 export interface FileBuffer {
   content: string
   savedContent?: string
@@ -167,6 +169,7 @@ export interface FileBuffer {
   isLargeFile?: boolean
   isBinary?: boolean
   fileSize?: number
+  status?: BufferStatus
 }
 
 export interface WorkspaceChangeEvent {

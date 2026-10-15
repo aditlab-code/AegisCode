@@ -422,8 +422,9 @@ describe("DAP Debugger (Delve) Frontend Workflow", () => {
 
     it("resolves go run command correctly", () => {
       expect(getTerminalRunCommand("cmd/server/main.go")).toBe(
-        'go run "cmd/server/main.go"',
+        "go run ./cmd/server",
       )
+      expect(getTerminalRunCommand("main.go")).toBe("go run .")
     })
 
     it("resolves node and tsx commands correctly", () => {
@@ -431,13 +432,28 @@ describe("DAP Debugger (Delve) Frontend Workflow", () => {
       expect(getTerminalRunCommand("src/main.ts")).toBe('npx tsx "src/main.ts"')
     })
 
-    it("resolves bash, cpp, and rust commands", () => {
+    it("resolves bash, c, cpp, and rust commands", () => {
       expect(getTerminalRunCommand("deploy.sh")).toBe('bash "deploy.sh"')
+      expect(getTerminalRunCommand("main.c")).toBe(
+        'clang "main.c" -o /tmp/aegis_bin && /tmp/aegis_bin',
+      )
       expect(getTerminalRunCommand("main.cpp")).toBe(
         'clang++ "main.cpp" -o /tmp/aegis_bin && /tmp/aegis_bin',
       )
       expect(getTerminalRunCommand("main.rs")).toBe(
         'rustc "main.rs" -o /tmp/aegis_bin && /tmp/aegis_bin',
+      )
+    })
+
+    it("supports Windows platform binary and execution commands", () => {
+      expect(getTerminalRunCommand("main.cpp", { isWindows: true })).toBe(
+        'clang++ "main.cpp" -o .\\aegis_bin.exe && .\\aegis_bin.exe',
+      )
+      expect(getTerminalRunCommand("main.c", { isWindows: true })).toBe(
+        'clang "main.c" -o .\\aegis_bin.exe && .\\aegis_bin.exe',
+      )
+      expect(getTerminalRunCommand("main.py", { isWindows: true })).toBe(
+        'python "main.py"',
       )
     })
 
