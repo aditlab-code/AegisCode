@@ -49,10 +49,10 @@ __debug_bin*
 .codegraph
 
 # Internal Agent Instructions & Local Specs
-#/AGENTS.md
-#/CLAUDE.md
+/AGENTS.md
+/CLAUDE.md
 /.scratch/
-/task
+#/task
 .mise.toml
 
 # Internal Developer Documentation
