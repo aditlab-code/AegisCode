@@ -251,6 +251,17 @@ describe("MP-5.2 Zustand Store Optimization Track (OPT-ZUS-01 through OPT-ZUS-09
     expect(termStore.getState().activeTerminalSessionId).toBe(initialSession.id)
 
     // 3. Restart terminal session with a custom shell (e.g. bash or powershell)
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        sessionId: initialSession.id,
+        shell: "pwsh",
+        cwd: "/workspace",
+        pid: 12345,
+      }),
+    } as any)
+
     await termStore.getState().restartTerminalSession(initialSession.id, "pwsh")
     const updated = termStore
       .getState()
