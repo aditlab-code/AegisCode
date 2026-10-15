@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -487,14 +488,32 @@ func (s *Server) handleWorkspaceSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, err := s.ws.Search(req.Query, req.IsRegex, req.IsMatchCase, req.IsWholeWord)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	outcome, err := s.ws.SearchWithContext(ctx, req.Query, req.IsRegex, req.IsMatchCase, req.IsWholeWord)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			jsonError(w, http.StatusRequestTimeout, "search timed out (workspace might be too large)")
+			return
+		}
+		if errors.Is(err, context.Canceled) {
+			return
+		}
 		jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
+	warning := ""
+	if outcome.IsCapped {
+		warning = "Hasil dibatasi maksimal 100 matches demi performa. Persempit kata kunci jika file belum ditemukan."
+	}
+
 	jsonResponse(w, http.StatusOK, SearchResponse{
-		Results: results,
+		Results:      outcome.Results,
+		IsCapped:     outcome.IsCapped,
+		TotalMatches: outcome.TotalMatches,
+		Warning:      warning,
 	})
 }
 

@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -34,6 +35,12 @@ type SearchResult struct {
 	Matches  []SearchMatch `json:"matches"`
 }
 
+type SearchOutcome struct {
+	Results      []SearchResult `json:"results"`
+	IsCapped     bool           `json:"isCapped"`
+	TotalMatches int            `json:"totalMatches"`
+}
+
 type RepoStatus struct {
 	IsRepo   bool   `json:"isRepo"`
 	Branch   string `json:"branch"`
@@ -46,6 +53,7 @@ type Manager struct {
 	watcher       *Watcher
 	watcherCancel func()
 	index         *WorkspaceIndex
+	gitignore     *GitIgnoreMatcher
 
 	subMu sync.RWMutex
 	subs  map[chan WorkspaceChangeEvent]struct{}
@@ -76,6 +84,7 @@ func NewManager(initialRoot string) (*Manager, error) {
 	}
 
 	m.rootPath = absPath
+	m.gitignore = NewGitIgnoreMatcher(absPath)
 	m.index = NewWorkspaceIndex(absPath)
 	m.startWatcherLocked(absPath)
 
@@ -105,6 +114,7 @@ func (m *Manager) SetRoot(newRoot string) (string, error) {
 	m.mu.Lock()
 	m.stopWatcherLocked()
 	m.rootPath = absPath
+	m.gitignore = NewGitIgnoreMatcher(absPath)
 	m.index = NewWorkspaceIndex(absPath)
 	m.startWatcherLocked(absPath)
 	m.mu.Unlock()
@@ -118,6 +128,7 @@ func (m *Manager) Close() error {
 	m.stopWatcherLocked()
 	m.rootPath = ""
 	m.index = nil
+	m.gitignore = nil
 	return nil
 }
 
@@ -179,9 +190,19 @@ func (m *Manager) startWatcherLocked(root string) {
 				}
 				m.mu.RLock()
 				idx := m.index
+				gi := m.gitignore
+				root := m.rootPath
 				m.mu.RUnlock()
 				if idx != nil {
 					idx.Invalidate(evt)
+				}
+				if gi != nil && root != "" {
+					for _, p := range append(append(evt.Created, evt.Modified...), evt.Deleted...) {
+						if strings.HasSuffix(p, ".gitignore") {
+							gi.Load(root)
+							break
+						}
+					}
 				}
 				m.broadcastEvent(evt)
 			}
@@ -636,8 +657,17 @@ func (m *Manager) Move(sourceRelPath string, targetDirRelPath string) (string, e
 }
 
 func (m *Manager) Search(query string, isRegex bool, isMatchCase bool, isWholeWord bool) ([]SearchResult, error) {
+	outcome, err := m.SearchWithContext(context.Background(), query, isRegex, isMatchCase, isWholeWord)
+	return outcome.Results, err
+}
+
+func (m *Manager) SearchWithContext(ctx context.Context, query string, isRegex bool, isMatchCase bool, isWholeWord bool) (SearchOutcome, error) {
 	if strings.TrimSpace(query) == "" {
-		return []SearchResult{}, nil
+		return SearchOutcome{Results: []SearchResult{}}, nil
+	}
+
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	var pattern *regexp.Regexp
@@ -656,30 +686,67 @@ func (m *Manager) Search(query string, isRegex bool, isMatchCase bool, isWholeWo
 
 	pattern, err = regexp.Compile(patternStr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid search pattern: %w", err)
+		return SearchOutcome{}, fmt.Errorf("invalid search pattern: %w", err)
 	}
 
 	m.mu.RLock()
 	root := m.rootPath
+	gi := m.gitignore
 	m.mu.RUnlock()
 
+	if root == "" {
+		return SearchOutcome{Results: []SearchResult{}}, nil
+	}
+
 	results := make([]SearchResult, 0)
+	totalMatches := 0
+	isCapped := false
 
 	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if err != nil {
 			return err
 		}
-		if d.IsDir() {
-			name := d.Name()
-			if name == ".git" || name == "node_modules" || name == "dist" {
-				return filepath.SkipDir
-			}
+
+		if path == root {
 			return nil
 		}
 
 		relPath, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
+		}
+
+		isDir := d.IsDir()
+
+		// Pure .* and .gitignore rules
+		if gi != nil && gi.ShouldIgnore(relPath, isDir) {
+			if isDir {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if isDir {
+			return nil
+		}
+
+		if totalMatches >= MaxSearchMatches {
+			isCapped = true
+			return filepath.SkipAll
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		if info.Size() == 0 || info.Size() > MaxSearchFileSize {
+			return nil
 		}
 
 		// Read file text
@@ -712,37 +779,59 @@ func (m *Manager) Search(query string, isRegex bool, isMatchCase bool, isWholeWo
 					LineContent: line,
 					MatchText:   matchText,
 				})
+				totalMatches++
+				if totalMatches >= MaxSearchMatches {
+					isCapped = true
+					break
+				}
+			}
+			if totalMatches >= MaxSearchMatches {
+				break
 			}
 		}
 
 		if len(matches) > 0 {
 			results = append(results, SearchResult{
-				Filename: relPath,
+				Filename: filepath.ToSlash(relPath),
 				Matches:  matches,
 			})
 		} else if pattern.MatchString(d.Name()) || pattern.MatchString(relPath) {
-			results = append(results, SearchResult{
-				Filename: relPath,
-				Matches: []SearchMatch{
-					{
-						LineNumber:      1,
-						Column:          1,
-						LineContent:     d.Name(),
-						MatchText:       d.Name(),
-						IsFilenameMatch: true,
+			if totalMatches < MaxSearchMatches {
+				totalMatches++
+				results = append(results, SearchResult{
+					Filename: filepath.ToSlash(relPath),
+					Matches: []SearchMatch{
+						{
+							LineNumber:      1,
+							Column:          1,
+							LineContent:     d.Name(),
+							MatchText:       d.Name(),
+							IsFilenameMatch: true,
+						},
 					},
-				},
-			})
+				})
+			} else {
+				isCapped = true
+			}
+		}
+
+		if totalMatches >= MaxSearchMatches {
+			isCapped = true
+			return filepath.SkipAll
 		}
 
 		return nil
 	})
 
-	if walkErr != nil {
-		return nil, walkErr
+	if walkErr != nil && !errors.Is(walkErr, filepath.SkipAll) {
+		return SearchOutcome{}, walkErr
 	}
 
-	return results, nil
+	return SearchOutcome{
+		Results:      results,
+		IsCapped:     isCapped,
+		TotalMatches: totalMatches,
+	}, nil
 }
 
 func (m *Manager) ReplaceAll(query string, replacement string, isRegex bool, isMatchCase bool, isWholeWord bool) (int, []string, error) {
@@ -768,6 +857,7 @@ func (m *Manager) ReplaceAll(query string, replacement string, isRegex bool, isM
 
 	m.mu.RLock()
 	root := m.rootPath
+	gi := m.gitignore
 	m.mu.RUnlock()
 
 	totalReplacements := 0
@@ -777,11 +867,33 @@ func (m *Manager) ReplaceAll(query string, replacement string, isRegex bool, isM
 		if err != nil {
 			return err
 		}
-		if d.IsDir() {
-			name := d.Name()
-			if name == ".git" || name == "node_modules" || name == "dist" {
+
+		if path == root {
+			return nil
+		}
+
+		relPath, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+
+		isDir := d.IsDir()
+		if gi != nil && gi.ShouldIgnore(relPath, isDir) {
+			if isDir {
 				return filepath.SkipDir
 			}
+			return nil
+		}
+
+		if isDir {
+			return nil
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		if info.Size() == 0 || info.Size() > MaxSearchFileSize {
 			return nil
 		}
 
@@ -809,12 +921,6 @@ func (m *Manager) ReplaceAll(query string, replacement string, isRegex bool, isM
 		if err := os.WriteFile(path, []byte(newContent), 0644); err != nil {
 			return err
 		}
-
-		relPath, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-
 		totalReplacements += len(matches)
 		modifiedFiles = append(modifiedFiles, relPath)
 		return nil

@@ -434,3 +434,70 @@ func TestGetTreeSymlinkedDirectory(t *testing.T) {
 	}
 }
 
+func TestSearch_LimitsAndIgnoredDirs(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "aegis-search-limit-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	mgr, err := NewManager(tempDir)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	// 1. Create file in ignored dir (.codegraph, .venv)
+	codegraphDir := filepath.Join(tempDir, ".codegraph")
+	if err := os.MkdirAll(codegraphDir, 0755); err != nil {
+		t.Fatalf("failed to create .codegraph: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(codegraphDir, "index.json"), []byte("MATCH_TARGET"), 0644); err != nil {
+		t.Fatalf("failed to write codegraph index: %v", err)
+	}
+
+	// 2. Create oversized file (>1MB)
+	largeFilePath := filepath.Join(tempDir, "large.txt")
+	largeData := make([]byte, MaxSearchFileSize+50)
+	copy(largeData, []byte("MATCH_TARGET"))
+	for i := 12; i < len(largeData); i++ {
+		largeData[i] = 'A'
+	}
+	if err := os.WriteFile(largeFilePath, largeData, 0644); err != nil {
+		t.Fatalf("failed to write large file: %v", err)
+	}
+
+	// 3. Create normal file with 150 matches across lines
+	normalFilePath := filepath.Join(tempDir, "normal.txt")
+	var normalBuilder strings.Builder
+	for i := 0; i < 150; i++ {
+		normalBuilder.WriteString("line with MATCH_TARGET\n")
+	}
+	if err := os.WriteFile(normalFilePath, []byte(normalBuilder.String()), 0644); err != nil {
+		t.Fatalf("failed to write normal file: %v", err)
+	}
+
+	// Execute search
+	results, err := mgr.Search("MATCH_TARGET", false, true, false)
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+
+	totalMatches := 0
+	for _, res := range results {
+		if strings.Contains(res.Filename, ".codegraph") {
+			t.Fatalf("expected .codegraph to be ignored, got match in: %s", res.Filename)
+		}
+		if res.Filename == "large.txt" {
+			t.Fatalf("expected large.txt (>1MB) to be ignored, got match in: %s", res.Filename)
+		}
+		totalMatches += len(res.Matches)
+	}
+
+	if totalMatches > MaxSearchMatches {
+		t.Fatalf("expected total matches <= %d, got %d", MaxSearchMatches, totalMatches)
+	}
+	if totalMatches != MaxSearchMatches {
+		t.Fatalf("expected total matches == %d (capped), got %d", MaxSearchMatches, totalMatches)
+	}
+}
+

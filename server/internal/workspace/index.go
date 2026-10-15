@@ -54,19 +54,14 @@ type WorkspaceIndex struct {
 	lastIndexedAt time.Time
 	indexDurMs    int64
 	status        string
+	gitignore     *GitIgnoreMatcher
 }
 
-var ignoredDirNames = map[string]struct{}{
-	".git":         {},
-	"node_modules": {},
-	"dist":         {},
-	".next":        {},
-	"vendor":       {},
-	".scratch":     {},
-	".gemini":      {},
-	"bin":          {},
-	"obj":          {},
-}
+// MaxSearchFileSize defines the maximum size of files searched (1MB) to prevent memory spikes.
+const MaxSearchFileSize = 1024 * 1024
+
+// MaxSearchMatches caps total matches to 100 for search queries to protect response payloads.
+const MaxSearchMatches = 100
 
 // NewWorkspaceIndex scans rootPath and constructs the in-memory index.
 func NewWorkspaceIndex(rootPath string) *WorkspaceIndex {
@@ -75,6 +70,7 @@ func NewWorkspaceIndex(rootPath string) *WorkspaceIndex {
 		files:       make([]IndexedFile, 0, 1024),
 		filesByPath: make(map[string]int),
 		status:      "idle",
+		gitignore:   NewGitIgnoreMatcher(rootPath),
 	}
 
 	if rootPath == "" {
@@ -101,11 +97,20 @@ func (idx *WorkspaceIndex) rebuild() {
 			return nil
 		}
 
-		name := d.Name()
-		if d.IsDir() {
-			if _, ignored := ignoredDirNames[name]; ignored && p != cleanRoot {
-				return filepath.SkipDir
+		if p != cleanRoot {
+			rel, err := filepath.Rel(cleanRoot, p)
+			if err != nil {
+				return nil
 			}
+			if idx.gitignore != nil && idx.gitignore.ShouldIgnore(rel, d.IsDir()) {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+		}
+
+		if d.IsDir() {
 			return nil
 		}
 
@@ -122,7 +127,11 @@ func (idx *WorkspaceIndex) rebuild() {
 			modTime = info.ModTime().Unix()
 			size = info.Size()
 		}
+		if size > MaxSearchFileSize {
+			return nil
+		}
 
+		name := d.Name()
 		item := IndexedFile{
 			Path:      rel,
 			LowerPath: strings.ToLower(rel),
@@ -254,13 +263,11 @@ func (idx *WorkspaceIndex) toRelPath(p, cleanRoot string) string {
 }
 
 func (idx *WorkspaceIndex) isIgnoredPath(rel string) bool {
-	parts := strings.Split(rel, "/")
-	for _, part := range parts {
-		if _, ok := ignoredDirNames[part]; ok {
-			return true
-		}
+	if idx.gitignore != nil {
+		return idx.gitignore.ShouldIgnore(rel, false)
 	}
-	return false
+	base := filepath.Base(rel)
+	return strings.HasPrefix(base, ".")
 }
 
 // FuzzyFind runs weighted subsequence matching against indexed files.

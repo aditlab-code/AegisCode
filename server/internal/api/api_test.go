@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1829,6 +1830,77 @@ func TestWorkspaceIndexStatsEndpoint(t *testing.T) {
 		t.Fatalf("unexpected index status: %q", stats.Status)
 	}
 }
+
+func TestWorkspaceSearchEndpoint(t *testing.T) {
+	_, handler, tempDir := setupTestServer(t, "")
+	defer os.RemoveAll(tempDir)
+
+	// Create test files
+	fileA := filepath.Join(tempDir, "sample.txt")
+	_ = os.WriteFile(fileA, []byte("apple banana orange\napple cherry\n"), 0644)
+
+	// 1. Method Not Allowed
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/workspace/search", nil)
+	rrGet := executeRequest(handler, getReq)
+	if rrGet.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 for GET search, got %d", rrGet.Code)
+	}
+
+	// 2. Normal Search
+	body, _ := json.Marshal(SearchRequest{Query: "apple"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspace/search", bytes.NewReader(body))
+	rr := executeRequest(handler, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for search, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var res SearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed to decode search response: %v", err)
+	}
+	if len(res.Results) == 0 {
+		t.Errorf("expected results for 'apple', got 0")
+	}
+	if res.IsCapped {
+		t.Errorf("expected IsCapped false for small results")
+	}
+
+	// 3. Invalid Regex Search -> 400
+	badRegexBody, _ := json.Marshal(SearchRequest{Query: "[invalid(", IsRegex: true})
+	badReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspace/search", bytes.NewReader(badRegexBody))
+	rrBad := executeRequest(handler, badReq)
+	if rrBad.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for bad regex, got %d", rrBad.Code)
+	}
+
+	// 4. Heavy Search with many matches -> capped at 100
+	var largeContent strings.Builder
+	for i := 0; i < 150; i++ {
+		largeContent.WriteString(fmt.Sprintf("hit_%d keyword\n", i))
+	}
+	fileB := filepath.Join(tempDir, "large.txt")
+	_ = os.WriteFile(fileB, []byte(largeContent.String()), 0644)
+
+	capBody, _ := json.Marshal(SearchRequest{Query: "keyword"})
+	capReq := httptest.NewRequest(http.MethodPost, "/api/v1/workspace/search", bytes.NewReader(capBody))
+	rrCap := executeRequest(handler, capReq)
+	if rrCap.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for capped search, got %d: %s", rrCap.Code, rrCap.Body.String())
+	}
+	var capRes SearchResponse
+	if err := json.Unmarshal(rrCap.Body.Bytes(), &capRes); err != nil {
+		t.Fatalf("failed to decode capped response: %v", err)
+	}
+	if !capRes.IsCapped {
+		t.Errorf("expected IsCapped true when matches exceed 100")
+	}
+	if capRes.TotalMatches != 100 {
+		t.Errorf("expected TotalMatches 100, got %d", capRes.TotalMatches)
+	}
+	if capRes.Warning == "" {
+		t.Errorf("expected Warning message when capped")
+	}
+}
+
 
 
 

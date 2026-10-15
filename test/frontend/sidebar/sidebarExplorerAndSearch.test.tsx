@@ -236,4 +236,12 @@ describe("Track MP-3.2 (Sidebar Explorer & Search) Tests", () => {
       })
     })
   })
+
+  describe("SB-06: SearchPanel Performance & Safeguards", () => {
+    it("renders SearchPanel structure and default empty search hint", () => {
+      const html = renderToString(<SearchPanel />)
+      expect(html).toContain("search-panel")
+      expect(html).toContain("Search across workspace files")
+    })
+  })
 })

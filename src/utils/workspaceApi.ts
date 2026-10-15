@@ -465,23 +465,37 @@ export async function moveWorkspaceFile(
   return data.newPath
 }
 
+export interface WorkspaceSearchResponse {
+  results: BackendSearchResult[]
+  isCapped?: boolean
+  totalMatches?: number
+  warning?: string
+}
+
 export async function searchWorkspace(
   query: string,
   isRegex = false,
   isMatchCase = false,
   isWholeWord = false,
-): Promise<BackendSearchResult[]> {
+  signal?: AbortSignal,
+): Promise<WorkspaceSearchResponse> {
   const res = await fetch(`${API_BASE}/api/v1/workspace/search`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query, isRegex, isMatchCase, isWholeWord }),
+    signal,
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.error || `Failed to search: ${res.statusText}`)
   }
   const data = await res.json()
-  return data.results || []
+  return {
+    results: data.results || [],
+    isCapped: Boolean(data.isCapped),
+    totalMatches: data.totalMatches,
+    warning: data.warning,
+  }
 }
 
 export interface ReplaceAllResult {
@@ -828,6 +842,7 @@ export interface FilesFindResult {
 export async function findWorkspaceFiles(
   query: string,
   limit = 20,
+  signal?: AbortSignal,
 ): Promise<FilesFindResult> {
   const params = new URLSearchParams()
   if (query) params.set("q", query)
@@ -835,6 +850,7 @@ export async function findWorkspaceFiles(
 
   const res = await fetch(
     `${API_BASE}/api/v1/workspace/files/find?${params.toString()}`,
+    { signal },
   )
   if (!res.ok) {
     throw new Error(

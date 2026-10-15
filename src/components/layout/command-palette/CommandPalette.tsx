@@ -285,19 +285,23 @@ export function CommandPalette() {
     const controller = new AbortController()
     const q = commandPaletteQuery.trim()
 
-    findWorkspaceFiles(q, 25)
-      .then((res) => {
-        if (!controller.signal.aborted && res?.matches) {
-          setBackendMatches(res.matches)
-        }
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) {
+    const timer = setTimeout(() => {
+      findWorkspaceFiles(q, 25, controller.signal)
+        .then((res) => {
+          if (!controller.signal.aborted && res?.matches) {
+            setBackendMatches(res.matches)
+          }
+        })
+        .catch((err) => {
+          if (err?.name === "AbortError" || controller.signal.aborted) {
+            return
+          }
           setBackendMatches([])
-        }
-      })
+        })
+    }, 200)
 
     return () => {
+      clearTimeout(timer)
       controller.abort()
     }
   }, [mode, commandPaletteQuery, serverConnected])

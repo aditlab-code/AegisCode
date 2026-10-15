@@ -64,62 +64,102 @@ export function SearchPanel() {
 
   const [backendResults, setBackendResults] = useState<FileSearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
+  const [searchWarning, setSearchWarning] = useState<string | null>(null)
+  const [searchError, setSearchError] = useState<string | null>(null)
 
   const searchInputRef = useRef<HTMLInputElement>(null)
+
+  const [visibleLimit, setVisibleLimit] = useState(100)
+  const activeAbortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     searchInputRef.current?.focus()
   }, [])
 
-  const refreshSearch = useCallback(async () => {
-    if (!search.trim()) {
-      setBackendResults([])
-      return
-    }
+  const refreshSearch = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!search.trim()) {
+        setBackendResults([])
+        setSearchWarning(null)
+        setSearchError(null)
+        return
+      }
 
-    try {
-      const results = await searchWorkspace(
-        search,
-        isRegex,
-        isMatchCase,
-        isWholeWord,
-      )
-      setBackendResults(
-        results.map((r) => ({
-          filename: r.filename,
-          matches: r.matches.map((m) => ({
-            filename: r.filename,
-            lineNumber: m.lineNumber,
-            column: m.column,
-            lineContent: m.lineContent,
-            matchText: m.matchText,
-            isFilenameMatch: m.isFilenameMatch,
-          })),
-        })),
-      )
-    } catch (err: any) {
-      setBackendResults([])
-      showToast(`Search failed: ${err?.message || "Unknown error"}`)
-    }
-  }, [search, isRegex, isMatchCase, isWholeWord, showToast])
+      try {
+        const response = await searchWorkspace(
+          search,
+          isRegex,
+          isMatchCase,
+          isWholeWord,
+          signal,
+        )
+        if (!signal?.aborted) {
+          setSearchError(null)
+          if (response.isCapped) {
+            setSearchWarning(
+              response.warning ||
+                "Banyak file cocok (dibatasi 100 matches). Persempit kata kunci jika file belum ditemukan.",
+            )
+          } else {
+            setSearchWarning(null)
+          }
+          setBackendResults(
+            response.results.map((r) => ({
+              filename: r.filename,
+              matches: r.matches.map((m) => ({
+                filename: r.filename,
+                lineNumber: m.lineNumber,
+                column: m.column,
+                lineContent: m.lineContent,
+                matchText: m.matchText,
+                isFilenameMatch: m.isFilenameMatch,
+              })),
+            })),
+          )
+        }
+      } catch (err: any) {
+        if (err?.name === "AbortError" || signal?.aborted) {
+          return
+        }
+        setBackendResults([])
+        setSearchWarning(null)
+        const errMsg = err?.message || "Search failed during processing"
+        setSearchError(errMsg)
+        showToast(`Search failed: ${errMsg}`)
+      }
+    },
+    [search, isRegex, isMatchCase, isWholeWord, showToast],
+  )
 
   useEffect(() => {
     setDismissedFiles({})
+    setVisibleLimit(100)
     if (!search.trim()) {
       setBackendResults([])
+      setSearchWarning(null)
+      setSearchError(null)
       return
     }
+
+    const controller = new AbortController()
+    activeAbortRef.current?.abort()
+    activeAbortRef.current = controller
 
     const timer = setTimeout(async () => {
       setIsSearching(true)
       try {
-        await refreshSearch()
+        await refreshSearch(controller.signal)
       } finally {
-        setIsSearching(false)
+        if (!controller.signal.aborted) {
+          setIsSearching(false)
+        }
       }
-    }, 200)
+    }, 250)
 
-    return () => clearTimeout(timer)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
   }, [search, isRegex, isMatchCase, isWholeWord, refreshSearch])
 
   const searchResults: FileSearchResult[] = useMemo(() => {
@@ -129,6 +169,36 @@ export function SearchPanel() {
   const totalMatchesCount = useMemo(() => {
     return searchResults.reduce((acc, curr) => acc + curr.matches.length, 0)
   }, [searchResults])
+
+  const { visibleFiles, renderedMatchesCount, hasMore } = useMemo(() => {
+    let remainingQuota = visibleLimit
+    const filesList: FileSearchResult[] = []
+    let count = 0
+
+    for (const file of searchResults) {
+      if (remainingQuota <= 0) break
+
+      if (file.matches.length <= remainingQuota) {
+        filesList.push(file)
+        remainingQuota -= file.matches.length
+        count += file.matches.length
+      } else {
+        filesList.push({
+          filename: file.filename,
+          matches: file.matches.slice(0, remainingQuota),
+        })
+        count += remainingQuota
+        remainingQuota = 0
+        break
+      }
+    }
+
+    return {
+      visibleFiles: filesList,
+      renderedMatchesCount: count,
+      hasMore: totalMatchesCount > count,
+    }
+  }, [searchResults, visibleLimit, totalMatchesCount])
 
   function toggleFileCollapse(filename: string) {
     setCollapsedFiles((prev) => ({
@@ -416,18 +486,55 @@ export function SearchPanel() {
       {/* Results Tree */}
       {search ? (
         <div className="search-results">
+          {searchError && (
+            <div
+              className="mx-3 mt-2 p-2 rounded text-xs bg-error-soft text-error border border-error/30 flex items-start gap-1.5"
+              role="alert"
+            >
+              <Icon name="error" size={14} className="shrink-0 mt-0.5" />
+              <div className="flex-1 leading-snug">
+                <span className="font-semibold">Kesalahan Pemrosesan:</span>{" "}
+                {searchError}
+              </div>
+            </div>
+          )}
+
+          {searchWarning && (
+            <div
+              className="mx-3 mt-2 p-2 rounded text-xs bg-warning-soft text-warning border border-warning/30 flex items-start gap-1.5"
+              role="status"
+            >
+              <Icon name="warning" size={14} className="shrink-0 mt-0.5" />
+              <div className="flex-1 leading-snug">
+                <span className="font-semibold">Perhatian:</span>{" "}
+                {searchWarning}
+              </div>
+            </div>
+          )}
+
           <div className="result-summary flex items-center justify-between">
             <span>
-              {totalMatchesCount}{" "}
-              {totalMatchesCount === 1 ? "result" : "results"} in{" "}
-              {searchResults.length}{" "}
-              {searchResults.length === 1 ? "file" : "files"}
+              {isSearching ? (
+                <span className="text-ink-muted italic">Mencari...</span>
+              ) : (
+                <>
+                  {totalMatchesCount}{" "}
+                  {totalMatchesCount === 1 ? "result" : "results"} in{" "}
+                  {searchResults.length}{" "}
+                  {searchResults.length === 1 ? "file" : "files"}
+                  {totalMatchesCount >= 100 && (
+                    <span className="text-[10px] text-ink-muted ml-1 font-normal">
+                      (capped at 100)
+                    </span>
+                  )}
+                </>
+              )}
             </span>
             <div className="flex items-center gap-1">
               <IconButton
                 className="p-0.5 text-ink-muted hover:text-ink cursor-pointer"
                 label="Refresh Search"
-                onClick={refreshSearch}
+                onClick={() => refreshSearch()}
               >
                 <Icon name="refresh" size={11} />
               </IconButton>
@@ -448,7 +555,7 @@ export function SearchPanel() {
             </div>
           </div>
 
-          {searchResults.map((fileRes) => {
+          {visibleFiles.map((fileRes) => {
             const isCollapsed = collapsedFiles[fileRes.filename]
             const cleanPath = fileRes.filename
               .replace(/\\/g, "/")
@@ -597,6 +704,19 @@ export function SearchPanel() {
               </div>
             )
           })}
+
+          {hasMore && (
+            <div className="py-2.5 px-3 text-center border-t border-line/50 mt-1">
+              <button
+                className="text-xs px-3 py-1 bg-surface hover:bg-surface-hover text-ink-muted hover:text-ink rounded border border-line cursor-pointer transition-colors"
+                onClick={() => setVisibleLimit((prev) => prev + 100)}
+                type="button"
+              >
+                Load more matches ({totalMatchesCount - renderedMatchesCount}{" "}
+                remaining)...
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="panel-hint">

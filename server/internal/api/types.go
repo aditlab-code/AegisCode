@@ -105,7 +105,10 @@ type SearchRequest struct {
 
 // SearchResponse models workspace search results.
 type SearchResponse struct {
-	Results []workspace.SearchResult `json:"results"`
+	Results      []workspace.SearchResult `json:"results"`
+	IsCapped     bool                     `json:"isCapped,omitempty"`
+	TotalMatches int                      `json:"totalMatches,omitempty"`
+	Warning      string                   `json:"warning,omitempty"`
 }
 
 // ReplaceAllRequest models find and replace parameters.
