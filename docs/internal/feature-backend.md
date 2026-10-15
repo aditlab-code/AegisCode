@@ -20,8 +20,10 @@ flowchart LR
     end
 
     subgraph GoCore["Go Core Server (Single Native Binary)"]
-        HTTPRouter["HTTP / SSE Router"]
+        HTTPRouter["HTTP / SSE Router (api.go)"]
+        DomainHandlers["10 Domain Handler Modules\n(workspace, git, term, sup, store, ai, debug, lsp, mcp, cg)"]
         WSHub["WebSocket Sync Hub"]
+        EventHub["Unified EventHub Broker (events_hub.go)"]
         DAPRunner["Bundled DAP / Delve Engine"]
         Supervisor["Process Supervisor"]
         Workspace["Workspace Engine"]
@@ -30,22 +32,40 @@ flowchart LR
     end
 
     subgraph Workers["Supervised Subprocesses"]
-        LSPWorker["Language Servers (LSP)"]
+        LSPWorker["Language Servers (gopls, pyright, tsserver)"]
         PTYWorker["Terminal Shells (PTY)"]
         AgentWorker["AEGIS AI Worker"]
     end
 
     DesktopUI <-->|REST / SSE / WS| HTTPRouter
     TabletUI <-->|REST / WS Pairing| WSHub
-    HTTPRouter --- DAPRunner
-    HTTPRouter --- Workspace
-    HTTPRouter --- Store
-    HTTPRouter --- CodeGraph
-    HTTPRouter --- Supervisor
+    HTTPRouter --> DomainHandlers
+    DomainHandlers <--> EventHub
+    DomainHandlers --- DAPRunner
+    DomainHandlers --- Workspace
+    DomainHandlers --- Store
+    DomainHandlers --- CodeGraph
+    DomainHandlers --- Supervisor
     Supervisor -->|stdio JSON-RPC| LSPWorker
     Supervisor -->|PTY Pipe| PTYWorker
     Supervisor -->|Unix Socket 0600| AgentWorker
 ```
+
+### 1.1 Modular HTTP API Domain Layer (`server/internal/api/`)
+To eliminate merge conflicts and cognitive overhead across developer teams, the HTTP presentation layer is deconstructed from a monolithic 3,420 LOC file into **1 core orchestrator (`api.go`) and 10 domain-specific handler files**:
+- **Package-Internal Cohesion**: All handler files declare `package api`, preserving complete access to unexported `Server` fields (`s.ws`, `s.git`, `s.lsp`, `s.mcp`, `s.eventHub`, etc.) and shared transport helpers (`jsonResponse`, `jsonError`) with zero interface overhead.
+- **File Matrix & Responsibilities**:
+  1. `api.go` (~350 LOC): Server struct definition, `NewServer()` constructor, dependency injection, CORS & Bearer auth middleware, and router mux (`Routes()`).
+  2. `workspace_handlers.go` (577 LOC): Root workspace lifecycle, directory browsing, file CRUD, index stats telemetry (`/api/v1/workspace/index/stats`), windowed CSV queries, and fuzzy file search.
+  3. `git_handlers.go` (407 LOC): 21 Git operations (status, branch checkout/creation, staging, commit, push, pull, sync, diff, tag management, remotes).
+  4. `terminal_handlers.go` (360 LOC): PTY session creation/resizing, raw WebSocket/SSE data streaming, and centralized `BroadcastLog`.
+  5. `supervisor_handlers.go` (188 LOC): Out-of-process worker runners, execution control, crash events streaming, and `BroadcastWorkerCrash`.
+  6. `storage_handlers.go` (360 LOC): Global app config, window state, chat ledger search, and content-addressed blob storage.
+  7. `ai_handlers.go` (191 LOC): LLM provider connectivity probe, model enumeration, dynamic skill discovery, and chat streaming.
+  8. `debug_handlers.go` (376 LOC): Delve DAP debugger lifecycle, breakpoint orchestration, stepping, `resolveGoProgram`, and system shutdown.
+  9. `lsp_handlers.go` (250 LOC): 11 LSP client handlers and real-time diagnostic SSE stream.
+  10. `mcp_handlers.go` (200 LOC): Model Context Protocol JSON-RPC runner, tool status event ingest, status broadcasting, and EventHub bridges.
+  11. `codegraph_handlers.go` (276 LOC): CodeGraph reverse proxy, AST reindexing, file code outlines/calls, and entrypoint search.
 
 ### Core Characteristics
 1. **Lightweight Footprint**: Memory usage <30MB at baseline, sub-30ms startup latency.
@@ -657,10 +677,16 @@ A high-performance CodeGraph Knowledge Engine and native Model Context Protocol 
     - `GET /api/v1/codegraph/file?path=<relPath>`: Active file symbol inspector stub.
     - `GET /api/v1/codegraph/symbols/search?q=<query>&limit=<20>`: Symbol autocomplete query.
 
-- **Stdio Transport CLI**:
-  - Command: `aegiscode mcp [--workspace <path>]`
-  - Enables external MCP clients (Claude Desktop, Cursor, OpenCode, Zed) to launch AegisCode as a native MCP server over Stdio.
-  - Dedicated stream isolation: All internal diagnostic logging is redirected to `os.Stderr`, preserving `os.Stdout` exclusively for clean JSON-RPC 2.0 frames.
+- **HTTP & Stdio Protocol Transports**:
+  - `POST /api/v1/mcp`: Standard MCP JSON-RPC 2.0 endpoint over HTTP transport. Processes initialize, ping, tools/list, and tools/call requests directly against native tools.
+  - `POST /api/v1/events/mcp`: Tool invocation and status event ingestion endpoint. Ingests execution status deltas (`tool`, `args`, `status: "running" | "completed" | "error"`) and dispatches them across the unified EventHub.
+  - **Antigravity CLI Envelope Unwrapping (`BroadcastMCPEventStatus`)**:
+    - Automatically unwraps nested Antigravity / Gemini CLI tool call envelopes (`call_mcp_tool`) to extract underlying tool names and symbol targets (`query`, `symbol`, `name`, `nodeId`, `symbol_name`, `file_path`, etc.).
+    - Dispatches structured events (`mcp:tool_invoked`) into the central `EventHub` for real-time UI indicator tracking in the AI drawer and status bar popovers.
+  - **Stdio Transport CLI**:
+    - Command: `aegiscode mcp [--workspace <path>]`
+    - Enables external MCP clients (Claude Desktop, Cursor, OpenCode, Zed) to launch AegisCode as a native MCP server over Stdio.
+    - Dedicated stream isolation: All internal diagnostic logging is redirected to `os.Stderr`, preserving `os.Stdout` exclusively for clean JSON-RPC 2.0 frames.
 
 - **7 Registered Progressive Disclosure Tools**:
   1. `get_file_outline`: Compact outline of all functions, classes, interfaces, and methods in a file without bodies (< 150 tokens). Parameter: `file_path: string`.
@@ -727,7 +753,7 @@ Rather than spawning dozens of scattered test files for every bug report or edge
    - On-demand dynamic code-splitting for `@xterm/xterm` (`React.lazy()`).
    - `WS-CLOSE-01`: Close workspace lifecycle (tree, buffers, and tab states cleared).
    - `WS-PATH-01`: Path normalization (trailing slash stripping, OS cross-platform paths, recent projects storage).
-2. **Backend Core Test**: The `TestCoreServerLifecycle` scenario matrix and internal packages (13 packages, including Multi-Provider AI engines in `ai`, Append-Only Ledger suites in `store`, Elastic PTY streaming in `terminal`, and LSP worker coordination, 128+ tests passing) spin up the native Core Server binary bound to an ephemeral TCP port and an isolated OS temporary directory (`os.MkdirTemp`). It executes real HTTP/REST requests:
+2. **Backend Core Test**: The `TestCoreServerLifecycle` scenario matrix, API GAP QA suite (`server/internal/api/gap_qa_test.go`), and internal packages (14 packages, including Multi-Provider AI engines in `ai`, Append-Only Ledger suites in `store`, Elastic PTY streaming in `terminal`, LSP worker coordination, and modular HTTP domain handlers, **217 tests passing**) spin up the native Core Server binary bound to an ephemeral TCP port and an isolated OS temporary directory (`os.MkdirTemp`). It executes real HTTP/REST requests:
    - `GET /api/v1/workspace/info`
    - `POST /api/v1/workspace/file` (Write & create directories)
    - `GET /api/v1/workspace/file` (Read verification)
@@ -740,6 +766,7 @@ Rather than spawning dozens of scattered test files for every bug report or edge
    - `GET /api/v1/workspace/info` (Verify empty rootPath after close)
    - `GET /api/v1/git/status` on empty/closed workspace (Safe 200 OK verification)
    - `POST /api/v1/workspace/open` with trailing slash (Normalization verification)
+   - **QA GAP Testing (`gap_qa_test.go`)**: Exhaustive edge-case validation for all 11 LSP endpoints (didOpen, didChange, didSave, didClose, symbols, completion, hover, definition, formatting fallback, status, SSE stream), MCP parse error envelopes, EventHub broadcast unwrapping for Antigravity tool calls (`call_mcp_tool`), nil manager safeguards, and HTTP 405 Method Not Allowed gatekeeping.
    Additionally, `TestServerBootWithEmptyWorkspaceRoot` verifies that booting without `WORKSPACE_ROOT` starts in a clean `rootPath == ""` state awaiting folder selection, without hardcoding the Go server's directory.
    All operations run against actual disk files with zero mock structs.
 

@@ -24,7 +24,10 @@ flowchart TB
     end
 
     subgraph GoServer["Go Core Server (Lightweight, Cross-Platform, Single Binary)"]
-        API["API & Stream Engine (REST, SSE, WebSockets)"]
+        API["Modular API & Stream Layer (api.go + 10 Domain Handlers)"]
+        EventBroker["Centralized Unified EventHub (events_hub.go)"]
+        LSPBridge["LSP Manager & Client (lsp_handlers.go)"]
+        MCPBridge["MCP Stdio Server & Bridge (mcp_handlers.go)"]
         Supervisor["Process Supervisor (Fail-Fast Worker Monitor)"]
         DAPRunner["Bundled DAP Engine & Delve Debugger Runner"]
         WSManager["Workspace Engine & File Watcher"]
@@ -35,6 +38,7 @@ flowchart TB
         LSPWorker["Language Server Protocol (LSP) Daemons"]
         PTYWorker["Native Terminal Runner (PTY / zsh / bash)"]
         AgentWorker["AEGIS AI Agent Runtime"]
+        CGWorker["CodeGraph Daemon & AST DB (.codegraph/codegraph.db)"]
     end
 
     subgraph Storage["Persistent Boundaries"]
@@ -45,10 +49,14 @@ flowchart TB
     Desktop <-->|HTTP / SSE / WebSockets| LoopbackHTTP
     Tablet <-->|HTTP / SSE / WebSockets| LoopbackHTTP
     LoopbackHTTP <--> API
+    API <--> EventBroker
+    API <--> LSPBridge
+    API <--> MCPBridge
+    LSPBridge <-->|stdio JSON-RPC| LSPWorker
+    MCPBridge <-->|stdio JSON-RPC 2.0| CGWorker
     API --- Supervisor
     Supervisor -->|Spawn & Supervise| STDIO
     Supervisor -->|Spawn & Supervise| UDS
-    STDIO <--> LSPWorker
     STDIO <--> PTYWorker
     UDS <--> AgentWorker
     API --- DAPRunner
@@ -108,9 +116,23 @@ The codebase adheres strictly to folder-level boundaries. Each directory owns a 
 
 The Go Core Server adheres to a pragmatic, flat package-by-feature layout avoiding deep DDD or hexagonal abstractions:
 
-- `server/cmd/server/`: Executable entry point (`main.go`), CLI flag parsing, configuration bootstrap, and graceful shutdown signal traps.
-- `server/internal/api/`: REST routing handlers, unified SSE multiplexer (`/api/v1/events`), WebSocket bidirectional event pipes, and workspace endpoints.
-- `server/internal/events/`: Unified Go `EventHub` SSE Multiplexer broadcasting events across topics (`workspace`, `logs`, `workers`, `debug`, `lsp`, `terminal`).
+- `server/internal/api/`: Modular REST routing and SSE streaming layer structured into 1 orchestrator file (`api.go`, ~350 LOC) and 10 domain-specific handler files:
+  - `api.go`: `Server` struct, `NewServer()`, CORS/auth middleware, dependency injection, and router mux.
+  - `workspace_handlers.go`: Filesystem operations, directory traversal, file CRUD, index stats telemetry, and CSV query engine.
+  - `git_handlers.go`: 21 Git operations (status, branches, staging, commit, push, pull, sync, diff, remotes).
+  - `terminal_handlers.go`: PTY session lifecycle, terminal SSE streams, and centralized logging (`BroadcastLog`).
+  - `supervisor_handlers.go`: Out-of-process worker supervision, health metrics, and crash dispatch (`BroadcastWorkerCrash`).
+  - `storage_handlers.go`: Global app config, window state, chat ledger search, and content-addressed blob storage.
+  - `ai_handlers.go`: LLM provider connectivity probe, model enumeration, dynamic skill registry, and token streaming.
+  - `debug_handlers.go`: Delve DAP debugger lifecycle, breakpoint orchestration, execution stepping, and graceful server shutdown.
+  - `lsp_handlers.go`: 11 Language Server Protocol client methods and real-time diagnostic SSE stream.
+  - `mcp_handlers.go`: Model Context Protocol JSON-RPC runner, events ingestion, status broadcasting, and EventHub bridges.
+  - `codegraph_handlers.go`: CodeGraph reverse proxy, AST reindexing, file code outlines/calls, and entrypoint search.
+  - `events_hub.go`: Centralized multiplexed SSE broker (`GET /api/v1/events`).
+  - `pairing.go`: Companion device authentication and LAN IP token validation.
+  - `types.go`: Canonical Go request/response DTOs.
+  - `gap_qa_test.go`: Comprehensive QA & GAP verification suite (LSP, MCP, nil manager safety, route verb gatekeeping).
+- `server/internal/events/`: Unified Go `EventHub` SSE Multiplexer broadcasting events across topics (`workspace`, `logs`, `workers`, `debug`, `lsp`, `terminal`, `mcp`).
 - `server/internal/config/`: Immutable configuration parser reading environment variables and defaults into read-only struct instances.
 - `server/internal/dap/`: Bundled Debug Adapter Protocol runner, managing debug sessions, breakpoints, and Delve daemon proxies.
 - `server/internal/git/`: Native Go Git subsystem with pure CLI/porcelain execution, DAG commit graph builder, conflict detection, checkout, and branch operations.

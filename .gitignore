@@ -55,7 +55,7 @@ __debug_bin*
 /.scratch/
 #/task/
 .mise.toml
-#GIT_RULES.md
+GIT_RULES.md
 
 # Internal Developer Documentation
 #docs/internal/
