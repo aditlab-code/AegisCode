@@ -216,6 +216,18 @@ func (m *Manager) FuzzyFind(query string, limit int) []FuzzyMatch {
 	return idx.FuzzyFind(query, limit)
 }
 
+// IndexStats returns telemetry metrics about the active in-memory index.
+func (m *Manager) IndexStats() IndexStats {
+	m.mu.RLock()
+	idx := m.index
+	m.mu.RUnlock()
+
+	if idx == nil {
+		return IndexStats{Status: "unindexed"}
+	}
+	return idx.Stats()
+}
+
 func (m *Manager) GetRoot() (string, string) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

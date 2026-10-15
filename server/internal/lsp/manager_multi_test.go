@@ -52,6 +52,9 @@ func TestMultiLanguageBinaryResolution(t *testing.T) {
 		"rust":       false,
 		"c":          false,
 		"cpp":        false,
+		"csharp":     false,
+		"bash":       false,
+		"makefile":   false,
 		"html":       false,
 		"css":        false,
 		"json":       false,
@@ -70,6 +73,90 @@ func TestMultiLanguageBinaryResolution(t *testing.T) {
 		if !found {
 			t.Errorf("expected language '%s' in status list", lang)
 		}
+	}
+}
+
+func TestMultiLanguageNormalizationAndCandidates(t *testing.T) {
+	mgr := NewManager("")
+
+	// Test normalization
+	tests := []struct {
+		input    string
+		expected string
+		canonLsp string
+	}{
+		{"makefile", "makefile", "makefile"},
+		{"mk", "makefile", "makefile"},
+		{"mak", "makefile", "makefile"},
+		{"sh", "bash", "shellscript"},
+		{"bash", "bash", "shellscript"},
+		{"zsh", "bash", "shellscript"},
+		{"shell", "bash", "shellscript"},
+		{"shellscript", "bash", "shellscript"},
+		{"c", "c", "c"},
+		{"h", "c", "c"},
+		{"cpp", "cpp", "cpp"},
+		{"c++", "cpp", "cpp"},
+		{"cxx", "cpp", "cpp"},
+		{"hpp", "cpp", "cpp"},
+		{"cs", "csharp", "csharp"},
+		{"csharp", "csharp", "csharp"},
+		{"c#", "csharp", "csharp"},
+		{"csx", "csharp", "csharp"},
+	}
+
+	for _, tc := range tests {
+		normalized := normalizeLang(tc.input)
+		if normalized != tc.expected {
+			t.Errorf("normalizeLang(%s) = %s; want %s", tc.input, normalized, tc.expected)
+		}
+		canon := canonicalLspLanguageID(tc.input)
+		if canon != tc.canonLsp {
+			t.Errorf("canonicalLspLanguageID(%s) = %s; want %s", tc.input, canon, tc.canonLsp)
+		}
+	}
+
+	// Test C/C++ clangd optimization flags and ccls fallback
+	cppSpec := mgr.getLangSpec("cpp")
+	if len(cppSpec.candidates) < 2 {
+		t.Fatalf("expected at least 2 candidates for cpp, got %d", len(cppSpec.candidates))
+	}
+	if cppSpec.candidates[0].binaryName != "clangd" {
+		t.Errorf("expected primary candidate clangd, got %s", cppSpec.candidates[0].binaryName)
+	}
+	clangdArgs := strings.Join(cppSpec.candidates[0].args, " ")
+	if !strings.Contains(clangdArgs, "--background-index") || !strings.Contains(clangdArgs, "--clang-tidy") {
+		t.Errorf("expected clangd args to contain optimization flags, got %v", cppSpec.candidates[0].args)
+	}
+	if cppSpec.candidates[1].binaryName != "ccls" {
+		t.Errorf("expected fallback candidate ccls, got %s", cppSpec.candidates[1].binaryName)
+	}
+
+	// Test Bash language server
+	bashSpec := mgr.getLangSpec("bash")
+	if len(bashSpec.candidates) == 0 || bashSpec.candidates[0].binaryName != "bash-language-server" {
+		t.Errorf("expected bash-language-server, got %+v", bashSpec.candidates)
+	}
+	if len(bashSpec.candidates[0].args) == 0 || bashSpec.candidates[0].args[0] != "start" {
+		t.Errorf("expected bash-language-server arg 'start', got %+v", bashSpec.candidates[0].args)
+	}
+
+	// Test Makefile language server
+	makeSpec := mgr.getLangSpec("makefile")
+	if len(makeSpec.candidates) == 0 || makeSpec.candidates[0].binaryName != "make-language-server" {
+		t.Errorf("expected make-language-server, got %+v", makeSpec.candidates)
+	}
+
+	// Test C# language server
+	csSpec := mgr.getLangSpec("csharp")
+	if len(csSpec.candidates) < 2 {
+		t.Fatalf("expected at least 2 candidates for csharp, got %d", len(csSpec.candidates))
+	}
+	if csSpec.candidates[0].binaryName != "csharp-ls" {
+		t.Errorf("expected primary candidate csharp-ls, got %s", csSpec.candidates[0].binaryName)
+	}
+	if csSpec.candidates[1].binaryName != "omnisharp" {
+		t.Errorf("expected secondary candidate omnisharp, got %s", csSpec.candidates[1].binaryName)
 	}
 }
 

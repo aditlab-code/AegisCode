@@ -7,6 +7,7 @@ import { NotificationsPopover } from "./NotificationsPopover"
 import { LspStatusPopover } from "./LspStatusPopover"
 import { McpStatusPopover } from "./McpStatusPopover"
 import { PerfStatusPill } from "./PerfStatusPill"
+import { IndexStatusPill } from "./IndexStatusPill"
 
 const CursorStatusItem = memo(function CursorStatusItem() {
   const cursorPosition = useWorkbenchStore((s) => s.cursorPosition)
@@ -212,6 +213,7 @@ export function StatusBar() {
           />{" "}
           MCP
         </button>
+        <IndexStatusPill />
         <PerfStatusPill />
         <button
           className="status-item cursor-pointer hover:text-[var(--color-ink)]"

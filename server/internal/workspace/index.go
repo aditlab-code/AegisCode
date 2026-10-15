@@ -34,6 +34,7 @@ type IndexStats struct {
 	TotalFiles      int       `json:"totalFiles"`
 	LastIndexedAt   time.Time `json:"lastIndexedAt"`
 	IndexDurationMs int64     `json:"indexDurationMs"`
+	Status          string    `json:"status"`
 }
 
 // IndexProvider defines the capability contract for the workspace in-memory index.
@@ -52,6 +53,7 @@ type WorkspaceIndex struct {
 	filesByPath   map[string]int // relative path -> index in files slice
 	lastIndexedAt time.Time
 	indexDurMs    int64
+	status        string
 }
 
 var ignoredDirNames = map[string]struct{}{
@@ -72,6 +74,7 @@ func NewWorkspaceIndex(rootPath string) *WorkspaceIndex {
 		rootPath:    rootPath,
 		files:       make([]IndexedFile, 0, 1024),
 		filesByPath: make(map[string]int),
+		status:      "idle",
 	}
 
 	if rootPath == "" {
@@ -83,6 +86,10 @@ func NewWorkspaceIndex(rootPath string) *WorkspaceIndex {
 }
 
 func (idx *WorkspaceIndex) rebuild() {
+	idx.mu.Lock()
+	idx.status = "indexing"
+	idx.mu.Unlock()
+
 	start := time.Now()
 	files := make([]IndexedFile, 0, 1024)
 	filesByPath := make(map[string]int)
@@ -135,6 +142,7 @@ func (idx *WorkspaceIndex) rebuild() {
 	idx.filesByPath = filesByPath
 	idx.lastIndexedAt = time.Now()
 	idx.indexDurMs = time.Since(start).Milliseconds()
+	idx.status = "ready"
 	idx.mu.Unlock()
 }
 
@@ -142,10 +150,15 @@ func (idx *WorkspaceIndex) rebuild() {
 func (idx *WorkspaceIndex) Stats() IndexStats {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
+	status := idx.status
+	if status == "" {
+		status = "ready"
+	}
 	return IndexStats{
 		TotalFiles:      len(idx.files),
 		LastIndexedAt:   idx.lastIndexedAt,
 		IndexDurationMs: idx.indexDurMs,
+		Status:          status,
 	}
 }
 
@@ -289,9 +302,9 @@ func (idx *WorkspaceIndex) FuzzyFind(query string, limit int) []FuzzyMatch {
 	}
 
 	// Parallel multi-core path for large repositories (> 2000 files)
-	numCPU := runtime.NumCPU()
-	if numCPU < 2 {
-		numCPU = 2
+	numCPU := runtime.NumCPU() - 1
+	if numCPU < 1 {
+		numCPU = 1
 	}
 
 	chunkSize := (totalFiles + numCPU - 1) / numCPU

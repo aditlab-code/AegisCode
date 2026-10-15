@@ -103,7 +103,7 @@ const SERVERS = [
   {
     language: "C / C++",
     key: "cpp",
-    binaries: ["clangd"],
+    binaries: ["clangd", "ccls"],
     extraPaths: [
       "/usr/bin/clangd",
       "/usr/local/bin/clangd",
@@ -112,6 +112,36 @@ const SERVERS = [
     ],
     installTip:
       "brew install llvm (macOS) or sudo apt-get install clangd (Linux)",
+  },
+  {
+    language: "Bash / Shell",
+    key: "bash",
+    binaries: ["bash-language-server"],
+    npmPackages: ["bash-language-server"],
+    installTip: "npm install -g bash-language-server",
+  },
+  {
+    language: "Makefile",
+    key: "makefile",
+    binaries: ["make-language-server", "autotools-language-server"],
+    npmPackages: ["make-language-server"],
+    installTip: "npm install -g make-language-server",
+  },
+  {
+    language: "C# (CSharp)",
+    key: "csharp",
+    binaries: ["csharp-ls", "omnisharp", "OmniSharp"],
+    extraPaths: [
+      path.join(
+        home,
+        ".dotnet",
+        "tools",
+        isWin ? "csharp-ls.exe" : "csharp-ls",
+      ),
+      "/usr/local/bin/omnisharp",
+      "/opt/homebrew/bin/omnisharp",
+    ],
+    installTip: "dotnet tool install -g csharp-ls (or brew install omnisharp)",
   },
 ]
 

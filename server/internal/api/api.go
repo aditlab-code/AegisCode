@@ -296,6 +296,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/workspace/folder", s.handleWorkspaceCreateFolder)
 	mux.HandleFunc("/api/v1/workspace/tree", s.handleWorkspaceTree)
 	mux.HandleFunc("/api/v1/workspace/files/find", s.handleWorkspaceFilesFind)
+	mux.HandleFunc("/api/v1/workspace/index/stats", s.handleWorkspaceIndexStats)
 	mux.HandleFunc("/api/v1/workspace/file", s.handleWorkspaceFile)
 	mux.HandleFunc("/api/v1/workspace/file/raw", s.handleWorkspaceFileRaw)
 	mux.HandleFunc("/api/v1/workspace/csv/query", s.handleWorkspaceCsvQuery)
@@ -380,6 +381,7 @@ func (s *Server) Routes() http.Handler {
 
 	// Model Context Protocol (MCP) & CodeGraph Endpoints
 	mux.HandleFunc("/api/v1/mcp", s.handleMCP)
+	mux.HandleFunc("/api/v1/events/mcp", s.handleMCPEventsIngest)
 	mux.HandleFunc("/api/v1/codegraph/status", s.handleCodeGraphStatus)
 	mux.HandleFunc("/api/v1/codegraph/reindex", s.handleCodeGraphReindex)
 	mux.HandleFunc("/api/v1/codegraph/file", s.handleCodeGraphFile)
@@ -915,6 +917,20 @@ func (s *Server) handleWorkspaceFilesFind(w http.ResponseWriter, r *http.Request
 		Total:      len(matches),
 		DurationMs: dur,
 	})
+}
+
+func (s *Server) handleWorkspaceIndexStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.ws == nil {
+		jsonResponse(w, http.StatusOK, workspace.IndexStats{Status: "unindexed"})
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, s.ws.IndexStats())
 }
 
 func (s *Server) handleWorkspaceReplaceAll(w http.ResponseWriter, r *http.Request) {
@@ -2329,8 +2345,14 @@ func (s *Server) handleAIChatStream(w http.ResponseWriter, r *http.Request) {
 
 	if s.mcp != nil {
 		req.ToolExecutor = func(ctx context.Context, name string, args map[string]any) (string, error) {
-			s.broadcastMCPEvent(name, args)
-			return s.mcp.ExecuteTool(ctx, name, args)
+			s.broadcastMCPEventStatus(name, args, "running")
+			out, err := s.mcp.ExecuteTool(ctx, name, args)
+			if err != nil {
+				s.broadcastMCPEventStatus(name, args, "error")
+			} else {
+				s.broadcastMCPEventStatus(name, args, "completed")
+			}
+			return out, err
 		}
 	}
 
@@ -2939,6 +2961,26 @@ func (s *Server) handleLSPEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleMCPEventsIngest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var evt map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&evt); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	tool, _ := evt["tool"].(string)
+	args, _ := evt["args"].(map[string]any)
+	status, _ := evt["status"].(string)
+	if status == "" {
+		status = "running"
+	}
+	s.broadcastMCPEventStatus(tool, args, status)
+	jsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -2963,46 +3005,94 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var callName string
+	var callArgs map[string]any
 	if req.Method == "tools/call" {
 		var callParams mcp.CallToolParams
 		if err := json.Unmarshal(req.Params, &callParams); err == nil {
-			s.broadcastMCPEvent(callParams.Name, callParams.Arguments)
+			callName = callParams.Name
+			callArgs = callParams.Arguments
+			s.broadcastMCPEventStatus(callName, callArgs, "running")
 		}
 	}
 
 	resp := s.mcp.HandleRequest(r.Context(), &req)
+
+	if callName != "" {
+		if resp != nil && resp.Error != nil {
+			s.broadcastMCPEventStatus(callName, callArgs, "error")
+		} else if resp != nil {
+			if callRes, ok := resp.Result.(*mcp.CallToolResult); ok && callRes != nil && callRes.IsError {
+				s.broadcastMCPEventStatus(callName, callArgs, "error")
+			} else if callRes, ok := resp.Result.(mcp.CallToolResult); ok && callRes.IsError {
+				s.broadcastMCPEventStatus(callName, callArgs, "error")
+			} else {
+				s.broadcastMCPEventStatus(callName, callArgs, "completed")
+			}
+		}
+	}
+
+	if resp == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) broadcastMCPEvent(tool string, args map[string]any) {
+	s.broadcastMCPEventStatus(tool, args, "running")
+}
+
+func (s *Server) broadcastMCPEventStatus(tool string, args map[string]any, status string) {
+	actualTool := tool
+	actualArgs := args
+
+	// Unwrap Antigravity / Gemini CLI call_mcp_tool
+	if tool == "call_mcp_tool" && args != nil {
+		if tn, ok := args["ToolName"].(string); ok && tn != "" {
+			actualTool = tn
+		}
+		if a, ok := args["Arguments"].(map[string]any); ok && a != nil {
+			actualArgs = a
+		}
+	}
+
 	sym := ""
-	if args != nil {
-		if v, ok := args["query"].(string); ok && v != "" {
+	if actualArgs != nil {
+		if v, ok := actualArgs["query"].(string); ok && v != "" {
 			sym = v
-		} else if v, ok := args["symbol"].(string); ok && v != "" {
+		} else if v, ok := actualArgs["symbol"].(string); ok && v != "" {
 			sym = v
-		} else if v, ok := args["name"].(string); ok && v != "" {
+		} else if v, ok := actualArgs["name"].(string); ok && v != "" {
 			sym = v
-		} else if v, ok := args["symbol_name"].(string); ok && v != "" {
+		} else if v, ok := actualArgs["nodeId"].(string); ok && v != "" {
 			sym = v
-		} else if v, ok := args["function_name"].(string); ok && v != "" {
+		} else if v, ok := actualArgs["symbol_name"].(string); ok && v != "" {
 			sym = v
-		} else if v, ok := args["root_symbol"].(string); ok && v != "" {
+		} else if v, ok := actualArgs["function_name"].(string); ok && v != "" {
 			sym = v
-		} else if v, ok := args["file"].(string); ok && v != "" {
+		} else if v, ok := actualArgs["root_symbol"].(string); ok && v != "" {
 			sym = v
-		} else if v, ok := args["file_path"].(string); ok && v != "" {
+		} else if v, ok := actualArgs["file"].(string); ok && v != "" {
 			sym = v
-		} else if v, ok := args["rel_path"].(string); ok && v != "" {
+		} else if v, ok := actualArgs["file_path"].(string); ok && v != "" {
+			sym = v
+		} else if v, ok := actualArgs["rel_path"].(string); ok && v != "" {
 			sym = v
 		}
 	}
+	if status == "" {
+		status = "running"
+	}
+
 	evt := map[string]any{
 		"event":     "mcp_tool_invoked",
-		"tool":      tool,
+		"tool":      actualTool,
 		"symbol":    sym,
-		"args":      args,
+		"status":    status,
+		"args":      actualArgs,
 		"timestamp": time.Now().Unix(),
 	}
 
@@ -3013,7 +3103,12 @@ func (s *Server) broadcastMCPEvent(tool string, args map[string]any) {
 
 // BroadcastMCPEvent dispatches an MCP tool call event to MCP subscribers and the unified event hub.
 func (s *Server) BroadcastMCPEvent(tool string, args map[string]any) {
-	s.broadcastMCPEvent(tool, args)
+	s.broadcastMCPEventStatus(tool, args, "running")
+}
+
+// BroadcastMCPEventStatus dispatches an MCP tool event with explicit execution lifecycle status.
+func (s *Server) BroadcastMCPEventStatus(tool string, args map[string]any, status string) {
+	s.broadcastMCPEventStatus(tool, args, status)
 }
 
 // initEventHubBridges connects workspace changes, debug events, and LSP diagnostics to the unified event hub.
@@ -3281,7 +3376,8 @@ func (s *Server) handleCodeGraphEntrypoints(w http.ResponseWriter, r *http.Reque
 		// Attempt fallback via MCP bridge if daemon direct fetch fails
 		if s.mcp != nil {
 			result, mcpErr := s.mcp.CallTool(r.Context(), "codegraph_explore", map[string]any{
-				"path": s.codegraph.Workspace(),
+				"query": "entrypoints main server",
+				"path":  s.codegraph.Workspace(),
 			})
 			if mcpErr == nil && result != nil && !result.IsError && len(result.Content) > 0 && result.Content[0].Type == "text" {
 				w.Header().Set("Content-Type", "application/json")

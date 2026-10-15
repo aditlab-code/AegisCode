@@ -8,9 +8,9 @@ This roadmap outlines the strategic milestones and technical trajectory for **Ae
 
 ```mermaid
 flowchart LR
-    Beta["v1.0.0-Beta (Current)"] --> GA["v1.0.0-GA (Release Readiness)"]
-    GA --> LSP["v1.1 Multi-LSP & Ast"]
-    LSP --> Ext["v1.2 Extensions & Marketplace"]
+    Beta["v1.0.0-Beta.1 (Current)"] --> LSP["v1.0.0-Beta.2 (Multi-LSP & AST)"]
+    LSP --> GA["v1.0.0-GA (Release Readiness)"]
+    GA --> Ext["v1.2 Extensions & Marketplace"]
     Ext --> Comp["v2.0 Companion Next & Collab"]
 ```
 
@@ -29,7 +29,22 @@ flowchart LR
 
 ---
 
-## Phase 2: Milestone GA — v1.0.0 (Target: Q1 2027)
+## Phase 2: Milestone v1.0.0-Beta.2 — Multi-Language LSP & AST Expansion
+*Focus: First-class polyglot language intelligence and semantic AST analysis without heavyweight background daemons.*
+
+- [x] **Expanded Built-in Language Server Bundles**:
+  - **Rust**: Integrated `rust-analyzer` management with auto-download and background diagnostics.
+  - **TypeScript / JavaScript**: Embedded `vtsls` or `typescript-language-server` integration.
+  - **Python**: Lightweight `pyright` / `basedpyright` support.
+  - **Go**: Native `gopls` toolchain bridge via Go process supervisor.
+- [x] **Polyglot Code Intelligence & Tree-Sitter Synthesizers**:
+  - Native `@colbymchenry/codegraph` Tree-sitter & Rust kernel multi-language engine integration.
+  - Cross-language dependency graph resolution (e.g. Go backend calling Python microservice or React frontend calling Go API).
+  - Real-time diagnostics multiplexer streaming LSP problems into the editor gutter and Problems view.
+
+---
+
+## Phase 3: Milestone GA — v1.0.0 (Target: 2027)
 *Focus: Release hardening, cross-platform distribution, and automated CI/CD.*
 
 - [ ] **Cross-Platform Release Automation**:
@@ -41,19 +56,6 @@ flowchart LR
   - Interactive branch switching and visual merge conflict resolution in editor gutter.
 - [ ] **Robust WAL Checkpointing**:
   - Automated idle database checkpointing (`PRAGMA wal_checkpoint(TRUNCATE)`) to minimize `.db-wal` disk footprints.
-
----
-
-## Phase 3: Milestone v1.1 — Multi-Language LSP & AST Expansion
-*Focus: First-class polyglot language intelligence without heavyweight background daemons.*
-
-- [ ] **Expanded Built-in Language Server Bundles**:
-  - **Rust**: Integrated `rust-analyzer` management with auto-download and background diagnostics.
-  - **TypeScript / JavaScript**: Embedded `vtsls` or `typescript-language-server` integration.
-  - **Python**: Lightweight `pyright` / `basedpyright` support.
-- [ ] **Polyglot Code Intelligence & Tree-Sitter Synthesizers**:
-  - Native `@colbymchenry/codegraph` Tree-sitter & Rust kernel multi-language engine integration.
-  - Cross-language dependency graph resolution (e.g. Go backend calling Python microservice or React frontend calling Go API).
 
 ---
 

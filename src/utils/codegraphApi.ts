@@ -136,8 +136,25 @@ export function extractCodeGraphTraceTargets(
   rawQuery: string
   filePath?: string
 } {
-  const cleanRaw = (rawToolName || "").trim()
-  const withoutMcpPrefix = cleanRaw.replace(/^mcp__codegraph__/i, "")
+  let effectiveTool = (rawToolName || "").trim()
+  let effectiveArgs = args || {}
+
+  if (effectiveTool === "call_mcp_tool" && args) {
+    if (args.ToolName) {
+      effectiveTool = String(args.ToolName)
+    }
+    if (args.Arguments && typeof args.Arguments === "object") {
+      effectiveArgs = (args.Arguments as Record<string, any>)
+    }
+  }
+
+  const withoutMcpPrefix = effectiveTool
+    .replace(/^mcp__codegraph__/i, "")
+    .replace(/^mcp_codegraph_/i, "")
+    .replace(/^codegraph[:_]/i, "codegraph_")
+    .replace(/^mcp__/i, "")
+    .replace(/^mcp_/i, "")
+
   const cleanToolName = withoutMcpPrefix.startsWith("codegraph:")
     ? withoutMcpPrefix.replace(/^codegraph:/i, "codegraph_")
     : withoutMcpPrefix
@@ -152,7 +169,8 @@ export function extractCodeGraphTraceTargets(
     cleanToolName === "codegraph_affected" ||
     cleanToolName === "codegraph_files" ||
     cleanToolName === "codegraph_status" ||
-    cleanToolName === "codegraph_context"
+    cleanToolName === "codegraph_context" ||
+    cleanToolName === "codegraph_flow"
 
   if (!isCodeGraph) {
     return {
@@ -165,24 +183,25 @@ export function extractCodeGraphTraceTargets(
   }
 
   const rawQuery = String(
-    args?.query ||
-      args?.symbol ||
-      args?.symbol_name ||
-      args?.function_name ||
-      args?.root_symbol ||
-      args?.name ||
-      args?.file ||
-      args?.file_path ||
-      args?.rel_path ||
-      args?.path ||
+    effectiveArgs?.query ||
+      effectiveArgs?.symbol ||
+      effectiveArgs?.nodeId ||
+      effectiveArgs?.symbol_name ||
+      effectiveArgs?.function_name ||
+      effectiveArgs?.root_symbol ||
+      effectiveArgs?.name ||
+      effectiveArgs?.file ||
+      effectiveArgs?.file_path ||
+      effectiveArgs?.rel_path ||
+      effectiveArgs?.path ||
       targetFile ||
       "",
   ).trim()
 
-  const filePath = (args?.file ||
-    args?.file_path ||
-    args?.rel_path ||
-    args?.file_hint ||
+  const filePath = (effectiveArgs?.file ||
+    effectiveArgs?.file_path ||
+    effectiveArgs?.rel_path ||
+    effectiveArgs?.file_hint ||
     targetFile) as string | undefined
 
   if (!rawQuery) {

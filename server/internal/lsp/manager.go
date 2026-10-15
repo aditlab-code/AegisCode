@@ -74,8 +74,14 @@ func normalizeLang(lang string) string {
 		return "rust"
 	case "c", "h":
 		return "c"
-	case "cpp", "c++", "cxx", "cc", "hpp":
+	case "cpp", "c++", "cxx", "cc", "hpp", "hh", "hxx":
 		return "cpp"
+	case "csharp", "c#", "cs", "csx":
+		return "csharp"
+	case "bash", "sh", "zsh", "shell", "shellscript":
+		return "bash"
+	case "makefile", "mk", "mak":
+		return "makefile"
 	case "json":
 		return "json"
 	case "html", "htm":
@@ -96,6 +102,45 @@ func clientGroup(normLang string) string {
 		return "cpp"
 	default:
 		return normLang
+	}
+}
+
+// canonicalLspLanguageID maps internal language names to official LSP specification LanguageIDs.
+func canonicalLspLanguageID(lang string) string {
+	l := strings.ToLower(strings.TrimSpace(lang))
+	switch l {
+	case "ts", "typescript":
+		return "typescript"
+	case "tsx", "typescriptreact":
+		return "typescriptreact"
+	case "js", "javascript":
+		return "javascript"
+	case "jsx", "javascriptreact":
+		return "javascriptreact"
+	case "py", "python":
+		return "python"
+	case "golang", "go":
+		return "go"
+	case "rs", "rust":
+		return "rust"
+	case "c", "h":
+		return "c"
+	case "cpp", "c++", "cxx", "cc", "hpp", "hh", "hxx":
+		return "cpp"
+	case "csharp", "c#", "cs", "csx":
+		return "csharp"
+	case "bash", "sh", "zsh", "shell", "shellscript":
+		return "shellscript"
+	case "makefile", "mk", "mak":
+		return "makefile"
+	case "json":
+		return "json"
+	case "html", "htm":
+		return "html"
+	case "css":
+		return "css"
+	default:
+		return l
 	}
 }
 
@@ -159,9 +204,45 @@ func (m *Manager) getLangSpec(normLang string) langSpec {
 	case "c", "cpp":
 		return langSpec{
 			candidates: []langCandidate{
-				{binaryName: "clangd", args: nil},
+				{
+					binaryName: "clangd",
+					args: []string{
+						"--background-index",
+						"--clang-tidy",
+						"--completion-style=detailed",
+						"--header-insertion=iwyu",
+					},
+				},
+				{binaryName: "ccls", args: nil},
 			},
 			installCommand: "brew install llvm (macOS) or sudo apt-get install clangd (Linux)",
+		}
+
+	case "bash":
+		return langSpec{
+			candidates: []langCandidate{
+				{binaryName: "bash-language-server", args: []string{"start"}},
+			},
+			installCommand: "npm install -g bash-language-server",
+		}
+
+	case "makefile":
+		return langSpec{
+			candidates: []langCandidate{
+				{binaryName: "make-language-server", args: nil},
+				{binaryName: "autotools-language-server", args: nil},
+			},
+			installCommand: "npm install -g make-language-server",
+		}
+
+	case "csharp":
+		return langSpec{
+			candidates: []langCandidate{
+				{binaryName: "csharp-ls", args: nil},
+				{binaryName: "omnisharp", args: []string{"-lsp"}},
+				{binaryName: "OmniSharp", args: []string{"-lsp"}},
+			},
+			installCommand: "dotnet tool install -g csharp-ls (or brew install omnisharp)",
 		}
 
 	case "json":
@@ -266,6 +347,7 @@ func (m *Manager) FindServerBinary(lang string) (string, []string, error) {
 			extraDirs = append(extraDirs,
 				filepath.Join(homeDir, "go", "bin"),
 				filepath.Join(homeDir, ".cargo", "bin"),
+				filepath.Join(homeDir, ".dotnet", "tools"),
 				filepath.Join(homeDir, ".local", "bin"),
 				filepath.Join(homeDir, ".npm-global", "bin"),
 				filepath.Join(homeDir, ".pyenv", "shims"),
@@ -334,6 +416,9 @@ func (m *Manager) GetStatus() []LanguageServerStatus {
 		"rust",
 		"c",
 		"cpp",
+		"csharp",
+		"bash",
+		"makefile",
 		"html",
 		"css",
 		"json",
@@ -515,7 +600,7 @@ func (m *Manager) DidOpen(relPath string, content string, lang string) error {
 	params := DidOpenTextDocumentParams{
 		TextDocument: TextDocumentItem{
 			URI:        uri,
-			LanguageID: lang,
+			LanguageID: canonicalLspLanguageID(lang),
 			Version:    1,
 			Text:       content,
 		},

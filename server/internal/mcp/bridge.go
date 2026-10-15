@@ -130,7 +130,7 @@ func (b *Bridge) EnsureRunning() error {
 	go b.readLoop(stdout)
 
 	// Perform initialize handshake
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 
 	initResp, err := b.callRPC(ctx, "initialize", map[string]any{
@@ -143,10 +143,18 @@ func (b *Bridge) EnsureRunning() error {
 			"version": "1.0.0",
 		},
 	})
-	if err != nil {
-		return fmt.Errorf("codegraph mcp initialize failed: %w", err)
-	}
-	if initResp.Error != nil {
+	if err != nil || (initResp != nil && initResp.Error != nil) {
+		b.mu.Lock()
+		b.running = false
+		b.cmd = nil
+		b.stdin = nil
+		b.mu.Unlock()
+		_ = stdin.Close()
+		_ = stdout.Close()
+		killProcessGroup(cmd)
+		if err != nil {
+			return fmt.Errorf("codegraph mcp initialize failed: %w", err)
+		}
 		return fmt.Errorf("codegraph mcp initialize error: %s", initResp.Error.Message)
 	}
 
@@ -344,7 +352,9 @@ func (b *Bridge) CallTool(ctx context.Context, name string, args map[string]any)
 
 	// Clean prefix: if client used "mcp__codegraph__explore" or "codegraph_explore", map to target name
 	cleanName := strings.TrimPrefix(name, "mcp__codegraph__")
+	cleanName = strings.TrimPrefix(cleanName, "mcp_codegraph_")
 	cleanName = strings.TrimPrefix(cleanName, "codegraph:")
+	cleanName = strings.TrimPrefix(cleanName, "mcp__")
 
 	// Auto-inject projectPath and path if not provided
 	if ws := b.getWorkspace(); ws != "" {
@@ -356,10 +366,47 @@ func (b *Bridge) CallTool(ctx context.Context, name string, args map[string]any)
 		}
 	}
 
-	// Target tool name
+	// Argument aliasing for compatibility with various LLM tool calling formats
+	if v, ok := args["nodeId"]; ok && v != nil && v != "" {
+		if _, hasSym := args["symbol"]; !hasSym || args["symbol"] == "" {
+			args["symbol"] = v
+		}
+	}
+	if v, ok := args["depth"]; ok && v != nil {
+		if _, hasMax := args["maxFiles"]; !hasMax {
+			args["maxFiles"] = v
+		}
+	}
+
+	// Resolve target tool name against advertised daemon tools
+	b.mu.RLock()
+	toolsList := b.tools
+	b.mu.RUnlock()
+
 	toolTarget := cleanName
-	if !strings.HasPrefix(toolTarget, "codegraph_") {
-		toolTarget = "codegraph_" + toolTarget
+	matched := false
+	for _, t := range toolsList {
+		if t.Name == cleanName {
+			toolTarget = cleanName
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		withCg := cleanName
+		if !strings.HasPrefix(withCg, "codegraph_") {
+			withCg = "codegraph_" + withCg
+		}
+		for _, t := range toolsList {
+			if t.Name == withCg {
+				toolTarget = withCg
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			toolTarget = withCg
+		}
 	}
 
 	resp, err := b.callRPC(ctx, "tools/call", map[string]any{

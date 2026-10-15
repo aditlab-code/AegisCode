@@ -134,3 +134,67 @@ func TestMCPRootsList(t *testing.T) {
 		t.Errorf("expected Name project-alpha, got %s", rootsResult.Roots[0].Name)
 	}
 }
+
+func TestMCPNotifications(t *testing.T) {
+	srv := setupTestServer(t)
+	ctx := context.Background()
+
+	// 1. notifications/initialized (notification with ID nil)
+	notifReq := &JSONRPCRequest{
+		JSONRPC: "2.0",
+		Method:  "notifications/initialized",
+	}
+	resp := srv.HandleRequest(ctx, notifReq)
+	if resp != nil {
+		t.Errorf("expected nil response for notification, got %+v", resp)
+	}
+
+	// 2. Notification with nil ID for any other notification
+	customNotif := &JSONRPCRequest{
+		JSONRPC: "2.0",
+		Method:  "notifications/roots/list_changed",
+	}
+	respCustom := srv.HandleRequest(ctx, customNotif)
+	if respCustom != nil {
+		t.Errorf("expected nil response for custom notification, got %+v", respCustom)
+	}
+}
+
+func TestLocalRegisteredToolExecution(t *testing.T) {
+	srv := NewServer()
+	ctx := context.Background()
+
+	srv.RegisterTool(Tool{
+		Name:        "custom_calc",
+		Description: "Simple test tool",
+		InputSchema: ToolInputSchema{
+			Type: "object",
+			Properties: map[string]PropertyDef{
+				"value": {Type: "string"},
+			},
+		},
+	}, func(ctx context.Context, args map[string]any) (*CallToolResult, error) {
+		return &CallToolResult{
+			Content: []ContentItem{
+				{Type: "text", Text: "calc_ok:" + args["value"].(string)},
+			},
+		}, nil
+	})
+
+	// Call via HandleRequest tools/call
+	callReq := &JSONRPCRequest{
+		JSONRPC: "2.0",
+		ID:      10,
+		Method:  "tools/call",
+		Params:  json.RawMessage(`{"name":"custom_calc","arguments":{"value":"42"}}`),
+	}
+	callResp := srv.HandleRequest(ctx, callReq)
+	if callResp.Error != nil {
+		t.Fatalf("unexpected error on custom_calc: %v", callResp.Error)
+	}
+	res, ok := callResp.Result.(*CallToolResult)
+	if !ok || len(res.Content) == 0 || res.Content[0].Text != "calc_ok:42" {
+		t.Fatalf("unexpected result payload: %+v", callResp.Result)
+	}
+}
+

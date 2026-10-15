@@ -843,3 +843,20 @@ export async function findWorkspaceFiles(
   }
   return res.json()
 }
+
+export interface WorkspaceIndexStats {
+  totalFiles: number
+  lastIndexedAt: string
+  indexDurationMs: number
+  status: "idle" | "indexing" | "ready" | "unindexed"
+}
+
+export async function fetchWorkspaceIndexStats(): Promise<WorkspaceIndexStats> {
+  const res = await fetch(`${API_BASE}/api/v1/workspace/index/stats`)
+  if (!res.ok) {
+    throw new Error(
+      await parseResponseError(res, "Failed to fetch workspace index stats"),
+    )
+  }
+  return res.json()
+}

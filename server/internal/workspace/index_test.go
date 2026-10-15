@@ -107,3 +107,18 @@ func BenchmarkWorkspaceIndex_FuzzyFind50k(b *testing.B) {
 		}
 	}
 }
+
+func TestWorkspaceIndex_StatsStatus(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "aegis_idx_status_*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	idx := NewWorkspaceIndex(tempDir)
+	stats := idx.Stats()
+	if stats.Status != "ready" {
+		t.Fatalf("expected status 'ready', got %q", stats.Status)
+	}
+}
+

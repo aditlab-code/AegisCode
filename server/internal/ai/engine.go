@@ -102,6 +102,10 @@ func GetCodeGraphOpenAITools() []map[string]any {
 							"type":        "string",
 							"description": "Natural language question, file name, or symbol names to explore",
 						},
+						"maxFiles": map[string]any{
+							"type":        "integer",
+							"description": "Maximum number of files to include source code from (default 12)",
+						},
 						"depth": map[string]any{
 							"type":        "integer",
 							"description": "Exploration traversal depth (default 3)",
@@ -119,12 +123,24 @@ func GetCodeGraphOpenAITools() []map[string]any {
 				"parameters": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
+						"symbol": map[string]any{
+							"type":        "string",
+							"description": "Symbol name or qualified identifier",
+						},
 						"nodeId": map[string]any{
 							"type":        "string",
-							"description": "Symbol node identifier",
+							"description": "Symbol node identifier (alias for symbol)",
+						},
+						"file": map[string]any{
+							"type":        "string",
+							"description": "Optional file path containing the symbol to disambiguate",
+						},
+						"includeCode": map[string]any{
+							"type":        "boolean",
+							"description": "Whether to include full verbatim node source code",
 						},
 					},
-					"required": []string{"nodeId"},
+					"required": []string{"symbol"},
 				},
 			},
 		},

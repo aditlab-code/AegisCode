@@ -1,7 +1,26 @@
 import type { DiagnosticItem } from "../types/workbench"
 
 export function detectLanguage(filename: string): string {
-  const parts = filename.split(".")
+  const clean = filename.split("?")[0] || filename
+  const base = (clean.split("/").pop() || clean).toLowerCase()
+  if (
+    base === "makefile" ||
+    base === "gnumakefile" ||
+    base.endsWith(".mk") ||
+    base.endsWith(".mak")
+  ) {
+    return "Makefile"
+  }
+  if (
+    base === ".bashrc" ||
+    base === ".zshrc" ||
+    base === ".bash_profile" ||
+    base === ".profile"
+  ) {
+    return "Shell"
+  }
+
+  const parts = clean.split(".")
   const ext = parts.length > 1 ? parts[parts.length - 1].toLowerCase() : ""
   switch (ext) {
     case "ts":
@@ -25,7 +44,19 @@ export function detectLanguage(filename: string): string {
     case "cc":
     case "cxx":
     case "hpp":
+    case "hh":
+    case "hxx":
       return "C++"
+    case "cs":
+    case "csx":
+      return "C#"
+    case "sh":
+    case "bash":
+    case "zsh":
+      return "Shell"
+    case "mk":
+    case "mak":
+      return "Makefile"
     case "css":
       return "CSS"
     case "html":
@@ -51,10 +82,31 @@ const LSP_EXTENSIONS = new Set([
   "cxx",
   "h",
   "hpp",
+  "hh",
+  "hxx",
+  "cs",
+  "csx",
+  "sh",
+  "bash",
+  "zsh",
+  "mk",
+  "mak",
 ])
 
 export function isLspLanguage(filename: string): boolean {
-  const ext = filename.split(".").pop()?.toLowerCase() || ""
+  const clean = filename.split("?")[0] || filename
+  const base = (clean.split("/").pop() || clean).toLowerCase()
+  if (
+    base === "makefile" ||
+    base === "gnumakefile" ||
+    base === ".bashrc" ||
+    base === ".zshrc" ||
+    base === ".bash_profile" ||
+    base === ".profile"
+  ) {
+    return true
+  }
+  const ext = clean.split(".").pop()?.toLowerCase() || ""
   return LSP_EXTENSIONS.has(ext)
 }
 

@@ -222,9 +222,25 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
   }
 
   // 5. @colbymchenry/codegraph MCP tools (codegraph_explore, codegraph_node, codegraph_search, etc.)
-  const rawCg = rawName
+  let effectiveName = rawName
+  let effectiveArgs = args
+  let effectiveServer = "codegraph"
+
+  if (rawName === "call_mcp_tool") {
+    effectiveServer = String(args.ServerName || "codegraph")
+    effectiveName = String(args.ToolName || "codegraph_explore")
+    if (args.Arguments && typeof args.Arguments === "object") {
+      effectiveArgs = args.Arguments
+    }
+  }
+
+  const rawCg = effectiveName
     .replace(/^mcp__codegraph__/i, "")
+    .replace(/^mcp_codegraph_/i, "")
     .replace(/^codegraph[:_]/i, "codegraph_")
+    .replace(/^mcp__/i, "")
+    .replace(/^mcp_/i, "")
+
   const isCgTool =
     rawCg === "codegraph_explore" ||
     rawCg === "codegraph_node" ||
@@ -237,15 +253,18 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
     rawCg === "codegraph_status" ||
     rawCg === "codegraph_context" ||
     rawCg === "codegraph_flow" ||
-    rawName.startsWith("mcp__")
+    rawName.startsWith("mcp__") ||
+    rawName.startsWith("mcp_") ||
+    rawName === "call_mcp_tool"
 
   if (isCgTool) {
     const q = String(
-      args.query ||
-        args.symbol ||
-        args.name ||
-        args.file ||
-        args.task ||
+      effectiveArgs.query ||
+        effectiveArgs.symbol ||
+        effectiveArgs.nodeId ||
+        effectiveArgs.name ||
+        effectiveArgs.file ||
+        effectiveArgs.task ||
         tc.summary ||
         "",
     ).trim()
@@ -263,17 +282,21 @@ export function parseToolCall(tc: ToolCallItem): ParsedToolCall {
       codegraph_flow: "Flow",
     }
     return {
-      actionLabel: labelMap[rawCg] || "CodeGraph",
+      actionLabel:
+        labelMap[rawCg] ||
+        (effectiveServer !== "codegraph" ? effectiveServer : "CodeGraph"),
       actionIcon: "zap",
       target: q || rawCg,
       fullTarget: q,
-      secondary: args.projectPath ? String(args.projectPath) : "codegraph",
-      targetFile: args.file ? String(args.file) : undefined,
+      secondary: effectiveArgs.projectPath
+        ? String(effectiveArgs.projectPath)
+        : effectiveServer,
+      targetFile: effectiveArgs.file ? String(effectiveArgs.file) : undefined,
       output: sanitizeOutput(tc.output, tc.preview),
       blobRef: tc.blobRef,
-      rawArgs: sanitizeRawArgs(tc.args),
+      rawArgs: sanitizeRawArgs(effectiveArgs),
       protocol: "mcp",
-      serverName: "codegraph",
+      serverName: effectiveServer,
     }
   }
 

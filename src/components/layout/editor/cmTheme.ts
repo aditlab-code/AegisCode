@@ -36,7 +36,34 @@ export interface LanguageInfo {
  * Maps file extension to CodeMirror language extension and LSP language ID.
  */
 export function resolveLanguage(filename: string): LanguageInfo {
-  const ext = filename.split(".").pop()?.toLowerCase() || ""
+  const cleanName = filename.split("?")[0] || filename
+  const base = (cleanName.split("/").pop() || cleanName).toLowerCase()
+  const ext = cleanName.includes(".")
+    ? cleanName.split(".").pop()?.toLowerCase() || ""
+    : ""
+
+  // Filename-based recognition (e.g. Makefile, .bashrc)
+  if (
+    base === "makefile" ||
+    base === "gnumakefile" ||
+    ext === "mk" ||
+    ext === "mak"
+  ) {
+    return { ext: null, id: "makefile" }
+  }
+
+  if (
+    base === ".bashrc" ||
+    base === ".zshrc" ||
+    base === ".bash_profile" ||
+    base === ".profile" ||
+    ext === "sh" ||
+    ext === "bash" ||
+    ext === "zsh"
+  ) {
+    return { ext: null, id: "shellscript" }
+  }
+
   switch (ext) {
     case "ts":
       return { ext: javascript({ typescript: true }), id: "typescript" }
@@ -72,7 +99,12 @@ export function resolveLanguage(filename: string): LanguageInfo {
     case "cc":
     case "cxx":
     case "hpp":
+    case "hh":
+    case "hxx":
       return { ext: cpp(), id: "cpp" }
+    case "cs":
+    case "csx":
+      return { ext: cpp(), id: "csharp" }
     default:
       return { ext: null, id: "plaintext" }
   }

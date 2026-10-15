@@ -1810,6 +1810,27 @@ func TestWorkspaceRenameAndMoveStatus(t *testing.T) {
 	}
 }
 
+func TestWorkspaceIndexStatsEndpoint(t *testing.T) {
+	_, handler, _ := setupTestServer(t, "")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspace/index/stats", nil)
+	rr := executeRequest(handler, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var stats workspace.IndexStats
+	if err := json.Unmarshal(rr.Body.Bytes(), &stats); err != nil {
+		t.Fatalf("failed to parse index stats response: %v", err)
+	}
+
+	if stats.Status != "ready" && stats.Status != "idle" {
+		t.Fatalf("unexpected index status: %q", stats.Status)
+	}
+}
+
+
 
 
 

@@ -123,7 +123,7 @@ func notifyLocalEventBridge(params json.RawMessage) {
 		"timestamp": time.Now().Unix(),
 	})
 	client := &http.Client{Timeout: 300 * time.Millisecond}
-	url := fmt.Sprintf("http://127.0.0.1:%s/api/v1/mcp/events", port)
+	url := fmt.Sprintf("http://127.0.0.1:%s/api/v1/events/mcp", port)
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(payload))
 	if err == nil {
 		req.Header.Set("Content-Type", "application/json")

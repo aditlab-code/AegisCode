@@ -9,11 +9,15 @@ import (
 	"sync"
 )
 
+// ToolHandler executes a registered local MCP tool.
+type ToolHandler func(ctx context.Context, args map[string]any) (*CallToolResult, error)
+
 // Server coordinates MCP protocol request handling.
 type Server struct {
 	mu            sync.RWMutex
 	workspaceRoot string
 	tools         []Tool
+	handlers      map[string]ToolHandler
 	bridge        *Bridge
 }
 
@@ -26,6 +30,7 @@ func NewServer(workspaceRoot ...string) *Server {
 	s := &Server{
 		workspaceRoot: ws,
 		tools:         make([]Tool, 0),
+		handlers:      make(map[string]ToolHandler),
 	}
 	if ws != "" {
 		s.bridge = NewBridge(ws)
@@ -55,11 +60,17 @@ func (s *Server) Workspace() string {
 	return s.workspaceRoot
 }
 
-// RegisterTool adds a tool to the server's local tool registry.
-func (s *Server) RegisterTool(tool Tool) {
+// RegisterTool adds a tool to the server's local tool registry with an optional execution handler.
+func (s *Server) RegisterTool(tool Tool, handler ...ToolHandler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.tools = append(s.tools, tool)
+	if len(handler) > 0 && handler[0] != nil {
+		if s.handlers == nil {
+			s.handlers = make(map[string]ToolHandler)
+		}
+		s.handlers[tool.Name] = handler[0]
+	}
 }
 
 // Tools returns native bridge tools when available, falling back to local registry.
@@ -97,6 +108,11 @@ func (s *Server) Close() error {
 
 // HandleRequest processes a JSON-RPC request and returns the corresponding response.
 func (s *Server) HandleRequest(ctx context.Context, req *JSONRPCRequest) *JSONRPCResponse {
+	// Per JSON-RPC 2.0 and MCP spec, notifications (no ID or notification methods) must not return a response
+	if req.ID == nil || req.Method == "notifications/initialized" || req.Method == "initialized" || strings.HasPrefix(req.Method, "notifications/") {
+		return nil
+	}
+
 	if req.JSONRPC != "2.0" && req.JSONRPC != "" {
 		return &JSONRPCResponse{
 			JSONRPC: "2.0",
@@ -238,7 +254,9 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]any)
 	}
 
 	cleanName := strings.TrimPrefix(name, "mcp__codegraph__")
+	cleanName = strings.TrimPrefix(cleanName, "mcp_codegraph_")
 	cleanName = strings.TrimPrefix(cleanName, "codegraph:")
+	cleanName = strings.TrimPrefix(cleanName, "mcp__")
 
 	// Auto-inject projectPath and path if omitted
 	if ws := s.Workspace(); ws != "" {
@@ -250,10 +268,20 @@ func (s *Server) callTool(ctx context.Context, name string, args map[string]any)
 		}
 	}
 
+	// 1. Check local registered tool handlers first
 	s.mu.RLock()
+	localHandler, hasHandler := s.handlers[cleanName]
+	if !hasHandler {
+		localHandler, hasHandler = s.handlers[name]
+	}
 	b := s.bridge
 	s.mu.RUnlock()
 
+	if hasHandler && localHandler != nil {
+		return localHandler(ctx, args)
+	}
+
+	// 2. Delegate to underlying native daemon bridge
 	if b != nil {
 		return b.CallTool(ctx, cleanName, args)
 	}

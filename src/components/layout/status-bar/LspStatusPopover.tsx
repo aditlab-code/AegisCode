@@ -14,6 +14,16 @@ function getCanonicalLspKey(lang: string): string {
   const l = lang.trim().toLowerCase()
   if (l === "c++" || l === "cpp") return "cpp"
   if (l === "c") return "c"
+  if (l === "c#" || l === "csharp" || l === "cs" || l === "csx") return "csharp"
+  if (
+    l === "bash" ||
+    l === "sh" ||
+    l === "zsh" ||
+    l === "shell" ||
+    l === "shellscript"
+  )
+    return "bash"
+  if (l === "makefile" || l === "make" || l === "mk") return "makefile"
   if (l.startsWith("typescript") || l === "ts" || l === "tsx")
     return "typescript"
   if (l.startsWith("javascript") || l === "js" || l === "jsx")

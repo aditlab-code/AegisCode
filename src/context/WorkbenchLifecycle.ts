@@ -142,6 +142,12 @@ export function useWorkbenchLifecycle() {
           data.args || { query: data.symbol || "" },
           data.symbol ? String(data.symbol) : undefined,
         )
+        const traceStatus =
+          data.status === "completed"
+            ? "completed"
+            : data.status === "error"
+              ? "error"
+              : "running"
         if (parsed.symbols.length > 0) {
           s.triggerAiTrace({
             symbols: parsed.symbols,
@@ -151,7 +157,7 @@ export function useWorkbenchLifecycle() {
             toolName: parsed.cleanToolName,
             provider: data.provider || s.activeProvider,
             model: data.model || s.activeModel,
-            status: data.status === "completed" ? "completed" : "running",
+            status: traceStatus,
           })
         }
       } catch {

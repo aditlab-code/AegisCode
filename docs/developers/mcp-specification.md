@@ -33,9 +33,9 @@ Standard LLM tool calling exhausts context windows by returning massive file dum
 
 | Tool Name | Primary Purpose | Key Parameters |
 | :--- | :--- | :--- |
-| `codegraph_explore` | Proportional token codebase exploration and call graph discovery | `query`, `projectPath`, `depth`, `budget` |
+| `codegraph_explore` | Proportional token codebase exploration and call graph discovery | `query`, `maxFiles`, `projectPath` |
 | `codegraph_status` | Index freshness, node/edge counts, languages, and WAL DB status | `projectPath` |
-| `codegraph_node` | Full symbol definition, qualified name, hierarchy, and 3-hop blast radius | `nodeId`, `projectPath` |
+| `codegraph_node` | Full symbol definition, qualified name, hierarchy, and 3-hop blast radius | `symbol` (or `nodeId`), `file`, `includeCode`, `projectPath` |
 | `codegraph_search` | BM25 / FTS5 ranked symbol and keyword search across all indexed files | `query`, `limit`, `projectPath` |
 | `codegraph_callers` | Direct and indirect upstream callers reaching a target function | `symbol`, `limit`, `projectPath` |
 | `codegraph_callees` | Direct downstream dependencies and functions called by a target | `symbol`, `limit`, `projectPath` |
@@ -50,7 +50,8 @@ Standard LLM tool calling exhausts context windows by returning massive file dum
 
 AegisCode exposes both raw MCP tool endpoints and the VantageCraft UI reverse proxy:
 - `POST /api/v1/mcp`: Standard MCP JSON-RPC 2.0 endpoint for agentic requests (`tools/list`, `tools/call`, `initialize`).
-- `GET /api/v1/mcp/events`: Server-Sent Events (SSE) stream for real-time indexing status and tool execution updates.
+- `GET /api/v1/events` (channel `"mcp"`): Unified Server-Sent Events (SSE) multiplexer channel for real-time tool execution lifecycle updates.
+- `POST /api/v1/events/mcp`: Local event bridge ingestion endpoint for stdio MCP tool invocation events.
 - `GET /api/codegraph/ui/*`: High-speed reverse proxy routing directly to the background `codegraph ui` daemon.
 
 ---
