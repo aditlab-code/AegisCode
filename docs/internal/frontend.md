@@ -81,18 +81,15 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
   - **Run & Debug Panel (`DebugSidePanel.tsx`)**:
     - **Session Controls Header**: Displays current session status badge (`idle`, `running`, `paused: reason`), detected target file (`.go`, `.py`, `.cpp`), and quick Start Debugging (`F5`) / Pause / Continue / Stop controls.
     - **Vertical Accordions (VS Code Standard)**:
-      - **Variables**: Collapsible accordion displaying in-scope variables with names in accent color, types, and values.
-        - `[DEPRECATED — Truncated-Only Debug Variables (SB-09)]`: Static truncation without expand capability is deprecated. Variables with long values now feature interactive click-to-expand toggling between `truncate` and full `whitespace-pre-wrap break-all`.
+      - **Variables**: Collapsible accordion displaying in-scope variables with names in accent color, types, values, and interactive click-to-expand toggling between truncated and full text.
       - **Call Stack**: Collapsible accordion displaying active stack frames with clickable file and line links that immediately navigate editor panes and set active debug line.
-      - **Breakpoints**: Collapsible accordion listing active breakpoints (`file.go:line`), with one-click navigation to editor lines, individual breakpoint delete hover action, and "Clear All Breakpoints" action in the section title bar.
-        - `[DEPRECATED & REMOVED — Spurious Breakpoint Debug Highlight (NEW-01, SB-08)]`: The previous behavior where clicking a standard breakpoint row called `setActiveDebugLine({ file, line })` and caused a false yellow execution highlight is deprecated and removed. Breakpoint row clicks now strictly navigate to the editor line via `openFileInGroup(file, focusedGroup)` and emit `aegis:editor-goto-line` without triggering active execution line decorations.
+      - **Breakpoints**: Collapsible accordion listing active breakpoints (`file.go:line`), with one-click navigation to editor lines (`openFileInGroup`), individual breakpoint delete hover action, and "Clear All Breakpoints" action in the section title bar.
   - **Sidebar Shell & Header Actions (`Sidebar.tsx`)**:
-    - `[DEPRECATED & REMOVED — Double Header on Source Control (SB-01)]`: Redundant outer `.panel-title` rendered above `SourceControlPanel` is removed. The header now dynamically hides outer title bar for Source Control and wires `<IconButton>` action clicks to `refreshWorkspace()` and custom event `aegis:explorer-collapse-all`.
-    - `[DEPRECATED — Legacy Sidebar CSS (~220 lines, SB-11, DC-09)]`: Unused CSS selectors in `sidebar.css` (`.git-repo-selector`, `.commit-btn`, legacy settings classes) are deprecated and marked for deletion in Wave 4 MP-4.2.
+    - Outer title bar dynamically hidden for Source Control, and header action `<IconButton>` elements wired to `refreshWorkspace()` and custom event `aegis:explorer-collapse-all`.
   - **Dimensions & Drag Sash**: Default width **260px**, minimum width **220px**, maximum width **460px** bounded by an interactive vertical drag sash (`ResizeSash.tsx`). Uses a cumulative mouse movement ref (`dragWidthRef`) starting from `onResizeStart` to ensure reliable continuous drag tracking without clamp traps.
   - **Auto-Collapse**: Dragging the sash leftwards below the threshold (**< 160px**) automatically triggers an instant collapse (`setSidebarOpen(false)`). Reopening the sidebar via Activity Rail or shortcut (`Ctrl+B`) smoothly restores the previous valid width (or default 260px).
   - **Explorer Panel**:
-    - `[DEPRECATED — Un-scoped Root File Creation & Unguarded Inputs (SB-03, SB-04)]`: Creating files/folders exclusively in the root directory and race conditions between `onBlur` and `Enter`/`Escape` during inline CRUD are deprecated. The active implementation captures `parentFolder` (`${cleanParent}/${name}`), expands parent folders, adds **New File** and **New Folder** options on folder context menus, and is protected by `isSubmittingRef`.
+    - Inline CRUD supporting arbitrary parent folders (`${cleanParent}/${name}`), folder context menus, protected by `isSubmittingRef` to prevent blur/enter race conditions.
     - "OPEN EDITORS" section with "Close All Editors" button (safeguarding dirty buffers via confirmation modal) and group-level close buttons when split.
     - Workspace file tree with folder expansion, tree guides, hidden file visibility toggle, inline CRUD actions (New File, New Folder, Rename, safe Delete confirmation modal), Refresh Explorer, and Collapse Folders in Explorer (`collapse-all`).
     - **Deterministic Ordering**: Folders always render at the top, followed by files, sorted alphabetically (case-insensitive A-Z) across root and all nested subdirectories.
@@ -100,14 +97,14 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
   - **Source Control Panel**:
     - Staged & unstaged changes tree with diff viewer launching.
     - Commit history with graphical DAG timeline lines.
-    - `[DEPRECATED — Non-Interactive Branch Prompt Modal (SB-06)]`: The branch prompt modal previously only providing an input for "Create New Branch" is deprecated. It now renders an interactive scrollable list of all workspace `gitBranches` with active branch indicator and one-click branch checkout.
-    - `[DEPRECATED — Context-Free AI Commit Template (SB-07)]`: Static commit message template generation without changed file context is deprecated in favor of AI commit drafts populated with detailed lists of staged and unstaged file paths.
+    - Interactive scrollable list of all workspace `gitBranches` with active branch indicator and one-click branch checkout.
+    - AI commit message draft generation populated with detailed lists of staged and unstaged file paths.
     - **Commit Checkout ("Call Back")**: Quick checkout action to inspect or switch working copy directly to any commit hash (detached HEAD).
     - **Hash-to-Hash Comparison**: Dedicated commit comparison mode (`base` ↔ `target`) displaying changed files list and launching side-by-side / unified diffs between arbitrary commits.
     - **VS Code Standard Git Status Badges**: Fast, non-blocking Git status decorations in the file tree: right-aligned status letter badges (`M` modified in `text-warning`, `U`/`A` untracked/added in `text-success`, `D` deleted in `text-error`, `R` renamed in `text-accent`) on files, and subtle indicator dots (`bg-accent`) on ancestor folders containing modified files computed via `buildExplorerGitDecorations`.
     - Context menu on right-click (Copy Path, Copy Relative Path, Delete, Rename).
   - **Search Panel**:
-    - `[DEPRECATED — Unscrollable Search Results & Missing Match Navigation (SB-05)]`: Overflowing search results without flex scrolling and static match clicks without editor navigation are deprecated. `.search-results` now enforces `flex: 1; min-height: 0; overflow-y: auto;` in `sidebar.css`, and clicking search match rows dispatches `aegis:editor-goto-line` with `{ file, line, col }`.
+    - Scrollable search results with flex layout (`flex: 1; min-height: 0; overflow-y: auto;` in `sidebar.css`), and clicking search match rows dispatches `aegis:editor-goto-line` with `{ file, line, col }`.
     - **Compact Input & Modifiers**: Input placeholder shortened to `Search files... (regex)` to preserve readability on narrow 220px widths. Search modifiers (`Aa`, `\b`, `.*`) and clear button (`✕`) are shielded with `flex-shrink: 0`.
     - **Integrated Search & Replace Box**: Chevron toggle (`>` / `v`) located directly to the left of the Search input box; when expanded, renders the Replace input box directly beneath with an embedded Replace All action icon button (`Icon name="replace-all"`).
     - **Results Toolbar**: Header actions for Refresh Search (`⟳`), Clear Results (`✕`), and Collapse/Expand All (`⊞`).
@@ -134,8 +131,8 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
 - **Visual Design**:
   - **Dual Window Groups (Split Pane)**: Group 1 and Group 2 side-by-side or stacked, divided by a draggable splitter sash.
   - **Editor Tabs**: Tab bar supporting drag-and-drop (HTML5 native DND) between groups, dirty unsaved indicator dot, close button.
-    - `[DEPRECATED — Unfiltered Pinned Tab Teardown & Local-Only State (HD-02)]`: Local-only unpersisted pinned tab state and indiscriminately closing pinned tabs during "Close Others", "Close All", or `Cmd+W` are deprecated. Pinned tabs are now centralized in Zustand `createEditorSlice.ts` (`pinnedTabs: Set<string>`), persisted across sessions in `localStorage` (`aegis_pinned_tabs`), and filtered out from batch close operations.
-    - `[DEPRECATED — Multi-Key Alias Buffer Indexing & Unbounded Background Tab Fetching (BUF-01, BUF-02, LFC-01, ADR-0016)]`: Storing duplicate 4-key aliases (`[clean]`, `[filename]`, `[baseName]`, `[rawBaseName]`) in `fileBuffers` and eagerly fetching all background tabs on workspace load are deprecated. Replaced with single canonical POSIX-relative key indexing (`clean`), JIT (Just-In-Time) on-demand background tab loading, explicit `BufferStatus` (`idle` | `loading` | `ready` | `error`) with loading skeleton UI in `CodePane.tsx` (preventing blank string mounting that causes false Outline errors), and `workspaceEpoch` stale request guards.
+    - **Pinned Tab Persistence**: Pinned tabs are centralized in Zustand `createEditorSlice.ts` (`pinnedTabs: Set<string>`), persisted across sessions in `localStorage` (`aegis_pinned_tabs`), and filtered out from batch close operations ("Close Others", "Close All").
+    - **Canonical POSIX-Relative Buffer Indexing**: Single canonical POSIX-relative key indexing (`clean`), JIT (Just-In-Time) on-demand background tab loading, explicit `BufferStatus` (`idle` | `loading` | `ready` | `error`) with loading skeleton UI in `CodePane.tsx` (preventing blank string mounting that causes false Outline errors), and `workspaceEpoch` stale request guards.
     - **Contextual Tab Icons**: Displays semantic file icons dynamically (`image` for PNG/JPG/SVG, `table` for CSV/TSV, `git` for diff tabs, `trash` for deleted files, `code` for source files).
     - **Git Diff Tab Integration**: Special diff tab format (`git-diff:<file>?staged=true...`) parsed via [`src/utils/gitDiffTab.ts`](../../src/utils/gitDiffTab.ts), rendering Git branch icon and semantic titles (`file (Working Tree)`, `file (Index)`, `file (commit)`).
   - **Universal On-Demand Code Splitting for Non-Code Viewers (`ViewerPane.tsx`)**:
@@ -157,7 +154,7 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
     - **Clamped Zoom & In-Flight Cancellation**: Zoom range 50% to 300% (0.25 steps) with active render task cancellation (`renderTask.cancel()`) preventing race condition collisions.
     - **Dual-Engine Toggle**: One-click switch between custom Canvas view and browser native `<iframe />` embed.
   - **Data Table CSV Viewer (`CsvViewer.tsx`)**:
-    - `[DEPRECATED — Client-Side CSV Full Parse]`: Client-side parsing of raw string buffers (`parseCsv` in `viewerTypes.ts`) is deprecated in favor of Go Server-Side Windowed Streaming (`/api/v1/workspace/csv/query`) for any non-trivial dataset ($\ge 2\text{ MB}$ or $> 100$ rows).
+    - **Server-Side Windowed Streaming**: Integrates with Go Server-Side Windowed Streaming (`/api/v1/workspace/csv/query`) for any non-trivial dataset ($\ge 2\text{ MB}$ or $> 100$ rows) with seamless client-side pagination.
     - Delimiter auto-detection (comma `,`, semicolon `;`, tab `\t`) with manual delimiter selector override.
     - Robust RFC 4180 parsing supporting quoted fields with embedded delimiters, newlines, and escaped quotes (`""`).
     - **Rebatching & Pagination for Large Tables (> 100 rows)**: Batch pagination (50, 100, 250, 500 rows per page) keeping DOM lightweight even on 10,000+ row datasets.
@@ -165,27 +162,23 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
     - Sticky row numbers column (1, 2, 3...).
     - Real-time search filter across all cells, text wrap toggle (`Wrap` vs `Truncate`), and `[Table | Raw Text]` mode switcher.
   - **In-Editor Side-by-Side Git Diff (`DiffEditorPane.tsx`)**:
-    - `[DEPRECATED — Legacy Popup Modal Diffs]`: Heavy overlay modal diff dialogs have been deprecated in favor of native in-editor `DiffEditorPane.tsx` matching VS Code ergonomics.
     - **Primary Review Gate for AI Code Generation (Sub-Phase 6.10)**: When users click `[Apply to Editor]` on chat code blocks, changes write to disk and automatically open side-by-side in `DiffEditorPane.tsx` without redundant temporary buffers. Users accept via native **Stage** / **Commit** or reject via native **Discard Changes** (with automatic buffer resynchronization to clean HEAD).
     - **Left Pane (Original)**: Read-only display of HEAD or previous commit revision with red background diff highlights. Synthesizes empty `/dev/null` diff for untracked / newly created files.
     - **Right Pane (Modified)**: Live-editable buffer connected directly to `fileBuffers` (when viewing working copy), saveable via `⌘S` / `Ctrl+S`, with green background diff highlights.
     - **Synchronized Scrolling**: Dual-pane vertical and horizontal scroll synchronization with unmount state cleanup to prevent memory leaks.
     - **Diff Toolbar**: File path, additions/deletions stats, "Open in Normal Editor", "Stage / Unstage", and "Discard" actions.
   - **Editor Breadcrumbs**: Clean path navigation bar (`src > components > layout > editor > Editor.tsx`). Displays `diff > [git] file (Working Tree)` when a diff tab is active.
-    - `[DEPRECATED & REMOVED — Incomplete Breadcrumbs Navigation Contract (HD-01, NEW-02)]`: Emitting `{ column: 1 }` or missing column parameters causing `Col undefined` in StatusBar is deprecated and removed. Breadcrumb navigation strictly emits standard `{ file, line, col: 1 }` on `aegis:editor-goto-line`.
+    - **Standardized Navigation Contract**: Breadcrumb navigation strictly emits standard `{ file, line, col: 1 }` on `aegis:editor-goto-line`.
   - **Editor Context Menu & Selection Bridge (`EditorContextMenu.tsx`)**:
-    - `[DEPRECATED — Event-Only AI Menu Dispatch (CH-01)]`: Emitting standalone custom events without opening the chat drawer or attaching selection context is deprecated. "Ask AEGIS AI" directly activates `setChatOpen(true)` and bridges highlighted text into the active session's context chips.
-  - **Legacy Core Facades (`DC-01` s/d `DC-07`)**:
-    - `[DEPRECATED — Monolithic Core Facade Files & Legacy Context Hooks (Wave 4 Target)]`: Monolithic legacy facade files in `src/context/` (`editorCore.ts`, `settingsCore.ts`, `workspaceCore.ts`) and monolithic hooks (`useChatCore`, `useGitCore`, `useLayoutCore`, `useTerminalCore`) are deprecated for complete removal in Wave 4, directly superseded by modular Zustand slices (`createEditorSlice`, `createWorkspaceSlice`, `createGitSlice`, `createChatSlice`, `createTerminalSlice`).
+    - **Ask AEGIS AI Bridge**: Directly activates `setChatOpen(true)` and bridges highlighted text into the active session's context chips.
   - **Code Pane**: Lightweight custom buffer editor with line numbers, active line highlight, auto-indentation, and syntax highlighting via semantic token parser.
   - **Inline Find Widget**: Floating widget in top-right corner (`Ctrl+F`) with match count and Next/Previous navigation.
   - **Minimap (`Minimap.tsx`)**:
-    - `[DEPRECATED — Synchronous Main-Thread Tokenizer]`: Synchronous `tokenizeLine` in the React render loop is deprecated in favor of Fast Lane Web Worker tokenization (`tokenizerTask.ts` via `WorkerBroker`) with instant visual skeleton bars during fast scroll.
+    - **Fast-Lane Web Worker Tokenizer**: Fast Lane Web Worker tokenization (`tokenizerTask.ts` via `WorkerBroker`) with instant visual skeleton bars during fast scroll.
     - Scaled visual overview on the right edge of the editor buffer with click-to-scroll viewport box.
   - **Heuristic Linter (`WorkbenchLifecycle.ts`)**:
-    - `[DEPRECATED — Synchronous Main-Thread Syntax Validation]`: Synchronous `validateSyntax` execution inside `WorkbenchLifecycle.ts` is deprecated in favor of Batch Lane Web Worker (`linterTask.ts` via `WorkerBroker`) debounced at 300ms with `AbortController` cancellation.
+    - **Batch-Lane Web Worker Syntax Validation**: Offloads syntax validation to Batch Lane Web Worker (`linterTask.ts` via `WorkerBroker`) debounced at 300ms with `AbortController` cancellation.
   - **VantageCraft CodeGraph Studio (`src/components/codegraph/`, ADR 0014 & ADR 0015)**:
-    - `[DEPRECATED & REMOVED — Legacy Cytoscape Flat Graph Viewer]`: The legacy flat graph viewer (`GraphViewer.tsx`) rendering generic recursive CTE nodes and edges from `/api/v1/codegraph/neighborhood` is deprecated and permanently removed.
     - **Modular 6-View Architecture (`CodeGraphShell.tsx`)**:
       1. **Entrypoints / Program View (`EntrypointsView.tsx`)**: Framework-aware catalog of HTTP routes, CLI commands, scripts, and background jobs.
       2. **Execution Steps View (`StepsView.tsx`)**: Execution spine tree with architectural tiers (`Handler` $\rightarrow$ `Service` $\rightarrow$ `Repo` $\rightarrow$ `DB`), branch conditions, side effects, and symbol selector (eliminating fragile hardcoded `main` fallbacks).
@@ -213,8 +206,7 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
   - **Dynamic Theme Re-Hydration**: Hook sinkronisasi reaktif `useEffect([theme, themePalette])` di `TerminalView.tsx` mengeksekusi `term.options.theme = getDynamicTerminalTheme(palette, mode)` secara instan (0ms snap) dengan palet hex konkret dan kontras warna ANSI yang tepat, sehingga canvas xterm langsung berganti warna seketika saat tema beralih antara Dark, Light, Atom One, dan Tokyo Night.
   - **Standardized Canvas Background**: Seluruh area konten panel bawah (`.bottom-panel-content`, `.terminal-session`, `.lint-output`, `.problems-container`, `DebugConsoleView`) menggunakan background canvas (`var(--color-canvas)` / `bg-canvas`) dengan teks `var(--color-ink)`, sementara header tab panel dan mini dock strip tetap menggunakan `var(--color-surface)` untuk memisahkan chrome dan konten secara elegan.
   - **Refreshed Toolbar Actions**:
-    - **Session Shell Selector**: Dropdown pemilihan shell (`zsh`, `bash`, `fish`, `sh`) dan sesi aktif.
-      - `[DEPRECATED — Unix-Only Shell Dropdown (BP-04)]`: Unix-only shell dropdown options (`zsh`, `bash`, `fish`, `sh`) lacking cross-platform Windows support are deprecated. The shell selector now natively supports Windows environments with `pwsh`, `powershell`, and `cmd`.
+    - **Session Shell Selector**: Cross-platform shell selector supporting host OS defaults (`detectDefaultShell()`), including `zsh`, `bash`, `fish`, `sh` on Unix and `pwsh`, `powershell`, `cmd` on Windows.
     - **New Session (`+`)**: Membuat sesi terminal baru via `createTerminalSession`.
     - **Kill Session (`trash` 🗑)**: Menghentikan proses dan menghapus sesi terminal via `closeTerminalSession`.
     - **Clear Buffer (`discard`)**: Mengosongkan buffer output xterm via `clearTerminal`.
@@ -222,10 +214,8 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
     - **Maximize/Restore (`maximize` / `chevron-down`)**: Toggle ukuran penuh panel (1fr).
     - **Hide Panel (`close` ✕)**: Menyembunyikan drawer ke mini dock strip (`setPanelOpen(false)`).
   - **Problems View**: Tabel diagnostik dengan filter chip (All, Errors, Warnings), jump-to-code saat baris diklik, dan tombol "Ask AI" untuk integrasi langsung ke AI chat drawer.
-  - **Output View**: Pilihan channel (Server, Tasks, Linter, Git) dengan streaming log real-time melalui SSE endpoint `/api/v1/events/logs` (atau unified `/api/v1/events`).
-    - `[DEPRECATED & REMOVED — Static Startup Output Logs (BP-02)]`: Hardcoded initial mock logs (`{ Server: ["Server started..."] }`) are deprecated and permanently removed. Channels are initialized cleanly as `{ Server: [], Linter: [], Tasks: [], Git: [] }` and populated strictly by real-time backend log streams.
-  - **Debug Console View (`DebugConsoleView.tsx`)**: Menggantikan tampilan debug lama sesuai standar VS Code. Menampilkan streaming real-time event log DAP (`stdout`, `stderr`, lifecycle events), filter teks, tombol copy dan clear console, serta baris interactive REPL input (`> `) di bagian bawah untuk evaluasi ekspresi saat proses berhenti/berjalan.
-    - `[DEPRECATED & REMOVED — Unsafe JS new Function() REPL Evaluation (BP-03)]`: Raw JavaScript evaluation via `new Function()` in client memory that crashes or returns incorrect results for non-JS variables is deprecated and permanently removed. Replaced by safe local scope variable lookup (`debugState.variables`) and DAP expression evaluation.
+  - **Output View**: Pilihan channel (Server, Tasks, Linter, Git) dengan streaming log real-time melalui SSE event hub (`WorkbenchEventHub`). Channels diinisialisasi bersih `{ Server: [], Linter: [], Tasks: [], Git: [] }` dan diisi langsung dari backend log stream.
+  - **Debug Console View (`DebugConsoleView.tsx`)**: Menggantikan tampilan debug lama sesuai standar VS Code. Menampilkan streaming real-time event log DAP (`stdout`, `stderr`, lifecycle events), filter teks, tombol copy dan clear console, serta baris interactive REPL input (`> `) di bagian bawah untuk evaluasi ekspresi menggunakan scope variables (`debugState.variables`) dan live DAP evaluation.
 
 ### 6. AEGIS AI Agent Drawer (`chat/`)
 - **Path**: [`src/components/layout/chat/`](../../src/components/layout/chat)
@@ -253,14 +243,13 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
     - **Unified Multi-Provider Catalog**: Lists all 4 AI providers (`Antigravity`, `Claude`, `OpenCode`, `OpenRouter`) and all their standard + custom models simultaneously in one menu.
     - **Quick Filter Tabs**: Horizontal pills (`[Semua]`, `[AGY]`, `[CLD]`, `[OC]`, `[OR]`) with color-coded dot badges for instant single-provider filtering.
     - **Atomic Selection Handler**: Selecting any model immediately sets both provider and model on the active session (`setSessionModel`) and persists agent settings.
-  - **Dual Provider & Model Message Badges (`ChatMessageList.tsx`)**:
-    - `[DEPRECATED — Assistant Header Dual Model Identifier Pill]`: Displaying repetitive model identifier pills (`[gemini-3.8-flash]`) in every assistant message card header is deprecated to eliminate visual redundancy. Only the provider badge is retained in the assistant card (`tag-antigravity`, `tag-claude`, `tag-opencode`, `tag-openrouter`), while the active model is clearly indicated in the composer toolbar and session sidebar.
-  - **Streaming AI Response via HTTP POST & Streamed SSE-Formatted Reader (`storeApi.ts` & `chatCore.ts`)**:
-    - `[DEPRECATED — Mock Streaming & Monolithic JSON Overwrite]`: Simulated client-side streaming (`mockData.ts`) and full-session monolithic JSON rewriting (`~/.aegis/chats/<id>.json`) are deprecated. The active system communicates via Go streaming proxy (`POST /api/v1/ai/chat`) and appends atomic event nodes to the graph ledger (`POST /api/v1/chats/:id/events`) with Content-Addressed Storage (CAS) blob offloading.
+  - **Provider Badge Architecture (`ChatMessageList.tsx`)**:
+    - Provider badge cleanly rendered in the assistant card header (`tag-antigravity`, `tag-claude`, `tag-opencode`, `tag-openrouter`), while the active model is clearly indicated in the composer toolbar and session sidebar.
+  - **Streaming AI Response via HTTP POST & Streamed SSE-Formatted Reader (`storeApi.ts`)**:
+    - Communicates via Go streaming proxy (`POST /api/v1/ai/chat`) and appends atomic event nodes to the graph ledger (`POST /api/v1/chats/:id/events`) with Content-Addressed Storage (CAS) blob offloading.
     - Client consumes streamed Server-Sent Events (`event: start/thinking/tool_call/chunk/done/error`) through a `ReadableStreamDefaultReader` parser.
     - Typewriter streaming text updates with pulsing cursor (`.streaming-cursor`) and shimmer loader (`.message-body-streaming-shimmer`).
   - **Modern Messenger-Style Balloon Architecture & Interactive Welcome Banner (`ChatMessageList.tsx`, `chat.css`)**:
-    - `[DEPRECATED — Hardcoded Dummy Initial Messages]`: Legacy initial dummy conversation messages (`[antigravity · gemini-3.8-flash-medium] New session started...` and `I'm connected to your local workspace...`) are deprecated and removed from `chatCore.ts`.
     - **Interactive Welcome Empty State Banner (`.chat-welcome-banner`)**: Clean, modern greeting rendered on empty sessions featuring the active workspace folder pill badge (`.workspace-pill`) and quick hint badges (`/` for skills, `@` for files & folders).
     - **Messenger-Style Chat Balloons**: Replaces uniform flat blocks with intuitive conversational message turns:
       - **User Turn (Right-Aligned)**: Rendered on the right (`.message-turn-user`, `max-width: 85%`) inside an accent-tinted card (`.user-prompt-card`) with clickable context pills.
@@ -281,17 +270,15 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
     - Send button dynamically transforms into a red accent **Stop Generation** button (`.composer-stop-btn`) while generation is active.
     - `Escape` key shortcut support to abort the in-flight SSE stream and immediately kill the child process via `AbortController`.
   - **Native Multi-Provider Skill Discovery & Popover Auto-Scroll (`ChatCommandPopover.tsx`)**:
-    - `[DEPRECATED — Static Hardcoded Skills Autocomplete & Clipped Popover]`: Static hardcoded skill arrays and unscrollable popover containers are deprecated.
     - Popover for `/` is populated dynamically via `GET /api/v1/ai/skills?provider=...&workspace=...`, discovering native provider skills across System and Workspace directories (Antigravity, Claude, OpenCode, OpenRouter).
     - **Popover Keyboard Pointer Auto-Scroll**: Attaches item DOM references and executes `scrollIntoView({ block: "nearest", inline: "nearest" })` whenever `selectedIndex` updates, ensuring highlighted items below the fold stay visible during arrow key navigation.
     - Detailed skill metadata: renders name, description, and scope/source label (e.g. `Workspace · .gemini/skills/my-skill` or `System`).
   - **Context Mentions & Folder Support (`contextExtractorCore.ts`, `ChatComposer.tsx`, `ChatMessageList.tsx`)**:
-    - `[DEPRECATED — Token Calculation UI Badges & Budgeting Demotion Loop]`: The `~{item.estimatedTokens} tokens` UI badge in `ChatComposer.tsx` and the `enforceContextTokenBudget` computation loop in `createChatSlice.ts` are deprecated and eliminated to lighten client computation.
     - **Folder / Directory Mentions (`@folder/`)**: Popover `@` allows selecting directories as well as files. Folders are rendered with `<Icon name="folder" />` and a distinct `(Dir)` badge.
     - **Lightweight Path-Only Context Packaging**: When folders are attached, prompt packaging (`formatPromptWithContext`) injects strictly `Directory: <path>` without reading or dumping filesystem trees into context buffers.
     - Files continue supporting progressive mode switching: `(Ref)` $\rightarrow$ `(Snippet)` $\rightarrow$ `(Full)` $\rightarrow$ `(Ref)`.
   - **Setup Needed Guard (`ChatComposer.tsx`)**:
-    - `[DEPRECATED — Incomplete Provider API Key Validation (CH-02)]`: Partial provider checks only validating specific subsets of AI services are deprecated. `isProviderConfigured` now validates credentials across all 5 supported providers (`claude`, `openai`, `gemini`, `openrouter`, `opencode`).
+    - Complete provider credential verification across all 5 supported providers (`claude`, `openai`, `gemini`, `openrouter`, `opencode`).
     - Warning badge (`Icon name="warning"`) displayed when active provider lacks credentials, linking directly to Settings Modal.
   - **Multi-line Textarea Composer**: Resilient composer with model badge, attachment triggers, and submit button fitting cleanly at 300px minimum width.
 
@@ -316,8 +303,6 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
       - **Centered Popover Anchor**: Positioned with `left-1/2 -translate-x-1/2 mb-1` directly above the trigger button, guaranteeing symmetrical alignment and preventing viewport overflow.
       - **Standardized Popover Header**: Adopts `.status-popover-header` with uppercase `PERFORMANCE GUARD` label and "Clear Lags" action button.
       - **Active State Indicator**: Highlights the status item with `.status-button-active` while the popover remains open.
-      - `[DEPRECATED — Text Emoji ⚡ in Status Bar]`: Text emoticon `⚡` has been deprecated and replaced by `<Icon name="zap" size={13} />` (and `size={12}` in header) from `IconName` and `Icon.tsx`.
-      - `[DEPRECATED — Asymmetric left-0 Popover Alignment]`: Left-aligned positioning (`left-0`) causing right-edge viewport overflow is deprecated in favor of centered anchor `left-1/2 -translate-x-1/2`.
     - **Server Connection Indicator**: Live Go Core Server ping (`/api/v1/workspace/info`) displaying glowing dot (`--color-success` online / `--color-error` offline) with `Local: Connected / Offline`; clicking triggers manual health check / reconnect attempt.
     - **Notification Center Badge & Popover (`NotificationsPopover.tsx`)**:
       - Real-time unread notification badge counter.
@@ -348,7 +333,7 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
   - **Single Input UX**: Eliminates duplicate search bars; the navbar search bar itself serves as the interactive input, while the floating dropdown beneath exclusively displays command results.
   - **Results List**: Scrollable command list with uppercase section headers (`COMMANDS`), icons, bold labels, and muted detail subtitles with clean ellipsis truncation (`text-overflow: ellipsis`) for long items.
   - **Go-First Quick Open Subsystem (`GET /api/v1/workspace/files/find`)**:
-    - `[DEPRECATED — Client-Side JavaScript files.filter()]`: Client-side linear filtering of tens of thousands of file paths in the browser thread is deprecated. Quick Open (`Cmd+P`) now queries the Go-First in-memory workspace index, evaluating weighted subsequence matches across 50.000+ files in sub-2ms with multi-core Goroutines.
+    - Quick Open (`Cmd+P`) queries the Go-First in-memory workspace index, evaluating weighted subsequence matches across 50,000+ files in sub-2ms with multi-core Goroutines.
   - **Keyboard Navigation & Shortcuts**: Supports `⌘K` / `Ctrl+K` and `⌘P` / `Ctrl+P` toggle shortcuts, `Arrow Up/Down` for cyclical selection, `Enter` to execute, and `Escape` to close and reset query.
   - **Dismissal**: Outside-click dismissal via `pointerdown` listener on `document` and `Escape` key handling.
 - **Tokens Used**: `bg-surface-overlay`, `border-line-bright`, `shadow-popover`, `text-ink`, `text-ink-soft`, `text-ink-muted`, `bg-surface-hover`.
@@ -403,7 +388,36 @@ Implemented in [`src/styles/base.css`](../../src/styles/base.css):
 
 ---
 
-## 5. UI Verification Gates
+## 5. Zustand Modular Store Architecture & Buffer Lifecycle
+
+AegisCode v2 utilizes a unified, modular Zustand architecture ([`src/store/index.ts`](../../src/store/index.ts)) replacing all monolithic legacy facade files and context hooks. The store is composed of isolated, typed slices combining into a single root `useWorkbenchStore`:
+
+### A. Modular Slice Boundaries
+1. **`createWorkspaceSlice`**: Workspace root management, canonical buffer indexing (`fileBuffers[clean]`), async file fetching with per-file sequence tokens (`fileFetchTokens`), dirty buffer protection, and auto-save disk synchronization.
+2. **`createEditorSlice`**: Multi-group window splits (`group1`, `group2`), active tab management, tab reordering / DND, pinned tab persistence (`pinnedTabs`), and editor settings synchronization.
+3. **`createChatSlice`**: AI chat sessions, agent multi-provider configurations, streaming message batches (RAF micro-buffering), and context mentions (`@folder/`, `@file`).
+4. **`createGitSlice`**: Git branch tracking, staging/unstaging, commit graph DAG nodes, diff mode toggles, and commit drafting.
+5. **`createDebugSlice`**: Delve DAP debugger lifecycle, breakpoint registry (`debugState.breakpoints`), call stacks, in-scope variables, and interactive debug REPL console.
+6. **`createTerminalSlice`**: Multi-session terminal PTY management, persistent active tabs, cross-platform host shell detection (`detectDefaultShell()`), and dynamic shell switching.
+7. **`createLayoutSlice`**: UI panel visibility (`sidebarOpen`, `panelOpen`, `chatOpen`), panel dimensions (`sidebarWidth`, `chatWidth`, `panelHeight`), and workbench action dispatching (`runAction`).
+8. **`createSettingsSlice`**: Single source of truth for global settings (`settings.workbench.appearance`, `settings.editor`, `settings.linter`), persistent in `localStorage` (`aegis_settings_v1`).
+9. **`createCodeGraphSlice`**: VantageCraft CodeGraph visualization state, active perspective views, node selections, call trails, and graph search filters. Decoupled via `registerCodeGraphWorkbenchStore` to prevent circular imports.
+
+### B. Single Sources of Truth & Decoupled Render Loops
+- **Theme & Appearance**: `createSettingsSlice.ts` serves as the authoritative source of truth (`settings.workbench.appearance.mode` and `palette`). `createLayoutSlice.ts` harmonizes `setTheme` and `setThemePalette` directly into `settings`, ensuring zero state divergence with localStorage.
+- **Editor Preferences**: `tabSize`, `minimapEnabled`, and `minimapScale` are synchronized bidirectionally between `createEditorSlice.ts` and `settings.editor` in `createSettingsSlice.ts`.
+- **Linter Configuration**: `linterSettings` in `createWorkspaceSlice.ts` mirrors and binds directly to `settings.linter` in `createSettingsSlice.ts`.
+- **Decoupled 60Hz Cursor Loop**: `CMEditor.tsx` cursor and selection coordinates are isolated via `useCursorPosition` subscriptions. `CodePane.tsx` does not re-render its entire editor shell or DOM body on cursor movement ticks, isolating high-frequency updates strictly to the StatusBar coordinates readout.
+
+### C. Buffer Lifecycle & Race Protection (ADR 0016)
+- **Single POSIX-Canonical Path Keying**: All buffer state in `fileBuffers` is indexed strictly by clean, normalized relative paths (e.g. `src/components/Header.tsx`). No duplicate alias keys exist.
+- **In-Flight Network Save Keystroke Protection (`OPT-BUF-01`)**: During `saveFile()`, the buffer snapshot (`contentToSave`) is captured prior to dispatching network requests. Upon async completion, `markBufferSavedLogic` compares `currentBuf.content === contentToSave`. If keystrokes were typed while the save was in-flight, `isDirty` remains `true`, completely eliminating race condition data loss.
+- **Self-Save Watcher Echo Suppression (`OPT-BUF-02`)**: Saving updates `buf.lastSaved = Date.now()`. When the Go filesystem watcher broadcasts a disk modification event within an 800ms window, or if on-disk content matches `buf.savedContent`, reload is suppressed. This eliminates editor unmounting, loading spinner flicker, and false `hasDiskConflict` alerts.
+- **Per-File Async Fetch Sequence Guard (`OPT-BUF-05`)**: `fetchBufferSafely` maintains per-file monotonic tokens (`fileFetchTokens[clean]`). If rapid folder switches or tab clicks fire overlapping reads, older resolved responses with stale tokens are discarded immediately.
+
+---
+
+## 6. UI Verification Gates
 
 Whenever frontend code in `src/` is modified, the following quality gates must pass:
 1. `rtk npm run build` -> 0 compile errors.
@@ -411,3 +425,55 @@ Whenever frontend code in `src/` is modified, the following quality gates must p
 3. Token reusability verified -> 0 hardcoded arbitrary hex colors in TSX/CSS.
 4. Layout markup preservation -> Existing selectors and class contracts preserved 1:1.
 5. Update this documentation if any layout module structure or CSS contract is modified.
+
+---
+
+## 7. Deprecated & Legacy Frontend Architecture (Historical Archive)
+
+> **Notice**: The architectures, patterns, and files listed below have been deprecated or permanently purged from AegisCode v2. They are documented here solely for historical auditability and backward traceability.
+
+### A. Purged Monolithic Core Facades & Legacy Context Hooks
+- **Monolithic Facades (`src/context/`)**:
+  - `editorCore.ts`: Monolithic editor state logic handling tabs, active files, and split panes in one large file. Superseded by `createEditorSlice.ts`.
+  - `settingsCore.ts`: Legacy settings manager with ad-hoc mutations. Superseded by `createSettingsSlice.ts`.
+  - `workspaceCore.ts`: Monolithic workspace filesystem and buffer manager. Superseded by `createWorkspaceSlice.ts`.
+- **Legacy Context Hooks**:
+  - `useChatCore`: Custom React context hook for chat state. Superseded by Zustand store selector `useWorkbenchStore((s) => s.chatState)`.
+  - `useGitCore`: Custom React context hook for git operations. Superseded by Zustand store selector `useWorkbenchStore((s) => s.gitState)`.
+  - `useLayoutCore`: Custom React context hook for layout dimensions and visibility. Superseded by `useWorkbenchStore((s) => s.layoutState)`.
+  - `useTerminalCore`: Custom React context hook for terminal sessions. Superseded by `useWorkbenchStore((s) => s.terminalState)`.
+
+### B. Legacy Buffer & Tab Patterns
+- **Multi-Key Alias Buffer Indexing (`BUF-01`, `ADR-0016`)**:
+  - *Legacy Pattern*: Storing duplicate 4-key aliases (`[clean]`, `[filename]`, `[baseName]`, `[rawBaseName]`) in `fileBuffers` dictionary to accommodate varied path inputs.
+  - *Actual Replacement*: Single canonical POSIX-relative key indexing (`clean`), strictly normalized via `normalizeWorkspacePath()`.
+- **Unbounded Eager Background Tab Fetching (`LFC-01`)**:
+  - *Legacy Pattern*: Eagerly fetching disk contents for all open tabs on workspace launch, creating network spikes and blank mounts.
+  - *Actual Replacement*: Just-In-Time (JIT) on-demand fetching when a tab gains focus, backed by `BufferStatus` (`idle` | `loading` | `ready` | `error`) and loading skeleton UI.
+- **Unfiltered Pinned Tab Teardown (`HD-02`)**:
+  - *Legacy Pattern*: Pinned tabs were local-only state in component memory and were closed during batch "Close All" or "Close Others" operations.
+  - *Actual Replacement*: Zustand centralized `pinnedTabs: Set<string>` persisted across sessions in `localStorage` (`aegis_pinned_tabs`).
+
+### C. Deprecated Viewer & Rendering Mechanics
+- **Cytoscape Flat Graph Viewer (`GraphViewer.tsx`)**:
+  - *Legacy Pattern*: Cytoscape.js canvas rendering flat recursive CTE nodes from `/api/v1/codegraph/neighborhood`.
+  - *Actual Replacement*: VantageCraft 6-View Studio (`CodeGraphShell.tsx`) backed by Go reverse proxy `/api/codegraph/ui/*`.
+- **Client-Side CSV Full Parsing (`viewerTypes.ts: parseCsv`)**:
+  - *Legacy Pattern*: Browser main-thread string parsing of entire CSV files.
+  - *Actual Replacement*: Server-side windowed streaming (`/api/v1/workspace/csv/query`) with client pagination.
+- **Synchronous Main-Thread Tokenizer & Heuristic Linter**:
+  - *Legacy Pattern*: Executing syntax tokenization and regex AST validation synchronously in the React component render loop.
+  - *Actual Replacement*: Fast Lane and Batch Lane Web Workers (`tokenizerTask.ts`, `linterTask.ts` via `WorkerBroker`) with non-blocking execution.
+- **Unsafe `new Function()` Debug REPL**:
+  - *Legacy Pattern*: Raw `new Function()` evaluation in browser memory for debug console inputs.
+  - *Actual Replacement*: Safe local scope inspection (`debugState.variables`) and Delve DAP expression evaluation.
+- **Client-Side Linear Quick Open Search**:
+  - *Legacy Pattern*: Linear JS array filtering (`files.filter()`) in browser thread across large projects.
+  - *Actual Replacement*: Multi-core Goroutine subsequence matching in Go backend (`GET /api/v1/workspace/files/find`).
+
+### D. Deprecated UI Elements & Micro-Patterns
+- **Text Emoji Emoticons in Chrome**: Text emoticons like `⚡` in the status bar or header. Replaced with semantic SVG `<Icon name="zap" />` components.
+- **Asymmetric Left-Aligned Status Popovers**: `left-0` alignment causing viewport overflow on narrow screens. Replaced with centered anchors `left-1/2 -translate-x-1/2`.
+- **Unix-Only Terminal Shell Dropdown**: Hardcoded options list lacking Windows `pwsh`/`powershell`/`cmd` detection. Replaced with `detectDefaultShell()`.
+- **Assistant Header Dual Model Identifier Pill**: Redundant model badge inside every individual assistant chat bubble. Replaced with provider badge only, leaving model indicator in composer and session sidebar.
+

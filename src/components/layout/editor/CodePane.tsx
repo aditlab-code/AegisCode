@@ -14,6 +14,8 @@ import { EditorContextMenu } from "./EditorContextMenu"
 import { fetchActiveFileGraph } from "../../../utils/codegraphApi"
 import { streamAIChat } from "../../../utils/storeApi"
 import { normalizeWorkspacePath } from "../../../utils/workspaceApi"
+import type { CursorCoordinates } from "../../../store/slices/createWorkspaceSlice"
+import type { EditorSelectionRange } from "../../../types/workbench"
 
 interface CodePaneProps {
   paneId: "primary" | "secondary"
@@ -57,8 +59,6 @@ export function CodePane({
     toggleBreakpoint,
     activeDebugLine,
     openFileInPane,
-    cursorPosition,
-    selection,
     sendChatMessage,
     setChatOpen,
     showToast,
@@ -91,8 +91,6 @@ export function CodePane({
         toggleBreakpoint: s.toggleBreakpoint,
         activeDebugLine: s.activeDebugLine,
         openFileInPane: s.openFileInPane,
-        cursorPosition: s.cursorPosition,
-        selection: s.selection,
         sendChatMessage: s.sendChatMessage,
         setChatOpen: s.setChatOpen,
         showToast: s.showToast,
@@ -116,9 +114,62 @@ export function CodePane({
 
   const paneRef = useRef<HTMLDivElement>(null)
   const inlineInputRef = useRef<HTMLInputElement>(null)
+  const cursorPositionRef = useRef<CursorCoordinates>({ line: 1, col: 1 })
+  const selectionRef = useRef<EditorSelectionRange>({
+    startLine: 1,
+    endLine: 1,
+    selectedText: "",
+  })
+  const cursorDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  )
+  const selectionDebounceTimerRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleCursorChange = useCallback(
+    (line: number, col: number) => {
+      cursorPositionRef.current = { line, col }
+      if (cursorDebounceTimerRef.current) {
+        clearTimeout(cursorDebounceTimerRef.current)
+      }
+      cursorDebounceTimerRef.current = setTimeout(() => {
+        setCursorPosition({ line, col })
+      }, 120)
+    },
+    [setCursorPosition],
+  )
+
+  const handleSelectionChange = useCallback(
+    (sel: EditorSelectionRange) => {
+      selectionRef.current = sel
+      if (selectionDebounceTimerRef.current) {
+        clearTimeout(selectionDebounceTimerRef.current)
+      }
+      selectionDebounceTimerRef.current = setTimeout(() => {
+        setSelection(sel)
+      }, 120)
+    },
+    [setSelection],
+  )
+
+  useEffect(() => {
+    return () => {
+      if (cursorDebounceTimerRef.current) {
+        clearTimeout(cursorDebounceTimerRef.current)
+        setCursorPosition(cursorPositionRef.current)
+      }
+      if (selectionDebounceTimerRef.current) {
+        clearTimeout(selectionDebounceTimerRef.current)
+        setSelection(selectionRef.current)
+      }
+    }
+  }, [setCursorPosition, setSelection])
+
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
+    line: number
+    selectedText: string
   } | null>(null)
   const [inlineAiOpen, setInlineAiOpen] = useState(false)
   const [inlineAiPrompt, setInlineAiPrompt] = useState("")
@@ -181,14 +232,14 @@ export function CodePane({
     const instruction = inlineAiPrompt.trim()
     if (!instruction || inlineAiStreaming) return
 
-    const targetLine = cursorPosition.line || 1
-    const selStart = selection?.startLine || targetLine
-    const selEnd = selection?.endLine || targetLine
+    const targetLine = cursorPositionRef.current.line || 1
+    const selStart = selectionRef.current?.startLine || targetLine
+    const selEnd = selectionRef.current?.endLine || targetLine
     const range = { startLine: selStart, endLine: selEnd }
     setInlineAiRange(range)
 
     const snippet =
-      selection?.selectedText?.trim() ||
+      selectionRef.current?.selectedText?.trim() ||
       lines.slice(selStart - 1, selEnd).join("\n")
 
     setInlineAiStreaming(true)
@@ -240,11 +291,13 @@ export function CodePane({
 
   const handleOpenInChat = () => {
     if (!inlineAiPrompt) return
-    const targetLine = cursorPosition.line || 1
-    const selStart = selection?.startLine || Math.max(1, targetLine - 10)
-    const selEnd = selection?.endLine || Math.min(lines.length, targetLine + 15)
+    const targetLine = cursorPositionRef.current.line || 1
+    const selStart =
+      selectionRef.current?.startLine || Math.max(1, targetLine - 10)
+    const selEnd =
+      selectionRef.current?.endLine || Math.min(lines.length, targetLine + 15)
     const snippet =
-      selection?.selectedText?.trim() ||
+      selectionRef.current?.selectedText?.trim() ||
       lines.slice(selStart - 1, selEnd).join("\n")
 
     setChatOpen(true)
@@ -443,9 +496,9 @@ export function CodePane({
               <Icon name="sparkle" size={11} />
               <span>
                 AI Edit ·{" "}
-                {selection?.selectedText
-                  ? `L${selection.startLine}-L${selection.endLine}`
-                  : `Ln ${cursorPosition.line}`}
+                {selectionRef.current?.selectedText
+                  ? `L${selectionRef.current.startLine}-L${selectionRef.current.endLine}`
+                  : `Ln ${cursorPositionRef.current.line}`}
               </span>
             </span>
             <input
@@ -595,7 +648,12 @@ export function CodePane({
         data-word-wrap={wordWrap}
         onContextMenu={(e) => {
           e.preventDefault()
-          setContextMenu({ x: e.clientX, y: e.clientY })
+          setContextMenu({
+            x: e.clientX,
+            y: e.clientY,
+            line: cursorPositionRef.current.line,
+            selectedText: selectionRef.current.selectedText,
+          })
         }}
         role="region"
         style={
@@ -631,10 +689,11 @@ export function CodePane({
               isDark={isDark}
               isFocused={isFocused}
               onChange={(newVal) => updateFileContent(filename, newVal)}
-              onCursorChange={(line, col) => setCursorPosition({ line, col })}
-              onSelectionChange={(sel) => setSelection(sel)}
+              onCursorChange={handleCursorChange}
+              onSelectionChange={handleSelectionChange}
               onNavigateDefinition={(targetPath, line, col) => {
                 openFileInPane(targetPath)
+                cursorPositionRef.current = { line, col }
                 setCursorPosition({ line, col })
                 window.dispatchEvent(
                   new CustomEvent("aegis:focus-symbol", {
@@ -667,9 +726,9 @@ export function CodePane({
       {contextMenu && (
         <EditorContextMenu
           filename={filename}
-          line={cursorPosition.line}
+          line={contextMenu.line}
           onClose={() => setContextMenu(null)}
-          selectedText={selection.selectedText}
+          selectedText={contextMenu.selectedText}
           x={contextMenu.x}
           y={contextMenu.y}
         />

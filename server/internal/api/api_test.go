@@ -1732,6 +1732,84 @@ func TestCodeGraphAndMCPEndpoints(t *testing.T) {
 	}
 }
 
+func TestWorkspaceRenameAndMoveStatus(t *testing.T) {
+	_, handler, tempDir := setupTestServer(t, "")
+	defer os.RemoveAll(tempDir)
+
+	// Create a real file for testing
+	fileA := filepath.Join(tempDir, "source.txt")
+	_ = os.WriteFile(fileA, []byte("hello"), 0644)
+	fileB := filepath.Join(tempDir, "existing.txt")
+	_ = os.WriteFile(fileB, []byte("world"), 0644)
+
+	// Create a target dir
+	targetDir := filepath.Join(tempDir, "folder")
+	_ = os.Mkdir(targetDir, 0755)
+
+	// 1. Rename: non-existent file -> 404 Not Found
+	ren404, _ := json.Marshal(RenameRequest{OldPath: "nonexistent.txt", NewPath: "target.txt"})
+	rr := executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/workspace/rename", bytes.NewReader(ren404)))
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for renaming nonexistent file, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// 2. Rename: empty paths -> 400 Bad Request
+	ren400, _ := json.Marshal(RenameRequest{OldPath: "", NewPath: "target.txt"})
+	rr = executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/workspace/rename", bytes.NewReader(ren400)))
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for empty oldPath, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// 3. Rename: destination already exists -> 409 Conflict
+	ren409, _ := json.Marshal(RenameRequest{OldPath: "source.txt", NewPath: "existing.txt"})
+	rr = executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/workspace/rename", bytes.NewReader(ren409)))
+	if rr.Code != http.StatusConflict {
+		t.Errorf("expected 409 for renaming to existing file, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// 4. Rename: path escapes root -> 400 Bad Request
+	renEscape, _ := json.Marshal(RenameRequest{OldPath: "source.txt", NewPath: "../../escaped.txt"})
+	rr = executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/workspace/rename", bytes.NewReader(renEscape)))
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for escape rename, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// 5. Move: non-existent source -> 404 Not Found
+	move404Source, _ := json.Marshal(MoveRequest{SourcePath: "nonexistent.txt", TargetDirectory: "folder"})
+	rr = executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/workspace/move", bytes.NewReader(move404Source)))
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for moving nonexistent source, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// 6. Move: non-existent target directory -> 404 Not Found
+	move404Dir, _ := json.Marshal(MoveRequest{SourcePath: "source.txt", TargetDirectory: "nonexistent_dir"})
+	rr = executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/workspace/move", bytes.NewReader(move404Dir)))
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for moving to nonexistent dir, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// 7. Move: target is not a directory -> 400 Bad Request
+	moveNotDir, _ := json.Marshal(MoveRequest{SourcePath: "source.txt", TargetDirectory: "existing.txt"})
+	rr = executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/workspace/move", bytes.NewReader(moveNotDir)))
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for moving into file (not directory), got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// 8. Move: empty source path -> 400 Bad Request
+	moveEmpty, _ := json.Marshal(MoveRequest{SourcePath: "", TargetDirectory: "folder"})
+	rr = executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/workspace/move", bytes.NewReader(moveEmpty)))
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for empty source path, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// 9. Move: valid move -> 200 OK
+	moveOK, _ := json.Marshal(MoveRequest{SourcePath: "source.txt", TargetDirectory: "folder"})
+	rr = executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/workspace/move", bytes.NewReader(moveOK)))
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200 OK for valid move, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
 
 
 

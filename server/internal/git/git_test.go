@@ -371,3 +371,18 @@ func TestCompareCommits(t *testing.T) {
 	}
 }
 
+func TestGitService_NilWorkspaceGuard(t *testing.T) {
+	svc := git.NewService(nil)
+	ctx := context.Background()
+
+	isRepo, err := svc.IsRepo(ctx)
+	if err != nil || isRepo {
+		t.Errorf("expected isRepo false and no error from nil workspace, got isRepo=%v, err=%v", isRepo, err)
+	}
+
+	err = svc.Init(ctx)
+	if err == nil {
+		t.Errorf("expected error from nil workspace on Init(), got nil")
+	}
+}
+

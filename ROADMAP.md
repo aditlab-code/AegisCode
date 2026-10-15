@@ -23,7 +23,7 @@ flowchart LR
 - [x] DAP Debugger with bundled Delve (`dlv`) orchestration and UI scopes.
 - [x] Terminal PTY runner over WebSockets with xterm.js and viewport auto-fit.
 - [x] Model Context Protocol (MCP) server with 7 progressive disclosure tools and native `@colbymchenry/codegraph` bridge.
-- [x] VantageCraft 6-View CodeGraph Studio (Entrypoints, Steps, Map, Flow, Screens, FileCode). *(Note: Legacy flat Cytoscape graph viewer and custom Go AST extractors are `[DEPRECATED & REMOVED]` per ADR 0014 & ADR 0015).*
+- [x] VantageCraft 6-View CodeGraph Studio (Entrypoints, Steps, Map, Flow, Screens, FileCode).
 - [x] AI Assistant Studio with Antigravity CLI (`agy`), Claude, and OpenAI SSE streams.
 - [x] Git-driven Review Gates for safe line-by-line file application.
 
@@ -52,7 +52,7 @@ flowchart LR
   - **TypeScript / JavaScript**: Embedded `vtsls` or `typescript-language-server` integration.
   - **Python**: Lightweight `pyright` / `basedpyright` support.
 - [ ] **Polyglot Code Intelligence & Tree-Sitter Synthesizers**:
-  - *(Note: Custom in-process Go AST extractors are `[DEPRECATED & SUPERSEDED]` by native `@colbymchenry/codegraph` Tree-sitter & Rust kernel multi-language engine).*
+  - Native `@colbymchenry/codegraph` Tree-sitter & Rust kernel multi-language engine integration.
   - Cross-language dependency graph resolution (e.g. Go backend calling Python microservice or React frontend calling Go API).
 
 ---
@@ -67,6 +67,9 @@ flowchart LR
   - One-click configuration generator for connecting Cursor, Claude Code, Windsurf, and local Ollama instances to the AegisCode MCP daemon.
 - [ ] **Decentralized Plugin Registry**:
   - Lightweight GitHub-backed extension catalog with semantic versioning.
+- [ ] **First-Party Scientific & Academic Extension Bundles**:
+  - **Aegis LaTeX Studio**: Live KaTeX/MathJax formula preview, SyncTeX bi-directional jumping between CM6 editor and compiled PDF, and automated `tectonic` / system compiler execution.
+  - **Aegis Quant Research Hub**: Large-scale tabular spreadsheet inspector (`.csv`, `.tsv`, `.parquet`), interactive scientific visualization canvases (Matplotlib/Plotly output), and Python statistical REPL bridge.
 
 ---
 
@@ -86,3 +89,14 @@ flowchart LR
 Have an idea for the roadmap?
 1. Check our [Existing Issues](https://github.com/aditlab-code/AegisCode/issues) or [Feature Request Form](.github/ISSUE_TEMPLATE/feature_request.yml).
 2. Propose ideas in GitHub Discussions or submit an architectural proposal under `docs/adr/`.
+
+---
+
+## 🗄️ Deprecated & Legacy Archives
+
+> **Notice**: The historical concepts and superseded architectures below have been permanently retired:
+- **Cytoscape.js Flat Graph Viewer**: Superseded by VantageCraft 6-View Studio (`CodeGraphShell.tsx`) per ADR 0014 and ADR 0015.
+- **Custom In-Process Go AST Extractors**: Superseded by native `@colbymchenry/codegraph` Tree-sitter and Rust kernel extraction.
+- **Fragmented Standalone SSE Streams**: Superseded by Unified Go `EventHub` multiplexer (`GET /api/v1/events`) per ADR 0016.
+- **Monolithic Context Facades**: Pre-Wave 4 `editorCore.ts`, `workspaceCore.ts`, and `settingsCore.ts` superseded by 9 modular Zustand slices in `src/store/slices/`.
+

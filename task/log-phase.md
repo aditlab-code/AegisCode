@@ -27,6 +27,11 @@
 | **LOG-016** | `Wave4/Complete` | Penyelesaian Wave 4 (MP-4.1 s/d MP-4.3) | `SUCCESS` | Dead Code Purged & Full Gates Passed | 1. MP-4.1: Menghapus 3 berkas core warisan (`editorCore.ts`, `settingsCore.ts`, `workspaceCore.ts` total 2.211 baris) setelah migrasi tipe & test ke Zustand.<br>2. MP-4.2: Memangkas 4 hook mati (`useChatCore`, `useGitCore`, `useTerminalCore`, `useLayoutCore` ~1.660 baris) dan ~200 baris CSS usang di `sidebar.css` (-2.8 kB bundle CSS).<br>3. MP-4.3: Full verification gate lolos 100% (283 Vitest tests, 191 Go tests, 0 build error, oxfmt clean). Seluruh Wave 1–4 Tuntas Penuh! |
 | **LOG-017** | `Optimization/Init` | Inisiasi Analisis BUGS - ISSUES - OPTIMIZES | `INIT` | Framework & Relational Table Setup | Menginisialisasi fase optimasi arsitektur per `task/task-issues-optimize.md`: dispatch subagent verifikasi, pemetaan relasional Backend API, Zustand DOM, dan Buffer Lifecycle, serta penyiapan `Table-Phase-Optimized.md` dan `pr-table-relational-opt.md`. |
 | **LOG-018** | `Optimization/Audit` | Penyelesaian Audit 3 Batasan Arsitektur | `SUCCESS` | `Table-Phase-Optimized.md` & `pr-table-relational-opt.md` | Verifikasi mendalam 31 temuan (10 BUG, 12 ISSUE, 9 OPTIMIZE) pada Backend API (17 temuan), Zustand Store (9 temuan), dan Buffer Lifecycle (5 temuan). Master audit table dan PR implementation map tuntas dan siap divalidasi. |
+| **LOG-019** | `Optimization/Dispatch` | Delegasi Paralel 3 Sub-Agent Wave 5 | `DISPATCH` | MP-5.1, MP-5.2, MP-5.3 Subagents | Memulai eksekusi serentak 3 Micro-Phase: Track A Backend Go Hardening, Track B Zustand Store Normalization, dan Track C Buffer Lifecycle Integrity. |
+| **LOG-020** | `Backend/MP-5.1` | Penyelesaian MP-5.1 Backend Go & Route Hardening | `SUCCESS` | MP-5.1 Terverifikasi (193 Go tests passed) | 1. Rute mati dibersihkan: `/auth/handshake`, `/pairing/info`, `/mcp/rpc`, `/mcp/events`, `/codegraph/init`.<br>2. Duplikasi ServeMux `/api/codegraph/entrypoints` dihapus.<br>3. SSE logs di BottomPanel dimigrasikan ke unified EventHub (hemat 1 soket browser).<br>4. Prefix API_BASE dipasang di TerminalView SSE.<br>5. Nil-pointer panic s.ws == nil di git.go ditambal.<br>6. Status code 400/404/409 diterapkan pada rename/move. |
+| **LOG-021** | `Buffer/MP-5.3` | Penyelesaian MP-5.3 Buffer Lifecycle Integrity | `SUCCESS` | MP-5.3 Terverifikasi (295 Vitest passed) | 1. In-flight save race condition dicegah di markBufferSavedLogic (ketikan baru saat I/O tetap isDirty=true).<br>2. Self-save watcher echo suppression (800ms window & content match) mencegah editor unmount/flicker.<br>3. Path tab ternormalisasi mencegah penutupan tab dirty tanpa konfirmasi modal.<br>4. Auto-save sinkron penuh saat switch folder.<br>5. Per-file async sequence token mencegah respon tab usang. |
+| **LOG-022** | `Store/MP-5.2` | Penyelesaian MP-5.2 Zustand Store Normalization | `SUCCESS` | MP-5.2 Terverifikasi (301 Vitest passed) | 1. OPT-ZUS-01: Tema disatukan di createSettingsSlice sebagai single source of truth, createLayoutSlice mendelegasikan setTheme/setThemePalette/toggleTheme dengan sinkronisasi dual localStorage (`aegis_settings_v1` & `aegis_user_settings`).<br>2. OPT-ZUS-02: tabSize, minimapEnabled, dan minimapScale tersinkronisasi 2 arah antara createEditorSlice dan settings.editor.<br>3. OPT-ZUS-03: Render loop 60Hz diputus; CodePane tidak lagi subscribe ke cursorPosition/selection di Zustand, kursor didebounce 120ms ke store.<br>4. OPT-ZUS-04: getDerivedEditorState dirapikan dengan guard splitEditor dan single source of truth untuk tab groups.<br>5. OPT-ZUS-05: linterSettings di createWorkspaceSlice tersinkronisasi dua arah dengan settings.linter di createSettingsSlice.<br>6. OPT-ZUS-06 & OPT-ZUS-07: toast dan runAction dipindahkan ke createLayoutSlice tanpa dependensi debug slice; breakpoints dan activeDebugLine ditempatkan di createDebugSlice dengan backward-compatible bridge. |
+| **LOG-023** | `Wave5/FullComplete` | Penyelesaian Wave 5 Architecture Hardening (MP-5.1–5.4) | `SUCCESS` | Seluruh 31 Temuan Beres & Gates Lulus | 1. MP-5.1 Backend Go Hardening tuntas (193 Go tests passed).<br>2. MP-5.2 Zustand Store Normalization tuntas (301 Vitest passed).<br>3. MP-5.3 Buffer Lifecycle Integrity tuntas (race condition save & watcher echo terselesaikan).<br>4. MP-5.4 Verification Gate lulus 100%: Vite build clean (0 error), oxfmt clean (159 files), 193 Go tests passing, 301 Vitest tests passing. Seluruh Wave 5 Tuntas Penuh! |
 
 ---
 
@@ -140,3 +145,27 @@
 - **Dokumen Output Fase Ini**:
   - `task/Table-Phase-Optimized.md` (Master Audit Table: 31 Relational Items).
   - `task/pr-table-relational-opt.md` (Relational PR Implementation Map: MP-5.1 s/d MP-5.3).
+
+---
+
+### **Log Eksekusi & Pembaruan Arsitektur: ADR-0016 & Penuntasan OPT-ZUS-08 & OPT-ZUS-09 — 🟢 SELESAI PENUH**
+- **LOG-024**:
+  - **Pembaruan ADR-0016 (`docs/adr/0016-...`) & ADR Catalog (`docs/adr/README.md`)**:
+    - Bagian 2 diperbarui: Mendokumentasikan Go `EventHub` Unified Multiplexer (`GET /api/v1/events` via `WorkbenchEventHub.ts`) menggantikan 5 SSE individual streams dan menghapus arbitrary deferral 600ms. Sisa persistent streaming socket pada port 8080 ditekan menjadi tepat 1 TCP socket.
+    - Bagian 3 diperbarui: Mengganti skema 4-key indexing lama dengan **Single POSIX Canonical Path Keying** (`normalizeWorkspacePath`), perlindungan keystroke in-flight save (`markBufferSavedLogic`), dan **Self-Save Watcher Echo Suppression** (window 800ms) untuk mencegah editor unmount/flicker.
+    - Ringkasan pada katalog `docs/adr/README.md` diselaraskan 1:1.
+  - **Penyelesaian OPT-ZUS-08 (`src/store/slices/createTerminalSlice.ts` & `src/data/mockData.ts`)**:
+    - Menambahkan `detectDefaultShell()` untuk mendeteksi OS secara dinamis (`powershell` pada Windows, `zsh` pada macOS/Linux).
+    - Memutakhirkan `initialTerminalSessions` di `mockData.ts` dan fallback sesi terminal pada `createTerminalSlice.ts`.
+    - Memperluas `restartTerminalSession(id?: string, shellName?: string)` agar mendukung pergantian shell dinamis saat restart/offline fallback.
+  - **Penyelesaian OPT-ZUS-09 (`src/store/slices/codegraphSlice.ts`, `src/store/index.ts`, `src/store/types.ts`)**:
+    - Mengonversi `codegraphSlice.ts` menjadi `SliceCreator<CodeGraphSlice>` (`createCodeGraphSlice`) dan me-mount-nya langsung ke dalam `useWorkbenchStore`.
+    - Mencegah circular dependency impor melalui decoupling registration `registerCodeGraphWorkbenchStore(useWorkbenchStore)`.
+    - Mengekspor bridge backward-compatible `useCodeGraphStore` sehingga seluruh 8 komponen viewer CodeGraph tetap berfungsi transparan tanpa perubahan impor.
+    - Mengintegrasikan pemanggilan `resetView()` saat membuka atau menutup workspace (`openRootFolder`/`closeRootFolder`) di `createWorkspaceSlice.ts` untuk membersihkan state graf stale.
+  - **Hasil Gerbang Verifikasi**:
+    - Frontend Vitest: **303 unit tests lulus 100%** di seluruh 28 berkas pengujian.
+    - Backend Go: **193 unit & integration tests lulus 100%** di seluruh 14 paket.
+    - Kode Formatting: **159 berkas terformat bersih dengan oxfmt**.
+    - Vite Production Build: **0 error, selesai dalam 676ms** dengan pemisahan bundle dinamis (`GraphViewer.js` 58 kB, `PdfViewer.js` 434 kB, `TerminalView.js` 336 kB) terjaga penuh.
+

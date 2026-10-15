@@ -1,4 +1,6 @@
-# Roadmap FRONT END ONLY
+# Roadmap FRONT END ONLY (Historical Draft)
+
+> **Archive Notice**: This document contains the initial scratchpad design notes for AegisCode phases 1–5. It is preserved strictly as a historical artifact. For the actual active roadmap, see [`roadmap.md`](./roadmap.md).
 
 # AEGISCODE 
 

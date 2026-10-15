@@ -22,13 +22,13 @@ The architecture documentation is decomposed into focused modules located in [`d
 
 | Document | Link | Focus Area & Description |
 | :--- | :--- | :--- |
-| **System Architecture** | [`docs/architecture.md`](../../docs/architecture.md) | High-level system architecture and folder-level ownership guide. |
-| **Frontend UI Design** | [`docs/frontend.md`](../../docs/frontend.md) | UI layout reference organized by component layout folder, styling rules, and tokens. |
-| **Engineering Roadmap** | [`docs/roadmap.md`](../../docs/roadmap.md) | Milestone progression tracking Phases 1 through 9. |
-| **Backend & Features** | [`docs/feature-backend.md`](../../docs/feature-backend.md) | Go Core Server specifications, endpoints (REST/SSE/WS), DAP debugger, and pairing. |
-| **Feature Assessment** | [`docs/report.md`](../../docs/report.md) | Feature evaluation scorecard, anti-over-engineering gates, and RFC checklist. |
-| **Installation & Setup** | [`docs/installation.md`](../../docs/installation.md) | Quickstart guide, environment prerequisites, and single binary build steps. |
-| **Architecture Decision Records** | [`docs/adr/`](../../docs/adr) | Formal ADR records (0001–0008) detailing fundamental technology decisions. |
+| **System Architecture** | [`docs/internal/architecture.md`](./architecture.md) | High-level system architecture and folder-level ownership guide. |
+| **Frontend UI Design** | [`docs/internal/frontend.md`](./frontend.md) | UI layout reference organized by component layout folder, styling rules, tokens, and Zustand stores. |
+| **Engineering Roadmap** | [`docs/internal/roadmap.md`](./roadmap.md) | Milestone progression tracking Phases 1 through 9, Wave 4 & 5, and Milestone v1.2. |
+| **Backend & Features** | [`docs/internal/feature-backend.md`](./feature-backend.md) | Go Core Server specifications, endpoints (REST/SSE/WS), Unified EventHub, DAP debugger, and pairing. |
+| **Feature Assessment** | [`docs/internal/report.md`](./report.md) | Feature evaluation scorecard, anti-over-engineering gates, health metrics, and RFC checklist. |
+| **Installation & Setup** | [`docs/internal/installation.md`](./installation.md) | Quickstart guide, environment prerequisites, and single binary build steps. |
+| **Architecture Decision Records** | [`docs/adr/`](../adr) | Formal ADR records (ADR 0001 through ADR 0016) detailing fundamental technology decisions. |
 
 ---
 

@@ -6,10 +6,11 @@ The AegisCode Go core server exposes a high-performance HTTP and SSE API on `127
 
 ## 1. General Conventions & Error Standards
 
-* **Host Binding**: Exclusively `127.0.0.1` (localhost).
+* **Host Binding**: Exclusively `127.0.0.1` (localhost) or local LAN in companion mode.
 * **Content Types**:
   - Standard REST: `application/json; charset=utf-8`
   - Real-Time Streaming: `text/event-stream`
+  - Raw Binary File Transfer: `application/octet-stream` or auto-detected MIME with `Range` header support.
 * **Error Format**:
   ```json
   {
@@ -21,86 +22,138 @@ The AegisCode Go core server exposes a high-performance HTTP and SSE API on `127
 
 ---
 
-## 2. Workspace & File System Endpoints
+## 2. Unified Server-Sent Events (SSE) & Real-Time Streams
+
+All background telemetry and real-time events are multiplexed over a single persistent TCP connection per ADR-0016 to prevent browser HTTP/1.1 socket pool starvation:
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/v1/events` | **Unified SSE Multiplexer**: Streams topics (`workspace`, `lsp`, `debug`, `mcp`, `logs`, `workers`) over a single socket with 15s keep-alive ping. |
+| `GET` | `/api/v1/events/terminal/{id}` | **Live PTY SSE Stream**: Streams lossless raw byte buffers for active terminal emulator sessions. |
+
+---
+
+## 3. Workspace & File System Endpoints
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `GET` | `/api/v1/workspace/info` | Returns active workspace root path and metadata |
 | `POST` | `/api/v1/workspace/open` | Opens a new workspace directory (`{"path": "..."}`) |
-| `POST` | `/api/v1/workspace/close` | Closes the active workspace |
+| `POST` | `/api/v1/workspace/close` | Closes active workspace and resets internal watchers |
 | `GET` | `/api/v1/workspace/tree` | Returns the hierarchical file tree representation |
 | `GET` | `/api/v1/workspace/file?path=<rel>` | Retrieves UTF-8 file content |
+| `GET` | `/api/v1/workspace/file/raw?path=<rel>` | Zero-copy binary file transfer (supports HTTP 206 Partial Content) |
 | `POST` | `/api/v1/workspace/file` | Creates or saves file content (`{"path": "...", "content": "..."}`) |
-| `DELETE` | `/api/v1/workspace/file?path=<rel>` | Deletes a file within the workspace |
+| `DELETE` | `/api/v1/workspace/file?path=<rel>` | Deletes a file within the workspace boundary |
 | `POST` | `/api/v1/workspace/folder` | Creates a new directory (`{"path": "..."}`) |
-| `POST` | `/api/v1/workspace/rename` | Renames a file or directory |
-| `POST` | `/api/v1/workspace/search` | Full-workspace text search |
+| `POST` | `/api/v1/workspace/rename` | Renames a file or directory (returns 400/404/409 on error) |
+| `POST` | `/api/v1/workspace/move` | Moves a file or directory to a target directory |
+| `POST` | `/api/v1/workspace/search` | Full-workspace regex text search |
 | `POST` | `/api/v1/workspace/replace-all` | Batch find-and-replace across files |
+| `GET` | `/api/v1/workspace/csv/query` | Big Data CSV/TSV query engine (row windowing, seek, search) |
 
 ---
 
-## 3. Git Operations Endpoints
+## 4. Git Operations Endpoints
+
+All operations execute through `git.Service` with internal mutex serialization and transient lock recovery:
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `GET` | `/api/v1/git/status` | Returns staged, unstaged, untracked, and conflicting files |
+| `GET` | `/api/v1/git/status` | Returns staged, unstaged, untracked, conflicting files, and branch metadata |
+| `POST` | `/api/v1/git/init` | Initializes a new Git repository |
 | `POST` | `/api/v1/git/stage` | Stages file paths (`{"paths": ["..."]}`) |
 | `POST` | `/api/v1/git/unstage` | Unstages file paths |
 | `POST` | `/api/v1/git/discard` | Discards unstaged modifications safely |
 | `POST` | `/api/v1/git/commit` | Commits staged changes (`{"message": "..."}`) |
-| `GET` | `/api/v1/git/diff?path=<rel>` | Returns unified diff for an individual file |
-| `GET` | `/api/v1/git/branches` | Lists local and remote branches |
-| `POST` | `/api/v1/git/branch/checkout` | Checks out a branch |
+| `GET` | `/api/v1/git/diff?file=<path>&staged=<bool>` | Returns unified diff for an individual file |
+| `GET` | `/api/v1/git/compare?base=<hash>&target=<hash>` | Compares arbitrary commits and returns changed files |
+| `GET` | `/api/v1/git/branches` | Lists local and remote tracking branches |
+| `POST` | `/api/v1/git/branch/checkout` | Checks out a branch or commit |
+| `POST` | `/api/v1/git/branch/create` | Creates a new branch |
+| `GET` | `/api/v1/git/log?limit=<n>` | Retrieves commit history nodes with author and branch decorations |
+| `GET` | `/api/v1/git/timeline?file=<path>&limit=<n>` | Retrieves commit history specific to a file for the Timeline panel |
 | `POST` | `/api/v1/git/push` | Pushes commits to remote |
 | `POST` | `/api/v1/git/pull` | Pulls commits from remote |
+| `POST` | `/api/v1/git/sync` | Pulls and pushes in a synchronized operation |
 
 ---
 
-## 4. CodeGraph & AST Endpoints
+## 5. Terminal & Worker Supervision Endpoints
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `GET` | `/api/v1/codegraph/status` | Returns indexing status, file count, and symbol count |
-| `POST` | `/api/v1/codegraph/reindex` | Forces a complete re-scan and AST re-indexing |
-| `GET` | `/api/v1/codegraph/file?path=<rel>` | Returns all AST symbols and local edges in a file |
-| `GET` | `/api/v1/codegraph/workspace` | Returns full workspace graph for Cytoscape canvas |
-| `GET` | `/api/v1/codegraph/neighborhood?symbol=<name>` | Queries sub-graph neighborhood around a symbol |
-| `GET` | `/api/v1/codegraph/symbols/search?q=<query>` | FTS5 symbol lookup |
-
----
-
-## 5. Delve Debugger Endpoints
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `POST` | `/api/v1/debug/start` | Spawns `dlv dap` and launches debug session |
-| `POST` | `/api/v1/debug/breakpoints` | Synchronizes breakpoints (`{"file": "...", "lines": [...]}`) |
-| `POST` | `/api/v1/debug/step` | Execution control (`{"action": "next|in|out|continue"}`) |
-| `GET` | `/api/v1/debug/state` | Returns call stack, active line, and variable scopes |
-| `POST` | `/api/v1/debug/terminate` | Terminates debuggee process and shuts down Delve |
-| `GET` | `/api/v1/events/debug` | **SSE Stream**: Broadcasts breakpoint hit and stopped events |
-
----
-
-## 6. Terminal PTY Endpoints
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `POST` | `/api/v1/terminal/create` | Spawns a new PTY shell session (`{"cols": 80, "rows": 24}`) |
+| `POST` | `/api/v1/terminal/create` | Spawns a new PTY session with dynamic OS shell resolution |
 | `GET` | `/api/v1/terminal/sessions` | Lists active terminal sessions |
-| `DELETE` | `/api/v1/terminal/{id}` | Terminates a terminal session |
-| `POST` | `/api/v1/terminal/{id}/resize` | Updates terminal dimensions |
-| `POST` | `/api/v1/terminal/{id}/write` | Writes input data to `stdin` |
-| `GET` | `/api/v1/events/terminal/{id}` | **SSE Stream**: Streams terminal output buffer |
+| `POST` | `/api/v1/terminal/:sessionId/write` | Writes input data to `stdin` |
+| `POST` | `/api/v1/terminal/:sessionId/resize` | Updates terminal dimensions (`cols`, `rows`) |
+| `DELETE` | `/api/v1/terminal/:sessionId` | Terminates terminal session process tree |
+| `GET` | `/api/v1/workers` | Retrieves status, PID, and uptime of supervised workers |
+| `POST` | `/api/v1/workers` | Registers and launches a new supervised worker process |
+| `GET` | `/api/v1/workers/:id` | Retrieves live metadata for a specific worker |
+| `GET` | `/api/v1/workers/:id/logs` | Returns in-memory ring buffer log history |
+| `POST` | `/api/v1/workers/:id/stop` | Gracefully shuts down a worker process |
 
 ---
 
-## 7. AI Assistant & Model Context Protocol (MCP)
+## 6. CodeGraph & Native Architecture Proxy
+
+Native `@colbymchenry/codegraph` daemon integration per ADR-0014 and ADR-0015:
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `POST` | `/api/v1/ai/chat` | **SSE Stream**: Streams token deltas, thoughts, and tool calls |
-| `GET` | `/api/v1/chats` | Lists project-scoped chat sessions |
+| `GET` | `/api/codegraph/ui/stats` | Reverse proxy to native CodeGraph daemon statistics |
+| `GET` | `/api/codegraph/ui/search` | Fast symbol search across project AST |
+| `POST` | `/api/codegraph/ui/sync` | Triggers background index synchronization |
+| `POST` | `/api/codegraph/ui/reindex` | Triggers full AST re-scan and graph rebuilding |
+| `GET` | `/api/v1/codegraph/entrypoints` | Returns detected framework routes and application entrypoints |
+
+---
+
+## 7. Delve Debugger (DAP) Endpoints
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/v1/debug/start` | Spawns `dlv dap` and launches debug target |
+| `POST` | `/api/v1/debug/breakpoints` | Synchronizes breakpoints (`{"file": "...", "lines": [...]}`) |
+| `POST` | `/api/v1/debug/step` | Execution control (`{"action": "continue|stepOver|stepIn|stepOut"}`) |
+| `GET` | `/api/v1/debug/state` | Returns call stack, active line, and variable scopes |
+| `POST` | `/api/v1/debug/terminate` | Terminates debuggee process cleanly (with Windows tree-kill support) |
+
+---
+
+## 8. AI Assistant & Model Context Protocol (MCP)
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/v1/ai/chat` | **SSE Stream**: Streams token deltas, thoughts, and tool call traces |
+| `GET` | `/api/v1/chats` | Lists project-scoped chat sessions from SQLite database |
 | `GET` | `/api/v1/chats/{id}` | Returns append-only event ledger for a session |
 | `GET` | `/api/v1/chats/search?q=<query>` | FTS5 full-text search across past conversations |
-| `POST` | `/api/v1/mcp` | Handles incoming MCP JSON-RPC 2.0 tool requests |
+| `POST` | `/api/v1/mcp` | Model Context Protocol JSON-RPC 2.0 tool dispatcher |
+
+---
+
+## 9. Deprecated & Legacy Endpoints (Historical Reference)
+
+The following endpoints have been decommissioned or superseded during Phase 5 optimization and are preserved for historical audit only:
+
+### A. Purged Dead Endpoints (Removed from ServeMux)
+| Endpoint | Method | Audit ID | Disposition / Replacement |
+| :--- | :---: | :---: | :--- |
+| `/api/v1/auth/handshake` | `POST` | `OPT-API-01` | **Purged**. Zero frontend callers; companion token handshake moved to LAN pairing module. |
+| `/api/v1/pairing/info` | `GET` | `OPT-API-02` | **Purged**. Zero frontend callers; integrated into status bar pairing popover. |
+| `/api/v1/mcp/rpc` | `POST` | `OPT-API-03` | **Purged**. Duplicate alias to `/api/v1/mcp`. Standardized on `/api/v1/mcp`. |
+| `/api/v1/mcp/events` | `GET/POST`| `OPT-API-04` | **Purged**. Dead standalone SSE stream; replaced by unified `/api/v1/events` channel `"mcp"`. |
+| `/api/v1/codegraph/init` | `POST` | `OPT-API-05` | **Purged**. Zero callers; frontend calls native `/api/codegraph/ui/init` via reverse proxy. |
+| `/api/codegraph/entrypoints`| `GET` | `OPT-API-14` | **Purged**. Duplicate route registration; standardized on `/api/v1/codegraph/entrypoints`. |
+
+### B. Deprecated Standalone SSE Streams (Superseded by Unified EventHub)
+| Endpoint | Method | Audit ID | Disposition / Replacement |
+| :--- | :---: | :---: | :--- |
+| `/api/v1/events/workspace` | `GET` | `OPT-API-07` | **Deprecated**. Superseded by `GET /api/v1/events` channel `"workspace"`. |
+| `/api/v1/events/workers` | `GET` | `OPT-API-08` | **Deprecated**. Superseded by `GET /api/v1/events` channel `"workers"`. |
+| `/api/v1/events/logs` | `GET` | `OPT-API-12` | **Deprecated**. Superseded by `GET /api/v1/events` channel `"logs"` via `WorkbenchEventHub.ts`. |
+| `/api/v1/events/debug` | `GET` | `OPT-API-13` | **Deprecated**. Superseded by `GET /api/v1/events` channel `"debug"`. |
+| `/api/v1/events/lsp` | `GET` | `OPT-API-13` | **Deprecated**. Superseded by `GET /api/v1/events` channel `"lsp"`. |
+

@@ -48,8 +48,6 @@ type Server struct {
 	logSubs      map[chan LogEvent]struct{}
 	workerMu     sync.RWMutex
 	workerSubs   map[chan supervisor.CrashEvent]struct{}
-	mcpMu        sync.RWMutex
-	mcpSubs      map[chan map[string]any]struct{}
 	shutdownChan chan struct{}
 }
 
@@ -84,7 +82,6 @@ func NewServer(ws *workspace.Manager, picker platform.FolderPicker, customStore 
 		eventHub:   NewEventHub(),
 		logSubs:    make(map[chan LogEvent]struct{}),
 		workerSubs: make(map[chan supervisor.CrashEvent]struct{}),
-		mcpSubs:    make(map[chan map[string]any]struct{}),
 	}
 	s.supervisor = supervisor.NewManager(func(evt supervisor.CrashEvent) {
 		s.BroadcastLog("Tasks", fmt.Sprintf("[Supervisor] Worker %s (%s) crashed: %v", evt.Name, evt.WorkerID, evt.Error), "error")
@@ -249,7 +246,7 @@ func (s *Server) isOriginAllowed(origin string, r *http.Request) bool {
 }
 
 func (s *Server) isPublicEndpoint(path string) bool {
-	return path == "/api/v1/auth/handshake" || path == "/api/v1/pairing/info"
+	return false
 }
 
 func (s *Server) corsAndAuthMiddleware(next http.Handler) http.Handler {
@@ -289,10 +286,6 @@ func (s *Server) corsAndAuthMiddleware(next http.Handler) http.Handler {
 // Routes constructs the HTTP handler mux mapping all 13 workspace and vcs endpoints.
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
-
-	// Authentication & Companion Pairing endpoints
-	mux.HandleFunc("/api/v1/auth/handshake", s.handleAuthHandshake)
-	mux.HandleFunc("/api/v1/pairing/info", s.handlePairingInfo)
 
 	// Workspace API endpoints
 	mux.HandleFunc("/api/v1/workspace/info", s.handleWorkspaceInfo)
@@ -387,14 +380,10 @@ func (s *Server) Routes() http.Handler {
 
 	// Model Context Protocol (MCP) & CodeGraph Endpoints
 	mux.HandleFunc("/api/v1/mcp", s.handleMCP)
-	mux.HandleFunc("/api/v1/mcp/rpc", s.handleMCP)
-	mux.HandleFunc("/api/v1/mcp/events", s.handleMCPEvents)
 	mux.HandleFunc("/api/v1/codegraph/status", s.handleCodeGraphStatus)
-	mux.HandleFunc("/api/v1/codegraph/init", s.handleCodeGraphInit)
 	mux.HandleFunc("/api/v1/codegraph/reindex", s.handleCodeGraphReindex)
 	mux.HandleFunc("/api/v1/codegraph/file", s.handleCodeGraphFile)
 	mux.HandleFunc("/api/v1/codegraph/symbols/search", s.handleCodeGraphSymbolsSearch)
-	mux.HandleFunc("/api/codegraph/entrypoints", s.handleCodeGraphEntrypoints)
 	mux.HandleFunc("/api/v1/codegraph/entrypoints", s.handleCodeGraphEntrypoints)
 	if s.codegraph != nil {
 		mux.Handle("/api/codegraph/ui/", s.codegraph.ProxyHandler())
@@ -405,36 +394,6 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/system/shutdown", s.handleSystemShutdown)
 
 	return s.corsAndAuthMiddleware(mux)
-}
-
-func (s *Server) handleAuthHandshake(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
-	var req HandshakeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
-		return
-	}
-
-	resp, err := s.pairing.Handshake(req.PairingToken, req.ClientType)
-	if err != nil {
-		jsonError(w, http.StatusUnauthorized, err.Error())
-		return
-	}
-
-	jsonResponse(w, http.StatusOK, resp)
-}
-
-func (s *Server) handlePairingInfo(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
-	jsonResponse(w, http.StatusOK, s.pairing.GetInfo())
 }
 
 func (s *Server) handleWorkspaceInfo(w http.ResponseWriter, r *http.Request) {
@@ -833,8 +792,21 @@ func (s *Server) handleWorkspaceRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if strings.TrimSpace(req.OldPath) == "" || strings.TrimSpace(req.NewPath) == "" {
+		jsonError(w, http.StatusBadRequest, "oldPath and newPath cannot be empty")
+		return
+	}
+
 	if err := s.ws.Rename(req.OldPath, req.NewPath); err != nil {
-		jsonError(w, http.StatusInternalServerError, err.Error())
+		if strings.Contains(err.Error(), "already exists") {
+			jsonError(w, http.StatusConflict, err.Error())
+		} else if strings.Contains(err.Error(), "escapes root directory") || strings.Contains(err.Error(), "empty path") {
+			jsonError(w, http.StatusBadRequest, err.Error())
+		} else if os.IsNotExist(err) || errors.Is(err, os.ErrNotExist) || strings.Contains(err.Error(), "no such file") {
+			jsonError(w, http.StatusNotFound, err.Error())
+		} else {
+			jsonError(w, http.StatusInternalServerError, err.Error())
+		}
 		return
 	}
 
@@ -857,9 +829,22 @@ func (s *Server) handleWorkspaceMove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if strings.TrimSpace(req.SourcePath) == "" {
+		jsonError(w, http.StatusBadRequest, "sourcePath cannot be empty")
+		return
+	}
+
 	newRelPath, err := s.ws.Move(req.SourcePath, req.TargetDirectory)
 	if err != nil {
-		jsonError(w, http.StatusInternalServerError, err.Error())
+		if strings.Contains(err.Error(), "is not a directory") || strings.Contains(err.Error(), "escapes root directory") || strings.Contains(err.Error(), "empty path") {
+			jsonError(w, http.StatusBadRequest, err.Error())
+		} else if strings.Contains(err.Error(), "already exists") {
+			jsonError(w, http.StatusConflict, err.Error())
+		} else if os.IsNotExist(err) || errors.Is(err, os.ErrNotExist) || strings.Contains(err.Error(), "no such file") {
+			jsonError(w, http.StatusNotFound, err.Error())
+		} else {
+			jsonError(w, http.StatusInternalServerError, err.Error())
+		}
 		return
 	}
 
@@ -3024,15 +3009,6 @@ func (s *Server) broadcastMCPEvent(tool string, args map[string]any) {
 	if s.eventHub != nil {
 		s.eventHub.Publish("mcp", "tool_invoked", evt)
 	}
-
-	s.mcpMu.RLock()
-	defer s.mcpMu.RUnlock()
-	for ch := range s.mcpSubs {
-		select {
-		case ch <- evt:
-		default:
-		}
-	}
 }
 
 // BroadcastMCPEvent dispatches an MCP tool call event to MCP subscribers and the unified event hub.
@@ -3080,90 +3056,6 @@ func (s *Server) initEventHubBridges() {
 	}
 }
 
-func (s *Server) handleMCPEvents(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost {
-		var payload map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			jsonError(w, http.StatusBadRequest, "invalid json")
-			return
-		}
-		tool, _ := payload["tool"].(string)
-		if tool == "" {
-			tool, _ = payload["name"].(string)
-		}
-		var args map[string]any
-		if a, ok := payload["args"].(map[string]any); ok {
-			args = a
-		} else {
-			args = payload
-		}
-		s.broadcastMCPEvent(tool, args)
-		jsonResponse(w, http.StatusOK, map[string]any{"status": "ok"})
-		return
-	}
-
-	if r.Method != http.MethodGet {
-		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		jsonError(w, http.StatusInternalServerError, "streaming unsupported")
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.WriteHeader(http.StatusOK)
-	flusher.Flush()
-
-	ch := make(chan map[string]any, 32)
-	s.mcpMu.Lock()
-	if s.mcpSubs == nil {
-		s.mcpSubs = make(map[chan map[string]any]struct{})
-	}
-	s.mcpSubs[ch] = struct{}{}
-	s.mcpMu.Unlock()
-
-	defer func() {
-		s.mcpMu.Lock()
-		delete(s.mcpSubs, ch)
-		close(ch)
-		s.mcpMu.Unlock()
-	}()
-
-	initData, _ := json.Marshal(map[string]any{
-		"status": "connected",
-	})
-	fmt.Fprintf(w, "event: connected\ndata: %s\n\n", string(initData))
-	flusher.Flush()
-
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case <-ticker.C:
-			fmt.Fprintf(w, ": ping\n\n")
-			flusher.Flush()
-		case evt, ok := <-ch:
-			if !ok {
-				return
-			}
-			data, err := json.Marshal(evt)
-			if err == nil {
-				fmt.Fprintf(w, "event: mcp_tool_invoked\ndata: %s\n\n", string(data))
-				flusher.Flush()
-			}
-		}
-	}
-}
-
 func (s *Server) handleCodeGraphStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -3180,23 +3072,6 @@ func (s *Server) handleCodeGraphStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResponse(w, http.StatusOK, st)
-}
-
-func (s *Server) handleCodeGraphInit(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	if s.codegraph == nil {
-		jsonError(w, http.StatusServiceUnavailable, "codegraph manager not initialized")
-		return
-	}
-
-	if err := s.codegraph.Init(r.Context()); err != nil {
-		jsonError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	jsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) handleCodeGraphReindex(w http.ResponseWriter, r *http.Request) {

@@ -21,7 +21,7 @@ import { OutputView } from "./OutputView"
 import { DebugConsoleView } from "./DebugConsoleView"
 import { McpPanelView } from "./McpPanelView"
 
-import { API_BASE } from "../../../utils/apiBase"
+import { eventHub } from "../../../services/WorkbenchEventHub"
 
 const TerminalView = lazy(() => import("./TerminalView"))
 
@@ -140,15 +140,15 @@ export function BottomPanel() {
   )
 
   useEffect(() => {
-    const sse = new EventSource(`${API_BASE}/api/v1/events/logs`)
-    sse.addEventListener("log", (event) => {
+    const unsubscribe = eventHub.subscribe("logs", (payload, type) => {
+      if (type === "connected") return
       try {
-        const data = JSON.parse(event.data) as {
+        const data = payload as {
           channel?: OutputChannel
           message?: string
           timestamp?: string
         }
-        if (data.channel && data.message) {
+        if (data && data.channel && data.message) {
           const ch = data.channel
           const time = data.timestamp || new Date().toTimeString().slice(0, 8)
           setOutputLogs((prev) => ({
@@ -160,12 +160,8 @@ export function BottomPanel() {
         // Safe fallback
       }
     })
-    sse.onerror = () => {
-      // Disconnect cleanly if server is down to prevent loop
-      sse.close()
-    }
     return () => {
-      sse.close()
+      unsubscribe()
     }
   }, [])
 

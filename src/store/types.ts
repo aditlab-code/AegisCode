@@ -41,6 +41,7 @@ import type {
 import type { CursorCoordinates } from "./slices/createWorkspaceSlice"
 import type { ConfirmCloseState } from "../types/workbench"
 import type { AiTraceState } from "../utils/codegraphApi"
+import type { CodeGraphSlice } from "./slices/codegraphSlice"
 
 export type SliceCreator<T> = StateCreator<WorkbenchStore, [], [], T>
 
@@ -93,6 +94,10 @@ export interface LayoutSlice {
   bottomPanelHeight: number
   setBottomPanelHeight: (h: number) => void
   resetBottomPanelHeight: () => void
+  toast: string
+  showToast: (msg: string) => void
+  clearToast: () => void
+  runAction: (action: string) => void
 }
 
 export interface SettingsSlice {
@@ -117,6 +122,8 @@ export interface SettingsSlice {
   setThemeMode: (mode: ThemeMode) => void
   setThemePalette: (palette: ThemePaletteId) => void
   toggleThemeMode: () => void
+  setTheme: (mode: ThemeMode) => void
+  toggleTheme: () => void
 }
 
 export interface EditorSlice {
@@ -361,7 +368,7 @@ export interface TerminalSlice {
   activeTerminalSession: TerminalSession | undefined
   setActiveTerminalSessionId: (id: string) => void
   createTerminalSession: (shellName?: string) => Promise<void>
-  restartTerminalSession: (id?: string) => Promise<void>
+  restartTerminalSession: (id?: string, shellName?: string) => Promise<void>
   terminateTerminalSession: (id?: string) => Promise<void>
   closeTerminalSession: (id?: string) => Promise<void>
   terminalLines: string[]
@@ -430,6 +437,24 @@ export interface DebugSlice {
   serverConnected: boolean
   checkServerConnection: () => Promise<boolean>
   runAction: (action: string) => void
+  breakpoints: Record<string, number[]>
+  setBreakpointsMap: (
+    updater: Record<string, number[]> | ((
+      prev: Record<string, number[]>,
+    ) => Record<string, number[]>),
+  ) => void
+  toggleBreakpoint: (file: string, line: number) => Promise<void>
+  clearBreakpoints: (file?: string) => void
+  activeDebugLine: {
+    file: string
+    line: number
+  } | null
+  setActiveDebugLine: (
+    line: {
+      file: string
+      line: number
+    } | null,
+  ) => void
 }
 
-export type WorkbenchStore = LayoutSlice & SettingsSlice & EditorSlice & WorkspaceSlice & GitSlice & TerminalSlice & ChatSlice & DebugSlice
+export type WorkbenchStore = LayoutSlice & SettingsSlice & EditorSlice & WorkspaceSlice & GitSlice & TerminalSlice & ChatSlice & DebugSlice & CodeGraphSlice

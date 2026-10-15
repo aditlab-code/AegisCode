@@ -18,8 +18,10 @@
 | **Special** | Settings Registry, Core IDE Preferences & Editor Polish | ✅ Completed | Decoupled schema registry, wildcard exclude, GPU cursor blinking, wrap column |
 | **Phase 6** | Go Core Server, Pure-Go SQLite, AI Agent Bridge, DAP Debugger & CodeGraph MCP | ✅ Completed (6.1–6.15 ✅) | Cross-platform Go binary & embed.FS, supervisor, Pure-Go SQLite, AI agent bridge, DAP/Delve, Zero-Freeze Offloading, FTS5 Search, CodeGraph MCP Engine & Interactive Graph Studio |
 | **Phase 7** | Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`) | 🟡 Active (Sub-Phase 7.1, 7.1b, 7.1c ✅, 7.2–7.3 ⚪) | Multi-format tab viewers (Images, Markdown, PDF, Big Data CSV), vector canvas wireframing |
-| **Phase 8** | Research Workshop & Data Science Studio | ⚪ Planned | LaTeX + PDF sync, BibTeX, Python/R dataframes, Biblioshiny |
+| **Wave 4 & 5**| Architectural Hardening, Modular Zustand Slices & Buffer Lifecycle | ✅ Completed | Dead code purge, Unified EventHub SSE, in-flight save dirty protection, self-save suppression, decoupled 60Hz cursor loop |
+| **Phase 8** | Research Workshop & Quantitative Research Studio | ⚪ Planned (v1.2) | LaTeX Studio + PDF Sync, BibTeX Reference Manager, Quantitative Analysis (Python/R DataFrames, PLS-SEM, Biblioshiny) |
 | **Phase 9** | Web-Based Remote Pairing & Tablet Companion | ⚪ Deferred (Final) | LAN pairing, web preview host, touch-optimized editor mode |
+
 
 ---
 
@@ -477,45 +479,35 @@
 - **Verification**: 100% lolos verifikasi Go backend tests (36 unit tests di `codegraph`, `mcp`, dan `api`), full backend suite (169 tests passing across 14 packages), Vitest frontend suite (210 tests passing across 19 files), Vite production build (0 errors), dan oxfmt formatting.
 
 
-#### Sub-Phase 6.15: Graph MCP UI Studio & VantageCraft Integration [SUPERSEDED & REPLACED by ADR 0014 & ADR 0015]
-- **Status**: ✅ Completed (Migrated to VantageCraft 6-View Studio)
+#### Sub-Phase 6.15: VantageCraft CodeGraph 6-View Studio & MCP Integration
+- **Status**: ✅ Completed
 - **Architecture Reference**: [ADR 0014](../../docs/adr/0014-native-colbymchenry-codegraph-and-vantagecraft-ui.md) & [ADR 0015](../../docs/adr/0015-native-codegraph-contract-alignment-and-zero-swallow.md)
-- **Architectural Transition**: The legacy Cytoscape.js flat graph renderer (`GraphViewer.tsx`) and legacy backend CTE routes (`/api/v1/codegraph/neighborhood`, `/api/v1/codegraph/workspace`) are **`[DEPRECATED & REMOVED]`**. They are replaced by the modular VantageCraft 6-View Architecture (`CodeGraphShell.tsx` hosting Entrypoints, Steps, Map, Flow, Screens, FileCode Drawer) with typed API service contracts (`src/services/codegraphApi.ts`), active workspace propagation, and strict zero-swallow error handling.
 - **Objective**: Menyediakan antarmuka visual on-demand untuk subsistem CodeGraph Knowledge Engine: editor tab view (`CodeGraphShell.tsx` via `ViewerPane.tsx`) yang mendukung split-screen side-by-side editing bersama buffer kode, status bar MCP popover (`McpStatusPopover.tsx`), tab diagnosa MCP di Bottom Panel (`McpPanelView.tsx`), serta sinkronisasi bidirectional real-time antara eksekusi tool AI agent dan node graf.
 - **Deliverables**:
-  - **Backend SQLite UI Service & REST Endpoints (`ui_service.go`, `ui_types.go`, `api.go`)**:
-    - `UIGraphNode`, `UIGraphEdge`, dan `UIGraphPayload` terformat siap render untuk Cytoscape.js.
-    - `GetSymbolNeighborhood`: Kueri recursive CTE untuk penelusuran graf 1-hop dan 2-hop dengan pembatasan kedalaman dan guardrail limit.
-    - `GetActiveFileGraph`: Pengambilan simbol instan dan relasi keterhubungan internal/eksternal untuk berkas yang sedang aktif.
-    - `GetWorkspaceGraph`: Simbol struktural teratas workspace berdasarkan derajat koneksi edge dengan filter pembersihan virtual environment.
-    - `SearchSymbols`: Pencarian FTS5 dan fallback LIKE untuk autocomplete simbol di toolbar graf.
-    - REST endpoints di `api.go`: `/api/v1/codegraph/neighborhood`, `/file`, `/workspace`, dan `/symbols/search`.
-  - **Integrasi LSP Bawaan & Ekstraktor Python Mandiri (`lsp_extractor.go`, `py_extractor.go`)**:
-    - Memanggil `s.lsp.SetWorkspace(absPath)` pada lifecycle workspace agar server bahasa bawaan (`gopls`, `pyright`/`pylsp`, `vtsls`) terikat ke root proyek.
-    - Ekstraktor leksikal Python mandiri untuk mengekstrak fungsi, method, class, docstrings, dan call edges (`calls`) tanpa ketergantungan subprocess eksternal.
-    - Auto-purge direktori virtual environment (`.venv`, `venv`, `site-packages`, `__pycache__`, `node_modules`) saat inisialisasi dan reindex.
-  - **Universal On-Demand Code Splitting & Tab System (`viewerTypes.ts`, `ViewerPane.tsx`, `EditorTabs.tsx`, `EditorBreadcrumbs.tsx`)**:
-    - Tipe `"graph"` pada `ViewerType`, `isGraphTab()`, dan `parseGraphTab()`.
+  - **Modular VantageCraft 6-View Architecture (`CodeGraphShell.tsx`)**:
+    1. **Entrypoints / Program View (`EntrypointsView.tsx`)**: Framework-aware catalog of HTTP routes, CLI commands, scripts, and background jobs.
+    2. **Execution Steps View (`StepsView.tsx`)**: Execution spine tree with architectural tiers (`Handler` $\rightarrow$ `Service` $\rightarrow$ `Repo` $\rightarrow$ `DB`), branch conditions, side effects, and dynamic symbol selection.
+    3. **Architecture Map View (`ArchitectureMapView.tsx`)**: Macro package/folder compound graph with reference thickness.
+    4. **Directed Flow & Trails View (`FlowTrailsView.tsx`)**: 3-column blast radius (Callers $\rightarrow$ Target $\rightarrow$ Callees) and shortest-path call trails.
+    5. **Screens & Events View (`ScreensEventsView.tsx`)**: UI component hierarchies linked to user interactions and backend handlers.
+    6. **FileCode Drawer (`FileCodeDrawer.tsx`)**: Bounded source viewer with syntax highlighting and direct jump-to-line integration with `CMEditor.tsx`.
+  - **Native API Service & Reverse Proxy (`src/services/codegraphApi.ts` & Go Reverse Proxy)**:
+    - Binds directly to the Go reverse proxy (`/api/codegraph/ui/*` and `/api/v1/codegraph/entrypoints`).
+    - Propagates active workspace root path (`workspace`) across all queries.
+    - Adopts native stats keys (`stats.graph.nodes`, `stats.graph.edges`, `stats.graph.files`).
+  - **Strict Zero-Swallow Error Policy (`ADR-0015`)**:
+    - Client services never swallow errors with `catch { return null }` or return silent empty fallbacks.
+    - Non-200 responses bubble up typed errors and surface actionable alert cards with retry and re-index triggers.
+  - **Universal On-Demand Code Splitting & Tab System (`viewerTypes.ts`, `ViewerPane.tsx`, `EditorTabs.tsx`)**:
     - Tab graf di `EditorTabs` menggunakan ikon `"zap"` dan label nama target yang rapi.
-    - Breadcrumb root `codegraph` pada `EditorBreadcrumbs`.
-    - `GraphViewer` diimpor strictly on-demand via `React.lazy()` di `ViewerPane.tsx` (nol overhead Cytoscape pada initial bundle).
+    - `CodeGraphShell` diimpor strictly on-demand via `React.lazy()` di `ViewerPane.tsx` (0 MB overhead pada initial bundle).
   - **Integrasi Status Bar & Bottom Panel (`McpStatusPopover.tsx`, `McpPanelView.tsx`)**:
     - MCP status pill dan popover di Status Bar menampilkan database SQLite aktif, metrik indeks (files, symbols, edges), aksi reindex, tombol peluncur kanvas, dan daftar tool terdaftar.
     - Tab `"MCP"` di Bottom Panel dengan informasi protokol `2024-11-05`, DB status, quick action side-by-side split, dan interactive JSON tool tester.
-  - **Interactive Cytoscape.js Studio (`GraphCanvas.tsx`, `GraphToolbar.tsx`, `NodeInspector.tsx`, `graphTheme.ts`)**:
-    - Layout 2D Card Grid seimbang untuk node standalone/terisolasi, dan Dagre hierarchical tree untuk node berelasi.
-    - Dimensi node konsisten bergaya kartu IDE (`160px` x `40px`) dengan warna semantik (Functions: `#3B82F6`, Interfaces: `#10B981`, Classes/Types: `#8B5CF6`, Active: `#F59E0B`, AI Trace: `#EC4899`, AI Node: `#8B5CF6`).
-    - Toolbar ringkas satu baris (*single-row responsive*): Autocomplete search, filter chip jenis simbol, layout switcher (Hierarchical Flow vs Network Graph), Zoom, Fit, dan Split Screen (toggle Hop 1/2 dieliminasi demi kedalaman direct neighborhood otomatis).
-    - Slide-in `NodeInspector` drawer: badge jenis simbol, path dan nomor baris, "Jump to Source", "Focus Subgraph", preview signature, docstrings, dan daftar pemanggil/panggilan.
   - **Sinkronisasi Bidirectional Real-Time & Live AI Trace**:
     - **Graph ➔ Editor**: Double-click node membuka file dan langsung melakukan scroll serta positioning kursor ke baris kode target.
     - **Editor ➔ Graph**: Navigasi definition di `CodePane.tsx` memancarkan `aegis:focus-symbol` untuk memusatkan kamera kanvas.
-    - **AI ➔ Graph**: Listener SSE real-time di `chatCore.ts` mendeteksi event `tool_call` CodeGraph/MCP dan inspeksi file secara langsung. Di kanvas graf, entitas **AI Assistant** dinamis diinjeksikan secara real-time dengan laser flow beam beranimasi menuju target kode, disusul transisi status sukses (4 detik delay) dan pelaporan error eksplisit tanpa pass silent atau mock dummy.
-  - **Pembersihan Bloat & Universal CLI Installer (`scripts/install-mcp.js`)**:
-    - Eliminasi entri zombie (`graphify`, `agent-lsp`) dari konfigurasi Antigravity CLI.
-    - CLI binary global di `~/.local/bin/aegiscode` (`aegiscode mcp`).
-    - Skrip otomatis `npm run mcp:install` untuk pendaftaran mandiri ke Antigravity, Claude Desktop, dan Cursor.
-- **Verification**: 100% lolos verifikasi Go backend tests (13 unit tests di `codegraph`), frontend Vitest suite (19 test files, 213 unit tests passing), Vite production build (0 error, chunk `GraphViewer` terpisah), dan formatting `oxfmt`.
+- **Verification**: 100% lolos verifikasi Go backend tests, full backend suite (193 tests passing across 14 packages), Vitest frontend suite (303 tests passing across 28 files), Vite production build (0 errors), dan oxfmt formatting.
 ---
 
 ### Phase 7: Multi-Viewer Engine & UI/UX Wireframe Studio (`tldraw`)
@@ -566,16 +558,47 @@
 
 ---
 
-### Phase 8: Research Workshop & Data Science Studio
-- **Status**: ⚪ Planned
+### Wave 4 & 5: Architectural Hardening, Modular Zustand Slices & Buffer Lifecycle
+- **Status**: ✅ Completed
+- **Architecture References**: [ADR 0016](../../docs/adr/0016-http1-socket-starvation-prevention-and-canonical-workspace-buffer-lifecycle.md)
+- **Objectives**: Purge obsolete frontend facades, eliminate HTTP/1.1 socket starvation, optimize store subscription performance, and harden buffer lifecycle concurrency.
+- **Deliverables**:
+  - **Wave 4: Dead Code & Monolithic Facade Purge**:
+    - Purged legacy monolithic facade files in `src/context/` (`editorCore.ts`, `settingsCore.ts`, `workspaceCore.ts`).
+    - Purged legacy custom context hooks (`useChatCore`, `useGitCore`, `useLayoutCore`, `useTerminalCore`).
+    - Established unified modular Zustand architecture ([`src/store/index.ts`](../../src/store/index.ts)) with 9 domain slices.
+  - **Wave 5 / MP-5.1: Backend Route Purge & Unified EventHub Migration**:
+    - Purged dead endpoints on Go ServeMux: `/api/v1/auth/handshake`, `/api/v1/pairing/info`, `/api/v1/mcp/rpc`, `/api/v1/mcp/events`, `/api/v1/codegraph/init`, and `/api/codegraph/entrypoints`.
+    - Migrated BottomPanel logs SSE from standalone `/api/v1/events/logs` to Unified Go `EventHub` (`WorkbenchEventHub.subscribe("logs")`).
+    - Added guard against nil pointer dereference on `s.ws` in Git service `root()`.
+    - Standardized Rename and Move error returns (400/404 instead of blind 500).
+  - **Wave 5 / MP-5.2: Zustand Store Optimization & Decoupled Render Loops**:
+    - Centralized theme state into `createSettingsSlice.ts` as the single source of truth; harmonized `setTheme` and `setThemePalette` in `createLayoutSlice.ts` to sync with `aegis_settings_v1`.
+    - Unified editor preferences (`tabSize`, `minimapEnabled`, `minimapScale`) and linter settings (`settings.linter`).
+    - Decoupled 60Hz cursor & selection loop (`useCursorPosition` / selective subscription) so high-frequency keystrokes and arrow navigation do not trigger full `CodePane.tsx` body re-renders.
+    - Added dynamic host OS shell detection (`detectDefaultShell()`) returning `powershell` on Windows and `zsh` on macOS/Linux with live session switching.
+    - Converted `codegraphSlice` into decoupled `createCodeGraphSlice` mounted inside `useWorkbenchStore` via `registerCodeGraphWorkbenchStore` to eliminate circular imports.
+  - **Wave 5 / MP-5.3: Buffer Lifecycle Race Protection & Echo Suppression**:
+    - In-flight network save keystroke protection: `markBufferSavedLogic` preserves `isDirty = true` if user types while network save is in-flight (`OPT-BUF-01`).
+    - Self-save watcher echo suppression: 800ms suppression window and content verification prevents editor unmounts and false disk conflict alerts (`OPT-BUF-02`).
+    - Canonical path enforcement on tab close: normalizes paths before checking dirty state to safeguard unsaved edits (`OPT-BUF-03`).
+    - Per-file monotonic fetch sequence tokens (`fileFetchTokens`) discarding stale responses on rapid switches (`OPT-BUF-05`).
+- **Verification**: 100% verified via Go backend tests (193 tests passing across 14 packages), Vitest frontend suite (303 tests passing across 28 files), Vite production build (0 errors in ~670ms), and oxfmt code formatting.
+
+---
+
+### Phase 8: Research Workshop & Quantitative Research Studio
+- **Status**: ⚪ Planned (Milestone v1.2)
 - **Objectives & Deliverables**:
-  - **Sub-Phase 8.1: LaTeX Compilation & Live PDF Synchronization**:
+  - **Sub-Phase 8.1: LaTeX Studio & Live PDF Synchronization (Milestone v1.2)**:
     - Go supervisor asynchronous job runner executing `tectonic` / `pdflatex` CLI with streaming build logs to Output Panel via SSE.
-    - Native `PdfViewerPane` powered by PDF.js, **dynamically code-split via `React.lazy()`** so PDF.js engine is only downloaded and instantiated when opening a `.pdf` file. Bidirectional SyncTeX click-to-code navigation.
-  - **Sub-Phase 8.2: BibTeX Reference Manager**:
-    - Dedicated sidebar panel and in-editor autocomplete (`\cite{...}`) backed by `.bib` file parser.
-  - **Sub-Phase 8.3: Data Science Python / R & Interactive Analytics**:
-    - Integrated DataFrame visualizer with column filtering and statistical profiling.
+    - Native `PdfViewerPane` powered by PDF.js, dynamically code-split via `React.lazy()` so the PDF.js engine is only downloaded and instantiated when opening a `.pdf` file.
+    - Bidirectional SyncTeX click-to-code navigation (clicking PDF position navigates to corresponding `.tex` line in CodePane, and vice-versa).
+  - **Sub-Phase 8.2: BibTeX Reference Manager (Milestone v1.2)**:
+    - Dedicated sidebar reference inspector and in-editor autocomplete (`\cite{...}`) backed by parser for `.bib` files.
+    - Auto-formatting and citation validation against standard bibliographic styles (APA, IEEE, ACM, Chicago).
+  - **Sub-Phase 8.3: Quantitative Research Studio & Interactive Analytics (Milestone v1.2)**:
+    - Integrated DataFrame visualizer with column filtering, sorting, and statistical profiling for Python (Pandas/Polars) and R datasets.
     - Python environment inspector (`venv` / `uv` / `pip` package manager).
     - Subprocess sandboxed webview iframe for R Shiny / `biblioshiny` and PLS-SEM interactive visualizations.
 
@@ -593,3 +616,27 @@
     - Embedded lightweight mDNS / Bonjour daemon in Go core server exposing `.local` domain (e.g. `aegis.local:8080`).
     - Status bar pairing popover rendering local QR Code and Pair URL with one-time session token for instantaneous second-device connection.
 - **Exit Criteria**: A developer can open AegisCode on an iPad/tablet on the same Wi-Fi, run the web application preview on the tablet, and edit code buffers with zero desktop layout corruption.
+
+---
+
+## Deprecated & Legacy Roadmap Items (Historical Archive)
+
+> **Notice**: The roadmap items and architectural designs listed below have been superseded or permanently removed from AegisCode v2. They are archived here for historical auditability.
+
+### 1. Legacy Cytoscape Flat Graph Studio (Superseded by Sub-Phase 6.15 / ADR 0014)
+- **Original Proposal**: Embedded Cytoscape.js canvas rendering flat node-link graphs from recursive SQLite CTE queries (`/api/v1/codegraph/neighborhood`).
+- **Reason for Deprecation**: Unbounded memory growth, lack of code hierarchy understanding, slow CTE queries on large projects, and lack of framework awareness.
+- **Actual Replacement**: VantageCraft 6-View Studio (`CodeGraphShell.tsx`) utilizing native CodeGraph CLI reverse proxying (`ADR-0014`, `ADR-0015`).
+
+### 2. Standalone Fragmented SSE Streams (Superseded by Wave 5 / ADR 0016)
+- **Original Proposal**: Multiple independent EventSource connections (`/events/workspace`, `/events/logs`, `/events/workers`, `/events/debug`, `/events/lsp`).
+- **Reason for Deprecation**: Exceeded the browser HTTP/1.1 maximum limit of 6 persistent connections per host, causing starvation of REST requests.
+- **Actual Replacement**: Single multiplexed SSE connection via Go `EventHub` (`GET /api/v1/events`).
+
+### 3. Purged Backend REST Endpoints (Wave 5 / MP-5.1)
+- `/api/v1/auth/handshake`: Redundant auth stub, replaced by direct pairing token headers.
+- `/api/v1/pairing/info`: Unreferenced standalone endpoint.
+- `/api/v1/mcp/rpc`: Redundant duplicate alias of `/api/v1/mcp`.
+- `/api/v1/mcp/events`: Unused standalone MCP SSE stream.
+- `/api/v1/codegraph/init`: Deprecated index initialization route.
+- `/api/codegraph/entrypoints`: Unversioned duplicate route removed in favor of `/api/v1/codegraph/entrypoints`.

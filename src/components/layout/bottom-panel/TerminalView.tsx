@@ -12,6 +12,7 @@ import {
   type ThemePaletteId,
   type ThemeMode,
 } from "../../../themes/themeRegistry"
+import { API_BASE } from "../../../utils/apiBase"
 
 function getDynamicTerminalTheme(
   palette: ThemePaletteId = "default",
@@ -198,7 +199,7 @@ export function TerminalView() {
     // 4. SSE Downlink connection
     let sse: EventSource | null = null
     if (isLive) {
-      sse = new EventSource(`/api/v1/events/terminal/${sessionId}`)
+      sse = new EventSource(`${API_BASE}/api/v1/events/terminal/${sessionId}`)
 
       sse.addEventListener("connected", () => {
         isConnected = true

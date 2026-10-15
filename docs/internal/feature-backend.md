@@ -80,14 +80,7 @@ To enable multi-screen remote workflows on tablets without external cloud server
 
 ## 4. Key Endpoints & API Contracts
 
-### A. Authentication & Pairing
-- `POST /api/v1/auth/handshake`
-  - Body: `{ "clientType": "desktop" | "companion", "pairingToken": "string" }`
-  - Response: `{ "sessionToken": "string", "expiresIn": 86400 }`
-- `GET /api/v1/pairing/info`
-  - Returns current LAN IP, pairing port, QR code data, and active companion sessions.
-
-### B. Workspace & File System Operations (Phase 6 Sub-Phase 1 Active)
+### A. Workspace & File System Operations (Phase 6 Sub-Phase 1 Active)
 - `GET /api/v1/workspace/info`
   - Returns current active workspace root path and folder name. If no workspace is open (e.g. server booted without `WORKSPACE_ROOT` or workspace was closed), returns empty strings:
   - Response (Active): `{ "rootPath": "/Users/...", "name": "AegisCodev2" }`
@@ -278,20 +271,7 @@ To eliminate race conditions and the common `fatal: Unable to create '.../.git/i
   - Streams raw PTY byte output chunks to the terminal emulator.
   - **Lossless Elastic Buffer Architecture**: Implements an elastic per-subscriber FIFO worker goroutine queue (buffering up to 8,192 chunks / ~32 MB burst capacity) and a 512 KB history replay ring buffer (`maxHistoryBytes = 512 * 1024`). Prevents silent byte drops during heavy throughput bursts while maintaining sub-microsecond non-blocking PTY pumping and leak-free teardown via `done` channel synchronization.
 
-- `[DEPRECATED — Standalone Multi-Stream SSE Endpoints (NET-01, ADR-0016)]`:
-  *Catatan: Endpoint streaming terpisah di bawah ini ditandai DEPRECATED dan dipertahankan semata-mata untuk backward compatibility legacy clients. Seluruh modul frontend baru wajib mengonsumsi `GET /api/v1/events`.*
-  - `GET /api/v1/events/workspace` `[DEPRECATED]`
-    - Events: `file:created`, `file:modified`, `file:deleted`, `git:status_change`. Gantikan dengan `eventHub.subscribe("workspace", ...)`.
-  - `GET /api/v1/events/logs` `[DEPRECATED]`
-    - Streams server activity and diagnostic log entries. Gantikan dengan `eventHub.subscribe("logs", ...)`.
-  - `GET /api/v1/events/debug` `[DEPRECATED]`
-    - Streams DAP debugger state change events. Gantikan dengan `eventHub.subscribe("debug", ...)`.
-  - `GET /api/v1/events/lsp` `[DEPRECATED]`
-    - Streams LSP server diagnostics and notifications. Gantikan dengan `eventHub.subscribe("lsp", ...)`.
-  - `GET /api/v1/events/workers` `[DEPRECATED]`
-    - Streams fail-fast crash diagnostic events (`worker:crash`). Gantikan dengan `eventHub.subscribe("workers", ...)`.
-
-### E. WebSocket Event Hub (Bi-directional Sync)
+### D. WebSocket Event Hub (Bi-directional Sync)
 - `WS /api/v1/ws/sync`
   - Used for real-time document buffer synchronization between Desktop and Tablet Companion:
   - Message Types:
@@ -300,7 +280,7 @@ To eliminate race conditions and the common `fatal: Unable to create '.../.git/i
     - `buffer:save`: Trigger disk write.
     - `preview:reload`: Force refresh on tablet host preview.
 
-### F. Bundled Debugger (DAP Engine)
+### E. Bundled Debugger (DAP Engine)
 - `POST /api/v1/debug/start`
   - Body: `{ "program": "./cmd/server", "args": [], "mode": "debug" }`
   - Response: `{ "debugSessionId": "string", "port": 40001 }`
@@ -314,15 +294,12 @@ To eliminate race conditions and the common `fatal: Unable to create '.../.git/i
   - Body: `{ "action": "continue" | "stepOver" | "stepIn" | "stepOut" }`
   - Response: Execution state and thread position.
 - `POST /api/v1/debug/terminate`
-  - Terminates the debug target process cleanly.
-  - `[DEPRECATED — Fragile Process Kill on Windows (DBG-03)]`: Pemanggilan langsung `cmd.Process.Kill()` pada platform Windows yang menyisakan child process zombie dan port locks didepresiasi. Engine kini mengeksekusi tree-kill native bergaransi `taskkill /F /T /PID <pid>` untuk memastikan seluruh hierarki proses anak tertutup rapat.
+  - Terminates the debug target process cleanly via native tree-kill (`taskkill /F /T /PID` on Windows, process group `SIGTERM` on POSIX).
 
 > [!NOTE]
-> Command generation for target scripts (`python3`, `go run`, `node`, `npx tsx`, `bash`, `clang++`, `rustc`) is resolved via [`src/utils/terminalRunCommand.ts`](../../src/utils/terminalRunCommand.ts), cleanly separated after the removal of legacy `workbenchFacade.ts`.
->
-> `[DEPRECATED — Direct Uncompiled C/C++ Debug Target (DBG-02)]`: Menjalankan berkas target `.c`/`.cpp` mentah secara langsung tanpa pre-kompilasi didepresiasi. Debug runner kini melakukan auto pre-kompilasi (`clang++ -g -O0` / `clang -g -O0`) dengan flag debug symbols sebelum meluncurkan sesi DAP.
+> Command generation for target scripts (`python3`, `go run`, `node`, `npx tsx`, `bash`, `clang++`, `rustc`) is resolved via [`src/utils/terminalRunCommand.ts`](../../src/utils/terminalRunCommand.ts), cleanly separated after the removal of legacy `workbenchFacade.ts`. Auto pre-compilation (`clang++ -g -O0` / `clang -g -O0`) is executed before launching DAP for C/C++ targets.
 
-### G. Terminal & Process Management
+### F. Terminal & Process Management
 - `POST /api/v1/terminal/create`
   - Body: `{ "shell": "zsh" | "bash", "cwd": "/path/to/project", "cols": 120, "rows": 32 }`
   - Response: `{ "sessionId": "term-1", "pid": 4821 }`
@@ -546,7 +523,6 @@ To ensure ACID transactional reliability, sub-3ms full-text search, and project-
   - In-memory 5-minute cached discovery of available Antigravity models (`agy models`).
   - Response: `{ "models": [ { "id": "gemini-3.8-flash-high", "name": "Gemini 3.8 Flash (High)", "provider": "antigravity", "description": "..." }, ... ] }`.
 - `GET /api/v1/ai/skills`
-  - `[DEPRECATED — Static Single-Provider Hardcoded Skills List]`: Static hardcoded skill lists and Antigravity-only discovery without workspace hierarchies are deprecated.
   - **Dynamic Multi-Provider & Workspace Hierarchical Discovery (`server/internal/ai/skills.go`)**:
     - Query parameters: `?provider=<provider>&workspace=<workspacePath>`
     - Discovers native skills dynamically per provider across both System and Workspace directory hierarchies:
@@ -649,12 +625,6 @@ A high-performance CodeGraph Knowledge Engine and native Model Context Protocol 
     - `POST /api/v1/codegraph/reindex`: Triggers full repository re-scan via upstream CLI.
     - `GET /api/v1/codegraph/file?path=<relPath>`: Active file symbol inspector stub.
     - `GET /api/v1/codegraph/symbols/search?q=<query>&limit=<20>`: Symbol autocomplete query.
-
-- **[DEPRECATED & REMOVED — Legacy In-Process Go AST Extractors & Endpoints]**:
-  - `[DEPRECATED & REMOVED] GET /api/v1/codegraph/neighborhood`: Decommissioned in favor of native `/api/codegraph/ui/flow` and `/api/codegraph/ui/steps`.
-  - `[DEPRECATED & REMOVED] GET /api/v1/codegraph/workspace`: Decommissioned in favor of native `/api/codegraph/ui/entrypoints` and `/api/codegraph/ui/map`.
-  - `[DEPRECATED & REMOVED] Custom Go AST Extractors`: `go_extractor.go`, `ts_extractor.go`, `py_extractor.go`, `lsp_extractor.go` permanently removed per ADR-0014 in favor of `@colbymchenry/codegraph` Rust `codegraph-kernel` and Tree-sitter grammars (30+ languages).
-  - `[DEPRECATED & REMOVED] In-Process SQLite Graph Tables`: `graph_files`, `code_symbols`, `code_edges` in `~/.aegis/graphs/*.db` replaced by daemon-managed `.codegraph/` relational index.
 
 - **Stdio Transport CLI**:
   - Command: `aegiscode mcp [--workspace <path>]`
@@ -793,3 +763,42 @@ On macOS, desktop users launch a native Swift/Cocoa window wrapper (~88 KB compi
   - Compiles native Swift Cocoa wrapper (`scripts/macos-wrapper/main.swift`) with `swiftc -O`.
   - Assembles macOS `AegisCode.app` bundle containing the Swift wrapper and Go backend.
   - Builds mountable `bin/AegisCode.dmg` installer (~3.5 MB) using `hdiutil`.
+
+---
+
+## 8. Deprecated & Legacy Backend Architecture (Historical Archive)
+
+The following endpoints, architecture patterns, and supervision routines were superseded, decommissioned, or purged during the Phase 5 optimization audit:
+
+### A. Purged Dead Route Registrations (MP-5.1)
+| Endpoint | Method | Audit ID | Disposition |
+| :--- | :---: | :---: | :--- |
+| `/api/v1/auth/handshake` | `POST` | `OPT-API-01` | **Purged**. Handshake logic consolidated into local LAN companion pairing. |
+| `/api/v1/pairing/info` | `GET` | `OPT-API-02` | **Purged**. Integrated into status bar pairing popover and mDNS broadcast. |
+| `/api/v1/mcp/rpc` | `POST` | `OPT-API-03` | **Purged**. Duplicate alias of `/api/v1/mcp`. Standardized exclusively on `/api/v1/mcp`. |
+| `/api/v1/mcp/events` | `GET/POST`| `OPT-API-04` | **Purged**. Dead standalone SSE stream; unified under `/api/v1/events` channel `"mcp"`. |
+| `/api/v1/codegraph/init` | `POST` | `OPT-API-05` | **Purged**. Frontend uses native `/api/codegraph/ui/init` via reverse proxy. |
+| `/api/codegraph/entrypoints`| `GET` | `OPT-API-14` | **Purged**. Duplicate route registration; standardized on `/api/v1/codegraph/entrypoints`. |
+
+### B. Deprecated Standalone SSE Streams (ADR-0016)
+The following endpoints were superseded by the unified Go `EventHub` multiplexer (`GET /api/v1/events`) to prevent browser HTTP/1.1 6-connection pool exhaustion:
+- `GET /api/v1/events/workspace` (`OPT-API-07`) ➔ Superseded by `eventHub.subscribe("workspace", ...)`.
+- `GET /api/v1/events/workers` (`OPT-API-08`) ➔ Superseded by `eventHub.subscribe("workers", ...)`.
+- `GET /api/v1/events/logs` (`OPT-API-12`) ➔ Superseded by `eventHub.subscribe("logs", ...)`.
+- `GET /api/v1/events/debug` (`OPT-API-13`) ➔ Superseded by `eventHub.subscribe("debug", ...)`.
+- `GET /api/v1/events/lsp` (`OPT-API-13`) ➔ Superseded by `eventHub.subscribe("lsp", ...)`.
+
+### C. Deprecated Process Management Routines
+- **Direct Process Kill on Windows (`DBG-03`)**: Direct invocation of `cmd.Process.Kill()` without child tree traversal left orphaned debuggee processes and locked TCP ports (`40001`). Superseded by guaranteed tree-kill (`taskkill /F /T /PID`).
+- **Raw Uncompiled C/C++ Execution (`DBG-02`)**: Running uncompiled `.c`/`.cpp` files directly without debug symbols was deprecated in favor of automatic pre-compilation (`clang++ -g -O0`) before launching DAP sessions.
+
+### D. Deprecated In-Process Go AST Extractors & Legacy Endpoints (ADR 0014)
+- `GET /api/v1/codegraph/neighborhood`: Decommissioned in favor of native reverse proxy routes `/api/codegraph/ui/flow` and `/api/codegraph/ui/steps`.
+- `GET /api/v1/codegraph/workspace`: Decommissioned in favor of native `/api/codegraph/ui/entrypoints` and `/api/codegraph/ui/map`.
+- **Custom Go AST Extractors**: `go_extractor.go`, `ts_extractor.go`, `py_extractor.go`, `lsp_extractor.go` permanently removed per ADR 0014 in favor of `@colbymchenry/codegraph` Rust `codegraph-kernel` and Tree-sitter grammars (30+ languages).
+- **In-Process SQLite Graph Tables**: `graph_files`, `code_symbols`, `code_edges` in `~/.aegis/graphs/*.db` replaced by daemon-managed `.codegraph/` relational index.
+
+### E. Deprecated Static Skills Discovery
+- Static hardcoded skill arrays and Antigravity-only discovery without workspace hierarchies are deprecated and replaced by dynamic multi-provider discovery (`server/internal/ai/skills.go`) across System and Workspace directories.
+
+

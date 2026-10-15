@@ -128,7 +128,9 @@ export function loadStoredSettings(): AppSettings {
   if (typeof window === "undefined") return DEFAULT_APP_SETTINGS
 
   try {
-    const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY)
+    const raw =
+      window.localStorage.getItem(SETTINGS_STORAGE_KEY) ||
+      window.localStorage.getItem("aegis_settings_v1")
     let parsed: any = null
     if (raw) {
       parsed = JSON.parse(raw)
@@ -222,7 +224,9 @@ export function loadStoredSettings(): AppSettings {
 export function saveStoredSettings(settings: AppSettings): void {
   if (typeof window === "undefined") return
   try {
-    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings))
+    const serialized = JSON.stringify(settings)
+    window.localStorage.setItem(SETTINGS_STORAGE_KEY, serialized)
+    window.localStorage.setItem("aegis_settings_v1", serialized)
 
     // Sync legacy keys
     window.localStorage.setItem(
@@ -356,6 +360,12 @@ export const createSettingsSlice: SliceCreator<SettingsSlice> = (set, get) => {
 
   return {
     settings: initialSettings,
+    theme: initialSettings.workbench.appearance.mode,
+    themePalette: initialSettings.workbench.appearance.palette,
+    tabSize: initialSettings.editor.tabSize,
+    minimapEnabled: initialSettings.editor.minimapEnabled,
+    minimapScale: initialSettings.editor.minimapScale,
+    linterSettings: initialSettings.linter,
 
     setSettings: (updater) => {
       set((state) => {
@@ -366,6 +376,10 @@ export const createSettingsSlice: SliceCreator<SettingsSlice> = (set, get) => {
           settings: next,
           theme: next.workbench.appearance.mode,
           themePalette: next.workbench.appearance.palette,
+          tabSize: next.editor.tabSize,
+          minimapEnabled: next.editor.minimapEnabled,
+          minimapScale: next.editor.minimapScale,
+          linterSettings: next.linter,
         } as any
       })
     },
@@ -382,7 +396,12 @@ export const createSettingsSlice: SliceCreator<SettingsSlice> = (set, get) => {
           editor: updatedEditor,
         }
         applySettingsSideEffects(next)
-        return { settings: next } as any
+        return {
+          settings: next,
+          tabSize: updatedEditor.tabSize,
+          minimapEnabled: updatedEditor.minimapEnabled,
+          minimapScale: updatedEditor.minimapScale,
+        } as any
       })
     },
 
@@ -514,7 +533,10 @@ export const createSettingsSlice: SliceCreator<SettingsSlice> = (set, get) => {
           linter: nextLinter,
         }
         applySettingsSideEffects(next)
-        return { settings: next } as any
+        return {
+          settings: next,
+          linterSettings: nextLinter,
+        } as any
       })
     },
 
@@ -541,6 +563,10 @@ export const createSettingsSlice: SliceCreator<SettingsSlice> = (set, get) => {
         settings: next,
         theme: next.workbench.appearance.mode,
         themePalette: next.workbench.appearance.palette,
+        tabSize: next.editor.tabSize,
+        minimapEnabled: next.editor.minimapEnabled,
+        minimapScale: next.editor.minimapScale,
+        linterSettings: next.linter,
       }))
     },
 
@@ -562,6 +588,10 @@ export const createSettingsSlice: SliceCreator<SettingsSlice> = (set, get) => {
           theme: mode,
         } as any
       })
+    },
+
+    setTheme: (mode: ThemeMode) => {
+      get().setThemeMode(mode)
     },
 
     setThemePalette: (palette: ThemePaletteId) => {
@@ -604,6 +634,10 @@ export const createSettingsSlice: SliceCreator<SettingsSlice> = (set, get) => {
           theme: nextMode,
         } as any
       })
+    },
+
+    toggleTheme: () => {
+      get().toggleThemeMode()
     },
   }
 }

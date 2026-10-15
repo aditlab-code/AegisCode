@@ -8,6 +8,7 @@ import type {
 import type { CursorCoordinates } from "./createWorkspaceSlice"
 import type { ConfirmCloseState } from "../../types/workbench"
 import { setBreakpoints } from "../../utils/debugApi"
+import { normalizeWorkspacePath } from "../../utils/workspaceApi"
 import type { EditorSlice, SliceCreator } from "../types"
 
 export interface TabMoveResult {
@@ -225,7 +226,7 @@ export function saveStoredPinnedTabs(pinnedTabs: Set<string>): void {
   } catch {}
 }
 
-function getDerivedEditorState(
+export function getDerivedEditorState(
   group1: EditorGroupState,
   group2: EditorGroupState,
   focusedGroup: "group1" | "group2",
@@ -234,13 +235,21 @@ function getDerivedEditorState(
   const currentFocusedFile =
     focusedGroup === "group2" && splitEditor
       ? group2.activeTab
-      : group1.activeTab
+      : group1.activeTab || (splitEditor ? group2.activeTab : "")
+
+  const tabs =
+    group2.tabs.length === 0
+      ? group1.tabs
+      : group1.tabs.length === 0
+        ? group2.tabs
+        : Array.from(new Set([...group1.tabs, ...group2.tabs]))
+
   return {
     currentFocusedFile: currentFocusedFile || null,
     activeTab: currentFocusedFile || "",
     secondaryActiveTab: group2.activeTab || "",
-    tabs: Array.from(new Set([...group1.tabs, ...group2.tabs])),
-    focusedPane: (focusedGroup === "group2"
+    tabs,
+    focusedPane: (focusedGroup === "group2" && splitEditor
       ? "secondary"
       : "primary") as "primary" | "secondary",
   }
@@ -352,7 +361,11 @@ export const createEditorSlice: SliceCreator<EditorSlice> = (set, get) => ({
   },
 
   closeTabInGroup: (group: "group1" | "group2", filename: string) => {
-    const buf = get().fileBuffers?.[filename]
+    const rootPath = (get() as any).rootWorkspacePath
+    const clean = rootPath
+      ? normalizeWorkspacePath(filename, rootPath)
+      : normalizeWorkspacePath(filename)
+    const buf = get().fileBuffers?.[clean] || get().fileBuffers?.[filename]
     if (buf?.isDirty) {
       set({ confirmCloseFile: { group, filename } })
       return
@@ -556,10 +569,15 @@ export const createEditorSlice: SliceCreator<EditorSlice> = (set, get) => ({
         : ["group1"]
 
     // Check for dirty tabs in targeted groups first (skipping pinned)
+    const rootPath = (get() as any).rootWorkspacePath
     for (const grp of groupsToCheck) {
       const gState = grp === "group1" ? get().group1 : get().group2
       for (const tab of gState.tabs) {
-        if (!pinned.has(tab) && get().fileBuffers?.[tab]?.isDirty) {
+        const clean = rootPath
+          ? normalizeWorkspacePath(tab, rootPath)
+          : normalizeWorkspacePath(tab)
+        const buf = get().fileBuffers?.[clean] || get().fileBuffers?.[tab]
+        if (!pinned.has(tab) && buf?.isDirty) {
           set({ confirmCloseFile: { group: grp, filename: tab } })
           return
         }
@@ -655,10 +673,15 @@ export const createEditorSlice: SliceCreator<EditorSlice> = (set, get) => ({
 
   minimapEnabled: loadStoredMinimapEnabled(),
   setMinimapEnabled: (val) => {
-    const next = typeof val === "function" ? val(get().minimapEnabled) : val
+    const current =
+      get().settings?.editor?.minimapEnabled ?? get().minimapEnabled
+    const next = typeof val === "function" ? val(current) : val
     try {
       window.localStorage?.setItem("aegis_minimap_enabled", String(next))
     } catch {}
+    if (typeof (get() as any).updateEditorSettings === "function") {
+      ;(get() as any).updateEditorSettings({ minimapEnabled: next })
+    }
     set({ minimapEnabled: next })
   },
   toggleMinimap: () => {
@@ -670,6 +693,9 @@ export const createEditorSlice: SliceCreator<EditorSlice> = (set, get) => ({
     try {
       window.localStorage?.setItem("aegis_minimap_scale", scale)
     } catch {}
+    if (typeof (get() as any).updateEditorSettings === "function") {
+      ;(get() as any).updateEditorSettings({ minimapScale: scale })
+    }
     set({ minimapScale: scale })
   },
 
@@ -785,6 +811,9 @@ export const createEditorSlice: SliceCreator<EditorSlice> = (set, get) => ({
     try {
       window.localStorage?.setItem("aegis_tab_size", String(size))
     } catch {}
+    if (typeof (get() as any).updateEditorSettings === "function") {
+      ;(get() as any).updateEditorSettings({ tabSize: size })
+    }
     set({ tabSize: size })
   },
   toggleTabSize: () => {

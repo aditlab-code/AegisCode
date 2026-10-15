@@ -1,4 +1,4 @@
-import { create } from "zustand"
+import type { SliceCreator } from "../types"
 
 export type CodeGraphView = "entrypoints" | "steps" | "map" | "flow" | "screens"
 
@@ -72,7 +72,12 @@ export interface CodeGraphState {
   resetView: () => void
 }
 
-export const useCodeGraphStore = create<CodeGraphState>((set, get) => ({
+export type CodeGraphSlice = CodeGraphState
+
+export const createCodeGraphSlice: SliceCreator<CodeGraphSlice> = (
+  set,
+  get,
+) => ({
   activeView: "entrypoints",
   selectedEntrypoint: null,
   selectedSymbol: null,
@@ -170,4 +175,66 @@ export const useCodeGraphStore = create<CodeGraphState>((set, get) => ({
       fileCodeTarget: null,
       breadcrumbs: [],
     }),
-}))
+})
+
+let _storeInstance: any = null
+
+export function registerCodeGraphWorkbenchStore(store: any): void {
+  _storeInstance = store
+}
+
+function getStoreInstance(): any {
+  if (_storeInstance) return _storeInstance
+  if (typeof window !== "undefined" && window.useWorkbenchStore) {
+    return window.useWorkbenchStore
+  }
+  return null
+}
+
+export const useCodeGraphStore = (<T,>(
+  selector?: (state: CodeGraphState) => T,
+  equalityFn?: (a: T, b: T) => boolean,
+): T => {
+  const store = getStoreInstance()
+  if (!store) {
+    throw new Error(
+      "useCodeGraphStore was accessed before workbench store was initialized.",
+    )
+  }
+  return store(selector, equalityFn)
+}) as unknown as {
+  <T = CodeGraphState>(
+    selector?: (state: CodeGraphState) => T,
+    equalityFn?: (a: T, b: T) => boolean,
+  ): T
+  getState: () => CodeGraphState
+  setState: (
+    partial: Partial<CodeGraphState> | ((
+      state: CodeGraphState,
+    ) => Partial<CodeGraphState>),
+  ) => void
+  subscribe: (
+    listener: (state: CodeGraphState, prevState: CodeGraphState) => void,
+  ) => () => void
+}
+
+Object.defineProperty(useCodeGraphStore, "getState", {
+  get: () => {
+    const store = getStoreInstance()
+    return store ? store.getState : () => ({})
+  },
+})
+
+Object.defineProperty(useCodeGraphStore, "setState", {
+  get: () => {
+    const store = getStoreInstance()
+    return store ? store.setState : () => {}
+  },
+})
+
+Object.defineProperty(useCodeGraphStore, "subscribe", {
+  get: () => {
+    const store = getStoreInstance()
+    return store ? store.subscribe : () => () => {}
+  },
+})

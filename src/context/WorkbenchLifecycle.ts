@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react"
 import { useWorkbenchStore } from "../store"
 import { extractCodeGraphTraceTargets } from "../utils/codegraphApi"
 import {
+  fetchFileDetailed,
   fetchWorkspaceTree,
   normalizeWorkspacePath,
 } from "../utils/workspaceApi"
@@ -210,65 +211,7 @@ export function useWorkbenchLifecycle() {
             typeof payload === "string" ? JSON.parse(payload) : payload
           ) as WorkspaceChangeEvent
           if (!evt) return
-          const { created = [], modified = [], deleted = [] } = evt
-
-          // 1. Refresh explorer tree if files were created or deleted
-          if (created.length > 0 || deleted.length > 0) {
-            fetchWorkspaceTree()
-              .then((treeData) => store.getState().setFiles(treeData.flatTree))
-              .catch((err) => console.warn("Tree refresh error:", err))
-          }
-
-          // 2. Synchronize open buffers
-          const activeBuffers = store.getState().fileBuffers
-          const filesToReload = [...created, ...modified]
-
-          for (const file of filesToReload) {
-            const buf = activeBuffers[file]
-            if (buf) {
-              if (!buf.isDirty) {
-                void store.getState().fetchBufferSafely(file)
-              } else {
-                store.getState().setFileBuffers((prev) => {
-                  const current = prev[file]
-                  if (!current) return prev
-                  return {
-                    ...prev,
-                    [file]: {
-                      ...current,
-                      hasDiskConflict: true,
-                    },
-                  }
-                })
-                store.getState().showToast(`File changed on disk: ${file}`)
-              }
-            }
-          }
-
-          if (deleted.length > 0) {
-            for (const file of deleted) {
-              const buf = activeBuffers[file]
-              if (buf) {
-                store.getState().setFileBuffers((prev) => {
-                  const current = prev[file]
-                  if (!current) return prev
-                  return {
-                    ...prev,
-                    [file]: {
-                      ...current,
-                      isDeletedOnDisk: true,
-                    },
-                  }
-                })
-                store.getState().showToast(`File deleted on disk: ${file}`)
-              }
-            }
-          }
-
-          // 3. Trigger git refresh
-          if (created.length > 0 || modified.length > 0 || deleted.length > 0) {
-            void store.getState().refreshGit()
-          }
+          void handleWorkspaceChangeEvent(evt, store)
         } catch (err) {
           console.error("Failed to parse workspace change event:", err)
         }
@@ -688,4 +631,125 @@ export function useWorkbenchLifecycle() {
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [store])
+}
+
+export async function handleWorkspaceChangeEvent(
+  evt: WorkspaceChangeEvent,
+  store: { getState: () => any },
+): Promise<void> {
+  const { created = [], modified = [], deleted = [] } = evt
+
+  // 1. Refresh explorer tree if files were created or deleted
+  if (created.length > 0 || deleted.length > 0) {
+    try {
+      const treeData = await fetchWorkspaceTree()
+      store.getState().setFiles(treeData.flatTree)
+    } catch (err) {
+      console.warn("Tree refresh error:", err)
+    }
+  }
+
+  // 2. Synchronize open buffers
+  const activeBuffers = store.getState().fileBuffers
+  const filesToReload = [...created, ...modified]
+  const rootPath = store.getState().rootWorkspacePath
+
+  for (const rawFile of filesToReload) {
+    const clean = rootPath
+      ? normalizeWorkspacePath(rawFile, rootPath)
+      : normalizeWorkspacePath(rawFile)
+    const file = activeBuffers[clean]
+      ? clean
+      : activeBuffers[rawFile]
+        ? rawFile
+        : clean
+    const buf = activeBuffers[file]
+    if (buf) {
+      // Self-Save Watcher Echo Suppression (OPT-BUF-02):
+      // If the disk event arrives within 800ms of buf.lastSaved, suppress reload!
+      if (buf.lastSaved && Date.now() - buf.lastSaved < 800) {
+        continue
+      }
+
+      if (!buf.isDirty) {
+        // If clean, verify if disk content already matches buffer savedContent or content
+        try {
+          const detail = await fetchFileDetailed(clean)
+          const currentBuf = store.getState().fileBuffers[file]
+          if (!currentBuf || currentBuf.isDirty) continue
+          if (
+            detail.content === currentBuf.savedContent ||
+            detail.content === currentBuf.content
+          ) {
+            // Suppress: file on disk matches what is already in buffer
+            continue
+          }
+          void store.getState().fetchBufferSafely(file)
+        } catch {
+          void store.getState().fetchBufferSafely(file)
+        }
+      } else {
+        // If dirty, check if disk content actually changed or matches buf.savedContent
+        try {
+          const detail = await fetchFileDetailed(clean)
+          const currentBuf = store.getState().fileBuffers[file]
+          if (!currentBuf || !currentBuf.isDirty) continue
+          if (
+            detail.content === currentBuf.savedContent ||
+            detail.content === currentBuf.content
+          ) {
+            // Suppress: disk content matches what we saved or current edits
+            continue
+          }
+          store.getState().setFileBuffers((prev: any) => {
+            const current = prev[file]
+            if (!current) return prev
+            return {
+              ...prev,
+              [file]: {
+                ...current,
+                hasDiskConflict: true,
+              },
+            }
+          })
+          store.getState().showToast(`File changed on disk: ${file}`)
+        } catch {
+          // Ignore transient read errors
+        }
+      }
+    }
+  }
+
+  if (deleted.length > 0) {
+    for (const rawFile of deleted) {
+      const clean = rootPath
+        ? normalizeWorkspacePath(rawFile, rootPath)
+        : normalizeWorkspacePath(rawFile)
+      const file = activeBuffers[clean]
+        ? clean
+        : activeBuffers[rawFile]
+          ? rawFile
+          : clean
+      const buf = activeBuffers[file]
+      if (buf) {
+        store.getState().setFileBuffers((prev: any) => {
+          const current = prev[file]
+          if (!current) return prev
+          return {
+            ...prev,
+            [file]: {
+              ...current,
+              isDeletedOnDisk: true,
+            },
+          }
+        })
+        store.getState().showToast(`File deleted on disk: ${file}`)
+      }
+    }
+  }
+
+  // 3. Trigger git refresh
+  if (created.length > 0 || modified.length > 0 || deleted.length > 0) {
+    void store.getState().refreshGit()
+  }
 }

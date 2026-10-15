@@ -54,24 +54,26 @@ We instituted a definitive architectural resolution spanning network origin rout
   - In production builds or embedded Go distributions (`embed.FS` serving `index.html` on port 8080), `API_BASE` evaluates to `""`, preserving single-port relative URL operations.
 - Removed `headers: { Connection: "keep-alive" }` from `vite.config.ts`.
 
-### 2. Deferred Window-Load SSE Initialization
-- In `src/context/WorkbenchLifecycle.ts`, tuned `runAfterWindowLoad` to defer background SSE listeners (`debug`, `mcp`, `workspace`, `lsp`, `logs`) by 600ms after `document.readyState === "complete"` or the window `load` event.
-- This allows Chromium's navigation coordinator to finalize navigation and clear the tab favicon loading indicator before background telemetry and watchers connect.
+### 2. Unified Go `EventHub` Multiplexer & Deferred Window-Load SSE
+- Consolidated multiple fragmented SSE streams (`workspace`, `lsp`, `debug`, `mcp`, `logs`) into a single high-throughput Go backend multiplexer: `GET /api/v1/events`.
+- In `src/services/WorkbenchEventHub.ts`, the frontend manages typed channel subscriptions over this single persistent connection, reducing persistent streaming socket usage from 5 TCP sockets down to **1 TCP socket** on `localhost:8080`.
+- In `src/context/WorkbenchLifecycle.ts`, background SSE listener initialization is deferred until `document.readyState === "complete"` or the window `load` event.
+- This guarantees that Chromium's navigation coordinator finalizes navigation immediately without socket contention, clearing the tab favicon loading indicator with zero delay.
 
-### 3. Canonical Multi-Key Buffer Indexing
-- In `fetchBufferSafely` (`src/store/slices/createWorkspaceSlice.ts`), newly fetched buffers are stored under all canonical key variants:
-  - `[clean]`: Canonical workspace-relative path (e.g. `src/types/document.ts`)
-  - `[filename]`: Raw request identifier (e.g. `document.ts` or `/src/types/document.ts`)
-  - `[baseName]`: Basename without directory prefix (e.g. `document.ts`)
-  - `[rawBaseName]`: Raw basename variant
-- Updated buffer selectors in `CodePane.tsx` and `ExplorerPanel.tsx` to query:
-  ```ts
-  buffer =
-    fileBuffers[filename] ||
-    (rootWorkspacePath ? fileBuffers[normalizeWorkspacePath(filename, rootWorkspacePath)] : undefined) ||
-    fileBuffers[filename.split("/").pop() || ""]
-  ```
-- Guarantees $O(1)$ buffer hits across split editor groups, breadcrumbs, diff views, and symbol outlines.
+### 3. Single POSIX Canonical Buffer Lifecycle & Self-Save Echo Suppression
+- **Single Canonical POSIX Keying**:
+  - The historical interim solution of duplicating buffer objects across multiple keys (`[clean]`, `[filename]`, `[baseName]`, `[rawBaseName]`) was superseded by strict **Single POSIX Canonical Path Keying** (`normalizeWorkspacePath`).
+  - Storing duplicate keys caused memory leaks and desynchronization when files across different directories shared colliding base names (e.g. `src/components/index.ts` vs `src/types/index.ts`).
+  - All store operations (`fileBuffers[clean]`), tab closures (`closeTabInGroup`), and dirty checks enforce `normalizeWorkspacePath(path)`.
+- **In-Flight Save Keystroke Protection (`markBufferSavedLogic`)**:
+  - `saveFile` snapshots `contentToSave` prior to awaiting the async network write.
+  - Upon completion, `markBufferSavedLogic` compares `currentBuf.content === contentToSave`. If the user continued typing while the save was in-flight, `isDirty` remains `true` and the newer edits are preserved safely.
+- **Self-Save Watcher Echo Suppression (`WorkbenchLifecycle.ts`)**:
+  - Successful file writes record a high-resolution `buf.lastSaved = Date.now()` timestamp on the buffer.
+  - When the backend file modification watcher fires, events within an 800ms window whose disk content matches `buf.savedContent` are suppressed.
+  - This eliminates editor pane unmounts, CM6 cursor resets, loading spinner flickers, and false `hasDiskConflict` dialogs on every save.
+- **Per-File Async Sequence Guard (`AsyncSequenceGuard`)**:
+  - `fetchBufferSafely` maintains per-file sequence request tokens, discarding stale responses caused by out-of-order network arrival during rapid tab switching.
 
 ### 4. Non-Destructive Workspace Tab Reconciliation & Entrypoint Fallback
 - Removed destructive `resetAllGroups()` from `openRootFolder`.
@@ -86,6 +88,9 @@ We instituted a definitive architectural resolution spanning network origin rout
 
 ### Positive
 - **Instant Navigation Finalization**: Browser tab favicon stops spinning immediately on page load; zero network stall warnings in DevTools.
+- **Single Multiplexed Socket**: Background events (`workspace`, `lsp`, `debug`, `mcp`, `logs`) consume exactly 1 backend socket instead of 5, preventing HTTP/1.1 pool starvation.
+- **Zero In-Flight Save Data Loss**: Typing during network latency is fully preserved with accurate dirty state tracking.
+- **Zero-Flicker Saving**: Self-save echo suppression prevents CMEditor unmounts and spurious conflict prompts.
 - **Flawless Multi-Workspace Transitions**: Switching between workspaces smoothly preserves valid tabs, opens primary entrypoints when no tabs match, and immediately renders source code across split panes.
 - **Complete Symbol & Timeline Availability**: Outline panel accurately extracts symbols (AST and lexical fallback) and Timeline shows git history without delays.
 - **Zero Production Degradation**: Production single-binary builds continue to serve assets and API seamlessly from port 8080 via relative paths (`API_BASE = ""`).
@@ -100,9 +105,11 @@ We instituted a definitive architectural resolution spanning network origin rout
 
 | Area | Modified File | Purpose |
 | :--- | :--- | :--- |
-| **API Base Resolution** | [`src/utils/apiBase.ts`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/utils/apiBase.ts) | Dynamic port-8080 backend connection for dev mode |
-| **Workspace Store** | [`src/store/slices/createWorkspaceSlice.ts`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/store/slices/createWorkspaceSlice.ts) | Tab reconciliation, priority buffer awaiting, multi-key cache |
-| **Lifecycle Coordinator** | [`src/context/WorkbenchLifecycle.ts`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/context/WorkbenchLifecycle.ts) | 600ms deferred SSE connection and direct `API_BASE` streams |
-| **Editor Pane** | [`src/components/layout/editor/CodePane.tsx`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/editor/CodePane.tsx) | Basename fallback lookup for buffer resolution |
-| **Explorer & Outline** | [`src/components/layout/sidebar/ExplorerPanel.tsx`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/sidebar/ExplorerPanel.tsx) | Resilient activeSymbols buffer lookup |
-| **Dev Server Proxy** | [`vite.config.ts`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/vite.config.ts) | Removed `Connection: keep-alive` proxy header |
+| **API Base Resolution** | [`src/utils/apiBase.ts`](../../src/utils/apiBase.ts) | Dynamic port-8080 backend connection for dev mode |
+| **Multiplexed SSE Hub** | [`src/services/WorkbenchEventHub.ts`](../../src/services/WorkbenchEventHub.ts) | Single-stream multiplexer for workspace, lsp, debug, mcp, logs |
+| **Workspace Store** | [`src/store/slices/createWorkspaceSlice.ts`](../../src/store/slices/createWorkspaceSlice.ts) | Tab reconciliation, priority buffer awaiting, in-flight save guard |
+| **Lifecycle Coordinator** | [`src/context/WorkbenchLifecycle.ts`](../../src/context/WorkbenchLifecycle.ts) | Self-save echo suppression (800ms) and direct `API_BASE` streams |
+| **Editor Pane** | [`src/components/layout/editor/CodePane.tsx`](../../src/components/layout/editor/CodePane.tsx) | Canonical normalized path buffer lookup |
+| **Editor Tabs** | [`src/components/layout/editor/EditorTabs.tsx`](../../src/components/layout/editor/EditorTabs.tsx) | Enforce canonical tab path normalization on tab close |
+| **Explorer & Outline** | [`src/components/layout/sidebar/ExplorerPanel.tsx`](../../src/components/layout/sidebar/ExplorerPanel.tsx) | Resilient activeSymbols buffer lookup |
+| **Dev Server Proxy** | [`vite.config.ts`](../../vite.config.ts) | Removed `Connection: keep-alive` proxy header |

@@ -1,16 +1,20 @@
-import type { SliceCreator, DebugSlice } from "../types"
+import type { SliceCreator, DebugSlice, ActiveDebugLine } from "../types"
 import type { DebugState, DebugConsoleMessage } from "../../types/workbench"
 import {
   startDebugSession,
   stepDebug,
   terminateDebugSession,
+  setBreakpoints,
 } from "../../utils/debugApi"
 import { API_BASE } from "../../utils/apiBase"
 import { getTerminalRunCommand } from "../../utils/terminalRunCommand"
+import {
+  showToastLogic,
+  clearToastLogic,
+  runActionLogic,
+} from "./createLayoutSlice"
 
 export { getTerminalRunCommand }
-
-let toastTimer: ReturnType<typeof setTimeout> | null = null
 
 export const createDebugSlice: SliceCreator<DebugSlice> = (set, get) => ({
   debugState: {
@@ -201,28 +205,9 @@ export const createDebugSlice: SliceCreator<DebugSlice> = (set, get) => ({
 
   toast: "",
 
-  showToast: (message: string) => {
-    if (toastTimer) {
-      clearTimeout(toastTimer)
-      toastTimer = null
-    }
-    set({ toast: message })
-    if (typeof window !== "undefined") {
-      toastTimer = setTimeout(() => {
-        set({ toast: "" })
-        toastTimer = null
-      }, 2200)
-    }
-    get().addNotification(message)
-  },
+  showToast: (message: string) => showToastLogic(message, set, get),
 
-  clearToast: () => {
-    if (toastTimer) {
-      clearTimeout(toastTimer)
-      toastTimer = null
-    }
-    set({ toast: "" })
-  },
+  clearToast: () => clearToastLogic(set),
 
   serverConnected: true,
 
@@ -240,85 +225,47 @@ export const createDebugSlice: SliceCreator<DebugSlice> = (set, get) => ({
     }
   },
 
-  runAction: (action: string) => {
-    const actionMessages: Record<string, string> = {
-      "new-file": "Untitled-1 created",
-      "open-folder": "Folder picker ready",
-      redo: "Nothing to redo",
-      run: "Run session queued without debugging",
-      "run-file": `Running ${get().activeTab}`,
-      undo: "Last editor action reverted",
-    }
+  runAction: (action: string) => runActionLogic(action, set, get),
 
-    if (action === "commands") {
-      get().setCommandPaletteOpen(true)
-    } else if (action === "new-file") {
-      const files = get().files || []
-      let counter = 1
-      while (
-        files.some(
-          (f) =>
-            f.path === `Untitled-${counter}.txt` ||
-            f.name === `Untitled-${counter}.txt`,
-        )
-      ) {
-        counter++
+  breakpoints: {},
+  setBreakpointsMap: (updater) =>
+    set((state) => ({
+      breakpoints:
+        typeof updater === "function" ? updater(state.breakpoints) : updater,
+    })),
+  toggleBreakpoint: async (file: string, line: number) => {
+    if (!file || line <= 0) return
+    const prev = get().breakpoints || {}
+    const existing = prev[file] || []
+    const next = existing.includes(line)
+      ? existing.filter((l) => l !== line)
+      : [...existing, line].sort((a, b) => a - b)
+
+    set({
+      breakpoints: {
+        ...prev,
+        [file]: next,
+      },
+    })
+
+    if (get().debugState?.active) {
+      try {
+        await setBreakpoints(file, next)
+      } catch (err: unknown) {
+        console.error("Failed to sync breakpoint:", err)
       }
-      const untitledName = `Untitled-${counter}.txt`
-      void get().createFile(untitledName)
-      get().showToast(`Created ${untitledName}`)
-    } else if (action === "undo") {
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("aegis:editor-undo"))
-      }
-    } else if (action === "redo") {
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("aegis:editor-redo"))
-      }
-    } else if (action === "open-folder") {
-      void get().openFolderPicker()
-    } else if (action === "close-folder") {
-      void get().closeRootFolder()
-    } else if (action === "sidebar") {
-      get().toggleSidebar()
-    } else if (action === "panel") {
-      get().togglePanel()
-    } else if (action === "new-terminal") {
-      get().setPanelOpen(true)
-      get().setActiveBottomTab("Terminal")
-      void get().createTerminalSession()
-    } else if (action === "clear-terminal") {
-      if (typeof get().clearTerminal === "function") {
-        get().clearTerminal()
-      } else if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("aegis:terminal-clear"))
-      }
-    } else if (action === "find") {
-      const state = get()
-      if (
-        "openFindInFocusedGroup" in state &&
-        typeof state.openFindInFocusedGroup === "function"
-      ) {
-        state.openFindInFocusedGroup(false)
-      } else if (typeof state.openFind === "function") {
-        state.openFind(state.focusedGroup, false)
-      } else if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("aegis:open-find"))
-      }
-    } else if (action === "stop") {
-      void get().terminateDebugging()
-    } else if (action === "save") {
-      void get().saveFile()
-    } else if (action === "debug") {
-      void get().startDebugging()
-    } else if (
-      action === "run-terminal" ||
-      action === "run-file" ||
-      action === "run"
-    ) {
-      void get().runFileInTerminal()
-    } else {
-      get().showToast(actionMessages[action] ?? "Command completed")
     }
   },
+  clearBreakpoints: (file?: string) => {
+    set((state) => {
+      if (!file) return { breakpoints: {} }
+      const next = { ...state.breakpoints }
+      delete next[file]
+      return { breakpoints: next }
+    })
+  },
+
+  activeDebugLine: null,
+  setActiveDebugLine: (line: ActiveDebugLine | null) =>
+    set({ activeDebugLine: line }),
 })

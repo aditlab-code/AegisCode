@@ -170,6 +170,7 @@ export interface FileBuffer {
   isBinary?: boolean
   fileSize?: number
   status?: BufferStatus
+  lastSaved?: number
 }
 
 export interface WorkspaceChangeEvent {

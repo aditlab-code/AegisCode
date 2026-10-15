@@ -126,6 +126,139 @@ export function loadStoredNumber(
   return fallback
 }
 
+let toastTimer: ReturnType<typeof setTimeout> | null = null
+
+export function showToastLogic(
+  message: string,
+  set: (updater: any) => void,
+  get: () => any,
+) {
+  if (toastTimer) {
+    clearTimeout(toastTimer)
+    toastTimer = null
+  }
+  set({ toast: message })
+  if (typeof window !== "undefined") {
+    toastTimer = setTimeout(() => {
+      set({ toast: "" })
+      toastTimer = null
+    }, 2200)
+  }
+  if (typeof get().addNotification === "function") {
+    get().addNotification(message)
+  }
+}
+
+export function clearToastLogic(set: (updater: any) => void) {
+  if (toastTimer) {
+    clearTimeout(toastTimer)
+    toastTimer = null
+  }
+  set({ toast: "" })
+}
+
+export function runActionLogic(
+  action: string,
+  set: (updater: any) => void,
+  get: () => any,
+) {
+  const actionMessages: Record<string, string> = {
+    "new-file": "Untitled-1 created",
+    "open-folder": "Folder picker ready",
+    redo: "Nothing to redo",
+    run: "Run session queued without debugging",
+    "run-file": `Running ${get().activeTab}`,
+    undo: "Last editor action reverted",
+  }
+
+  if (action === "commands") {
+    get().setCommandPaletteOpen(true)
+  } else if (action === "new-file") {
+    const files = get().files || []
+    let counter = 1
+    while (
+      files.some(
+        (f: any) =>
+          f.path === `Untitled-${counter}.txt` ||
+          f.name === `Untitled-${counter}.txt`,
+      )
+    ) {
+      counter++
+    }
+    const untitledName = `Untitled-${counter}.txt`
+    if (typeof get().createFile === "function") {
+      void get().createFile(untitledName)
+    }
+    get().showToast(`Created ${untitledName}`)
+  } else if (action === "undo") {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("aegis:editor-undo"))
+    }
+  } else if (action === "redo") {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("aegis:editor-redo"))
+    }
+  } else if (action === "open-folder") {
+    if (typeof get().openFolderPicker === "function") {
+      void get().openFolderPicker()
+    }
+  } else if (action === "close-folder") {
+    if (typeof get().closeRootFolder === "function") {
+      void get().closeRootFolder()
+    }
+  } else if (action === "sidebar") {
+    get().toggleSidebar()
+  } else if (action === "panel") {
+    get().togglePanel()
+  } else if (action === "new-terminal") {
+    get().setPanelOpen(true)
+    get().setActiveBottomTab("Terminal")
+    if (typeof get().createTerminalSession === "function") {
+      void get().createTerminalSession()
+    }
+  } else if (action === "clear-terminal") {
+    if (typeof get().clearTerminal === "function") {
+      get().clearTerminal()
+    } else if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("aegis:terminal-clear"))
+    }
+  } else if (action === "find") {
+    const state = get()
+    if (
+      "openFindInFocusedGroup" in state &&
+      typeof state.openFindInFocusedGroup === "function"
+    ) {
+      state.openFindInFocusedGroup(false)
+    } else if (typeof state.openFind === "function") {
+      state.openFind(state.focusedGroup, false)
+    } else if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("aegis:open-find"))
+    }
+  } else if (action === "stop") {
+    if (typeof get().terminateDebugging === "function") {
+      void get().terminateDebugging()
+    }
+  } else if (action === "save") {
+    if (typeof get().saveFile === "function") {
+      void get().saveFile()
+    }
+  } else if (action === "debug") {
+    if (typeof get().startDebugging === "function") {
+      void get().startDebugging()
+    }
+  } else if (
+    action === "run-terminal" ||
+    action === "run-file" ||
+    action === "run"
+  ) {
+    if (typeof get().runFileInTerminal === "function") {
+      void get().runFileInTerminal()
+    }
+  } else {
+    get().showToast(actionMessages[action] ?? "Command completed")
+  }
+}
+
 export const createLayoutSlice: SliceCreator<LayoutSlice> = (set, get) => {
   let lastSidebarWidth = loadStoredNumber(
     "aegis_sidebar_width",
@@ -344,9 +477,27 @@ export const createLayoutSlice: SliceCreator<LayoutSlice> = (set, get) => {
     theme: initialTheme,
     themePalette: "default",
     setTheme: (mode) => {
+      const state = get() as any
+      if (typeof state.setThemeMode === "function") {
+        state.setThemeMode(mode)
+        return
+      }
       if (typeof window !== "undefined") {
         try {
           window.localStorage.setItem("aegis_theme", mode)
+          window.localStorage.setItem(
+            "aegis_settings_v1",
+            JSON.stringify({
+              ...(state.settings || {}),
+              workbench: {
+                ...(state.settings?.workbench || {}),
+                appearance: {
+                  ...(state.settings?.workbench?.appearance || {}),
+                  mode,
+                },
+              },
+            }),
+          )
         } catch {
           // ignore
         }
@@ -356,15 +507,15 @@ export const createLayoutSlice: SliceCreator<LayoutSlice> = (set, get) => {
       }
       const currentPalette = get().themePalette || "default"
       applyThemeToDom(currentPalette, mode)
-      set((state) => {
+      set((st) => {
         const patch: Partial<WorkbenchStore> = { theme: mode }
-        if (state.settings) {
+        if (st.settings) {
           patch.settings = {
-            ...state.settings,
+            ...st.settings,
             workbench: {
-              ...state.settings.workbench,
+              ...st.settings.workbench,
               appearance: {
-                ...state.settings.workbench.appearance,
+                ...st.settings.workbench.appearance,
                 mode,
               },
             },
@@ -374,17 +525,28 @@ export const createLayoutSlice: SliceCreator<LayoutSlice> = (set, get) => {
       })
     },
     setThemePalette: (palette) => {
+      const state = get() as any
+      if (typeof state.updateWorkbenchSettings === "function") {
+        const currentMode = state.theme || "dark"
+        applyThemeToDom(palette, currentMode)
+        state.updateWorkbenchSettings((prev: any) => ({
+          ...prev,
+          appearance: { ...prev.appearance, palette },
+        }))
+        set({ themePalette: palette })
+        return
+      }
       const currentMode = get().theme || "dark"
       applyThemeToDom(palette, currentMode)
-      set((state) => {
+      set((st) => {
         const patch: Partial<WorkbenchStore> = { themePalette: palette }
-        if (state.settings) {
+        if (st.settings) {
           patch.settings = {
-            ...state.settings,
+            ...st.settings,
             workbench: {
-              ...state.settings.workbench,
+              ...st.settings.workbench,
               appearance: {
-                ...state.settings.workbench.appearance,
+                ...st.settings.workbench.appearance,
                 palette,
               },
             },
@@ -394,10 +556,20 @@ export const createLayoutSlice: SliceCreator<LayoutSlice> = (set, get) => {
       })
     },
     toggleTheme: () => {
+      const state = get() as any
+      if (typeof state.toggleThemeMode === "function") {
+        state.toggleThemeMode()
+        return
+      }
       const current = get().theme
       const next = toggleThemeLogic(current)
       get().setTheme(next)
     },
+
+    toast: "",
+    showToast: (msg) => showToastLogic(msg, set, get),
+    clearToast: () => clearToastLogic(set),
+    runAction: (action) => runActionLogic(action, set, get),
 
     sidebarWidth: loadStoredNumber(
       "aegis_sidebar_width",

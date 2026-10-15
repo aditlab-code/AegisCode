@@ -23,7 +23,7 @@ This directory catalogs the **Architecture Decision Records (ADRs)** for **Aegis
 | **[0013](0013-embedded-pure-go-sqlite-and-fts5-search.md)** | Embedded Pure-Go SQLite & FTS5 | Storage & Search | `Accepted` | Replaces fragmented flat-files with transactional pure-Go SQLite (`modernc.org/sqlite`) in WAL mode with FTS5. |
 | **[0014](0014-native-colbymchenry-codegraph-and-vantagecraft-ui.md)** | Native CodeGraph & VantageCraft UI | AI & Code Intelligence | `Accepted` | Replaces custom Go extractors with native `@colbymchenry/codegraph` daemon, reverse proxy, and VantageCraft 6-view UI. |
 | **[0015](0015-native-codegraph-contract-alignment-and-zero-swallow.md)** | Native CodeGraph Contract Alignment & Zero Swallow | Code Intelligence & Resilience | `Accepted` | Aligns Go proxy contracts, unwraps MCP envelopes, decommissions legacy routes, and enforces zero silent swallow. |
-| **[0016](0016-http1-socket-starvation-prevention-and-canonical-workspace-buffer-lifecycle.md)** | HTTP/1.1 Socket Starvation Prevention & Buffer Lifecycle | Networking & State Lifecycle | `Accepted` | Prevents browser 6-socket pool starvation via direct backend API_BASE, deferred SSE, and canonical buffer reconciliation. |
+| **[0016](0016-http1-socket-starvation-prevention-and-canonical-workspace-buffer-lifecycle.md)** | HTTP/1.1 Socket Starvation Prevention & Buffer Lifecycle | Networking & State Lifecycle | `Accepted` | Prevents browser 6-socket pool starvation via direct backend API_BASE, unified EventHub multiplexer, and single POSIX canonical buffer lifecycle. |
 
 ---
 

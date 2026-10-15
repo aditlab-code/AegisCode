@@ -248,15 +248,22 @@ export function sanitizeContentOnSave(
 export function markBufferSavedLogic(
   buffers: Record<string, FileBuffer>,
   filename: string,
+  contentToSave?: string,
 ): Record<string, FileBuffer> {
   const currentBuf = buffers[filename]
   if (!currentBuf) return buffers
+
+  const savedContent =
+    contentToSave !== undefined ? contentToSave : currentBuf.content
+  const isDirty = currentBuf.content !== savedContent
+
   return {
     ...buffers,
     [filename]: {
       ...currentBuf,
-      savedContent: currentBuf.content,
-      isDirty: false,
+      savedContent,
+      isDirty,
+      lastSaved: Date.now(),
     },
   }
 }
@@ -349,6 +356,7 @@ export class AsyncSequenceGuard {
 }
 
 const workspaceGuard = new AsyncSequenceGuard()
+const fileFetchTokens: Record<string, number> = {}
 
 export async function loadWorkspaceInternal(
   get: () => any,
@@ -678,6 +686,9 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
       if (typeof terminalRestart === "function") {
         void terminalRestart()
       }
+      if (typeof (get() as any).resetView === "function") {
+        ;(get() as any).resetView()
+      }
       get().showToast?.(`Opened folder: ${path}`)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -706,6 +717,9 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
       }
       if (typeof get().refreshGit === "function") {
         void get().refreshGit()
+      }
+      if (typeof (get() as any).resetView === "function") {
+        ;(get() as any).resetView()
       }
       get().showToast?.("Workspace closed")
     } catch (err: any) {
@@ -917,7 +931,8 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
       )
       return
     }
-    let contentToSave = buf?.content ?? ""
+    const originalContent = buf?.content ?? ""
+    let contentToSave = originalContent
     if (buf && options) {
       contentToSave = sanitizeContentOnSave(contentToSave, options)
     }
@@ -935,24 +950,34 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
     }
 
     set((state) => {
-      const marked = markBufferSavedLogic(state.fileBuffers, targetKey)
+      const currentBuf = state.fileBuffers[targetKey]
+      if (!currentBuf) return state
+
+      // If hygiene options transformed the content and user didn't type during save, apply hygiene to content
       if (
         options &&
-        marked[targetKey] &&
-        contentToSave !== state.fileBuffers[targetKey]?.content
+        contentToSave !== originalContent &&
+        currentBuf.content === originalContent
       ) {
         return {
           fileBuffers: {
-            ...marked,
+            ...state.fileBuffers,
             [targetKey]: {
-              ...marked[targetKey],
+              ...currentBuf,
               content: contentToSave,
               savedContent: contentToSave,
               isDirty: false,
+              lastSaved: Date.now(),
             },
           },
         }
       }
+
+      const marked = markBufferSavedLogic(
+        state.fileBuffers,
+        targetKey,
+        contentToSave,
+      )
       return { fileBuffers: marked }
     })
 
@@ -1120,6 +1145,8 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
     }
 
     const currentEpoch = get().workspaceEpoch
+    const fetchToken = (fileFetchTokens[clean] =
+      (fileFetchTokens[clean] || 0) + 1)
     const existing = get().fileBuffers[clean]
     if (!existing) {
       set((state) => ({
@@ -1150,11 +1177,22 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
 
     try {
       const detail = await fetchFileDetailed(clean)
-      if (get().workspaceEpoch !== currentEpoch) return
+      if (
+        get().workspaceEpoch !== currentEpoch ||
+        fileFetchTokens[clean] !== fetchToken
+      ) {
+        return
+      }
       const content = detail.content
       set((state) => {
         const existingBuf = state.fileBuffers[clean]
         if (existingBuf?.isDirty) {
+          if (
+            content === existingBuf.savedContent ||
+            content === existingBuf.content
+          ) {
+            return state
+          }
           return {
             fileBuffers: {
               ...state.fileBuffers,
@@ -1165,6 +1203,14 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
               },
             },
           }
+        }
+        if (
+          existingBuf &&
+          existingBuf.content === content &&
+          existingBuf.status === "ready" &&
+          !existingBuf.hasDiskConflict
+        ) {
+          return state
         }
         const newBuf: FileBuffer = {
           content,
@@ -1189,7 +1235,12 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
         triggerOffloadedLint(clean, content, true, set, 0)
       }
     } catch (err) {
-      if (get().workspaceEpoch !== currentEpoch) return
+      if (
+        get().workspaceEpoch !== currentEpoch ||
+        fileFetchTokens[clean] !== fetchToken
+      ) {
+        return
+      }
       set((state) => {
         const existingBuf = state.fileBuffers[clean]
         return {
@@ -1279,11 +1330,17 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
     trigger: "onType",
     showWarnings: true,
   },
-  setLinterSettings: (updater) =>
-    set((state) => ({
-      linterSettings:
-        typeof updater === "function" ? updater(state.linterSettings) : updater,
-    })),
+  setLinterSettings: (updater) => {
+    const current = (get() as any).settings?.linter ?? get().linterSettings
+    const nextLinter =
+      typeof updater === "function"
+        ? updater(current)
+        : { ...current, ...updater }
+    if (typeof (get() as any).updateLinterSettings === "function") {
+      ;(get() as any).updateLinterSettings(nextLinter)
+    }
+    set({ linterSettings: nextLinter })
+  },
 
   navigateToDiagnostic: (diag: DiagnosticItem) => {
     let filename = ""
@@ -1356,8 +1413,16 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
     for (const filename of dirty) {
       const buf = fileBuffers[filename]
       if (buf) {
+        const contentToSave = buf.content
         try {
-          await saveWorkspaceFile(filename, buf.content, false)
+          await saveWorkspaceFile(filename, contentToSave, false)
+          set((state) => ({
+            fileBuffers: markBufferSavedLogic(
+              state.fileBuffers,
+              filename,
+              contentToSave,
+            ),
+          }))
         } catch (err) {
           console.warn(`Failed to auto-save dirty buffer for ${filename}:`, err)
         }

@@ -10,6 +10,7 @@ import {
   isGraphTab,
   parseGraphTab,
 } from "./viewers/viewerTypes"
+import { normalizeWorkspacePath } from "../../../utils/workspaceApi"
 
 interface ContextMenuData {
   x: number
@@ -243,9 +244,15 @@ export function EditorTabs({
             : graphInfo
               ? graphInfo.displayName
               : tab.split("/").pop() || tab
-          const buf = isDiff
-            ? fileBuffers[diffInfo?.file || ""]
-            : fileBuffers[tab]
+          const rawTabFile = isDiff ? diffInfo?.file || "" : tab
+          const cleanTabFile = normalizeWorkspacePath(
+            rawTabFile,
+            rootWorkspacePath,
+          )
+          const buf =
+            fileBuffers[cleanTabFile] ||
+            fileBuffers[rawTabFile] ||
+            fileBuffers[tab]
           const isDirty = Boolean(buf?.isDirty)
           const hasDiskConflict = Boolean(buf?.hasDiskConflict)
           const isDeletedOnDisk = Boolean(buf?.isDeletedOnDisk)
@@ -387,17 +394,28 @@ export function EditorTabs({
         >
           <Icon name="search" size={14} />
         </IconButton>
-        <IconButton
-          disabled={!fileBuffers[currentGroup.activeTab]?.isDirty}
-          label={
-            fileBuffers[currentGroup.activeTab]?.isDirty
-              ? "Revert / discard changes"
-              : "No changes to revert"
-          }
-          onClick={() => requestRevertFile(currentGroup.activeTab)}
-        >
-          <Icon name="history" size={14} />
-        </IconButton>
+        {(() => {
+          const activeRaw = currentGroup.activeTab || ""
+          const activeClean = normalizeWorkspacePath(
+            activeRaw,
+            rootWorkspacePath,
+          )
+          const activeBuf = fileBuffers[activeClean] || fileBuffers[activeRaw]
+          const isCurrentDirty = Boolean(activeBuf?.isDirty)
+          return (
+            <IconButton
+              disabled={!isCurrentDirty}
+              label={
+                isCurrentDirty
+                  ? "Revert / discard changes"
+                  : "No changes to revert"
+              }
+              onClick={() => requestRevertFile(currentGroup.activeTab)}
+            >
+              <Icon name="history" size={14} />
+            </IconButton>
+          )
+        })()}
         <IconButton
           label="Save file (Ctrl+S)"
           onClick={() => saveFile(currentGroup.activeTab)}

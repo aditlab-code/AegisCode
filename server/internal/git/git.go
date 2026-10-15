@@ -87,6 +87,9 @@ func NewService(ws *workspace.Manager) *Service {
 }
 
 func (s *Service) root() (string, error) {
+	if s.ws == nil {
+		return "", errors.New("no active workspace root")
+	}
 	rootPath, _ := s.ws.GetRoot()
 	clean := strings.TrimSpace(rootPath)
 	if clean == "" {

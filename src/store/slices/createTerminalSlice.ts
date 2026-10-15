@@ -1,5 +1,8 @@
 import type { TerminalSession } from "../../types/workbench"
-import { initialTerminalSessions } from "../../data/mockData"
+import {
+  initialTerminalSessions,
+  detectDefaultShell,
+} from "../../data/mockData"
 import {
   createTerminalApi,
   sendTerminalInputApi,
@@ -16,6 +19,7 @@ import {
 } from "../../context/core/terminalCore"
 
 export {
+  detectDefaultShell,
   createTerminalSessionLogic,
   closeTerminalSessionLogic,
   clearTerminalSessionLogic,
@@ -60,18 +64,19 @@ export const createTerminalSlice: SliceCreator<TerminalSlice> = (set, get) => {
       set(syncTerminalDerivedState(terminalSessions, id))
     },
 
-    createTerminalSession: async (shellName = "zsh") => {
+    createTerminalSession: async (shellName?: string) => {
+      const targetShell = shellName || detectDefaultShell()
       try {
         const rootPath = (get() as { rootWorkspacePath?: string })
           .rootWorkspacePath
-        const data = await createTerminalApi(shellName, rootPath || undefined)
+        const data = await createTerminalApi(targetShell, rootPath || undefined)
         if (data) {
           const sessions = get().terminalSessions
           if (sessions.length === 1 && !sessions[0]?.isLive) {
             const upgraded: TerminalSession = {
               id: data.sessionId,
-              name: `1: ${shellName}`,
-              shell: shellName,
+              name: `1: ${targetShell}`,
+              shell: targetShell,
               lines: [],
               running: true,
               commandHistory: [],
@@ -84,8 +89,8 @@ export const createTerminalSlice: SliceCreator<TerminalSlice> = (set, get) => {
           const nextNum = sessions.length + 1
           const newSession: TerminalSession = {
             id: data.sessionId,
-            name: `${nextNum}: ${shellName}`,
-            shell: shellName,
+            name: `${nextNum}: ${targetShell}`,
+            shell: targetShell,
             lines: [],
             running: true,
             commandHistory: [],
@@ -101,18 +106,18 @@ export const createTerminalSlice: SliceCreator<TerminalSlice> = (set, get) => {
       }
 
       const sessions = get().terminalSessions
-      const res = createTerminalSessionLogic(sessions, shellName)
+      const res = createTerminalSessionLogic(sessions, targetShell)
       const updated = res.sessions.map((s) =>
         s.id === res.newSession.id ? { ...s, isLive: false } : s,
       )
       set(syncTerminalDerivedState(updated, res.newSession.id))
     },
 
-    restartTerminalSession: async (id?: string) => {
+    restartTerminalSession: async (id?: string, shellName?: string) => {
       const { terminalSessions, activeTerminalSessionId } = get()
       const targetId = id || activeTerminalSessionId
       const found = terminalSessions.find((s) => s.id === targetId)
-      const targetShell = found?.shell || "zsh"
+      const targetShell = shellName || found?.shell || detectDefaultShell()
       if (found?.isLive) {
         try {
           await closeTerminalApi(targetId)
@@ -161,7 +166,17 @@ export const createTerminalSlice: SliceCreator<TerminalSlice> = (set, get) => {
       }
 
       const fallbackSessions = get().terminalSessions.map((s) =>
-        s.id === targetId ? { ...s, running: false, isLive: false } : s,
+        s.id === targetId
+          ? {
+              ...s,
+              shell: targetShell,
+              name: s.name.includes(":")
+                ? `${s.name.split(":")[0]}: ${targetShell}`
+                : `1: ${targetShell}`,
+              running: false,
+              isLive: false,
+            }
+          : s,
       )
       set(
         syncTerminalDerivedState(
@@ -201,7 +216,7 @@ export const createTerminalSlice: SliceCreator<TerminalSlice> = (set, get) => {
       }
 
       if (terminalSessions.length <= 1) {
-        const shell = target?.shell || "zsh"
+        const shell = target?.shell || detectDefaultShell()
         try {
           const data = await createTerminalApi(shell)
           if (data) {
