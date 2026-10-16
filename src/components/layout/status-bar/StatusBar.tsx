@@ -5,7 +5,6 @@ import { BranchPopover } from "./BranchPopover"
 import { ProblemsPopover } from "./ProblemsPopover"
 import { NotificationsPopover } from "./NotificationsPopover"
 import { LspStatusPopover } from "./LspStatusPopover"
-import { McpStatusPopover } from "./McpStatusPopover"
 import { PerfStatusPill } from "./PerfStatusPill"
 import { IndexStatusPill } from "./IndexStatusPill"
 
@@ -36,7 +35,9 @@ export function StatusBar() {
     serverConnected,
     checkServerConnection,
     showToast,
+    panelOpen,
     setPanelOpen,
+    activeBottomTab,
     setActiveBottomTab,
   } = useWorkbenchStore(
     useShallow((s) => ({
@@ -56,15 +57,15 @@ export function StatusBar() {
       serverConnected: s.serverConnected,
       checkServerConnection: s.checkServerConnection,
       showToast: s.showToast,
+      panelOpen: s.panelOpen,
       setPanelOpen: s.setPanelOpen,
+      activeBottomTab: s.activeBottomTab,
       setActiveBottomTab: s.setActiveBottomTab,
     })),
   )
 
   const [activePanel, setActivePanel] =
-    useState<"branch" | "notifications" | "problems" | "lsp" | "mcp" | null>(
-      null,
-    )
+    useState<"branch" | "notifications" | "problems" | "lsp" | null>(null)
   const statusBarRef = useRef<HTMLElement>(null)
 
   const isDirty = gitChanges.length > 0 || stagedChanges.length > 0
@@ -72,10 +73,17 @@ export function StatusBar() {
   const errorCount = diagnostics.filter((d) => d.type === "error").length
   const warningCount = diagnostics.filter((d) => d.type === "warning").length
 
-  function togglePanel(
-    panel: "branch" | "notifications" | "problems" | "lsp" | "mcp",
-  ) {
+  function togglePanel(panel: "branch" | "notifications" | "problems" | "lsp") {
     setActivePanel((current) => (current === panel ? null : panel))
+  }
+
+  function handleMcpClick() {
+    if (panelOpen && activeBottomTab === "MCP") {
+      setPanelOpen(false)
+    } else {
+      setActiveBottomTab("MCP")
+      setPanelOpen(true)
+    }
   }
 
   function handleProblemsClick() {
@@ -200,10 +208,10 @@ export function StatusBar() {
         </button>
         <button
           className={`status-item cursor-pointer hover:text-[var(--color-ink)] ${
-            activePanel === "mcp" ? "status-button-active" : ""
+            panelOpen && activeBottomTab === "MCP" ? "status-button-active" : ""
           }`}
-          onClick={() => togglePanel("mcp")}
-          title="Model Context Protocol (MCP) & CodeGraph Status"
+          onClick={handleMcpClick}
+          title="Model Context Protocol (MCP) & CodeGraph Panel (Click to toggle)"
           type="button"
         >
           <span
@@ -257,9 +265,6 @@ export function StatusBar() {
       )}
       {activePanel === "lsp" && (
         <LspStatusPopover onClose={() => setActivePanel(null)} />
-      )}
-      {activePanel === "mcp" && (
-        <McpStatusPopover onClose={() => setActivePanel(null)} />
       )}
       {activePanel === "notifications" && (
         <NotificationsPopover onClose={() => setActivePanel(null)} />

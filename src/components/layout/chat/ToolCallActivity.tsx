@@ -3,6 +3,7 @@ import { Icon } from "../../ui/Icon"
 import type { ToolCallItem, IconName } from "../../../types/workbench"
 import { cleanFilePath } from "../../../utils/workspaceApi"
 import { fetchChatBlob } from "../../../utils/storeApi"
+import { useWorkbenchStore } from "../../../store"
 
 export interface ParsedToolCall {
   actionLabel: string
@@ -448,6 +449,25 @@ export const ToolCallActivityCard = memo(function ToolCallActivityCard({
             title={`Open ${parsed.fullTarget} in editor`}
           >
             <span>Open</span>
+          </button>
+        )}
+
+        {/* Quick Graph visualizer jump for CodeGraph / MCP tools */}
+        {parsed.protocol === "mcp" && (
+          <button
+            type="button"
+            className="shrink-0 px-1.5 py-0.5 rounded text-[10px] text-accent hover:bg-surface-raised border border-line cursor-pointer flex items-center gap-1"
+            onClick={(e) => {
+              e.stopPropagation()
+              const graphTab = parsed.targetFile
+                ? `codegraph:${parsed.targetFile}`
+                : "codegraph:workspace"
+              useWorkbenchStore.getState().openFileInPane(graphTab)
+            }}
+            title="Open Visual CodeGraph for this tool"
+          >
+            <Icon name="zap" size={10} />
+            <span>Graph</span>
           </button>
         )}
 

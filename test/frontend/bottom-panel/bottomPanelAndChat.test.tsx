@@ -154,4 +154,28 @@ describe("Track MP-3.4 (Bottom Panel & Chat Track) Tests", () => {
       ).toBe(true)
     })
   })
+
+  describe("MCP-01: Live AI Trace Store & Clear Mechanism", () => {
+    it("clears both active aiTrace and aiTraceHistory when clearAiTrace is called", () => {
+      const store = useWorkbenchStore.getState()
+      store.triggerAiTrace({
+        symbolName: "testSymbol",
+        symbols: ["testSymbol"],
+        rawQuery: "test query",
+        provider: "gemini",
+        toolName: "codegraph_explore",
+      })
+
+      const stateAfterTrigger = useWorkbenchStore.getState()
+      expect(stateAfterTrigger.aiTrace).not.toBeNull()
+      expect(stateAfterTrigger.aiTrace?.symbolName).toBe("testSymbol")
+      expect(stateAfterTrigger.aiTraceHistory.length).toBeGreaterThan(0)
+
+      stateAfterTrigger.clearAiTrace()
+
+      const stateAfterClear = useWorkbenchStore.getState()
+      expect(stateAfterClear.aiTrace).toBeNull()
+      expect(stateAfterClear.aiTraceHistory).toEqual([])
+    })
+  })
 })

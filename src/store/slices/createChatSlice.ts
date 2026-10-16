@@ -315,7 +315,7 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
     aiTraceHistory: [],
 
     clearAiTrace: () => {
-      set({ aiTrace: null })
+      set({ aiTrace: null, aiTraceHistory: [] })
     },
 
     triggerAiTrace: (incoming) => {
