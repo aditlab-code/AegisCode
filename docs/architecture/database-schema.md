@@ -6,17 +6,27 @@ AegisCode utilizes an embedded, zero-CGO, pure-Go SQLite relational engine (`mod
 
 ## 1. Database Partitioning Strategy
 
-Storage is cleanly partitioned across two tiers to ensure strict project isolation and zero repository pollution (per ADR-0002 and ADR-0014):
+Storage is cleanly partitioned across three tiers to ensure strict project isolation and zero repository pollution (per ADR-0002, ADR-0014, and ADR-0017):
 
 ```text
 ~/.aegiscode/
 ├── aegis.db                   # [Global Tier] System configs, chat ledgers, blobs, and chat FTS
 ├── mcp/                       # [Runtime Tier] Managed MCP daemon runtimes
 └── ipc/                       # [IPC Tier] Unix domain sockets for worker supervision
+
+<workspace>/
+├── .codegraph/
+│   └── codegraph.db           # [Workspace Intelligence Tier] AST symbols, relations & call graphs
+├── .aegis/                    # [Workspace Task & Copilot Tier] Autonomous tasks, wave plans & config
+│   ├── config.json            # Copilot configuration (version, active persona, settings)
+│   └── tasks/                 # File-first autonomous task tracker
+└── AGENTS.md                  # Workspace-level agent directives & persona guidelines
 ```
 
 * **Global Tier (`~/.aegiscode/aegis.db`)**: Houses user preferences, session metadata, dialog history, content-addressed blob payloads, and cross-session search indices.
 * **Workspace Intelligence Tier (`<workspace>/.codegraph/codegraph.db`)**: High-performance SQLite database in WAL mode managed out-of-process by `@colbymchenry/codegraph`, indexing all AST symbols, call hierarchies, and Git diff freshness.
+* **Workspace Task & Copilot Tier (`<workspace>/.aegis/`)**: Zero-bloat local file-first storage tier managing autonomous task specifications, multi-wave execution plans, checklists, runtime execution logs, and workspace copilot configurations.
+
 
 ---
 
@@ -187,3 +197,53 @@ CREATE VIRTUAL TABLE IF NOT EXISTS symbol_fts USING fts5(
     content_rowid='id'
 );
 ```
+
+---
+
+## 4. Workspace Copilot & Local Task State Schema (`<workspace>/.aegis/`)
+
+To support transparent pair programming without microservice bloat or cloud dependencies, Aegis Copilot adopts a **file-first local state architecture**.
+
+### File Structure & Responsibilities
+
+```text
+<workspace>/.aegis/
+├── config.json                # Workspace copilot configuration
+└── tasks/                     # Task execution ledger (idempotently gitignored)
+    └── <task-slug>/
+        ├── meta.json          # Machine-readable task state & timestamps
+        ├── 0-spec.md          # Requirements, constraints & API contracts
+        ├── 0-plan.md          # Multi-wave execution steps & markdown checklists
+        └── 0-log.md           # Continuous CoT runtime thoughts & progress log
+```
+
+### JSON Schemas
+
+#### 1. `.aegis/config.json`
+Stores workspace-level copilot preferences and active persona linkage.
+```json
+{
+  "version": "1.0",
+  "initialized": true,
+  "activePersona": "kanna",
+  "createdAt": "2026-10-16T10:00:00Z"
+}
+```
+
+#### 2. `.aegis/tasks/<task-slug>/meta.json`
+Stores lifecycle status and execution timing for individual autonomous tasks.
+```json
+{
+  "id": "001-workspace-init",
+  "title": "Aegis Copilot Workspace Initialization",
+  "status": "IN_PROGRESS",
+  "createdAt": "2026-10-16T10:05:00Z",
+  "updatedAt": "2026-10-16T10:15:00Z"
+}
+```
+
+### In-Memory Wave Model & Markdown Synchronization
+The Go backend (`server/internal/agent/task_sync.go`) dynamically compiles `0-plan.md` into structured wave status models:
+* `WaveStatus.Status`: Computed on-the-fly (`PASSED` when all `- [x]` checked, `IN_PROGRESS` if partially checked, `PENDING` if untouched).
+* `WaveStatus.PassedSteps` / `TotalSteps`: Extracted via regex from markdown checklist tokens (`- [ ]`, `- [x]`).
+

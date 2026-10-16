@@ -66,7 +66,8 @@ To eliminate merge conflicts and cognitive overhead across developer teams, the 
   9. `lsp_handlers.go` (250 LOC): 11 LSP client handlers and real-time diagnostic SSE stream.
   10. `mcp_handlers.go` (200 LOC): Model Context Protocol JSON-RPC runner, tool status event ingest, status broadcasting, and EventHub bridges.
   11. `codegraph_handlers.go` (276 LOC): CodeGraph reverse proxy, AST reindexing, file code outlines/calls, and entrypoint search.
-  12. `agent_handlers.go` (195 LOC): Aegis Copilot Autonomous Orchestrator handlers (`/api/v1/agent/rules-status`, `/api/v1/agent/init-rules`, `/api/v1/agent/tasks`, `/api/v1/agent/task/{slug}`) and EventHub real-time event broadcasting on topic `"copilot"`.
+  12. `agent_handlers.go` (~280 LOC): Aegis Copilot Autonomous Orchestrator handlers (`/api/v1/agent/workspace-status`, `/api/v1/agent/init-workspace`, `/api/v1/agent/rules-status`, `/api/v1/agent/init-rules`, `/api/v1/agent/tasks`, `/api/v1/agent/task/{slug}`) and EventHub real-time event broadcasting on topic `"copilot"`.
+
 
 ### Core Characteristics
 1. **Lightweight Footprint**: Memory usage <30MB at baseline, sub-30ms startup latency.
@@ -718,11 +719,17 @@ A standalone, in-process autonomous AI agent orchestration and task synchronizat
      - State extraction: `ExtractWaveStatus()` parses markdown checklists (`- [x]`, `- [ ]`) and Wave headers (`### Wave N:`) into structured `WaveStatus` models (`PASSED`, `IN_PROGRESS`, `PENDING`).
   2. `RulesManager` ([`rules.go`](../../server/internal/agent/rules.go)):
      - Persona presets: **Kanna** (Creative & Friendly anime companion), **Senior Architect** (Systematic DDD & modularity), and **Minimalist** (Concise diff-first).
+     - `DetectPersonaFromContent(content)`: Dynamic heuristic parser matching rules text tokens to active persona IDs (`kanna`, `architect`, `minimalist`, or `custom`).
      - `GetRulesStatus(workspaceRoot)`: Evaluates if `AGENTS.md` is present in root workspace, returning active persona and available templates.
      - `InitWorkspaceRulesWithContent(workspaceRoot, presetID, customContent)`: Thread-safe writing of customized markdown rules or preset defaults to `AGENTS.md`.
      - `GetEffectiveSystemRules(workspaceRoot)`: Reads active rules file or falls back to in-memory Kanna preset for system prompt injection.
+  3. `WorkspaceInitializer` ([`workspace_init.go`](../../server/internal/agent/workspace_init.go)):
+     - `GetWorkspaceCopilotStatus(rootPath)`: Probes existence of `.aegis/`, `.aegis/tasks/`, `.aegis/config.json`, and `AGENTS.md`, returning aggregate initialization health, count of active tasks, and active persona.
+     - `InitWorkspace(rootPath, opts)`: Complete atomic scaffolding of `.aegis/`, `.aegis/tasks/`, `.aegis/config.json`, rewrites `AGENTS.md` with selected persona preset or custom instructions, idempotently appends `.aegis/tasks/` to `.gitignore`, and seeds an initial welcome task (`001-welcome`).
 
 - **REST API Endpoints**:
+  - `GET /api/v1/agent/workspace-status`: Returns full workspace copilot initialization status, directory existence flags, task count, detected active persona, and available persona presets.
+  - `POST /api/v1/agent/init-workspace`: Fully initializes Aegis Copilot environment for a workspace. Request body: `{ "preset": "kanna", "addToGitignore": true, "createSample": true, "overwriteRules": true, "customContent"?: "..." }`. Broadcasts `workspace_initialized` event.
   - `GET /api/v1/agent/rules-status`: Ingests workspace `AGENTS.md` status, active persona, and available preset templates.
   - `POST /api/v1/agent/init-rules`: Initializes or updates `AGENTS.md` in workspace root. Body: `{ "preset": "kanna", "content"?: "..." }`. Broadcasts `rules_updated` event.
   - `GET /api/v1/agent/tasks`: Lists all autonomous tasks in `.aegis/tasks/` with metadata and statuses.
@@ -731,7 +738,7 @@ A standalone, in-process autonomous AI agent orchestration and task synchronizat
   - `PUT /api/v1/agent/task/{slug}`: Atomically updates a task file (`0-spec.md`, `0-plan.md`, or `0-log.md`). Broadcasts `task_updated` event.
 
 - **EventHub SSE Topic (`"copilot"`)**:
-  - Emits real-time state changes (`rules_updated`, `task_updated`) through the unified EventHub multiplexer (`/api/v1/events`), enabling immediate frontend UI updates across the Chat Drawer and Settings Modal without polling.
+  - Emits real-time state changes (`workspace_initialized`, `rules_updated`, `task_updated`) through the unified EventHub multiplexer (`/api/v1/events`), enabling immediate frontend UI updates across the Chat Drawer, Composer, and Settings Modal without polling.
 
 ---
 
