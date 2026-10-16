@@ -219,8 +219,12 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
 
 ### 6. AEGIS AI Agent Drawer (`chat/`)
 - **Path**: [`src/components/layout/chat/`](../../src/components/layout/chat)
-- **Primary Components**: `ChatDrawer.tsx`, `ChatHeader.tsx`, `ChatSessionSidebar.tsx`, `ChatMessageList.tsx`, `MarkdownRenderer.tsx`, `MermaidBlock.tsx`, `MermaidPreviewModal.tsx`, `useSmoothStream.ts`, `ChatSuggestions.tsx`, `ChatComposer.tsx`, `ChatCommandPopover.tsx`, `ChatProviderSelect.tsx`, `chat.css`
+- **Primary Components**: `ChatDrawer.tsx`, `ChatHeader.tsx`, `ChatSessionSidebar.tsx`, `ChatMessageList.tsx`, `MarkdownRenderer.tsx`, `MermaidBlock.tsx`, `MermaidPreviewModal.tsx`, `useSmoothStream.ts`, `ChatSuggestions.tsx`, `ChatComposer.tsx`, `ChatCommandPopover.tsx`, `ChatProviderSelect.tsx`, `CopilotInitBanner.tsx`, `CopilotInitModal.tsx`, `ChatWaveStepper.tsx`, `chat.css`
 - **Visual Design & Responsive Architecture**:
+  - **Flexbox Column Layout & Anti-Overlap Stacking (`.chat-main-pane`, `chat.css`)**:
+    - Replaced rigid 3-row CSS Grid with a resilient, dynamic Flexbox column (`display: flex; flex-direction: column; height: 100%; min-width: 0; overflow: hidden;`).
+    - Configured `.messages` with `flex: 1 1 0%; min-height: 0; overflow-y: auto;` guaranteeing it naturally occupies all remaining vertical space and scrolls smoothly.
+    - Explicitly locked `shrink-0` / `flex-shrink: 0;` on `.chat-header` (49px), `<CopilotInitBanner />`, `<ChatWaveStepper />`, `aiTrace` banner, and `.composer-wrapper` to prevent vertical squishing, clipping, or overlapping between dynamic banners.
   - **Dual Dimension Modes & Drag Sash**: Resized along the left sash (`ResizeSash.tsx`) using cumulative drag tracking (`dragWidthRef`):
     - **Normal Mode (Sessions closed)**: Default width **340px**, minimum width **300px**, maximum width **600px**, auto-collapse threshold **< 180px**.
     - **Expanded Mode (Sessions open)**: Default width **500px**, minimum width **480px**, maximum width **600px**, auto-collapse threshold **< 320px**.
@@ -293,12 +297,22 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
   - **Setup Needed Guard (`ChatComposer.tsx`)**:
     - Complete provider credential verification across all 5 supported providers (`claude`, `openai`, `gemini`, `openrouter`, `opencode`).
     - Warning badge (`Icon name="warning"`) displayed when active provider lacks credentials, linking directly to Settings Modal.
-  - **Multi-line Textarea Composer**: Resilient composer with model badge, attachment triggers, and submit button fitting cleanly at 300px minimum width.
+  - **Proactive Copilot Onboarding Banner (`CopilotInitBanner.tsx`, `ChatDrawer.tsx`)**:
+    - **Contextual Onboarding Pill**: Dynamically rendered beneath `ChatHeader` when `isCopilotInitialized === false`. Styled with Tailwind v4 semantic tokens (`bg-accent/10 border-b border-accent/25`).
+    - **1-Click Launch**: Features a direct **Initialize** CTA button that opens the `CopilotInitModal`.
+  - **Copilot Workspace Initialization Modal (`CopilotInitModal.tsx`)**:
+    - **Persona Selection**: Interactive preset selector supporting **Kanna** (Creative & Friendly anime companion), **Senior Architect** (Formal & Structured), and **Minimalist Hacker** (Direct & Lean).
+    - **Sync with Detected Rules**: Pre-selects the active persona detected by backend heuristics from existing `AGENTS.md` content.
+    - **Interactive Options**: Toggles for adding `.aegis/tasks/` to `.gitignore`, scaffolding initial welcome task (`001-welcome`), overwriting existing rules, and optional custom directives.
+    - **Atomic Submission**: Calls `initWorkspaceCopilot` (`POST /api/v1/agent/init-workspace`), refreshes workspace state, and closes cleanly with a feedback toast.
+  - **Contextual `/plan` & `/goal` Interception (`ChatComposer.tsx`)**:
+    - When an uninitialized workspace attempts to submit autonomous commands like `/plan` or `/goal`, `ChatComposer` intercepts submission, shows a guidance toast, and automatically opens `CopilotInitModal` to ensure `.aegis/` is scaffolded before autonomous workflows execute.
   - **Aegis Copilot Autonomous Wave Stepper (`ChatWaveStepper.tsx`, `ChatDrawer.tsx`)**:
-    - **Ultra-Compact Status Track**: Rendered directly beneath `ChatHeader` inside `ChatDrawer.tsx` as a slim ~32px horizontal bar.
+    - **Ultra-Compact Status Track**: Rendered directly beneath `ChatHeader` (or `CopilotInitBanner`) inside `ChatDrawer.tsx` as a slim ~32px horizontal bar declared with `shrink-0`.
     - **Real-Time Wave Chips**: Displays current autonomous task title with dynamic progress chips (`PASSED`, `IN_PROGRESS`, `PENDING`, `BLOCKED`) reacting to EventHub SSE topic `"copilot"`.
     - **Quick File Launchers**: Provides instantaneous links (`[Spec]`, `[Plan]`, `[Log]`) opening `.aegis/tasks/<task-slug>/` markdown files directly into active workbench editor panes via `openFileInGroup(...)`.
     - **Zero-Emoji Architecture**: Uses standard `<Icon name="..." />` primitives for all state indicators (e.g. `check`, `play`, `circle`).
+
 
 ### 7. Status Bar (`status-bar/`)
 - **Path**: [`src/components/layout/status-bar/`](../../src/components/layout/status-bar)
@@ -330,20 +344,21 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
 
 ### 8. Settings Overlay (`settings/`)
 - **Path**: [`src/components/layout/settings/`](../../src/components/layout/settings)
-- **Primary Components**: `SettingsModal.tsx`, `settingsRegistry.ts`, `settings-modal.css`
+- **Primary Components**: `SettingsModal.tsx`, `SettingsView.tsx`, `AISettingsPane.tsx`, `AIProvidersCard.tsx`, `AIModelsTable.tsx`, `AgentRulesCard.tsx`, `FolderBrowserModal.tsx`, `settingsRegistry.ts`, `settings-modal.css`
 - **Visual Design**:
-  - Modal overlay with dimmed backdrop.
+  - Modal overlay with dimmed backdrop and dedicated standalone view support (`SettingsView.tsx`).
   - Two-column VS Code-style preferences: Left category rail (Editor, Files, Workbench, Terminal, Features, Companion, AI Agent) and right settings card list.
   - Top search input with instant regex filtering across all settings options.
-  - **AI Agent Settings & Models Management**:
-    - Unified multi-provider cards for Antigravity, Claude, OpenCode, and OpenRouter.
+  - **AI Agent Settings & Models Management (`AISettingsPane.tsx`)**:
+    - **Aegis Copilot Workspace Setup Card**: Rendered prominently at the top of the AI Agent settings tab. Displays real-time workspace initialization status pill (`Initialized` with green dot or `Not Initialized` with amber dot) linked to `GET /api/v1/agent/workspace-status`. Features a direct one-click launcher button opening `CopilotInitModal` to scaffold guidelines and task tracking on-demand.
+    - Unified multi-provider cards for Antigravity, Claude, OpenCode, and OpenRouter (`AIProvidersCard.tsx`).
     - **Antigravity Auto-Discovery Card**: Auto-detected via `~/.gemini/oauth_creds.json` and brain workspace, with 1-line concise hint and live sub-60ms connection probe.
-    - **Custom Models Tag Chips**: Interactive pills allowing adding and deleting arbitrary custom model IDs per provider (`+ Add` / `✕`).
+    - **Custom Models Tag Chips & Table (`AIModelsTable.tsx`)**: Interactive pills and table allowing adding, testing, and deleting arbitrary custom model IDs per provider (`+ Add` / `✕`).
     - **Live Connection Test**: Real-time test probe buttons measuring round-trip latency (ms) with spinner and status tooltips.
   - **Workspace Rules & Persona Card (`AgentRulesCard.tsx`)**:
     - Embedded within the AI Agent settings category to manage `.aegis/` directives and root `AGENTS.md`.
-    - **Live Status Badge**: Detects workspace state dynamically via `GET /api/v1/agent/rules-status`, rendering `Active (Workspace Override)` with `<Icon name="check" />` if `AGENTS.md` exists, or `Using Built-in Defaults` with `<Icon name="sparkle" />`.
-    - **Preset Selector Dropdown**: Styled `<select>` dropdown with custom `<Icon name="chevron-down" />` supporting multiple persona presets (Kanna, Senior Architect, Minimalist).
+    - **Live Status & Persona Detection**: Detects workspace state dynamically via `GET /api/v1/agent/rules-status`, inspecting file content to accurately display the active persona badge (`Kanna`, `Senior Architect`, `Minimalist Hacker`, or `Custom`) rather than defaulting to generic "custom".
+    - **Preset Selector Dropdown**: Styled `<select>` dropdown with custom `<Icon name="chevron-down" />` supporting multiple persona presets (Kanna, Senior Architect, Minimalist), auto-synced with detected persona.
     - **Editable Markdown Preview Box**: Controlled monospace `<textarea>` with real-time `Modified` badge and contextual `Reset to default` action (`<Icon name="history" />`).
     - **1-Click Workspace File Creation & Save**:
       - `Copy Template`: Copies customized textarea contents to clipboard.
