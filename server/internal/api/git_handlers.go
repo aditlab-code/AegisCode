@@ -2,7 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
 )
 
@@ -322,7 +324,13 @@ func (s *Server) handleGitTagCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.git.CreateTag(r.Context(), req.Name, req.Message); err != nil {
+	var err error
+	if req.Target != "" {
+		err = s.git.CreateTag(r.Context(), req.Name, req.Message, req.Target)
+	} else {
+		err = s.git.CreateTag(r.Context(), req.Name, req.Message)
+	}
+	if err != nil {
 		jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -404,4 +412,161 @@ func (s *Server) handleGitAddRemote(w http.ResponseWriter, r *http.Request) {
 
 	jsonResponse(w, http.StatusOK, GitOperationResponse{Status: "ok"})
 }
+
+func (s *Server) handleGitStashes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	stashes, err := s.git.GetStashes(r.Context())
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, StashesResponse{Stashes: stashes})
+}
+
+func (s *Server) handleGitStashSave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req StashSaveRequest
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	if err := s.git.StashSave(r.Context(), req.Message, req.Untracked); err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, GitOperationResponse{Status: "ok"})
+}
+
+func (s *Server) handleGitStashPop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req StashActionRequest
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	if err := s.git.StashPop(r.Context(), req.Ref); err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, GitOperationResponse{Status: "ok"})
+}
+
+func (s *Server) handleGitStashApply(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req StashActionRequest
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	if err := s.git.StashApply(r.Context(), req.Ref); err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, GitOperationResponse{Status: "ok"})
+}
+
+func (s *Server) handleGitStashDrop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req StashActionRequest
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	if err := s.git.StashDrop(r.Context(), req.Ref); err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, GitOperationResponse{Status: "ok"})
+}
+
+func (s *Server) handleGitCherryPick(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req CherryPickRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	if err := s.git.CherryPick(r.Context(), req.Hash); err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	jsonResponse(w, http.StatusOK, GitOperationResponse{Status: "ok"})
+}
+
+func (s *Server) handleGitClone(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req CloneRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+
+	clonedPath, err := s.git.Clone(r.Context(), req.URL, req.TargetPath)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	name := filepath.Base(clonedPath)
+	if req.OpenWorkspace && s.ws != nil {
+		if absPath, setErr := s.ws.SetRoot(clonedPath); setErr == nil {
+			_, name = s.ws.GetRoot()
+			s.BroadcastLog("Server", fmt.Sprintf("Mounted cloned workspace root: %s (%s)", absPath, name), "info")
+			if s.store != nil {
+				_ = s.store.AddRecentProject(absPath)
+			}
+			if s.lsp != nil {
+				s.lsp.SetWorkspace(absPath)
+			}
+			if s.codegraph != nil {
+				_ = s.codegraph.SetWorkspace(absPath)
+			}
+			if s.mcp != nil {
+				s.mcp.SetWorkspace(absPath)
+			}
+		}
+	}
+
+	jsonResponse(w, http.StatusOK, CloneResponse{
+		Status:   "ok",
+		RootPath: clonedPath,
+		Name:     name,
+	})
+}
+
 

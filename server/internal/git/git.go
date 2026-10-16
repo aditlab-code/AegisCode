@@ -75,6 +75,14 @@ type UnlockResult struct {
 	Message  string   `json:"message,omitempty"`
 }
 
+// StashEntry models a git stash record.
+type StashEntry struct {
+	Index     int    `json:"index"`
+	Ref       string `json:"ref"`
+	Message   string `json:"message"`
+	Timestamp string `json:"timestamp"`
+}
+
 // Service provides native Git CLI operations on the active workspace root.
 type Service struct {
 	ws *workspace.Manager
@@ -690,7 +698,7 @@ func (s *Service) GetTimeline(ctx context.Context, relPath string, limit int) ([
 
 			nodes = append(nodes, CommitNode{
 				ID:        parts[1],
-				Hash:      parts[1],
+				Hash:      parts[0],
 				ShortHash: parts[1],
 				Author:    parts[2],
 				Email:     parts[3],
@@ -907,19 +915,24 @@ func (s *Service) GetTags(ctx context.Context) ([]string, error) {
 	return tags, nil
 }
 
-// CreateTag creates a new git tag at HEAD.
-func (s *Service) CreateTag(ctx context.Context, name string, message string) error {
+// CreateTag creates a new git tag at HEAD or a specified commit.
+func (s *Service) CreateTag(ctx context.Context, name string, message string, target ...string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return errors.New("tag name cannot be empty")
 	}
 
+	args := []string{"tag"}
 	if message != "" {
-		_, err := s.runGit(ctx, "tag", "-a", name, "-m", message)
-		return err
+		args = append(args, "-a", name, "-m", message)
+	} else {
+		args = append(args, name)
+	}
+	if len(target) > 0 && strings.TrimSpace(target[0]) != "" {
+		args = append(args, strings.TrimSpace(target[0]))
 	}
 
-	_, err := s.runGit(ctx, "tag", name)
+	_, err := s.runGit(ctx, args...)
 	return err
 }
 
@@ -1043,4 +1056,154 @@ func (s *Service) GetDiff(ctx context.Context, relPath string, staged bool, comm
 		Original: origContent,
 		Modified: modContent,
 	}, nil
+}
+
+// GetStashes returns all git stashes in the active repository.
+func (s *Service) GetStashes(ctx context.Context) ([]StashEntry, error) {
+	out, err := s.runGit(ctx, "stash", "list", "--pretty=format:%gd|%cr|%gs")
+	if err != nil {
+		if strings.Contains(err.Error(), "does not have any commits") || strings.Contains(err.Error(), "fatal:") {
+			return []StashEntry{}, nil
+		}
+		return nil, err
+	}
+
+	stashes := make([]StashEntry, 0)
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	for idx, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		ref := fmt.Sprintf("stash@{%d}", idx)
+		timestamp := ""
+		msg := line
+		if len(parts) >= 1 && strings.TrimSpace(parts[0]) != "" {
+			ref = strings.TrimSpace(parts[0])
+		}
+		if len(parts) >= 2 {
+			timestamp = strings.TrimSpace(parts[1])
+		}
+		if len(parts) >= 3 {
+			msg = strings.TrimSpace(parts[2])
+		} else if len(parts) == 1 {
+			msg = ref
+		}
+		stashes = append(stashes, StashEntry{
+			Index:     idx,
+			Ref:       ref,
+			Message:   msg,
+			Timestamp: timestamp,
+		})
+	}
+	return stashes, nil
+}
+
+// StashSave saves current changes into a new stash with optional message.
+func (s *Service) StashSave(ctx context.Context, message string, includeUntracked bool) error {
+	args := []string{"stash", "push"}
+	if includeUntracked {
+		args = append(args, "-u")
+	}
+	message = strings.TrimSpace(message)
+	if message != "" {
+		args = append(args, "-m", message)
+	}
+	_, err := s.runGit(ctx, args...)
+	return err
+}
+
+// StashPop pops changes from stash (defaults to stash@{0} if ref is empty).
+func (s *Service) StashPop(ctx context.Context, ref string) error {
+	ref = strings.TrimSpace(ref)
+	args := []string{"stash", "pop"}
+	if ref != "" {
+		args = append(args, ref)
+	}
+	_, err := s.runGit(ctx, args...)
+	return err
+}
+
+// StashApply applies changes from stash without dropping it.
+func (s *Service) StashApply(ctx context.Context, ref string) error {
+	ref = strings.TrimSpace(ref)
+	args := []string{"stash", "apply"}
+	if ref != "" {
+		args = append(args, ref)
+	}
+	_, err := s.runGit(ctx, args...)
+	return err
+}
+
+// StashDrop drops a specific stash.
+func (s *Service) StashDrop(ctx context.Context, ref string) error {
+	ref = strings.TrimSpace(ref)
+	args := []string{"stash", "drop"}
+	if ref != "" {
+		args = append(args, ref)
+	}
+	_, err := s.runGit(ctx, args...)
+	return err
+}
+
+// CherryPick applies the changes from an existing commit onto the current HEAD.
+func (s *Service) CherryPick(ctx context.Context, hash string) error {
+	hash = strings.TrimSpace(hash)
+	if hash == "" {
+		return errors.New("commit hash cannot be empty")
+	}
+	_, err := s.runGit(ctx, "cherry-pick", hash)
+	return err
+}
+
+// Clone clones a git repository from url into targetDir and returns the absolute destination path.
+func (s *Service) Clone(ctx context.Context, url string, targetDir string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	url = strings.TrimSpace(url)
+	if url == "" {
+		return "", errors.New("repository URL cannot be empty")
+	}
+
+	targetDir = strings.TrimSpace(targetDir)
+	if targetDir == "" {
+		base := filepath.Base(url)
+		base = strings.TrimSuffix(base, ".git")
+		if base == "" || base == "/" || base == "." {
+			base = "cloned-repo"
+		}
+		root, err := s.root()
+		if err == nil && root != "" {
+			targetDir = filepath.Join(root, base)
+		} else {
+			targetDir = base
+		}
+	}
+
+	absTarget, err := filepath.Abs(targetDir)
+	if err != nil {
+		return "", err
+	}
+
+	parentDir := filepath.Dir(absTarget)
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create destination directory: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "clone", url, absTarget)
+	cmd.Dir = parentDir
+	var errBuf bytes.Buffer
+	cmd.Stderr = &errBuf
+
+	if err := cmd.Run(); err != nil {
+		errMsg := strings.TrimSpace(errBuf.String())
+		if errMsg != "" {
+			return "", fmt.Errorf("git clone failed: %s", errMsg)
+		}
+		return "", fmt.Errorf("git clone failed: %w", err)
+	}
+
+	return absTarget, nil
 }

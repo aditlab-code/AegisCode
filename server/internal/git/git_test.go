@@ -386,3 +386,193 @@ func TestGitService_NilWorkspaceGuard(t *testing.T) {
 	}
 }
 
+func TestGitService_StashOperations(t *testing.T) {
+	tempDir, _, svc := setupTestGitRepo(t)
+	defer os.RemoveAll(tempDir)
+
+	ctx := context.Background()
+
+	// Initial commit so repository is in valid git state
+	f := filepath.Join(tempDir, "stash-test.txt")
+	_ = os.WriteFile(f, []byte("initial\n"), 0644)
+	_ = svc.Stage(ctx, nil, true)
+	_, err := svc.Commit(ctx, "initial commit", false)
+	if err != nil {
+		t.Fatalf("failed initial commit: %v", err)
+	}
+
+	// Make modifications
+	_ = os.WriteFile(f, []byte("modified before stash\n"), 0644)
+
+	// Save stash
+	err = svc.StashSave(ctx, "work in progress test", true)
+	if err != nil {
+		t.Fatalf("StashSave failed: %v", err)
+	}
+
+	// Verify working tree restored
+	data, _ := os.ReadFile(f)
+	if string(data) != "initial\n" {
+		t.Errorf("expected working directory clean after stash, got %q", string(data))
+	}
+
+	// List stashes
+	stashes, err := svc.GetStashes(ctx)
+	if err != nil {
+		t.Fatalf("GetStashes failed: %v", err)
+	}
+	if len(stashes) == 0 {
+		t.Fatalf("expected at least 1 stash, got 0")
+	}
+	if stashes[0].Ref != "stash@{0}" {
+		t.Errorf("expected stash@{0}, got %s", stashes[0].Ref)
+	}
+
+	// Pop stash
+	err = svc.StashPop(ctx, "")
+	if err != nil {
+		t.Fatalf("StashPop failed: %v", err)
+	}
+
+	dataAfterPop, _ := os.ReadFile(f)
+	if string(dataAfterPop) != "modified before stash\n" {
+		t.Errorf("expected modified content restored after pop, got %q", string(dataAfterPop))
+	}
+}
+
+func TestGitService_CherryPickAndTargetTag(t *testing.T) {
+	tempDir, _, svc := setupTestGitRepo(t)
+	defer os.RemoveAll(tempDir)
+
+	ctx := context.Background()
+
+	// Commit on main
+	fileMain := filepath.Join(tempDir, "main.txt")
+	_ = os.WriteFile(fileMain, []byte("main 1\n"), 0644)
+	_ = svc.Stage(ctx, nil, true)
+	c1, err := svc.Commit(ctx, "commit 1", false)
+	if err != nil {
+		t.Fatalf("commit 1 failed: %v", err)
+	}
+
+	// Create tag targeting c1
+	err = svc.CreateTag(ctx, "v1.0.0", "Release 1.0", c1.Hash)
+	if err != nil {
+		t.Fatalf("CreateTag with target commit failed: %v", err)
+	}
+	tags, err := svc.GetTags(ctx)
+	if err != nil || len(tags) == 0 || tags[0] != "v1.0.0" {
+		t.Fatalf("expected tag v1.0.0, got %v", tags)
+	}
+
+	// Create feature branch
+	err = svc.CreateBranch(ctx, "feature", true)
+	if err != nil {
+		t.Fatalf("CreateBranch failed: %v", err)
+	}
+	fileFeat := filepath.Join(tempDir, "feature.txt")
+	_ = os.WriteFile(fileFeat, []byte("feature work\n"), 0644)
+	_ = svc.Stage(ctx, nil, true)
+	cFeat, err := svc.Commit(ctx, "feat commit", false)
+	if err != nil {
+		t.Fatalf("feature commit failed: %v", err)
+	}
+
+	// Checkout main
+	err = svc.CheckoutBranch(ctx, "main")
+	if err != nil {
+		t.Fatalf("checkout main failed: %v", err)
+	}
+
+	// Cherry-pick feat commit onto main
+	err = svc.CherryPick(ctx, cFeat.Hash)
+	if err != nil {
+		t.Fatalf("CherryPick failed: %v", err)
+	}
+
+	// Verify feature file exists on main now
+	if _, err := os.Stat(fileFeat); os.IsNotExist(err) {
+		t.Errorf("expected cherry-picked feature file to exist on main")
+	}
+}
+
+func TestGitService_Clone(t *testing.T) {
+	sourceDir, _, svcSource := setupTestGitRepo(t)
+	defer os.RemoveAll(sourceDir)
+
+	ctx := context.Background()
+
+	file1 := filepath.Join(sourceDir, "README.md")
+	_ = os.WriteFile(file1, []byte("# Aegis Clone Test\n"), 0644)
+	_ = svcSource.Stage(ctx, nil, true)
+	_, _ = svcSource.Commit(ctx, "init readme", false)
+
+	destDir, err := os.MkdirTemp("", "aegis-clone-dest-*")
+	if err != nil {
+		t.Fatalf("temp dir err: %v", err)
+	}
+	defer os.RemoveAll(destDir)
+
+	cloneTarget := filepath.Join(destDir, "cloned-repo")
+	resultPath, err := svcSource.Clone(ctx, sourceDir, cloneTarget)
+	if err != nil {
+		t.Fatalf("Clone failed: %v", err)
+	}
+
+	if resultPath != cloneTarget {
+		t.Errorf("expected resultPath %s, got %s", cloneTarget, resultPath)
+	}
+
+	clonedReadme := filepath.Join(cloneTarget, "README.md")
+	if _, err := os.Stat(clonedReadme); os.IsNotExist(err) {
+		t.Errorf("expected cloned README.md to exist")
+	}
+}
+
+func TestGitService_GetTimeline(t *testing.T) {
+	tempDir, _, svc := setupTestGitRepo(t)
+	defer os.RemoveAll(tempDir)
+
+	ctx := context.Background()
+
+	file1 := filepath.Join(tempDir, "timeline.txt")
+	_ = os.WriteFile(file1, []byte("line 1\n"), 0644)
+	_ = svc.Stage(ctx, nil, true)
+	_, err := svc.Commit(ctx, "commit 1 for timeline", false)
+	if err != nil {
+		t.Fatalf("Commit 1 failed: %v", err)
+	}
+
+	_ = os.WriteFile(file1, []byte("line 1\nline 2\n"), 0644)
+	_ = svc.Stage(ctx, nil, true)
+	_, err = svc.Commit(ctx, "commit 2 for timeline", false)
+	if err != nil {
+		t.Fatalf("Commit 2 failed: %v", err)
+	}
+
+	timeline, err := svc.GetTimeline(ctx, "timeline.txt", 10)
+	if err != nil {
+		t.Fatalf("GetTimeline failed: %v", err)
+	}
+
+	if len(timeline) != 2 {
+		t.Fatalf("expected 2 commits in timeline, got %d", len(timeline))
+	}
+
+	headNode := timeline[0]
+	if len(headNode.Hash) != 40 {
+		t.Errorf("expected Hash to be full SHA-1 (40 chars), got %s (len %d)", headNode.Hash, len(headNode.Hash))
+	}
+	if len(headNode.ShortHash) != 7 {
+		t.Errorf("expected ShortHash to be 7 chars, got %s (len %d)", headNode.ShortHash, len(headNode.ShortHash))
+	}
+	if !headNode.IsHead {
+		t.Errorf("expected first commit in timeline to be IsHead")
+	}
+	if headNode.Message != "commit 2 for timeline" {
+		t.Errorf("expected message 'commit 2 for timeline', got '%s'", headNode.Message)
+	}
+}
+
+
+

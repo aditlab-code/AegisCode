@@ -6,6 +6,8 @@ import type {
   GitCompareResult,
   GitRepo,
   GitStatusData,
+  GitStashEntry,
+  GitCloneResult,
 } from "../types/workbench"
 
 export interface WorkspaceInfo {
@@ -758,11 +760,15 @@ export async function fetchGitTags(): Promise<string[]> {
   return data.tags || []
 }
 
-export async function createGitTag(name: string, message = ""): Promise<void> {
+export async function createGitTag(
+  name: string,
+  message = "",
+  target = "",
+): Promise<void> {
   const res = await fetch(`${API_BASE}/api/v1/git/tag`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, message }),
+    body: JSON.stringify({ name, message, target }),
   })
   if (!res.ok) {
     throw new Error(await parseResponseError(res, "Failed to create tag"))
@@ -790,6 +796,91 @@ export async function addGitRemote(
   if (!res.ok) {
     throw new Error(await parseResponseError(res, "Failed to add remote"))
   }
+}
+
+export async function fetchGitStashes(): Promise<GitStashEntry[]> {
+  const res = await fetch(`${API_BASE}/api/v1/git/stashes`)
+  if (!res.ok) {
+    throw new Error(await parseResponseError(res, "Failed to fetch stashes"))
+  }
+  const data = await res.json()
+  return data.stashes || []
+}
+
+export async function saveGitStash(
+  message = "",
+  untracked = true,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/v1/git/stash/save`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, untracked }),
+  })
+  if (!res.ok) {
+    throw new Error(await parseResponseError(res, "Failed to save stash"))
+  }
+}
+
+export async function popGitStash(ref = ""): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/v1/git/stash/pop`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ref }),
+  })
+  if (!res.ok) {
+    throw new Error(await parseResponseError(res, "Failed to pop stash"))
+  }
+}
+
+export async function applyGitStash(ref = ""): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/v1/git/stash/apply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ref }),
+  })
+  if (!res.ok) {
+    throw new Error(await parseResponseError(res, "Failed to apply stash"))
+  }
+}
+
+export async function dropGitStash(ref = ""): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/v1/git/stash/drop`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ref }),
+  })
+  if (!res.ok) {
+    throw new Error(await parseResponseError(res, "Failed to drop stash"))
+  }
+}
+
+export async function cherryPickGitCommit(hash: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/v1/git/cherry-pick`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ hash }),
+  })
+  if (!res.ok) {
+    throw new Error(
+      await parseResponseError(res, "Failed to cherry-pick commit"),
+    )
+  }
+}
+
+export async function cloneGitRepo(
+  url: string,
+  targetPath = "",
+  openWorkspace = true,
+): Promise<GitCloneResult> {
+  const res = await fetch(`${API_BASE}/api/v1/git/clone`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, targetPath, openWorkspace }),
+  })
+  if (!res.ok) {
+    throw new Error(await parseResponseError(res, "Failed to clone repository"))
+  }
+  return res.json()
 }
 
 export async function fetchGitDiff(

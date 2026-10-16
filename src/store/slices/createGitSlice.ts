@@ -6,6 +6,7 @@ import type {
   GitCompareResult,
   GitRepo,
   GitUser,
+  GitStashEntry,
 } from "../../types/workbench"
 import {
   addGitRemote,
@@ -29,6 +30,13 @@ import {
   syncGit,
   unlockGitRepo,
   unstageGitFiles,
+  fetchGitStashes,
+  saveGitStash,
+  popGitStash,
+  applyGitStash,
+  dropGitStash,
+  cherryPickGitCommit,
+  cloneGitRepo,
 } from "../../utils/workspaceApi"
 import { makeGitDiffTab } from "../../utils/gitDiffTab"
 import type { GitSlice, SliceCreator } from "../types"
@@ -101,6 +109,8 @@ export const createGitSlice: SliceCreator<GitSlice> = (set, get) => {
     setGitCommits: (gitCommits: GitCommitNode[]) => set({ gitCommits }),
     gitBranches: [],
     gitTags: [],
+    gitStashes: [],
+    isLoadingStashes: false,
     gitProfile: { name: "", email: "" },
     ahead: 0,
     behind: 0,
@@ -137,6 +147,7 @@ export const createGitSlice: SliceCreator<GitSlice> = (set, get) => {
             gitCommits: [],
             gitBranches: [],
             gitTags: [],
+            gitStashes: [],
             ahead: 0,
             behind: 0,
             upstream: "",
@@ -171,11 +182,12 @@ export const createGitSlice: SliceCreator<GitSlice> = (set, get) => {
           ],
         })
 
-        const [branchesResult, logResult, tagsResult] =
+        const [branchesResult, logResult, tagsResult, stashesResult] =
           await Promise.allSettled([
             fetchGitBranches(),
             fetchGitLog(50),
             fetchGitTags(),
+            fetchGitStashes(),
           ])
 
         const updates: Partial<GitSlice> = {}
@@ -187,6 +199,9 @@ export const createGitSlice: SliceCreator<GitSlice> = (set, get) => {
         }
         if (tagsResult.status === "fulfilled") {
           updates.gitTags = tagsResult.value
+        }
+        if (stashesResult.status === "fulfilled") {
+          updates.gitStashes = stashesResult.value
         }
         set(updates)
       } catch (err: unknown) {
@@ -466,9 +481,9 @@ export const createGitSlice: SliceCreator<GitSlice> = (set, get) => {
       }
     },
 
-    createTag: async (name: string) => {
+    createTag: async (name: string, message = "", target = "") => {
       try {
-        await createGitTag(name, "")
+        await createGitTag(name, message, target)
         get().showToast?.(`Created tag "${name}"`)
         await get().refreshGit()
         return true
@@ -476,6 +491,136 @@ export const createGitSlice: SliceCreator<GitSlice> = (set, get) => {
         const msg = err instanceof Error ? err.message : String(err)
         get().showToast?.(`Tag failed: ${msg}`)
         return false
+      }
+    },
+
+    cherryPickCommit: async (hash: string) => {
+      set({ isOperatingGit: true })
+      try {
+        await cherryPickGitCommit(hash)
+        get().showToast?.(`Cherry-picked commit [${hash.slice(0, 7)}]`)
+        await get().refreshGit()
+        if (typeof get().refreshWorkspace === "function") {
+          await get().refreshWorkspace()
+        }
+        return true
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        get().showToast?.(`Cherry-pick failed: ${msg}`)
+        return false
+      } finally {
+        set({ isOperatingGit: false })
+      }
+    },
+
+    cloneRepo: async (url: string, targetPath = "", openWorkspace = true) => {
+      set({ isOperatingGit: true })
+      try {
+        const res = await cloneGitRepo(url, targetPath, openWorkspace)
+        get().showToast?.(`Cloned repository successfully into ${res.name}`)
+        if (openWorkspace && res.rootPath) {
+          if (typeof get().openRootFolder === "function") {
+            await get().openRootFolder(res.rootPath)
+          }
+        }
+        await get().refreshGit()
+        return true
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        get().showToast?.(`Clone failed: ${msg}`)
+        return false
+      } finally {
+        set({ isOperatingGit: false })
+      }
+    },
+
+    fetchStashes: async () => {
+      set({ isLoadingStashes: true })
+      try {
+        const stashes = await fetchGitStashes()
+        set({ gitStashes: stashes })
+        return stashes
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        get().showToast?.(`Failed to fetch stashes: ${msg}`)
+        return []
+      } finally {
+        set({ isLoadingStashes: false })
+      }
+    },
+
+    stashSave: async (message = "", untracked = true) => {
+      set({ isOperatingGit: true })
+      try {
+        await saveGitStash(message, untracked)
+        get().showToast?.(
+          message ? `Stashed changes: "${message}"` : "Stashed current changes",
+        )
+        await get().refreshGit()
+        if (typeof get().refreshWorkspace === "function") {
+          await get().refreshWorkspace()
+        }
+        return true
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        get().showToast?.(`Stash failed: ${msg}`)
+        return false
+      } finally {
+        set({ isOperatingGit: false })
+      }
+    },
+
+    stashPop: async (ref = "") => {
+      set({ isOperatingGit: true })
+      try {
+        await popGitStash(ref)
+        get().showToast?.(`Popped ${ref || "latest stash"}`)
+        await get().refreshGit()
+        if (typeof get().refreshWorkspace === "function") {
+          await get().refreshWorkspace()
+        }
+        return true
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        get().showToast?.(`Stash pop failed: ${msg}`)
+        return false
+      } finally {
+        set({ isOperatingGit: false })
+      }
+    },
+
+    stashApply: async (ref = "") => {
+      set({ isOperatingGit: true })
+      try {
+        await applyGitStash(ref)
+        get().showToast?.(`Applied ${ref || "latest stash"}`)
+        await get().refreshGit()
+        if (typeof get().refreshWorkspace === "function") {
+          await get().refreshWorkspace()
+        }
+        return true
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        get().showToast?.(`Stash apply failed: ${msg}`)
+        return false
+      } finally {
+        set({ isOperatingGit: false })
+      }
+    },
+
+    stashDrop: async (ref = "") => {
+      set({ isOperatingGit: true })
+      try {
+        await dropGitStash(ref)
+        get().showToast?.(`Dropped ${ref || "stash"}`)
+        await get().refreshGit()
+        return true
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        get().showToast?.(`Stash drop failed: ${msg}`)
+        return false
+      } finally {
+        set({ isOperatingGit: false })
       }
     },
 

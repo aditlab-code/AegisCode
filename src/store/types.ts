@@ -27,6 +27,7 @@ import type {
   GitCompareResult,
   GitRepo,
   GitUser,
+  GitStashEntry,
   LinterSettings,
   MinimapScale,
   NotificationItem,
@@ -311,6 +312,8 @@ export interface GitSlice {
   setGitCommits: (commits: GitCommitNode[]) => void
   gitBranches: GitBranch[]
   gitTags: string[]
+  gitStashes: GitStashEntry[]
+  isLoadingStashes: boolean
   gitProfile: GitUser
   ahead: number
   behind: number
@@ -332,8 +335,19 @@ export interface GitSlice {
   unstageAllChanges: () => Promise<boolean>
   discardChange: (file: string) => Promise<void>
   discardAllChanges: () => Promise<boolean>
-  commitChanges: (msg: string) => Promise<boolean>
+  commitChanges: (msg: string, autoStage?: boolean) => Promise<boolean>
   checkoutCommit: (hash: string) => Promise<boolean>
+  cherryPickCommit: (hash: string) => Promise<boolean>
+  cloneRepo: (
+    url: string,
+    targetPath?: string,
+    openWorkspace?: boolean,
+  ) => Promise<boolean>
+  fetchStashes: () => Promise<GitStashEntry[]>
+  stashSave: (message?: string, untracked?: boolean) => Promise<boolean>
+  stashPop: (ref?: string) => Promise<boolean>
+  stashApply: (ref?: string) => Promise<boolean>
+  stashDrop: (ref?: string) => Promise<boolean>
   compareBaseCommit: string | null
   compareTargetCommit: string | null
   compareResult: GitCompareResult | null
@@ -344,7 +358,11 @@ export interface GitSlice {
   gitPull: () => Promise<boolean>
   gitPush: () => Promise<boolean>
   gitSync: () => Promise<boolean>
-  createTag: (name: string) => Promise<boolean>
+  createTag: (
+    name: string,
+    message?: string,
+    target?: string,
+  ) => Promise<boolean>
   pushTags: () => Promise<boolean>
   addRemote: (name: string, url: string) => Promise<boolean>
   fetchDiff: (

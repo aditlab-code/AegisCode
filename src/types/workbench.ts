@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 
-export type IconName = "aegis" | "arrow-down" | "arrow-up" | "bell" | "branch" | "check" | "chevron" | "chevron-down" | "chevron-up" | "close" | "close-all" | "code" | "copy" | "error" | "explorer" | "file" | "folder" | "git" | "history" | "layout" | "maximize" | "moon" | "more" | "panel" | "play" | "plus" | "refresh" | "search" | "send" | "settings" | "split" | "sun" | "symbol" | "terminal" | "trash" | "warning" | "edit" | "add" | "replace-all" | "cloud" | "sparkle" | "tag" | "discard" | "collapse-all" | "brain" | "debug" | "pause" | "step-over" | "step-into" | "step-out" | "stop" | "zoom-in" | "zoom-out" | "fit-screen" | "table" | "image" | "bold" | "italic" | "heading" | "list" | "link" | "eye" | "wrap-text" | "sidebar-left" | "sidebar-right" | "zap"
+export type IconName = "aegis" | "arrow-down" | "arrow-up" | "bell" | "branch" | "check" | "chevron" | "chevron-down" | "chevron-up" | "close" | "close-all" | "code" | "copy" | "error" | "explorer" | "file" | "folder" | "git" | "history" | "layout" | "maximize" | "moon" | "more" | "panel" | "play" | "plus" | "refresh" | "search" | "send" | "settings" | "split" | "sun" | "symbol" | "terminal" | "trash" | "warning" | "edit" | "add" | "replace-all" | "cloud" | "sparkle" | "tag" | "discard" | "collapse-all" | "brain" | "debug" | "pause" | "step-over" | "step-into" | "step-out" | "stop" | "zoom-in" | "zoom-out" | "fit-screen" | "table" | "image" | "bold" | "italic" | "heading" | "list" | "link" | "eye" | "wrap-text" | "sidebar-left" | "sidebar-right" | "zap" | "stash" | "cherry-pick"
 
 export type ThemeMode = "dark" | "light"
 export type ThemePaletteId = "default" | "atom" | "tokyo-night"
@@ -331,6 +331,19 @@ export interface GitCompareResult {
   targetCommit: string
   files: GitCompareChange[]
   totalChanges: number
+}
+
+export interface GitStashEntry {
+  index: number
+  ref: string
+  message: string
+  timestamp: string
+}
+
+export interface GitCloneResult {
+  status: string
+  rootPath: string
+  name: string
 }
 
 export interface GitChange {

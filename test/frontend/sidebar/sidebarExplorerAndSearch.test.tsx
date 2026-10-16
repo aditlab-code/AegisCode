@@ -244,4 +244,13 @@ describe("Track MP-3.2 (Sidebar Explorer & Search) Tests", () => {
       expect(html).toContain("Search across workspace files")
     })
   })
+
+  describe("SB-07: Explorer Timeline Refinement (Option 1)", () => {
+    it("renders Explorer Timeline header with refresh button and timeline section", () => {
+      const html = renderToString(<ExplorerPanel />)
+      expect(html).toContain("timeline-section")
+      expect(html).toContain("TIMELINE")
+      expect(html).toContain("Refresh Timeline")
+    })
+  })
 })

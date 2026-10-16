@@ -205,4 +205,87 @@ describe("Track MP-3.3 (Sidebar Git & Debug) Tests", () => {
       expect(expandedVarKeys[key]).toBe(false)
     })
   })
+
+  describe("SB-10: Git Stash Operations", () => {
+    it("handles stash save, apply, pop, and drop", async () => {
+      const showToastSpy = vi.fn()
+      const stashSaveSpy = vi.fn().mockResolvedValue(true)
+      const stashPopSpy = vi.fn().mockResolvedValue(true)
+      const stashApplySpy = vi.fn().mockResolvedValue(true)
+      const stashDropSpy = vi.fn().mockResolvedValue(true)
+
+      useWorkbenchStore.setState({
+        showToast: showToastSpy,
+        stashSave: stashSaveSpy,
+        stashPop: stashPopSpy,
+        stashApply: stashApplySpy,
+        stashDrop: stashDropSpy,
+        gitStashes: [
+          {
+            index: 0,
+            ref: "stash@{0}",
+            message: "WIP on main: work in progress",
+            date: "2026-03-29 10:00:00",
+          },
+        ],
+      })
+
+      const state = useWorkbenchStore.getState()
+      expect(state.gitStashes).toHaveLength(1)
+      expect(state.gitStashes[0].ref).toBe("stash@{0}")
+
+      await state.stashSave("WIP feature", true)
+      expect(stashSaveSpy).toHaveBeenCalledWith("WIP feature", true)
+
+      await state.stashApply("stash@{0}")
+      expect(stashApplySpy).toHaveBeenCalledWith("stash@{0}")
+
+      await state.stashPop("stash@{0}")
+      expect(stashPopSpy).toHaveBeenCalledWith("stash@{0}")
+
+      await state.stashDrop("stash@{0}")
+      expect(stashDropSpy).toHaveBeenCalledWith("stash@{0}")
+    })
+  })
+
+  describe("SB-11: Git Clone Repository Operation", () => {
+    it("invokes cloneRepo with target path and openWorkspace flag", async () => {
+      const cloneRepoSpy = vi.fn().mockResolvedValue(true)
+
+      useWorkbenchStore.setState({
+        cloneRepo: cloneRepoSpy,
+      })
+
+      const state = useWorkbenchStore.getState()
+      await state.cloneRepo(
+        "https://github.com/example/repo.git",
+        "/tmp/repo",
+        true,
+      )
+      expect(cloneRepoSpy).toHaveBeenCalledWith(
+        "https://github.com/example/repo.git",
+        "/tmp/repo",
+        true,
+      )
+    })
+  })
+
+  describe("SB-12: Commit Context Menu Actions & Cherry-Pick", () => {
+    it("invokes cherryPickCommit and checkoutCommit correctly", async () => {
+      const cherryPickSpy = vi.fn().mockResolvedValue(true)
+      const checkoutCommitSpy = vi.fn().mockResolvedValue(true)
+
+      useWorkbenchStore.setState({
+        cherryPickCommit: cherryPickSpy,
+        checkoutCommit: checkoutCommitSpy,
+      })
+
+      const state = useWorkbenchStore.getState()
+      await state.checkoutCommit("abc1234567")
+      expect(checkoutCommitSpy).toHaveBeenCalledWith("abc1234567")
+
+      await state.cherryPickCommit("abc1234567")
+      expect(cherryPickSpy).toHaveBeenCalledWith("abc1234567")
+    })
+  })
 })

@@ -298,6 +298,9 @@ export function ExplorerPanel() {
   const [timelineOpen, setTimelineOpen] = useState(false)
   const [timelineCommits, setTimelineCommits] = useState<GitCommitNode[]>([])
   const [timelineLoading, setTimelineLoading] = useState(false)
+  const [activeTimelineMenu, setActiveTimelineMenu] =
+    useState<GitCommitNode | null>(null)
+  const timelineMenuRef = useRef<HTMLDivElement>(null)
 
   const rawActiveFile =
     focusedGroup === "group1" ? group1.activeTab : group2.activeTab
@@ -313,38 +316,33 @@ export function ExplorerPanel() {
     )
     return match?.path || rawActiveFile
   }, [rawActiveFile, files])
-  useEffect(() => {
-    if (!timelineOpen || !isGitRepo) return
-    let isMounted = true
-    setTimelineLoading(true)
 
+  const loadTimelineData = useCallback(() => {
+    if (!isGitRepo) return
+    setTimelineLoading(true)
     fetchTimeline(activeEditorFile || "", timelineMaxVisible)
       .then((res) => {
-        if (isMounted) {
-          const list =
-            res.length > 0 ? res : gitCommits.slice(0, timelineMaxVisible)
-          setTimelineCommits(list.slice(0, timelineMaxVisible))
-          setTimelineLoading(false)
-        }
+        const list =
+          res.length > 0 ? res : gitCommits.slice(0, timelineMaxVisible)
+        setTimelineCommits(list.slice(0, timelineMaxVisible))
+        setTimelineLoading(false)
       })
       .catch(() => {
-        if (isMounted) {
-          setTimelineCommits(gitCommits.slice(0, timelineMaxVisible))
-          setTimelineLoading(false)
-        }
+        setTimelineCommits(gitCommits.slice(0, timelineMaxVisible))
+        setTimelineLoading(false)
       })
-
-    return () => {
-      isMounted = false
-    }
   }, [
     activeEditorFile,
     fetchTimeline,
     gitCommits,
     isGitRepo,
-    timelineOpen,
     timelineMaxVisible,
   ])
+
+  useEffect(() => {
+    if (!timelineOpen || !isGitRepo) return
+    loadTimelineData()
+  }, [timelineOpen, loadTimelineData, isGitRepo])
 
   // Drag and Drop target highlight state
   const [dragTarget, setDragTarget] = useState<string | null>(null)
@@ -377,18 +375,28 @@ export function ExplorerPanel() {
       ? group2.activeTab
       : group1.activeTab
 
-  // Close context menu on outside click, scroll, resize, or escape
+  // Close context menu and timeline menu on outside click, scroll, resize, or escape
   useEffect(() => {
     function handleDismiss(e: MouseEvent | Event) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setContextMenu(null)
       }
+      if (
+        timelineMenuRef.current &&
+        !timelineMenuRef.current.contains(e.target as Node)
+      ) {
+        setActiveTimelineMenu(null)
+      }
     }
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setContextMenu(null)
+      if (e.key === "Escape") {
+        setContextMenu(null)
+        setActiveTimelineMenu(null)
+      }
     }
     function handleWindowResize() {
       setContextMenu(null)
+      setActiveTimelineMenu(null)
     }
 
     window.addEventListener("click", handleDismiss)
@@ -1613,31 +1621,60 @@ export function ExplorerPanel() {
       </div>
 
       {/* TIMELINE Section */}
-      <div className="timeline-section">
-        <button
-          className="collapsed-section section-title-clickable"
-          onClick={() => setTimelineOpen((v) => !v)}
-          type="button"
-        >
-          <span
-            className={`chevron-arrow ${timelineOpen ? "chevron-open" : ""}`}
+      <div className="timeline-section" ref={timelineMenuRef}>
+        <div className="flex items-center justify-between px-3 py-1.5 hover:bg-[var(--color-surface-hover)] transition-colors">
+          <button
+            className="flex items-center gap-1.5 text-[11px] font-bold text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer text-left min-w-0"
+            onClick={() => setTimelineOpen((v) => !v)}
+            type="button"
           >
-            <Icon name="chevron" size={12} />
-          </span>
-          <span>TIMELINE</span>
-          {activeEditorFile && (
-            <span className="ml-auto text-[10px] text-[var(--color-ink-muted)] truncate max-w-[120px] font-normal">
-              {activeEditorFile}
+            <span
+              className={`chevron-arrow ${timelineOpen ? "chevron-open" : ""}`}
+            >
+              <Icon name="chevron" size={11} />
             </span>
-          )}
-        </button>
+            <span>TIMELINE</span>
+            {activeEditorFile ? (
+              <span
+                className="text-[10px] text-[var(--color-ink-muted)] truncate max-w-[100px] font-mono px-1 py-0.5 rounded bg-[var(--color-surface-raised)] border border-[var(--color-line)]"
+                title={activeEditorFile}
+              >
+                {activeEditorFile.split("/").pop() || activeEditorFile}
+              </span>
+            ) : null}
+            {timelineCommits.length > 0 && (
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-[var(--color-surface-raised)] border border-[var(--color-line)] text-[var(--color-ink-muted)] shrink-0">
+                {timelineCommits.length}
+              </span>
+            )}
+          </button>
+
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              aria-label="Refresh Timeline"
+              className="p-1 rounded hover:bg-[var(--color-surface-raised)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer"
+              disabled={timelineLoading}
+              onClick={(e) => {
+                e.stopPropagation()
+                loadTimelineData()
+              }}
+              title="Refresh Timeline"
+              type="button"
+            >
+              <span className={timelineLoading ? "animate-spin block" : ""}>
+                <Icon name="refresh" size={12} />
+              </span>
+            </button>
+          </div>
+        </div>
+
         {timelineOpen && (
-          <div className="timeline-content p-2">
+          <div className="timeline-content max-h-[220px] overflow-y-auto px-2 py-1">
             {!isGitRepo ? (
               <div className="p-3 text-center text-[11px] text-[var(--color-ink-muted)]">
                 No Git repository detected.
               </div>
-            ) : timelineLoading ? (
+            ) : timelineLoading && timelineCommits.length === 0 ? (
               <div className="flex items-center justify-center p-3 text-[11px] text-[var(--color-ink-muted)]">
                 <span className="animate-spin mr-2">
                   <Icon name="refresh" size={12} />
@@ -1651,46 +1688,191 @@ export function ExplorerPanel() {
                   : "Open a file to view commit timeline."}
               </div>
             ) : (
-              <div className="space-y-1">
-                {timelineCommits.map((item) => (
-                  <div
-                    className="group flex items-start gap-2 p-1.5 rounded hover:bg-[var(--color-surface-hover)] cursor-pointer transition-colors"
-                    key={item.hash}
-                    onClick={() => {
-                      if (activeEditorFile) {
-                        openGitDiff(activeEditorFile, false, item.hash)
-                      } else {
-                        navigator.clipboard?.writeText(item.hash)
-                        showToast(
-                          `Copied commit hash [${item.shortHash || item.hash.slice(0, 7)}]`,
-                        )
+              <div className="relative pl-1 py-1 space-y-1">
+                {timelineCommits.map((item, idx) => {
+                  const isMenuOpen = activeTimelineMenu?.hash === item.hash
+                  const prevCommit = timelineCommits[idx + 1]
+
+                  return (
+                    <div
+                      className={`relative group flex items-start gap-2.5 px-2 py-1.5 rounded transition-colors cursor-pointer text-left ${
+                        isMenuOpen
+                          ? "bg-[var(--color-surface-raised)]"
+                          : "hover:bg-[var(--color-surface-hover)]"
+                      }`}
+                      key={item.hash || item.id || `timeline-${idx}`}
+                      onClick={() => {
+                        if (activeEditorFile) {
+                          openGitDiff(activeEditorFile, false, item.hash)
+                        } else {
+                          void navigator.clipboard?.writeText(item.hash)
+                          showToast(
+                            `Copied commit hash [${
+                              item.shortHash || item.hash.slice(0, 7)
+                            }]`,
+                          )
+                        }
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setActiveTimelineMenu(item)
+                      }}
+                      title={
+                        activeEditorFile
+                          ? "Click to compare with working tree"
+                          : "Click to copy commit hash"
                       }
-                    }}
-                    title={
-                      activeEditorFile
-                        ? "Click to open comparison in editor"
-                        : "Click to copy hash"
-                    }
-                  >
-                    <span className="mt-1 w-2 h-2 rounded-full bg-[var(--color-accent)] shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="font-mono text-[10px] text-[var(--color-ink-muted)]">
-                          {item.shortHash || item.hash.slice(0, 7)}
-                        </span>
-                        <span className="text-[10px] text-[var(--color-ink-muted)]">
-                          {item.timestamp}
-                        </span>
+                    >
+                      {/* Vertical timeline track line & circular node */}
+                      <div className="relative flex flex-col items-center self-stretch shrink-0 mt-0.5">
+                        <span
+                          className={`w-2 h-2 rounded-full shrink-0 z-10 transition-colors ${
+                            item.isHead || idx === 0
+                              ? "bg-[var(--color-accent)] ring-2 ring-[var(--color-accent)]/20"
+                              : "border border-[var(--color-ink-muted)]/50 bg-[var(--color-surface)] group-hover:border-[var(--color-accent)] group-hover:bg-[var(--color-accent)]"
+                          }`}
+                        />
+                        {idx < timelineCommits.length - 1 && (
+                          <span className="absolute top-2 bottom-[-8px] w-[1px] bg-[var(--color-line)] -translate-x-1/2 left-1/2" />
+                        )}
                       </div>
-                      <p className="text-[11px] font-medium text-[var(--color-ink)] truncate mt-0.5">
-                        {item.message}
-                      </p>
-                      <p className="text-[10px] text-[var(--color-ink-soft)] truncate">
-                        {item.author}
-                      </p>
+
+                      {/* Commit details */}
+                      <div className="flex-1 min-w-0 pr-6">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-mono text-[10px] text-[var(--color-ink-muted)] font-semibold">
+                            {item.shortHash || item.hash.slice(0, 7)}
+                          </span>
+                          <span className="text-[10px] text-[var(--color-ink-muted)] shrink-0">
+                            {item.timestamp}
+                          </span>
+                        </div>
+                        <p className="text-[11px] font-medium text-[var(--color-ink)] truncate mt-0.5">
+                          {item.message}
+                        </p>
+                        <p className="text-[10px] text-[var(--color-ink-soft)] truncate">
+                          {item.author}
+                        </p>
+                      </div>
+
+                      {/* 3-dots action menu button */}
+                      <div className="absolute right-1.5 top-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center">
+                        <button
+                          aria-label="Commit actions"
+                          className="p-1 rounded hover:bg-[var(--color-surface-raised)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setActiveTimelineMenu((prev) =>
+                              prev?.hash === item.hash ? null : item,
+                            )
+                          }}
+                          title="More Actions"
+                          type="button"
+                        >
+                          <Icon name="more" size={12} />
+                        </button>
+                      </div>
+
+                      {/* Dropdown Menu (Contained in panel) */}
+                      {isMenuOpen && (
+                        <div
+                          className="absolute right-2 top-7 w-48 rounded-md border border-[var(--color-line)] bg-[var(--color-surface-raised)] shadow-xl py-1 z-40 text-[11px] animate-in fade-in zoom-in-95 duration-100 divide-y divide-[var(--color-line)]"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="py-0.5">
+                            {activeEditorFile && (
+                              <button
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] cursor-pointer"
+                                onClick={() => {
+                                  openGitDiff(
+                                    activeEditorFile,
+                                    false,
+                                    item.hash,
+                                  )
+                                  setActiveTimelineMenu(null)
+                                }}
+                                type="button"
+                              >
+                                <Icon
+                                  className="text-[var(--color-accent)] shrink-0"
+                                  name="split"
+                                  size={12}
+                                />
+                                <span>Open Changes</span>
+                              </button>
+                            )}
+
+                            {activeEditorFile && prevCommit && (
+                              <button
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] cursor-pointer"
+                                onClick={() => {
+                                  openGitDiff(
+                                    activeEditorFile,
+                                    false,
+                                    item.hash,
+                                    prevCommit.hash,
+                                  )
+                                  setActiveTimelineMenu(null)
+                                }}
+                                type="button"
+                              >
+                                <Icon
+                                  className="text-[var(--color-accent)] shrink-0"
+                                  name="split"
+                                  size={12}
+                                />
+                                <span>Compare with Previous</span>
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="py-0.5">
+                            <button
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] cursor-pointer"
+                              onClick={() => {
+                                void navigator.clipboard?.writeText(item.hash)
+                                showToast(
+                                  `Copied commit hash [${
+                                    item.shortHash || item.hash.slice(0, 7)
+                                  }]`,
+                                )
+                                setActiveTimelineMenu(null)
+                              }}
+                              type="button"
+                            >
+                              <Icon
+                                className="text-[var(--color-ink-muted)] shrink-0"
+                                name="copy"
+                                size={12}
+                              />
+                              <span>Copy Commit Hash</span>
+                            </button>
+
+                            <button
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] cursor-pointer"
+                              onClick={() => {
+                                void navigator.clipboard?.writeText(
+                                  item.message,
+                                )
+                                showToast("Copied commit message")
+                                setActiveTimelineMenu(null)
+                              }}
+                              type="button"
+                            >
+                              <Icon
+                                className="text-[var(--color-ink-muted)] shrink-0"
+                                name="file"
+                                size={12}
+                              />
+                              <span>Copy Commit Message</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>

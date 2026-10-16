@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbenchStore, useShallow } from "../../../store"
 import { hasConflictMarkers } from "../../../utils/gitConflict"
+import { pickFolderNative } from "../../../utils/workspaceApi"
+import type { GitCommitNode } from "../../../types/workbench"
 
 export function SourceControlPanel() {
   const {
@@ -13,6 +15,8 @@ export function SourceControlPanel() {
     gitCommits,
     gitBranches,
     gitTags,
+    gitStashes,
+    isLoadingStashes,
     gitProfile,
     ahead,
     behind,
@@ -44,6 +48,13 @@ export function SourceControlPanel() {
     unlockRepo,
     isLoadingGit,
     checkoutCommit,
+    cherryPickCommit,
+    cloneRepo,
+    fetchStashes,
+    stashSave,
+    stashPop,
+    stashApply,
+    stashDrop,
     compareBaseCommit,
     compareTargetCommit,
     compareResult,
@@ -62,6 +73,8 @@ export function SourceControlPanel() {
       gitCommits: s.gitCommits,
       gitBranches: s.gitBranches,
       gitTags: s.gitTags,
+      gitStashes: s.gitStashes,
+      isLoadingStashes: s.isLoadingStashes,
       gitProfile: s.gitProfile,
       ahead: s.ahead,
       behind: s.behind,
@@ -93,6 +106,13 @@ export function SourceControlPanel() {
       unlockRepo: s.unlockRepo,
       isLoadingGit: s.isLoadingGit,
       checkoutCommit: s.checkoutCommit,
+      cherryPickCommit: s.cherryPickCommit,
+      cloneRepo: s.cloneRepo,
+      fetchStashes: s.fetchStashes,
+      stashSave: s.stashSave,
+      stashPop: s.stashPop,
+      stashApply: s.stashApply,
+      stashDrop: s.stashDrop,
       compareBaseCommit: s.compareBaseCommit,
       compareTargetCommit: s.compareTargetCommit,
       compareResult: s.compareResult,
@@ -117,22 +137,54 @@ export function SourceControlPanel() {
   const [changesSectionOpen, setChangesSectionOpen] = useState(true)
   const [stagedOpen, setStagedOpen] = useState(true)
   const [changesOpen, setChangesOpen] = useState(true)
+  const [stashesOpen, setStashesOpen] = useState(true)
   const [graphOpen, setGraphOpen] = useState(true)
 
   // Context & action menus
   const [menuOpen, setMenuOpen] = useState(false)
   const [commitDropdownOpen, setCommitDropdownOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
 
+  // Modals / prompts
   // Modals / prompts
   const [showTagPrompt, setShowTagPrompt] = useState(false)
   const [tagNameInput, setTagNameInput] = useState("")
   const [tagMessageInput, setTagMessageInput] = useState("")
+  const [tagTargetCommit, setTagTargetCommit] = useState("")
+  const [tagTargetMode, setTagTargetMode] = useState<"recent" | "custom">(
+    "recent",
+  )
+  const [tagCustomHashInput, setTagCustomHashInput] = useState("")
+
+  const [showComparePrompt, setShowComparePrompt] = useState(false)
+  const [compareBaseHash, setCompareBaseHash] = useState("")
+  const [compareTargetMode, setCompareTargetMode] =
+    useState<"recent" | "custom">("recent")
+  const [compareTargetHash, setCompareTargetHash] = useState("")
+  const [compareCustomHashInput, setCompareCustomHashInput] = useState("")
+
+  function isValidGitHash(hash: string): boolean {
+    return /^[0-9a-fA-F]{7,40}$/.test(hash.trim())
+  }
+
   const [showBranchPrompt, setShowBranchPrompt] = useState(false)
   const [branchNameInput, setBranchNameInput] = useState("")
   const [showRemotePrompt, setShowRemotePrompt] = useState(false)
   const [remoteNameInput, setRemoteNameInput] = useState("origin")
   const [remoteUrlInput, setRemoteUrlInput] = useState("")
+
+  const [showStashPrompt, setShowStashPrompt] = useState(false)
+  const [stashMessageInput, setStashMessageInput] = useState("")
+  const [stashUntrackedInput, setStashUntrackedInput] = useState(true)
+
+  const [showClonePrompt, setShowClonePrompt] = useState(false)
+  const [cloneUrlInput, setCloneUrlInput] = useState("")
+  const [cloneTargetInput, setCloneTargetInput] = useState("")
+  const [cloneOpenWorkspace, setCloneOpenWorkspace] = useState(true)
+
+  const [activeCommitMenu, setActiveCommitMenu] =
+    useState<GitCommitNode | null>(null)
 
   const conflictedFiles = useMemo(() => {
     const list = new Set<string>()
@@ -161,9 +213,26 @@ export function SourceControlPanel() {
         setMenuOpen(false)
         setCommitDropdownOpen(false)
       }
+      if (
+        contextMenuRef.current &&
+        !contextMenuRef.current.contains(e.target as Node)
+      ) {
+        setActiveCommitMenu(null)
+      }
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setMenuOpen(false)
+        setCommitDropdownOpen(false)
+        setActiveCommitMenu(null)
+      }
     }
     document.addEventListener("mousedown", handleClickOutside)
-    return () => document.removeEventListener("mousedown", handleClickOutside)
+    document.addEventListener("keydown", handleKeyDown)
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
   }, [])
 
   function handleCommit(andPush = false) {
@@ -243,10 +312,83 @@ export function SourceControlPanel() {
       showToast("Tag name cannot be empty")
       return
     }
-    createTag(trimmed, tagMessageInput.trim())
+    const finalTarget =
+      tagTargetMode === "custom"
+        ? tagCustomHashInput.trim()
+        : tagTargetCommit.trim()
+
+    if (
+      tagTargetMode === "custom" &&
+      finalTarget &&
+      !isValidGitHash(finalTarget)
+    ) {
+      showToast("Invalid commit hash: Must be 7-40 hex characters")
+      return
+    }
+
+    createTag(trimmed, tagMessageInput.trim(), finalTarget)
     setShowTagPrompt(false)
     setTagNameInput("")
     setTagMessageInput("")
+    setTagTargetCommit("")
+    setTagCustomHashInput("")
+    setTagTargetMode("recent")
+  }
+
+  function handleCompareSubmit() {
+    const base = compareBaseHash.trim()
+    const target =
+      compareTargetMode === "custom"
+        ? compareCustomHashInput.trim()
+        : compareTargetHash.trim()
+
+    if (!base) {
+      showToast("Base commit is required for comparison")
+      return
+    }
+    if (!target) {
+      showToast("Target commit is required for comparison")
+      return
+    }
+    if (compareTargetMode === "custom" && !isValidGitHash(target)) {
+      showToast("Invalid target commit hash: Must be 7-40 hex characters")
+      return
+    }
+    if (base === target) {
+      showToast("Base and target commits cannot be the same")
+      return
+    }
+
+    void compareCommits(base, target)
+    setShowComparePrompt(false)
+    setCompareBaseHash("")
+    setCompareTargetHash("")
+    setCompareCustomHashInput("")
+    setCompareTargetMode("recent")
+  }
+
+  async function handleStashSubmit() {
+    await stashSave(stashMessageInput.trim(), stashUntrackedInput)
+    setShowStashPrompt(false)
+    setStashMessageInput("")
+  }
+
+  async function handleCloneSubmit() {
+    const url = cloneUrlInput.trim()
+    if (!url) {
+      showToast("Repository URL cannot be empty")
+      return
+    }
+    await cloneRepo(url, cloneTargetInput.trim(), cloneOpenWorkspace)
+    setShowClonePrompt(false)
+    setCloneUrlInput("")
+    setCloneTargetInput("")
+  }
+
+  function handleCommitContextMenu(e: React.MouseEvent, commit: GitCommitNode) {
+    e.preventDefault()
+    e.stopPropagation()
+    setActiveCommitMenu(commit)
   }
 
   function handleCreateBranchSubmit() {
@@ -272,6 +414,96 @@ export function SourceControlPanel() {
     setRemoteUrlInput("")
   }
 
+  const renderCloneModal = () =>
+    showClonePrompt && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <div className="w-full max-w-sm rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-4 shadow-xl text-left">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="font-semibold text-xs text-[var(--color-ink)] flex items-center gap-1.5">
+              <Icon name="cloud" size={14} />
+              <span>Clone Repository</span>
+            </h4>
+            <button
+              className="text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer"
+              onClick={() => setShowClonePrompt(false)}
+              title="Close"
+              type="button"
+            >
+              <Icon name="close" size={13} />
+            </button>
+          </div>
+          <div className="space-y-3 mb-4">
+            <div>
+              <label className="block text-[10px] font-semibold text-[var(--color-ink-muted)] mb-1 uppercase tracking-wider">
+                Repository URL
+              </label>
+              <input
+                className="w-full px-2.5 py-1.5 rounded border border-[var(--color-line)] bg-[var(--color-canvas)] text-xs text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
+                onChange={(e) => setCloneUrlInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleCloneSubmit()
+                }}
+                placeholder="https://github.com/org/repo.git"
+                value={cloneUrlInput}
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-[var(--color-ink-muted)] mb-1 uppercase tracking-wider">
+                Destination Folder (Optional)
+              </label>
+              <div className="flex items-center gap-1.5">
+                <input
+                  className="flex-1 px-2.5 py-1.5 rounded border border-[var(--color-line)] bg-[var(--color-canvas)] text-xs text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
+                  onChange={(e) => setCloneTargetInput(e.target.value)}
+                  placeholder="Leave empty for auto or browse..."
+                  value={cloneTargetInput}
+                />
+                <button
+                  className="px-2.5 py-1.5 rounded border border-[var(--color-line)] bg-[var(--color-surface-raised)] hover:bg-[var(--color-surface-hover)] text-xs text-[var(--color-ink)] cursor-pointer shrink-0"
+                  onClick={async () => {
+                    const res = await pickFolderNative()
+                    if (res?.status === "ok" && res.path) {
+                      setCloneTargetInput(res.path)
+                    }
+                  }}
+                  title="Browse folder"
+                  type="button"
+                >
+                  Browse
+                </button>
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-xs text-[var(--color-ink-soft)] cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={cloneOpenWorkspace}
+                onChange={(e) => setCloneOpenWorkspace(e.target.checked)}
+                className="rounded border-[var(--color-line)] text-[var(--color-accent)]"
+              />
+              <span>Open workspace after clone</span>
+            </label>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              className="px-3 py-1 rounded text-xs text-[var(--color-ink-muted)] hover:bg-[var(--color-surface-hover)] cursor-pointer"
+              onClick={() => setShowClonePrompt(false)}
+              type="button"
+            >
+              Cancel
+            </button>
+            <button
+              className="px-3 py-1 rounded bg-[var(--color-accent)] text-white text-xs font-medium cursor-pointer"
+              onClick={handleCloneSubmit}
+              disabled={isOperatingGit}
+              type="button"
+            >
+              {isOperatingGit ? "Cloning..." : "Clone"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+
   // 0a. If no folder is open in workspace
   if (!rootWorkspacePath) {
     return (
@@ -286,14 +518,25 @@ export function SourceControlPanel() {
           You have not yet opened a folder. Open a folder to initialize a Git
           repository or track changes.
         </p>
-        <button
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[var(--color-accent)] hover:opacity-90 text-white text-xs font-medium transition-all shadow-xs cursor-pointer"
-          onClick={openFolderPicker}
-          type="button"
-        >
-          <Icon name="folder" size={13} />
-          <span>Open Folder</span>
-        </button>
+        <div className="flex flex-col gap-2 w-full max-w-[210px]">
+          <button
+            className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded bg-[var(--color-accent)] hover:opacity-90 text-white text-xs font-medium transition-all shadow-xs cursor-pointer"
+            onClick={openFolderPicker}
+            type="button"
+          >
+            <Icon name="folder" size={13} />
+            <span>Open Folder</span>
+          </button>
+          <button
+            className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded border border-[var(--color-line)] bg-[var(--color-surface-raised)] hover:bg-[var(--color-surface-hover)] text-xs text-[var(--color-ink-soft)] transition-all cursor-pointer"
+            onClick={() => setShowClonePrompt(true)}
+            type="button"
+          >
+            <Icon name="cloud" size={13} />
+            <span>Clone Repository</span>
+          </button>
+        </div>
+        {renderCloneModal()}
       </div>
     )
   }
@@ -324,6 +567,14 @@ export function SourceControlPanel() {
           </button>
           <button
             className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded border border-[var(--color-line)] bg-[var(--color-surface-raised)] hover:bg-[var(--color-surface-hover)] text-xs text-[var(--color-ink-soft)] transition-all cursor-pointer"
+            onClick={() => setShowClonePrompt(true)}
+            type="button"
+          >
+            <Icon name="cloud" size={13} />
+            <span>Clone Repository</span>
+          </button>
+          <button
+            className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded border border-[var(--color-line)] bg-[var(--color-surface-raised)] hover:bg-[var(--color-surface-hover)] text-xs text-[var(--color-ink-soft)] transition-all cursor-pointer"
             onClick={openFolderPicker}
             type="button"
           >
@@ -331,6 +582,7 @@ export function SourceControlPanel() {
             <span>Open Other Folder</span>
           </button>
         </div>
+        {renderCloneModal()}
       </div>
     )
   }
@@ -496,6 +748,42 @@ export function SourceControlPanel() {
                   <span>Add Remote...</span>
                 </button>
               </div>
+
+              <div className="py-1">
+                <button
+                  className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] text-left cursor-pointer"
+                  onClick={() => {
+                    setShowStashPrompt(true)
+                    setMenuOpen(false)
+                  }}
+                  type="button"
+                >
+                  <Icon name="stash" size={13} />
+                  <span>Stash Changes...</span>
+                </button>
+                <button
+                  className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] text-left cursor-pointer"
+                  onClick={() => {
+                    void stashPop()
+                    setMenuOpen(false)
+                  }}
+                  type="button"
+                >
+                  <Icon name="arrow-up" size={13} />
+                  <span>Pop Latest Stash</span>
+                </button>
+                <button
+                  className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] text-left cursor-pointer"
+                  onClick={() => {
+                    setShowClonePrompt(true)
+                    setMenuOpen(false)
+                  }}
+                  type="button"
+                >
+                  <Icon name="cloud" size={13} />
+                  <span>Clone Repository...</span>
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -589,400 +877,492 @@ export function SourceControlPanel() {
         )}
       </div>
 
-      {/* 2. CHANGES Section (Commit Input & Changes List) */}
-      <div className="border-b border-[var(--color-line)]">
-        <button
-          className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-hover)] text-left transition-colors cursor-pointer"
-          onClick={() => setChangesSectionOpen((v) => !v)}
-          type="button"
-        >
-          <span
-            className={`chevron-arrow ${
-              changesSectionOpen ? "chevron-open" : ""
-            }`}
+      {/* 2. Primary Commit Action Zone */}
+      <div className="p-3 border-b border-[var(--color-line)] space-y-2.5 bg-[var(--color-surface)]">
+        {/* Conflict Alert Banner */}
+        {hasConflicts && (
+          <div
+            aria-label="Unresolved merge conflicts"
+            className="p-2.5 rounded bg-[var(--color-warning-soft)] border border-[var(--color-warning)]/40 text-[var(--color-warning)] text-xs flex items-start gap-2 select-none"
           >
-            <Icon name="chevron" size={11} />
-          </span>
-          <span>Source Control</span>
-        </button>
-
-        {changesSectionOpen && (
-          <div className="p-3 pt-1 space-y-2.5">
-            {/* Conflict Alert Banner */}
-            {hasConflicts && (
-              <div
-                aria-label="Unresolved merge conflicts"
-                className="p-2.5 rounded bg-[var(--color-warning-soft)] border border-[var(--color-warning)]/40 text-[var(--color-warning)] text-xs flex items-start gap-2 select-none"
-              >
-                <Icon
-                  className="shrink-0 mt-0.5 text-[var(--color-warning)]"
-                  name="warning"
-                  size={14}
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-[var(--color-ink)]">
-                    Unresolved Merge Conflicts
-                  </div>
-                  <div className="text-[11px] text-[var(--color-ink-muted)] mt-0.5 leading-relaxed">
-                    Resolve conflict markers (
-                    <code className="text-[var(--color-warning)] font-mono">
-                      &lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD
-                    </code>
-                    ,{" "}
-                    <code className="text-[var(--color-warning)] font-mono">
-                      =======
-                    </code>
-                    ,{" "}
-                    <code className="text-[var(--color-warning)] font-mono">
-                      &gt;&gt;&gt;&gt;&gt;&gt;&gt;
-                    </code>
-                    ) in{" "}
-                    <span className="font-mono text-[var(--color-warning)] font-medium">
-                      {conflictedFiles.join(", ")}
-                    </span>{" "}
-                    before committing.
-                  </div>
-                </div>
+            <Icon
+              className="shrink-0 mt-0.5 text-[var(--color-warning)]"
+              name="warning"
+              size={14}
+            />
+            <div className="flex-1 min-w-0">
+              <div className="font-semibold text-[var(--color-ink)]">
+                Unresolved Merge Conflicts
               </div>
-            )}
-
-            {/* Commit Message Box with Sparkle AI Icon */}
-            <div className="relative">
-              <textarea
-                aria-label="Commit message"
-                className="w-full p-2 pr-7 rounded border border-[var(--color-line)] bg-[var(--color-canvas)] text-[11px] text-[var(--color-ink)] placeholder-[var(--color-ink-muted)] outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] resize-none transition-all leading-normal"
-                onChange={(e) => setCommitMessage(e.target.value)}
-                onKeyDown={(e) => {
-                  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                    e.preventDefault()
-                    handleCommit(false)
-                  }
-                }}
-                placeholder="Message (⌘Enter to commit)"
-                rows={3}
-                title={`Commit changes on "${activeBranch}"`}
-                value={commitMessage}
-              />
-              <button
-                aria-label="Generate Commit Message with AI"
-                className="absolute right-2 top-2 p-1 text-[var(--color-ink-muted)] hover:text-[var(--color-accent)] transition-colors cursor-pointer"
-                onClick={handleGenerateAiCommit}
-                title="Generate AI Commit Message"
-                type="button"
-              >
-                <Icon name="sparkle" size={13} />
-              </button>
+              <div className="text-[11px] text-[var(--color-ink-muted)] mt-0.5 leading-relaxed">
+                Resolve conflict markers (
+                <code className="text-[var(--color-warning)] font-mono">
+                  &lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD
+                </code>
+                ,{" "}
+                <code className="text-[var(--color-warning)] font-mono">
+                  =======
+                </code>
+                ,{" "}
+                <code className="text-[var(--color-warning)] font-mono">
+                  &gt;&gt;&gt;&gt;&gt;&gt;&gt;
+                </code>
+                ) in{" "}
+                <span className="font-mono text-[var(--color-warning)] font-medium">
+                  {conflictedFiles.join(", ")}
+                </span>{" "}
+                before committing.
+              </div>
             </div>
+          </div>
+        )}
 
-            {/* Split Commit Button (✓ Commit + dropdown) */}
-            <div
-              className={`flex w-full items-stretch rounded-md text-white shadow-xs overflow-visible relative ${
+        {/* Commit Message Box with Sparkle AI Icon */}
+        <div className="relative">
+          <textarea
+            aria-label="Commit message"
+            className="w-full p-2 pr-7 rounded border border-[var(--color-line)] bg-[var(--color-canvas)] text-[11px] text-[var(--color-ink)] placeholder-[var(--color-ink-muted)] outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)] resize-none transition-all leading-normal"
+            onChange={(e) => setCommitMessage(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                e.preventDefault()
+                handleCommit(false)
+              }
+            }}
+            placeholder="Message (⌘Enter to commit)"
+            rows={3}
+            title={`Commit changes on "${activeBranch}"`}
+            value={commitMessage}
+          />
+          <button
+            aria-label="Generate Commit Message with AI"
+            className="absolute right-2 top-2 p-1 text-[var(--color-ink-muted)] hover:text-[var(--color-accent)] transition-colors cursor-pointer"
+            onClick={handleGenerateAiCommit}
+            title="Generate AI Commit Message"
+            type="button"
+          >
+            <Icon name="sparkle" size={13} />
+          </button>
+        </div>
+
+        {/* Split Commit Button (✓ Commit + dropdown) */}
+        <div
+          className={`flex w-full items-stretch rounded-md text-white shadow-xs overflow-visible relative ${
+            hasConflicts
+              ? "bg-[var(--color-surface-raised)] border border-[var(--color-line)] text-[var(--color-ink-muted)]"
+              : "bg-[var(--color-success)]"
+          }`}
+        >
+          <button
+            className={`flex-1 flex items-center justify-center gap-2 py-1.5 px-3 text-xs font-medium rounded-l-md truncate min-w-0 select-none ${
+              hasConflicts
+                ? "cursor-not-allowed opacity-60 text-[var(--color-ink-muted)]"
+                : "hover:bg-black/15 active:bg-black/25 transition-colors cursor-pointer"
+            }`}
+            disabled={hasConflicts || isOperatingGit}
+            onClick={() => handleCommit(false)}
+            title={
+              hasConflicts
+                ? `Cannot commit: Unresolved merge conflicts in ${conflictedFiles.join(", ")}`
+                : `Commit changes on "${activeBranch}"`
+            }
+            type="button"
+          >
+            <Icon
+              className="shrink-0"
+              name={hasConflicts ? "warning" : "check"}
+              size={13}
+            />
+            <span className="truncate">Commit</span>
+          </button>
+
+          <div
+            className={`w-[1px] self-stretch my-1 shrink-0 ${
+              hasConflicts ? "bg-[var(--color-line)]" : "bg-white/25"
+            }`}
+          />
+
+          <div className="relative flex items-stretch shrink-0">
+            <button
+              aria-label="Commit Options"
+              className={`flex items-center justify-center px-3 rounded-r-md ${
                 hasConflicts
-                  ? "bg-[var(--color-surface-raised)] border border-[var(--color-line)] text-[var(--color-ink-muted)]"
-                  : "bg-[var(--color-success)]"
+                  ? "cursor-not-allowed opacity-60 text-[var(--color-ink-muted)]"
+                  : "hover:bg-black/15 active:bg-black/25 transition-colors cursor-pointer"
               }`}
-            >
-              <button
-                className={`flex-1 flex items-center justify-center gap-2 py-1.5 px-3 text-xs font-medium rounded-l-md truncate min-w-0 select-none ${
-                  hasConflicts
-                    ? "cursor-not-allowed opacity-60 text-[var(--color-ink-muted)]"
-                    : "hover:bg-black/15 active:bg-black/25 transition-colors cursor-pointer"
-                }`}
-                disabled={hasConflicts || isOperatingGit}
-                onClick={() => handleCommit(false)}
-                title={
-                  hasConflicts
-                    ? `Cannot commit: Unresolved merge conflicts in ${conflictedFiles.join(", ")}`
-                    : `Commit changes on "${activeBranch}"`
+              disabled={hasConflicts || isOperatingGit}
+              onClick={() => {
+                if (!hasConflicts) {
+                  setCommitDropdownOpen((v) => !v)
                 }
-                type="button"
-              >
-                <Icon
-                  className="shrink-0"
-                  name={hasConflicts ? "warning" : "check"}
-                  size={13}
-                />
-                <span className="truncate">Commit</span>
-              </button>
+              }}
+              title={
+                hasConflicts
+                  ? `Cannot commit: Unresolved merge conflicts in ${conflictedFiles.join(", ")}`
+                  : "More commit options"
+              }
+              type="button"
+            >
+              <Icon className="shrink-0" name="chevron-down" size={12} />
+            </button>
 
-              <div
-                className={`w-[1px] self-stretch my-1 shrink-0 ${
-                  hasConflicts ? "bg-[var(--color-line)]" : "bg-white/25"
-                }`}
-              />
-
-              <div className="relative flex items-stretch shrink-0">
+            {commitDropdownOpen && !hasConflicts && (
+              <div className="absolute right-0 top-full mt-1.5 w-44 rounded-md border border-[var(--color-line)] bg-[var(--color-surface-raised)] shadow-xl py-1 z-50 text-[11px] animate-in fade-in zoom-in-95 duration-100">
                 <button
-                  aria-label="Commit Options"
-                  className={`flex items-center justify-center px-3 rounded-r-md ${
-                    hasConflicts
-                      ? "cursor-not-allowed opacity-60 text-[var(--color-ink-muted)]"
-                      : "hover:bg-black/15 active:bg-black/25 transition-colors cursor-pointer"
-                  }`}
-                  disabled={hasConflicts || isOperatingGit}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] cursor-pointer"
                   onClick={() => {
-                    if (!hasConflicts) {
-                      setCommitDropdownOpen((v) => !v)
-                    }
+                    handleCommit(false)
+                    setCommitDropdownOpen(false)
                   }}
-                  title={
-                    hasConflicts
-                      ? `Cannot commit: Unresolved merge conflicts in ${conflictedFiles.join(", ")}`
-                      : "More commit options"
-                  }
                   type="button"
                 >
-                  <Icon className="shrink-0" name="chevron-down" size={12} />
+                  <Icon
+                    className="text-[var(--color-success)] shrink-0"
+                    name="check"
+                    size={12}
+                  />
+                  <span>Commit</span>
                 </button>
-
-                {commitDropdownOpen && !hasConflicts && (
-                  <div className="absolute right-0 top-full mt-1.5 w-44 rounded-md border border-[var(--color-line)] bg-[var(--color-surface-raised)] shadow-xl py-1 z-50 text-[11px] animate-in fade-in zoom-in-95 duration-100">
-                    <button
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] cursor-pointer"
-                      onClick={() => {
-                        handleCommit(false)
-                        setCommitDropdownOpen(false)
-                      }}
-                      type="button"
-                    >
-                      <Icon
-                        className="text-[var(--color-success)] shrink-0"
-                        name="check"
-                        size={12}
-                      />
-                      <span>Commit</span>
-                    </button>
-                    <button
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] cursor-pointer"
-                      onClick={() => {
-                        handleCommit(true)
-                        setCommitDropdownOpen(false)
-                      }}
-                      type="button"
-                    >
-                      <Icon
-                        className="text-[var(--color-accent)] shrink-0"
-                        name="arrow-up"
-                        size={12}
-                      />
-                      <span>Commit & Push</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Sub-section: STAGED CHANGES */}
-            {stagedChanges.length > 0 && (
-              <div className="pt-1">
-                <div className="flex items-center justify-between py-1 px-1 text-[11px] font-semibold text-[var(--color-ink-soft)]">
-                  <button
-                    className="flex items-center gap-1.5 hover:text-[var(--color-ink)] cursor-pointer"
-                    onClick={() => setStagedOpen((v) => !v)}
-                    type="button"
-                  >
-                    <span
-                      className={`chevron-arrow ${
-                        stagedOpen ? "chevron-open" : ""
-                      }`}
-                    >
-                      <Icon name="chevron" size={11} />
-                    </span>
-                    <span>STAGED CHANGES</span>
-                    <span className="git-count-badge">
-                      {stagedChanges.length}
-                    </span>
-                  </button>
-
-                  <button
-                    aria-label="Unstage all changes"
-                    className="git-header-action action-unstage"
-                    onClick={unstageAllChanges}
-                    title="Unstage all changes"
-                    type="button"
-                  >
-                    <Icon name="close" size={11} />
-                  </button>
-                </div>
-
-                {stagedOpen && (
-                  <div className="divide-y divide-transparent">
-                    {(showAllStaged
-                      ? stagedChanges
-                      : stagedChanges.slice(0, maxVisibleChanges)
-                    ).map((change) => (
-                      <div
-                        className="group flex items-center gap-2 px-2 py-1 rounded text-[11px] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-hover)] cursor-pointer min-w-0"
-                        key={`staged-${change.file}`}
-                        onClick={() => openGitDiff(change.file, true)}
-                        title={change.file}
-                      >
-                        <span
-                          className={`change-badge change-${
-                            change.status || "modified"
-                          } shrink-0`}
-                        >
-                          {change.code}
-                        </span>
-                        <span className="truncate flex-1 font-mono text-[11px] min-w-0">
-                          {change.file}
-                        </span>
-
-                        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 shrink-0">
-                          <button
-                            aria-label={`Unstage ${change.file}`}
-                            className="p-1 hover:text-[var(--color-error)] cursor-pointer"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              unstageChange(change.file)
-                            }}
-                            title="Unstage change"
-                            type="button"
-                          >
-                            <Icon name="close" size={11} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-
-                    {stagedChanges.length > maxVisibleChanges && (
-                      <button
-                        className="w-full text-center py-1 text-[10px] text-accent hover:underline cursor-pointer"
-                        onClick={() => setShowAllStaged((v) => !v)}
-                        type="button"
-                      >
-                        {showAllStaged
-                          ? "Show Less"
-                          : `Showing ${maxVisibleChanges} of ${stagedChanges.length} (Show All)`}
-                      </button>
-                    )}
-                  </div>
-                )}
+                <button
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] cursor-pointer"
+                  onClick={() => {
+                    handleCommit(true)
+                    setCommitDropdownOpen(false)
+                  }}
+                  type="button"
+                >
+                  <Icon
+                    className="text-[var(--color-accent)] shrink-0"
+                    name="arrow-up"
+                    size={12}
+                  />
+                  <span>Commit & Push</span>
+                </button>
               </div>
             )}
+          </div>
+        </div>
+      </div>
 
-            {/* Sub-section: CHANGES */}
-            <div className="pt-1">
-              <div className="flex items-center justify-between py-1 px-1 text-[11px] font-semibold text-[var(--color-ink-soft)]">
-                <button
-                  className="flex items-center gap-1.5 hover:text-[var(--color-ink)] cursor-pointer"
-                  onClick={() => setChangesOpen((v) => !v)}
-                  type="button"
+      {/* 3. STAGED CHANGES Section */}
+      {stagedChanges.length > 0 && (
+        <div className="border-b border-[var(--color-line)]">
+          <div className="flex items-center justify-between px-3 py-1.5 hover:bg-[var(--color-surface-hover)] transition-colors">
+            <button
+              className="flex items-center gap-1.5 text-[11px] font-bold text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer text-left"
+              onClick={() => setStagedOpen((v) => !v)}
+              type="button"
+            >
+              <span
+                className={`chevron-arrow ${stagedOpen ? "chevron-open" : ""}`}
+              >
+                <Icon name="chevron" size={11} />
+              </span>
+              <span>STAGED CHANGES</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-[var(--color-surface-raised)] border border-[var(--color-line)] text-[var(--color-ink-muted)]">
+                {stagedChanges.length}
+              </span>
+            </button>
+
+            <div className="flex items-center gap-1">
+              <button
+                aria-label="Unstage all changes"
+                className="p-1 rounded hover:bg-[var(--color-surface-raised)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer"
+                onClick={unstageAllChanges}
+                title="Unstage all changes"
+                type="button"
+              >
+                <Icon name="close" size={11} />
+              </button>
+            </div>
+          </div>
+
+          {stagedOpen && (
+            <div className="px-1 py-1 divide-y divide-transparent">
+              {(showAllStaged
+                ? stagedChanges
+                : stagedChanges.slice(0, maxVisibleChanges)
+              ).map((change) => (
+                <div
+                  className="group flex items-center gap-2 px-2 py-1 rounded text-[11px] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-hover)] cursor-pointer min-w-0"
+                  key={`staged-${change.file}`}
+                  onClick={() => openGitDiff(change.file, true)}
+                  title={change.file}
                 >
                   <span
-                    className={`chevron-arrow ${
-                      changesOpen ? "chevron-open" : ""
-                    }`}
+                    className={`change-badge change-${
+                      change.status || "modified"
+                    } shrink-0`}
                   >
-                    <Icon name="chevron" size={11} />
+                    {change.code}
                   </span>
-                  <span>CHANGES</span>
-                  <span className="git-count-badge">{gitChanges.length}</span>
-                </button>
+                  <span className="truncate flex-1 font-mono text-[11px] min-w-0">
+                    {change.file}
+                  </span>
 
-                {gitChanges.length > 0 && (
-                  <div className="flex items-center gap-1">
+                  <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 shrink-0">
                     <button
-                      aria-label="Discard all changes"
-                      className="git-header-action hover:text-[var(--color-error)]"
-                      onClick={discardAllChanges}
-                      title="Discard all changes"
+                      aria-label={`Unstage ${change.file}`}
+                      className="p-1 hover:text-[var(--color-error)] cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        unstageChange(change.file)
+                      }}
+                      title="Unstage change"
                       type="button"
                     >
-                      <Icon name="discard" size={11} />
-                    </button>
-                    <button
-                      aria-label="Stage all changes"
-                      className="git-header-action action-stage"
-                      onClick={stageAllChanges}
-                      title="Stage all changes"
-                      type="button"
-                    >
-                      <Icon name="add" size={12} />
+                      <Icon name="close" size={11} />
                     </button>
                   </div>
-                )}
-              </div>
-
-              {changesOpen && (
-                <div className="divide-y divide-transparent">
-                  {gitChanges.length > 0 ? (
-                    <>
-                      {(showAllChanges
-                        ? gitChanges
-                        : gitChanges.slice(0, maxVisibleChanges)
-                      ).map((change) => (
-                        <div
-                          className="group flex items-center gap-2 px-2 py-1 rounded text-[11px] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-hover)] cursor-pointer min-w-0"
-                          key={`change-${change.file}`}
-                          onClick={() => openGitDiff(change.file, false)}
-                          title={change.file}
-                        >
-                          <span
-                            className={`change-badge change-${
-                              change.status || "modified"
-                            } shrink-0`}
-                          >
-                            {change.code}
-                          </span>
-                          <span className="truncate flex-1 font-mono text-[11px] min-w-0">
-                            {change.file}
-                          </span>
-
-                          <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 shrink-0">
-                            <button
-                              aria-label={`Discard ${change.file}`}
-                              className="p-1 hover:text-[var(--color-error)] cursor-pointer"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                discardChange(change.file)
-                              }}
-                              title="Discard change"
-                              type="button"
-                            >
-                              <Icon name="discard" size={11} />
-                            </button>
-                            <button
-                              aria-label={`Stage ${change.file}`}
-                              className="p-1 hover:text-[var(--color-success)] cursor-pointer"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                stageChange(change.file)
-                              }}
-                              title="Stage change"
-                              type="button"
-                            >
-                              <Icon name="add" size={11} />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-
-                      {gitChanges.length > maxVisibleChanges && (
-                        <button
-                          className="w-full text-center py-1 text-[10px] text-accent hover:underline cursor-pointer"
-                          onClick={() => setShowAllChanges((v) => !v)}
-                          type="button"
-                        >
-                          {showAllChanges
-                            ? "Show Less"
-                            : `Showing ${maxVisibleChanges} of ${gitChanges.length} (Show All)`}
-                        </button>
-                      )}
-                    </>
-                  ) : (
-                    <div className="px-2 py-2 text-[11px] text-[var(--color-ink-muted)] italic">
-                      Working tree clean
-                    </div>
-                  )}
                 </div>
+              ))}
+
+              {stagedChanges.length > maxVisibleChanges && (
+                <button
+                  className="w-full text-center py-1 text-[10px] text-accent hover:underline cursor-pointer"
+                  onClick={() => setShowAllStaged((v) => !v)}
+                  type="button"
+                >
+                  {showAllStaged
+                    ? "Show Less"
+                    : `Showing ${maxVisibleChanges} of ${stagedChanges.length} (Show All)`}
+                </button>
               )}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* 4. CHANGES Section */}
+      <div className="border-b border-[var(--color-line)]">
+        <div className="flex items-center justify-between px-3 py-1.5 hover:bg-[var(--color-surface-hover)] transition-colors">
+          <button
+            className="flex items-center gap-1.5 text-[11px] font-bold text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer text-left"
+            onClick={() => setChangesOpen((v) => !v)}
+            type="button"
+          >
+            <span
+              className={`chevron-arrow ${changesOpen ? "chevron-open" : ""}`}
+            >
+              <Icon name="chevron" size={11} />
+            </span>
+            <span>CHANGES</span>
+            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-[var(--color-surface-raised)] border border-[var(--color-line)] text-[var(--color-ink-muted)]">
+              {gitChanges.length}
+            </span>
+          </button>
+
+          {gitChanges.length > 0 && (
+            <div className="flex items-center gap-1">
+              <button
+                aria-label="Discard all changes"
+                className="p-1 rounded hover:bg-[var(--color-surface-raised)] text-[var(--color-ink-muted)] hover:text-[var(--color-error)] cursor-pointer"
+                onClick={discardAllChanges}
+                title="Discard all changes"
+                type="button"
+              >
+                <Icon name="discard" size={11} />
+              </button>
+              <button
+                aria-label="Stage all changes"
+                className="p-1 rounded hover:bg-[var(--color-surface-raised)] text-[var(--color-ink-muted)] hover:text-[var(--color-success)] cursor-pointer"
+                onClick={stageAllChanges}
+                title="Stage all changes"
+                type="button"
+              >
+                <Icon name="add" size={12} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {changesOpen && (
+          <div className="px-1 py-1 divide-y divide-transparent">
+            {gitChanges.length > 0 ? (
+              <>
+                {(showAllChanges
+                  ? gitChanges
+                  : gitChanges.slice(0, maxVisibleChanges)
+                ).map((change) => (
+                  <div
+                    className="group flex items-center gap-2 px-2 py-1 rounded text-[11px] text-[var(--color-ink-soft)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-hover)] cursor-pointer min-w-0"
+                    key={`change-${change.file}`}
+                    onClick={() => openGitDiff(change.file, false)}
+                    title={change.file}
+                  >
+                    <span
+                      className={`change-badge change-${
+                        change.status || "modified"
+                      } shrink-0`}
+                    >
+                      {change.code}
+                    </span>
+                    <span className="truncate flex-1 font-mono text-[11px] min-w-0">
+                      {change.file}
+                    </span>
+
+                    <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 shrink-0">
+                      <button
+                        aria-label={`Discard ${change.file}`}
+                        className="p-1 hover:text-[var(--color-error)] cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          discardChange(change.file)
+                        }}
+                        title="Discard change"
+                        type="button"
+                      >
+                        <Icon name="discard" size={11} />
+                      </button>
+                      <button
+                        aria-label={`Stage ${change.file}`}
+                        className="p-1 hover:text-[var(--color-success)] cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          stageChange(change.file)
+                        }}
+                        title="Stage change"
+                        type="button"
+                      >
+                        <Icon name="add" size={11} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {gitChanges.length > maxVisibleChanges && (
+                  <button
+                    className="w-full text-center py-1 text-[10px] text-accent hover:underline cursor-pointer"
+                    onClick={() => setShowAllChanges((v) => !v)}
+                    type="button"
+                  >
+                    {showAllChanges
+                      ? "Show Less"
+                      : `Showing ${maxVisibleChanges} of ${gitChanges.length} (Show All)`}
+                  </button>
+                )}
+              </>
+            ) : (
+              <div className="px-3 py-2 text-[11px] text-[var(--color-ink-muted)] italic">
+                Working tree clean
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* 3. GRAPH Section (Visual SVG Commit Timeline & Interactive Branches) */}
+      {/* 3. STASHES Section */}
+      <div className="border-b border-[var(--color-line)]">
+        <div className="flex items-center justify-between px-3 py-1.5 hover:bg-[var(--color-surface-hover)] transition-colors">
+          <button
+            className="flex items-center gap-1.5 text-[11px] font-bold text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer text-left"
+            onClick={() => setStashesOpen((v) => !v)}
+            type="button"
+          >
+            <span
+              className={`chevron-arrow ${stashesOpen ? "chevron-open" : ""}`}
+            >
+              <Icon name="chevron" size={11} />
+            </span>
+            <span>STASHES</span>
+            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-[var(--color-surface-raised)] border border-[var(--color-line)] text-[var(--color-ink-muted)]">
+              {gitStashes.length}
+            </span>
+          </button>
+
+          <div className="flex items-center gap-1">
+            <button
+              aria-label="Stash Changes"
+              className="p-1 rounded hover:bg-[var(--color-surface-raised)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer"
+              onClick={() => setShowStashPrompt(true)}
+              title="Stash Changes..."
+              type="button"
+            >
+              <Icon name="add" size={12} />
+            </button>
+            {gitStashes.length > 0 && (
+              <button
+                aria-label="Pop Latest Stash"
+                className="p-1 rounded hover:bg-[var(--color-surface-raised)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer"
+                onClick={() => stashPop()}
+                title="Pop Latest Stash"
+                type="button"
+              >
+                <Icon name="arrow-up" size={12} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {stashesOpen && (
+          <div className="px-2 pb-2">
+            {gitStashes.length === 0 ? (
+              <div className="px-3 py-2 text-[10px] text-[var(--color-ink-muted)] text-center">
+                No stashes saved
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {gitStashes.map((stash) => (
+                  <div
+                    key={stash.ref}
+                    className="group flex items-center justify-between gap-2 p-1.5 rounded hover:bg-[var(--color-surface-hover)] text-xs transition-colors"
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      <span className="text-[var(--color-accent)] shrink-0">
+                        <Icon name="stash" size={13} />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-[10px] font-semibold text-[var(--color-ink)]">
+                            {stash.ref}
+                          </span>
+                          {stash.timestamp && (
+                            <span className="text-[9px] text-[var(--color-ink-muted)] truncate">
+                              {stash.timestamp}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-[var(--color-ink-soft)] truncate">
+                          {stash.message || "WIP stash"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                      <button
+                        className="p-1 rounded hover:bg-[var(--color-surface-raised)] text-[var(--color-ink-muted)] hover:text-[var(--color-accent)] cursor-pointer"
+                        onClick={() => stashApply(stash.ref)}
+                        title={`Apply ${stash.ref}`}
+                        type="button"
+                      >
+                        <Icon name="check" size={11} />
+                      </button>
+                      <button
+                        className="p-1 rounded hover:bg-[var(--color-surface-raised)] text-[var(--color-ink-muted)] hover:text-[var(--color-accent)] cursor-pointer"
+                        onClick={() => stashPop(stash.ref)}
+                        title={`Pop ${stash.ref}`}
+                        type="button"
+                      >
+                        <Icon name="arrow-up" size={11} />
+                      </button>
+                      <button
+                        className="p-1 rounded hover:bg-[var(--color-surface-raised)] text-[var(--color-ink-muted)] hover:text-[var(--color-error)] cursor-pointer"
+                        onClick={() => stashDrop(stash.ref)}
+                        title={`Drop ${stash.ref}`}
+                        type="button"
+                      >
+                        <Icon name="trash" size={11} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 4. GRAPH Section (Visual SVG Commit Timeline & Interactive Branches) */}
       <div className="flex-1 flex flex-col min-h-0">
         <div className="flex items-center justify-between px-3 py-1.5 border-b border-[var(--color-line)] bg-[var(--color-surface)]">
           <button
@@ -1115,7 +1495,11 @@ export function SourceControlPanel() {
 
                     return (
                       <div
-                        className="group flex items-start gap-2 p-1.5 rounded hover:bg-[var(--color-surface-hover)] cursor-pointer transition-colors"
+                        className={`group flex items-start gap-2 p-1.5 rounded hover:bg-[var(--color-surface-hover)] cursor-pointer transition-colors relative ${
+                          activeCommitMenu?.hash === commit.hash
+                            ? "bg-[var(--color-surface-hover)] z-30"
+                            : "z-0"
+                        }`}
                         key={commit.hash}
                         onClick={() => {
                           navigator.clipboard?.writeText(commit.hash)
@@ -1123,12 +1507,15 @@ export function SourceControlPanel() {
                             `Copied commit hash [${commit.shortHash || commit.hash.slice(0, 7)}]`,
                           )
                         }}
+                        onContextMenu={(e) =>
+                          handleCommitContextMenu(e, commit)
+                        }
                         onDoubleClick={() => {
                           if (commit.branch && commit.branch !== activeBranch) {
                             checkoutBranch(commit.branch)
                           }
                         }}
-                        title="Double-click to checkout branch, single-click to copy hash"
+                        title="Click ... or right-click for options, double-click to switch branch"
                       >
                         {/* Visual SVG Timeline Line + Dot */}
                         <div className="shrink-0 w-4.5 pt-0.5 flex flex-col items-center">
@@ -1225,71 +1612,161 @@ export function SourceControlPanel() {
                                 </span>
                               ))}
 
-                            {/* Hover Actions: Checkout Commit & Compare */}
-                            <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {compareBaseCommit === commit.hash && (
+                              <span className="px-1.5 py-0.2 rounded-full text-[9px] font-semibold bg-[var(--color-accent)] text-white">
+                                Base
+                              </span>
+                            )}
+
+                            <div className="ml-auto flex items-center gap-1 shrink-0">
+                              <span className="text-[10px] text-[var(--color-ink-muted)]">
+                                {commit.timestamp}
+                              </span>
                               <button
-                                className="p-0.5 rounded hover:bg-[var(--color-surface-raised)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer"
+                                aria-label="Commit Actions"
+                                className={`p-0.5 rounded text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface-hover)] transition-opacity cursor-pointer ${
+                                  activeCommitMenu?.hash === commit.hash
+                                    ? "opacity-100 text-[var(--color-ink)] bg-[var(--color-surface-hover)]"
+                                    : "opacity-60 group-hover:opacity-100"
+                                }`}
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  checkoutCommit(commit.hash)
+                                  setActiveCommitMenu((curr) =>
+                                    curr?.hash === commit.hash ? null : commit,
+                                  )
                                 }}
-                                title="Checkout this commit (detached HEAD)"
+                                title="Commit Actions"
                                 type="button"
                               >
-                                <Icon name="branch" size={11} />
+                                <Icon name="more" size={12} />
                               </button>
-
-                              {compareBaseCommit === commit.hash ? (
-                                <button
-                                  className="px-1.5 py-0.2 rounded text-[9px] bg-[var(--color-accent)] text-white font-semibold cursor-pointer"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setCompareBaseCommit(null)
-                                  }}
-                                  title="Base commit selected. Click to deselect"
-                                  type="button"
-                                >
-                                  Base
-                                </button>
-                              ) : compareBaseCommit ? (
-                                <button
-                                  className="px-1.5 py-0.2 rounded text-[9px] bg-[var(--color-accent)] text-white font-medium hover:opacity-90 cursor-pointer"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    compareCommits(
-                                      compareBaseCommit,
-                                      commit.hash,
-                                    )
-                                  }}
-                                  title={`Compare with ${compareBaseCommit.slice(0, 7)}`}
-                                  type="button"
-                                >
-                                  Compare
-                                </button>
-                              ) : (
-                                <button
-                                  className="p-0.5 rounded hover:bg-[var(--color-surface-raised)] text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setCompareBaseCommit(commit.hash)
-                                  }}
-                                  title="Select as base commit for comparison"
-                                  type="button"
-                                >
-                                  <Icon name="split" size={11} />
-                                </button>
-                              )}
                             </div>
-
-                            <span className="text-[10px] text-[var(--color-ink-muted)] shrink-0 ml-1">
-                              {commit.timestamp}
-                            </span>
                           </div>
 
                           <p className="text-[11px] text-[var(--color-ink)] truncate font-medium mt-0.5">
                             {commit.message}
                           </p>
                         </div>
+
+                        {/* Commit Action Dropdown (Contained within Source Control Panel) */}
+                        {activeCommitMenu?.hash === commit.hash && (
+                          <div
+                            ref={contextMenuRef}
+                            className="absolute right-2 top-7 w-48 rounded-md border border-[var(--color-line)] bg-[var(--color-surface-raised)] shadow-xl py-1 z-50 text-[11px] divide-y divide-[var(--color-line)] animate-in fade-in zoom-in-95 duration-100 text-[var(--color-ink)]"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="px-3 py-1 text-[10px] text-[var(--color-ink-muted)] bg-[var(--color-surface)]/50">
+                              <span className="font-mono font-bold text-[var(--color-ink)] mr-1.5">
+                                {commit.shortHash || commit.hash.slice(0, 7)}
+                              </span>
+                              <span className="block truncate max-w-[170px]">
+                                {commit.message}
+                              </span>
+                            </div>
+
+                            <div className="py-1">
+                              {/* 1. Checkout */}
+                              <button
+                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] text-left cursor-pointer"
+                                onClick={() => {
+                                  const hash = commit.hash
+                                  setActiveCommitMenu(null)
+                                  void checkoutCommit(hash)
+                                }}
+                                type="button"
+                              >
+                                <Icon name="branch" size={13} />
+                                <span>Checkout</span>
+                              </button>
+
+                              {/* 2. Create Tag */}
+                              <button
+                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] text-left cursor-pointer"
+                                onClick={() => {
+                                  const hash = commit.hash
+                                  setActiveCommitMenu(null)
+                                  setTagTargetCommit(hash)
+                                  setTagTargetMode("recent")
+                                  setTagCustomHashInput("")
+                                  setShowTagPrompt(true)
+                                }}
+                                type="button"
+                              >
+                                <Icon name="tag" size={13} />
+                                <span>Create Tag...</span>
+                              </button>
+
+                              {/* 3. Cherry Pick */}
+                              <button
+                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] text-left cursor-pointer"
+                                onClick={() => {
+                                  const hash = commit.hash
+                                  setActiveCommitMenu(null)
+                                  void cherryPickCommit(hash)
+                                }}
+                                type="button"
+                              >
+                                <Icon name="cherry-pick" size={13} />
+                                <span>Cherry Pick</span>
+                              </button>
+
+                              {/* 4. Compare With */}
+                              <button
+                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] text-left cursor-pointer"
+                                onClick={() => {
+                                  const hash = commit.hash
+                                  setActiveCommitMenu(null)
+                                  setCompareBaseHash(hash)
+                                  const other = gitCommits.find(
+                                    (c) => c.hash !== hash,
+                                  )
+                                  setCompareTargetHash(other ? other.hash : "")
+                                  setCompareTargetMode("recent")
+                                  setCompareCustomHashInput("")
+                                  setShowComparePrompt(true)
+                                }}
+                                type="button"
+                              >
+                                <Icon name="split" size={13} />
+                                <span>Compare with...</span>
+                              </button>
+                            </div>
+
+                            <div className="py-1">
+                              {/* 5. Copy Commit Hash */}
+                              <button
+                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] text-left cursor-pointer"
+                                onClick={() => {
+                                  const hash = commit.hash
+                                  setActiveCommitMenu(null)
+                                  void navigator.clipboard?.writeText(hash)
+                                  showToast(
+                                    `Copied commit hash [${hash.slice(0, 7)}]`,
+                                  )
+                                }}
+                                type="button"
+                              >
+                                <Icon name="copy" size={13} />
+                                <span>Copy Commit Hash</span>
+                              </button>
+
+                              {/* 6. Copy Commit Message */}
+                              <button
+                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--color-surface-hover)] text-[var(--color-ink)] text-left cursor-pointer"
+                                onClick={() => {
+                                  const msg = commit.message
+                                  setActiveCommitMenu(null)
+                                  void navigator.clipboard?.writeText(msg)
+                                  showToast("Copied commit message")
+                                }}
+                                type="button"
+                              >
+                                <Icon name="edit" size={13} />
+                                <span>Copy Commit Message</span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )
                   })}
@@ -1339,37 +1816,353 @@ export function SourceControlPanel() {
       {showTagPrompt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-sm rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-4 shadow-xl">
-            <h4 className="font-semibold text-xs text-[var(--color-ink)] mb-3">
-              Create Git Tag
-            </h4>
-            <div className="space-y-2 mb-4">
-              <input
-                className="w-full px-2.5 py-1.5 rounded border border-[var(--color-line)] bg-[var(--color-canvas)] text-xs text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
-                onChange={(e) => setTagNameInput(e.target.value)}
-                placeholder="Tag name (e.g. v1.0.0)"
-                value={tagNameInput}
-              />
-              <input
-                className="w-full px-2.5 py-1.5 rounded border border-[var(--color-line)] bg-[var(--color-canvas)] text-xs text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
-                onChange={(e) => setTagMessageInput(e.target.value)}
-                placeholder="Annotation message (optional)"
-                value={tagMessageInput}
-              />
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-semibold text-xs text-[var(--color-ink)] flex items-center gap-1.5">
+                <Icon name="tag" size={14} />
+                <span>Create Git Tag</span>
+              </h4>
+              <button
+                className="text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer"
+                onClick={() => {
+                  setShowTagPrompt(false)
+                  setTagTargetCommit("")
+                  setTagCustomHashInput("")
+                  setTagTargetMode("recent")
+                }}
+                title="Close"
+                type="button"
+              >
+                <Icon name="close" size={13} />
+              </button>
             </div>
+
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="block text-[10px] font-semibold text-[var(--color-ink-muted)] mb-1 uppercase tracking-wider">
+                  Tag Name
+                </label>
+                <input
+                  className="w-full px-2.5 py-1.5 rounded border border-[var(--color-line)] bg-[var(--color-canvas)] text-xs text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
+                  onChange={(e) => setTagNameInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleCreateTagSubmit()
+                  }}
+                  placeholder="e.g. v1.0.0"
+                  value={tagNameInput}
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-semibold text-[var(--color-ink-muted)] mb-1 uppercase tracking-wider">
+                  Annotation Message (Optional)
+                </label>
+                <input
+                  className="w-full px-2.5 py-1.5 rounded border border-[var(--color-line)] bg-[var(--color-canvas)] text-xs text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
+                  onChange={(e) => setTagMessageInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleCreateTagSubmit()
+                  }}
+                  placeholder="e.g. Release version 1.0.0"
+                  value={tagMessageInput}
+                />
+              </div>
+
+              {/* Target Commit Selector */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] font-semibold text-[var(--color-ink-muted)] uppercase tracking-wider">
+                    Target Commit
+                  </label>
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <button
+                      className={`cursor-pointer hover:underline ${
+                        tagTargetMode === "recent"
+                          ? "text-[var(--color-accent)] font-semibold"
+                          : "text-[var(--color-ink-muted)]"
+                      }`}
+                      onClick={() => setTagTargetMode("recent")}
+                      type="button"
+                    >
+                      Recent (5)
+                    </button>
+                    <span className="text-[var(--color-ink-muted)]">|</span>
+                    <button
+                      className={`cursor-pointer hover:underline ${
+                        tagTargetMode === "custom"
+                          ? "text-[var(--color-accent)] font-semibold"
+                          : "text-[var(--color-ink-muted)]"
+                      }`}
+                      onClick={() => setTagTargetMode("custom")}
+                      type="button"
+                    >
+                      Manual Hash
+                    </button>
+                  </div>
+                </div>
+
+                {tagTargetMode === "recent" ? (
+                  <select
+                    className="w-full px-2.5 py-1.5 rounded border border-[var(--color-line)] bg-[var(--color-canvas)] text-xs text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)] cursor-pointer"
+                    onChange={(e) => setTagTargetCommit(e.target.value)}
+                    value={tagTargetCommit || (gitCommits[0]?.hash ?? "")}
+                  >
+                    {gitCommits.slice(0, 5).map((c, i) => (
+                      <option key={c.hash} value={c.hash}>
+                        [{c.shortHash || c.hash.slice(0, 7)}]
+                        {i === 0 ? " (HEAD)" : ""}: {c.message.slice(0, 28)}
+                        {c.message.length > 28 ? "..." : ""}
+                      </option>
+                    ))}
+                    {gitCommits.length === 0 && (
+                      <option value="">HEAD (Current HEAD)</option>
+                    )}
+                  </select>
+                ) : (
+                  <div>
+                    <input
+                      className={`w-full px-2.5 py-1.5 rounded border bg-[var(--color-canvas)] text-xs text-[var(--color-ink)] outline-none font-mono ${
+                        tagCustomHashInput &&
+                        !isValidGitHash(tagCustomHashInput)
+                          ? "border-[var(--color-error)]"
+                          : "border-[var(--color-line)] focus:border-[var(--color-accent)]"
+                      }`}
+                      onChange={(e) => setTagCustomHashInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleCreateTagSubmit()
+                      }}
+                      placeholder="Enter commit SHA (7-40 hex chars)..."
+                      value={tagCustomHashInput}
+                    />
+                    <div className="mt-1 text-[10px]">
+                      {tagCustomHashInput ? (
+                        isValidGitHash(tagCustomHashInput) ? (
+                          <span className="text-[var(--color-success)] flex items-center gap-1">
+                            <Icon name="check" size={10} />
+                            <span>Valid commit hash format</span>
+                          </span>
+                        ) : (
+                          <span className="text-[var(--color-error)] flex items-center gap-1">
+                            <Icon name="warning" size={10} />
+                            <span>Must be 7-40 hexadecimal characters</span>
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-[var(--color-ink-muted)]">
+                          Leave empty for HEAD or enter specific SHA
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="flex items-center justify-end gap-2">
               <button
                 className="px-3 py-1 rounded text-xs text-[var(--color-ink-muted)] hover:bg-[var(--color-surface-hover)] cursor-pointer"
-                onClick={() => setShowTagPrompt(false)}
+                onClick={() => {
+                  setShowTagPrompt(false)
+                  setTagTargetCommit("")
+                  setTagCustomHashInput("")
+                  setTagTargetMode("recent")
+                }}
                 type="button"
               >
                 Cancel
               </button>
               <button
-                className="px-3 py-1 rounded bg-[var(--color-accent)] text-white text-xs font-medium cursor-pointer"
+                className="px-3 py-1 rounded bg-[var(--color-accent)] text-white text-xs font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={
+                  tagTargetMode === "custom" &&
+                  Boolean(tagCustomHashInput) &&
+                  !isValidGitHash(tagCustomHashInput)
+                }
                 onClick={handleCreateTagSubmit}
                 type="button"
               >
                 Create Tag
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Compare Commits Modal */}
+      {showComparePrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-sm rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-4 shadow-xl">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-semibold text-xs text-[var(--color-ink)] flex items-center gap-1.5">
+                <Icon name="split" size={14} />
+                <span>Compare Commits</span>
+              </h4>
+              <button
+                className="text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer"
+                onClick={() => {
+                  setShowComparePrompt(false)
+                  setCompareBaseHash("")
+                  setCompareTargetHash("")
+                  setCompareCustomHashInput("")
+                  setCompareTargetMode("recent")
+                }}
+                title="Close"
+                type="button"
+              >
+                <Icon name="close" size={13} />
+              </button>
+            </div>
+
+            <div className="space-y-3 mb-4">
+              {/* Base Commit Display */}
+              <div>
+                <label className="block text-[10px] font-semibold text-[var(--color-ink-muted)] mb-1 uppercase tracking-wider">
+                  Base Commit
+                </label>
+                <div className="px-2.5 py-1.5 rounded border border-[var(--color-line)] bg-[var(--color-canvas)] text-xs text-[var(--color-ink)] flex items-center gap-2">
+                  <span className="font-mono font-bold text-[var(--color-accent)] shrink-0">
+                    {compareBaseHash.slice(0, 7)}
+                  </span>
+                  <span className="truncate text-[11px] text-[var(--color-ink-muted)]">
+                    {gitCommits.find((c) => c.hash === compareBaseHash)
+                      ?.message || compareBaseHash}
+                  </span>
+                </div>
+              </div>
+
+              {/* Target Commit Selector */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] font-semibold text-[var(--color-ink-muted)] uppercase tracking-wider">
+                    Compare With (Target)
+                  </label>
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <button
+                      className={`cursor-pointer hover:underline ${
+                        compareTargetMode === "recent"
+                          ? "text-[var(--color-accent)] font-semibold"
+                          : "text-[var(--color-ink-muted)]"
+                      }`}
+                      onClick={() => setCompareTargetMode("recent")}
+                      type="button"
+                    >
+                      Recent (5)
+                    </button>
+                    <span className="text-[var(--color-ink-muted)]">|</span>
+                    <button
+                      className={`cursor-pointer hover:underline ${
+                        compareTargetMode === "custom"
+                          ? "text-[var(--color-accent)] font-semibold"
+                          : "text-[var(--color-ink-muted)]"
+                      }`}
+                      onClick={() => setCompareTargetMode("custom")}
+                      type="button"
+                    >
+                      Manual Hash
+                    </button>
+                  </div>
+                </div>
+
+                {compareTargetMode === "recent" ? (
+                  <select
+                    className="w-full px-2.5 py-1.5 rounded border border-[var(--color-line)] bg-[var(--color-canvas)] text-xs text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)] cursor-pointer"
+                    onChange={(e) => setCompareTargetHash(e.target.value)}
+                    value={compareTargetHash}
+                  >
+                    {gitCommits
+                      .filter((c) => c.hash !== compareBaseHash)
+                      .slice(0, 5)
+                      .map((c, i) => (
+                        <option key={c.hash} value={c.hash}>
+                          [{c.shortHash || c.hash.slice(0, 7)}]
+                          {i === 0 ? " (HEAD)" : ""}: {c.message.slice(0, 28)}
+                          {c.message.length > 28 ? "..." : ""}
+                        </option>
+                      ))}
+                    {gitCommits.filter((c) => c.hash !== compareBaseHash)
+                      .length === 0 && (
+                      <option disabled value="">
+                        No other commits in history
+                      </option>
+                    )}
+                  </select>
+                ) : (
+                  <div>
+                    <input
+                      className={`w-full px-2.5 py-1.5 rounded border bg-[var(--color-canvas)] text-xs text-[var(--color-ink)] outline-none font-mono ${
+                        compareCustomHashInput &&
+                        !isValidGitHash(compareCustomHashInput)
+                          ? "border-[var(--color-error)]"
+                          : "border-[var(--color-line)] focus:border-[var(--color-accent)]"
+                      }`}
+                      onChange={(e) =>
+                        setCompareCustomHashInput(e.target.value)
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleCompareSubmit()
+                      }}
+                      placeholder="Enter target commit SHA (7-40 hex chars)..."
+                      value={compareCustomHashInput}
+                    />
+                    <div className="mt-1 text-[10px]">
+                      {compareCustomHashInput ? (
+                        isValidGitHash(compareCustomHashInput) ? (
+                          compareCustomHashInput.trim() === compareBaseHash ? (
+                            <span className="text-[var(--color-warning)] flex items-center gap-1">
+                              <Icon name="warning" size={10} />
+                              <span>Cannot compare commit with itself</span>
+                            </span>
+                          ) : (
+                            <span className="text-[var(--color-success)] flex items-center gap-1">
+                              <Icon name="check" size={10} />
+                              <span>Valid commit hash format</span>
+                            </span>
+                          )
+                        ) : (
+                          <span className="text-[var(--color-error)] flex items-center gap-1">
+                            <Icon name="warning" size={10} />
+                            <span>Must be 7-40 hexadecimal characters</span>
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-[var(--color-ink-muted)]">
+                          Enter specific commit SHA to compare against base
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                className="px-3 py-1 rounded text-xs text-[var(--color-ink-muted)] hover:bg-[var(--color-surface-hover)] cursor-pointer"
+                onClick={() => {
+                  setShowComparePrompt(false)
+                  setCompareBaseHash("")
+                  setCompareTargetHash("")
+                  setCompareCustomHashInput("")
+                  setCompareTargetMode("recent")
+                }}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="px-3 py-1 rounded bg-[var(--color-accent)] text-white text-xs font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={
+                  isLoadingCompare ||
+                  (compareTargetMode === "recent"
+                    ? !compareTargetHash
+                    : !compareCustomHashInput ||
+                      !isValidGitHash(compareCustomHashInput) ||
+                      compareCustomHashInput.trim() === compareBaseHash)
+                }
+                onClick={handleCompareSubmit}
+                type="button"
+              >
+                {isLoadingCompare ? "Comparing..." : "Compare"}
               </button>
             </div>
           </div>
@@ -1546,6 +2339,68 @@ export function SourceControlPanel() {
           </div>
         </div>
       )}
+
+      {/* Stash Prompt Modal */}
+      {showStashPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-sm rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] p-4 shadow-xl">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-semibold text-xs text-[var(--color-ink)] flex items-center gap-1.5">
+                <Icon name="stash" size={14} />
+                <span>Stash Changes</span>
+              </h4>
+              <button
+                className="text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer"
+                onClick={() => setShowStashPrompt(false)}
+                title="Close"
+                type="button"
+              >
+                <Icon name="close" size={13} />
+              </button>
+            </div>
+            <div className="space-y-3 mb-4">
+              <input
+                className="w-full px-2.5 py-1.5 rounded border border-[var(--color-line)] bg-[var(--color-canvas)] text-xs text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
+                onChange={(e) => setStashMessageInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void handleStashSubmit()
+                }}
+                placeholder="Stash message (optional)..."
+                value={stashMessageInput}
+              />
+              <label className="flex items-center gap-2 text-xs text-[var(--color-ink-soft)] cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={stashUntrackedInput}
+                  onChange={(e) => setStashUntrackedInput(e.target.checked)}
+                  className="rounded border-[var(--color-line)] text-[var(--color-accent)]"
+                />
+                <span>Include untracked files</span>
+              </label>
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                className="px-3 py-1 rounded text-xs text-[var(--color-ink-muted)] hover:bg-[var(--color-surface-hover)] cursor-pointer"
+                onClick={() => setShowStashPrompt(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="px-3 py-1 rounded bg-[var(--color-accent)] text-white text-xs font-medium cursor-pointer"
+                onClick={handleStashSubmit}
+                disabled={isOperatingGit}
+                type="button"
+              >
+                {isOperatingGit ? "Stashing..." : "Stash"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clone Repository Modal */}
+      {renderCloneModal()}
     </div>
   )
 }

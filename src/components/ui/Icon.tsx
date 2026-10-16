@@ -306,6 +306,20 @@ export function Icon({ name, size = 16, className = "" }: IconProps) {
       </>
     ),
     zap: <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />,
+    stash: (
+      <>
+        <rect x="3" y="4" width="18" height="5" rx="1" />
+        <path d="M4 9v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9" />
+        <path d="M10 13h4" />
+      </>
+    ),
+    "cherry-pick": (
+      <>
+        <circle cx="7" cy="18" r="3" />
+        <circle cx="17" cy="6" r="3" />
+        <path d="M7 15V9a3 3 0 0 1 3-3h4" />
+      </>
+    ),
   }
 
   return (

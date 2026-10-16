@@ -364,6 +364,88 @@ func TestGitEndpoints(t *testing.T) {
 	}
 }
 
+func TestGitStashCherryPickAndCloneEndpoints(t *testing.T) {
+	_, handler, tempDir := setupTestServer(t, "")
+	defer os.RemoveAll(tempDir)
+
+	// Init git repo
+	cmd := exec.Command("git", "init", "-b", "main")
+	cmd.Dir = tempDir
+	if err := cmd.Run(); err != nil {
+		fallback := exec.Command("git", "init")
+		fallback.Dir = tempDir
+		_ = fallback.Run()
+	}
+	_ = exec.Command("git", "-C", tempDir, "config", "user.name", "Tester").Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.email", "tester@example.com").Run()
+
+	// Initial commit
+	testFile := filepath.Join(tempDir, "file.txt")
+	_ = os.WriteFile(testFile, []byte("original\n"), 0644)
+	stageBody, _ := json.Marshal(StageFilesRequest{Files: []string{"file.txt"}})
+	executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/git/stage", bytes.NewReader(stageBody)))
+	commitBody, _ := json.Marshal(CommitRequest{Message: "initial commit"})
+	rrC := executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/git/commit", bytes.NewReader(commitBody)))
+	var cRes CommitResponse
+	_ = json.Unmarshal(rrC.Body.Bytes(), &cRes)
+	initialHash := ""
+	if cRes.Commit != nil {
+		initialHash = cRes.Commit.Hash
+	}
+
+	// 1. Tag with target
+	if initialHash != "" {
+		tagBody, _ := json.Marshal(CreateTagRequest{Name: "v0.9.0", Message: "Release 0.9", Target: initialHash})
+		rrTag := executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/git/tag", bytes.NewReader(tagBody)))
+		if rrTag.Code != http.StatusOK {
+			t.Fatalf("expected 200 for create tag with target, got %d: %s", rrTag.Code, rrTag.Body.String())
+		}
+	}
+
+	// 2. Modify and stash
+	_ = os.WriteFile(testFile, []byte("modified for stash\n"), 0644)
+	stashSaveBody, _ := json.Marshal(StashSaveRequest{Message: "test stash endpoint", Untracked: true})
+	rrStashSave := executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/git/stash/save", bytes.NewReader(stashSaveBody)))
+	if rrStashSave.Code != http.StatusOK {
+		t.Fatalf("expected 200 for stash save, got %d: %s", rrStashSave.Code, rrStashSave.Body.String())
+	}
+
+	// 3. Stashes list
+	rrStashes := executeRequest(handler, httptest.NewRequest(http.MethodGet, "/api/v1/git/stashes", nil))
+	if rrStashes.Code != http.StatusOK {
+		t.Fatalf("expected 200 for get stashes, got %d", rrStashes.Code)
+	}
+	var stashesRes StashesResponse
+	_ = json.Unmarshal(rrStashes.Body.Bytes(), &stashesRes)
+	if len(stashesRes.Stashes) == 0 {
+		t.Fatalf("expected at least 1 stash, got 0")
+	}
+
+	// 4. Stash Pop
+	stashPopBody, _ := json.Marshal(StashActionRequest{Ref: "stash@{0}"})
+	rrStashPop := executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/git/stash/pop", bytes.NewReader(stashPopBody)))
+	if rrStashPop.Code != http.StatusOK {
+		t.Fatalf("expected 200 for stash pop, got %d: %s", rrStashPop.Code, rrStashPop.Body.String())
+	}
+
+	// 5. Commit change so we can test clone and cherry-pick
+	executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/git/stage", bytes.NewReader(stageBody)))
+	commitBody2, _ := json.Marshal(CommitRequest{Message: "commit 2"})
+	executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/git/commit", bytes.NewReader(commitBody2)))
+
+	// 6. Clone endpoint
+	destDir, err := os.MkdirTemp("", "api-clone-dest-*")
+	if err == nil {
+		defer os.RemoveAll(destDir)
+		cloneTarget := filepath.Join(destDir, "cloned")
+		cloneBody, _ := json.Marshal(CloneRequest{URL: tempDir, TargetPath: cloneTarget, OpenWorkspace: false})
+		rrClone := executeRequest(handler, httptest.NewRequest(http.MethodPost, "/api/v1/git/clone", bytes.NewReader(cloneBody)))
+		if rrClone.Code != http.StatusOK {
+			t.Fatalf("expected 200 for git clone, got %d: %s", rrClone.Code, rrClone.Body.String())
+		}
+	}
+}
+
 func TestGitInitStageUnstage_E2E(t *testing.T) {
 	_, handler, tempDir := setupTestServer(t, "")
 	defer os.RemoveAll(tempDir)

@@ -281,6 +281,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/git/remote/add", s.handleGitAddRemote)
 	mux.HandleFunc("/api/v1/git/diff", s.handleGitDiff)
 	mux.HandleFunc("/api/v1/git/compare", s.handleGitCompare)
+	mux.HandleFunc("/api/v1/git/stashes", s.handleGitStashes)
+	mux.HandleFunc("/api/v1/git/stash/save", s.handleGitStashSave)
+	mux.HandleFunc("/api/v1/git/stash/pop", s.handleGitStashPop)
+	mux.HandleFunc("/api/v1/git/stash/apply", s.handleGitStashApply)
+	mux.HandleFunc("/api/v1/git/stash/drop", s.handleGitStashDrop)
+	mux.HandleFunc("/api/v1/git/cherry-pick", s.handleGitCherryPick)
+	mux.HandleFunc("/api/v1/git/clone", s.handleGitClone)
 
 	// Terminal API endpoints
 	mux.HandleFunc("/api/v1/terminal/create", s.handleTerminalCreate)

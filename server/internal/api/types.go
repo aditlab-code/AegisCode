@@ -205,6 +205,42 @@ type TagsResponse struct {
 type CreateTagRequest struct {
 	Name    string `json:"name"`
 	Message string `json:"message"`
+	Target  string `json:"target,omitempty"`
+}
+
+// StashesResponse models git stash list payload.
+type StashesResponse struct {
+	Stashes []git.StashEntry `json:"stashes"`
+}
+
+// StashSaveRequest models git stash push payload.
+type StashSaveRequest struct {
+	Message   string `json:"message"`
+	Untracked bool   `json:"untracked"`
+}
+
+// StashActionRequest models git stash pop/apply/drop payload.
+type StashActionRequest struct {
+	Ref string `json:"ref"`
+}
+
+// CherryPickRequest models git cherry-pick payload.
+type CherryPickRequest struct {
+	Hash string `json:"hash"`
+}
+
+// CloneRequest models git clone payload.
+type CloneRequest struct {
+	URL           string `json:"url"`
+	TargetPath    string `json:"targetPath"`
+	OpenWorkspace bool   `json:"openWorkspace"`
+}
+
+// CloneResponse models git clone result payload.
+type CloneResponse struct {
+	Status   string `json:"status"`
+	RootPath string `json:"rootPath"`
+	Name     string `json:"name"`
 }
 
 // GitOperationResponse models standard Git operation response.
