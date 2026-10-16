@@ -319,6 +319,12 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/ai/transcript/", s.handleAITranscript)
 	mux.HandleFunc("/api/v1/ai/chat", s.handleAIChatStream)
 
+	// Aegis Copilot Autonomous Orchestrator Endpoints
+	mux.HandleFunc("/api/v1/agent/init-rules", s.handleAgentInitRules)
+	mux.HandleFunc("/api/v1/agent/rules-status", s.handleAgentRulesStatus)
+	mux.HandleFunc("/api/v1/agent/tasks", s.handleAgentTasks)
+	mux.HandleFunc("/api/v1/agent/task/", s.handleAgentTaskDetail)
+
 	// Bundled DAP Debugger (Delve) Endpoints (Sub-Phase 6.5)
 	mux.HandleFunc("/api/v1/debug/start", s.handleDebugStart)
 	mux.HandleFunc("/api/v1/debug/breakpoints", s.handleDebugBreakpoints)

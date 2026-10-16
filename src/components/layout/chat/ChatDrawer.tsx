@@ -12,6 +12,7 @@ import {
   COLLAPSE_CHAT_EXPANDED_THRESHOLD,
 } from "../../../store/slices/createLayoutSlice"
 import { ChatHeader } from "./ChatHeader"
+import { ChatWaveStepper } from "./ChatWaveStepper"
 import { ChatMessageList } from "./ChatMessageList"
 import { ChatComposer } from "./ChatComposer"
 import { ChatSessionSidebar } from "./ChatSessionSidebar"
@@ -123,6 +124,7 @@ export function ChatDrawer() {
       {chatSessionsOpen && <ChatSessionSidebar />}
       <div className="chat-main-pane">
         <ChatHeader />
+        <ChatWaveStepper />
         {aiTrace && (
           <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-accent/10 border-b border-accent/30 text-[11px] select-none">
             <div className="flex items-center gap-1.5 min-w-0">

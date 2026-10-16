@@ -15,6 +15,7 @@ import {
   type LanguageServerStatusInfo,
 } from "../../../utils/lspApi"
 import type { ChatProvider } from "../../../types/workbench"
+import { AgentRulesCard } from "./AgentRulesCard"
 
 export function SettingsModal() {
   const {
@@ -1170,6 +1171,11 @@ export function SettingsModal() {
                       </table>
                     </div>
                   </div>
+                </div>
+
+                {/* 4. Workspace Rules & Persona (AGENTS.md) */}
+                <div className="ai-section">
+                  <AgentRulesCard />
                 </div>
               </div>
             ) : activeCategory === "LSP" && !searchQuery.trim() ? (
