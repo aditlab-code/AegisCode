@@ -201,7 +201,6 @@ const ChatMessageCard = memo(function ChatMessageCard({
         {item.text ? (
           <div className="agent-body">
             <MarkdownRenderer text={item.text} isStreaming={item.isStreaming} />
-            {item.isStreaming && <span className="streaming-cursor" />}
           </div>
         ) : item.isStreaming ? (
           <div className="message-body-streaming-shimmer">

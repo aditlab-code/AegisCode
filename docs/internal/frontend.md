@@ -219,7 +219,7 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
 
 ### 6. AEGIS AI Agent Drawer (`chat/`)
 - **Path**: [`src/components/layout/chat/`](../../src/components/layout/chat)
-- **Primary Components**: `ChatDrawer.tsx`, `ChatHeader.tsx`, `ChatSessionSidebar.tsx`, `ChatMessageList.tsx`, `MarkdownRenderer.tsx`, `ChatSuggestions.tsx`, `ChatComposer.tsx`, `ChatCommandPopover.tsx`, `ChatProviderSelect.tsx`, `chat.css`
+- **Primary Components**: `ChatDrawer.tsx`, `ChatHeader.tsx`, `ChatSessionSidebar.tsx`, `ChatMessageList.tsx`, `MarkdownRenderer.tsx`, `MermaidBlock.tsx`, `MermaidPreviewModal.tsx`, `useSmoothStream.ts`, `ChatSuggestions.tsx`, `ChatComposer.tsx`, `ChatCommandPopover.tsx`, `ChatProviderSelect.tsx`, `chat.css`
 - **Visual Design & Responsive Architecture**:
   - **Dual Dimension Modes & Drag Sash**: Resized along the left sash (`ResizeSash.tsx`) using cumulative drag tracking (`dragWidthRef`):
     - **Normal Mode (Sessions closed)**: Default width **340px**, minimum width **300px**, maximum width **600px**, auto-collapse threshold **< 180px**.
@@ -249,6 +249,9 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
     - Communicates via Go streaming proxy (`POST /api/v1/ai/chat`) and appends atomic event nodes to the graph ledger (`POST /api/v1/chats/:id/events`) with Content-Addressed Storage (CAS) blob offloading.
     - Client consumes streamed Server-Sent Events (`event: start/thinking/tool_call/chunk/done/error`) through a `ReadableStreamDefaultReader` parser.
     - Typewriter streaming text updates with pulsing cursor (`.streaming-cursor`) and shimmer loader (`.message-body-streaming-shimmer`).
+  - **Adaptive Smooth Typewriter Pacing (`useSmoothStream.ts`)**:
+    - Solves choppy, jumpy typing caused by coarse SSE chunking by buffering incoming text and pacing output through throttled 30ms interval micro-batches (~33 FPS).
+    - Automatically scales step size according to buffer backlog, ensuring smooth visual typing without lagging behind when the stream finishes or locking up the UI thread.
   - **Modern Messenger-Style Balloon Architecture & Interactive Welcome Banner (`ChatMessageList.tsx`, `chat.css`)**:
     - **Interactive Welcome Empty State Banner (`.chat-welcome-banner`)**: Clean, modern greeting rendered on empty sessions featuring the active workspace folder pill badge (`.workspace-pill`) and quick hint badges (`/` for skills, `@` for files & folders).
     - **Messenger-Style Chat Balloons**: Replaces uniform flat blocks with intuitive conversational message turns:
@@ -260,6 +263,16 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
     - **Subtle Micro-Metadata Footer**: Monospace micro-text (`2.4s`) and provider tag at the message footer.
     - **Streaming Fast-Path & Zero-Parse Markdown Architecture (`MarkdownRenderer.tsx`)**: Completely bypasses expensive $O(N)$ AST block parsing and regex syntax tokenization during active streaming (`isStreaming === true`). Renders plain typography in `whitespace-pre-wrap` during live generation to eliminate DOM reconciliation churn, memory spikes, and tab freezing/crashing. Once generation completes (`isStreaming === false`), executes a single full markdown parse to render rich interactive elements (syntax highlighting, tables, code review gates, task lists).
     - **Interactive Code Blocks & Git Review Gates (`MarkdownRenderer.tsx`)**: Fenced code blocks with language badge, syntax highlighting (reusing `tokenizeLine` token classes), one-click **Copy Code** button with feedback, and **Apply to Editor** / **Apply to <basename>** review gate button. Supports `lang:filepath` fence headers (e.g. ````ts:src/utils.ts````) to automatically route code to the correct file. Writing triggers path validation, dirty buffer prompt protection, and opens the changes immediately in `DiffEditorPane.tsx` side-by-side view. Omitted `[Insert at Cursor]` to maintain a lean UI and prevent focus-stealing bugs.
+    - **On-Demand Lazy Mermaid Rendering & Crash Guards (`MermaidBlock.tsx`)**:
+      - Dynamically loaded on-demand (`import("mermaid")`) strictly when a ```mermaid fenced block is encountered, keeping the main bundle lightweight.
+      - Automatically matches system Dark / Light theme tokens.
+      - **Strict Streaming Guard**: Mermaid rendering is strictly bypassed while `isStreaming === true` or when the block is unclosed (`if (isStreaming || unclosed) return;`), completely preventing DOM reconciliation race conditions with React.
+      - **Fault-Tolerant Fallback**: Syntax errors render formatted raw code with an error status badge rather than crashing the chat interface, and residual `#dmermaid` DOM nodes are safely pruned on error or unmount.
+      - Features a Diagram / Code toggle and a dedicated Preview button opening the diagram in a full modal.
+    - **Global Lightbox Modal Preview with Pan & Zoom (`MermaidPreviewModal.tsx`)**:
+      - Ephemeral fullscreen modal mounted via `createPortal` to `document.body` (zero disk or tab buffer storage overhead).
+      - Interactive canvas featuring mouse-drag panning, mouse wheel zooming (20% – 500%), and double-click reset to 100%.
+      - Header toolbar with zoom buttons, one-click SVG export/download, source code copy, and keyboard `Esc` listener.
     - **Agent Multi-File Review Banner (`ChatMessageList.tsx`)**: Inspects both executed tool calls (`write_to_file`, `replace_file_content`, `create_file`, `delete_file`) and `lang:filepath` code blocks. Proposed file block extraction (`extractProposedCodeBlocks`) is deferred until stream completion to eliminate redundant regex scanning every frame. Renders a compact bottom summary banner displaying touched file counts, individual clickable file chips to open files directly in editor panes, an **Apply All ({N})** batch action for proposed code blocks, and a **Review in Git** button navigating directly to Source Control.
     - **Parameter & Output Sanitization & Anti-Ghost Tab**: Arguments and execution output blocks are sanitized and capped (max 2,500 characters in DOM preview via `CapOutput` / `sanitizeOutput`) to prevent DOM bloat. Strict path validation rejects empty paths or path values matching tool names (`view_file`), preventing empty ghost editor tabs.
       - **Line Range Badges**: If `StartLine` and `EndLine` are present on read tools, displays a compact range badge (e.g. `style.css · L1-100`) directly on the card header.

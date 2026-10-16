@@ -102,3 +102,23 @@ When an AI provider executes CodeGraph tools to explore your codebase, AegisCode
 2. **Instant `[Open]` Navigation (Zero-Lag)**: Clicking `[Open]` jumps directly to the target file in the main editor. AegisCode intentionally omits forced editor splitting inside chat cards, eliminating CSS Grid reflow and UI freezing during streaming.
 3. **In-Memory System Context (Zero Repo Pollution)**: AegisCode dynamically wraps prompts with `<system_context>` instructions in-memory during Go core dispatch. Your workspace `AGENTS.md` remains strictly untouched and read-only.
 
+---
+
+## 5. Smooth Typing & Interactive Mermaid Diagram Preview
+
+### Smooth Typewriter Pacing
+Incoming LLM token streams often arrive in uneven, coarse chunks over Server-Sent Events (SSE). AegisCode buffers incoming chunks and paces rendering via an adaptive 30ms micro-batcher (~33 FPS). This provides an organic, smooth typewriter experience without UI thread freezes or lagging behind long responses.
+
+### Mermaid Flowchart & Diagram Rendering
+Any ````mermaid```` code block returned by an assistant renders directly as a visual diagram:
+* **Lazy On-Demand Loading**: Mermaid runtime assets are loaded only when a diagram is encountered, keeping the initial app bundle lean.
+* **Fault-Tolerant Fallback**: Invalid syntax automatically renders formatted raw code with an error status badge instead of crashing the interface.
+* **Diagram / Code Toggle**: Switch between visual diagram mode and formatted raw code at any time.
+
+### Fullscreen Pan & Zoom Preview Modal
+Clicking the **Preview** button (`maximize` icon) in the diagram toolbar opens an interactive lightbox modal:
+* **Pan & Zoom Canvas**: Drag to pan across large architectures, scroll wheel to zoom (20% – 500%), and double-click to reset view to 100%.
+* **SVG Export & Copy**: Download the diagram directly as a clean `.svg` file or copy the raw Mermaid source.
+* **Zero Workspace Overhead**: Ephemeral portal rendering means zero extra disk files, dirty tabs, or RAM leaks. Press `Esc` or click close to dismiss cleanly.
+
+

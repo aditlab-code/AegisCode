@@ -43,6 +43,7 @@
     "codemirror": "^6.0.2",
     "cytoscape": "^3.34.3",
     "cytoscape-dagre": "^4.0.1",
+    "mermaid": "^12.2.0",
     "pdfjs-dist": "^6.4.299",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

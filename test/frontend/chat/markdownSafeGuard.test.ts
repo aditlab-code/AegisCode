@@ -78,4 +78,57 @@ describe("MarkdownRenderer Safe Guard & Block Parser", () => {
     // nodes[5] is the command chip
     expect(nodes[6]).toBe(" suite")
   })
+
+  it("correctly parses mermaid diagram fenced code blocks", () => {
+    const text = "```mermaid\ngraph TD;\n  A-->B;\n```"
+    const blocks = parseMarkdownBlocks(text, false)
+    expect(blocks.length).toBe(1)
+    expect(blocks[0].type).toBe("code")
+    if (blocks[0].type === "code") {
+      expect(blocks[0].lang).toBe("mermaid")
+      expect(blocks[0].content).toBe("graph TD;\n  A-->B;")
+      expect(blocks[0].unclosed).toBe(false)
+    }
+  })
+
+  it("handles unclosed streaming mermaid blocks without crashing", () => {
+    const text = "```mermaid\nsequenceDiagram\nAlice->>John: Hello"
+    const blocks = parseMarkdownBlocks(text, true)
+    expect(blocks.length).toBe(1)
+    expect(blocks[0].type).toBe("code")
+    if (blocks[0].type === "code") {
+      expect(blocks[0].lang).toBe("mermaid")
+      expect(blocks[0].unclosed).toBe(true)
+    }
+  })
+
+  it("renders MermaidPreviewModal with controls and SVG content", async () => {
+    const React = await import("react")
+    const { MermaidPreviewModal } = await import(
+      "@/components/layout/chat/MermaidPreviewModal"
+    )
+    const { renderToString } = await import("react-dom/server")
+
+    const closedHtml = renderToString(
+      React.createElement(MermaidPreviewModal, {
+        isOpen: false,
+        svgContent: "<svg><g></g></svg>",
+        code: "graph TD; A-->B",
+        onClose: () => {},
+      }),
+    )
+    expect(closedHtml).toBe("")
+
+    const openHtml = renderToString(
+      React.createElement(MermaidPreviewModal, {
+        isOpen: true,
+        svgContent: "<svg id='test-svg'><g></g></svg>",
+        code: "graph TD; A-->B",
+        onClose: () => {},
+      }),
+    )
+    expect(openHtml).toContain("Mermaid Diagram Preview")
+    expect(openHtml).toContain("test-svg")
+    expect(openHtml).toContain("SVG")
+  })
 })

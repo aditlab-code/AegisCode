@@ -3,6 +3,8 @@ import { Icon } from "../../ui/Icon"
 import { useWorkbenchStore, useShallow } from "../../../store"
 import { tokenizeLine } from "../../../utils/syntax"
 import { isGitDiffTab } from "../../../utils/gitDiffTab"
+import { useSmoothStream } from "./useSmoothStream"
+import { MermaidBlock } from "./MermaidBlock"
 
 interface MarkdownRendererProps {
   text: string
@@ -54,6 +56,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
   text,
   isStreaming = false,
 }: MarkdownRendererProps) {
+  const displayedText = useSmoothStream(text, isStreaming)
   const { openFileInPane, applyCodeWithReview, showToast } = useWorkbenchStore(
     useShallow((s) => ({
       openFileInPane: s.openFileInPane,
@@ -62,25 +65,22 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
     })),
   )
 
-  // During streaming: skip the expensive O(N) parser entirely.
-  // Parse only once after the stream is done (isStreaming === false).
   const blocks = useMemo(() => {
-    if (isStreaming) return []
-    return parseMarkdownBlocks(text, false)
-  }, [text, isStreaming])
-
-  // Fast-path: render plain pre-wrap during streaming — zero parse, zero tokenizeLine cost.
-  if (isStreaming) {
-    return (
-      <div className="markdown-body">
-        <span className="whitespace-pre-wrap leading-relaxed">{text}</span>
-      </div>
-    )
-  }
+    return parseMarkdownBlocks(displayedText, isStreaming)
+  }, [displayedText, isStreaming])
 
   return (
     <div className="markdown-body">
+      {blocks.length === 0 && isStreaming && (
+        <span className="streaming-cursor" />
+      )}
       {blocks.map((block, idx) => {
+        const isLastBlock = idx === blocks.length - 1
+        const cursorNode =
+          isStreaming && isLastBlock && block.type !== "code" ? (
+            <span className="streaming-cursor" />
+          ) : null
+
         switch (block.type) {
           case "code":
             return (
@@ -118,6 +118,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
               return (
                 <h1 key={`block-${idx}`} className="markdown-h1">
                   {inline}
+                  {cursorNode}
                 </h1>
               )
             }
@@ -125,6 +126,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
               return (
                 <h2 key={`block-${idx}`} className="markdown-h2">
                   {inline}
+                  {cursorNode}
                 </h2>
               )
             }
@@ -132,33 +134,41 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
               return (
                 <h3 key={`block-${idx}`} className="markdown-h3">
                   {inline}
+                  {cursorNode}
                 </h3>
               )
             }
             return (
               <h4 key={`block-${idx}`} className="markdown-h4">
                 {inline}
+                {cursorNode}
               </h4>
             )
           }
           case "blockquote":
             return (
               <blockquote key={`block-${idx}`} className="markdown-blockquote">
-                {block.content.map((line, lineIdx) => (
-                  <div key={lineIdx}>
-                    {renderInlineMarkdown(
-                      line,
-                      openFileInPane,
-                      `bq-${idx}-${lineIdx}`,
-                    )}
-                  </div>
-                ))}
+                {block.content.map((line, lineIdx) => {
+                  const isLastLine = lineIdx === block.content.length - 1
+                  return (
+                    <div key={lineIdx}>
+                      {renderInlineMarkdown(
+                        line,
+                        openFileInPane,
+                        `bq-${idx}-${lineIdx}`,
+                      )}
+                      {isLastLine ? cursorNode : null}
+                    </div>
+                  )
+                })}
               </blockquote>
             )
           case "ul":
             return (
               <ul key={`block-${idx}`} className="markdown-ul">
                 {block.items.map((item, itemIdx) => {
+                  const isLastItem = itemIdx === block.items.length - 1
+                  const itemCursor = isLastItem ? cursorNode : null
                   const isTask =
                     item.startsWith("[ ] ") || item.startsWith("[x] ")
                   if (isTask) {
@@ -178,6 +188,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
                             openFileInPane,
                             `ul-task-${idx}-${itemIdx}`,
                           )}
+                          {itemCursor}
                         </span>
                       </li>
                     )
@@ -189,6 +200,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
                         openFileInPane,
                         `ul-${idx}-${itemIdx}`,
                       )}
+                      {itemCursor}
                     </li>
                   )
                 })}
@@ -197,15 +209,19 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
           case "ol":
             return (
               <ol key={`block-${idx}`} className="markdown-ol">
-                {block.items.map((item, itemIdx) => (
-                  <li key={itemIdx} className="markdown-li">
-                    {renderInlineMarkdown(
-                      item,
-                      openFileInPane,
-                      `ol-${idx}-${itemIdx}`,
-                    )}
-                  </li>
-                ))}
+                {block.items.map((item, itemIdx) => {
+                  const isLastItem = itemIdx === block.items.length - 1
+                  return (
+                    <li key={itemIdx} className="markdown-li">
+                      {renderInlineMarkdown(
+                        item,
+                        openFileInPane,
+                        `ol-${idx}-${itemIdx}`,
+                      )}
+                      {isLastItem ? cursorNode : null}
+                    </li>
+                  )
+                })}
               </ol>
             )
           case "table":
@@ -241,10 +257,16 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
                     ))}
                   </tbody>
                 </table>
+                {cursorNode}
               </div>
             )
           case "hr":
-            return <hr key={`block-${idx}`} className="markdown-hr" />
+            return (
+              <div key={`block-${idx}`}>
+                <hr className="markdown-hr" />
+                {cursorNode}
+              </div>
+            )
           case "p":
           default:
             return (
@@ -254,6 +276,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
                   openFileInPane,
                   `p-${idx}`,
                 )}
+                {cursorNode}
               </p>
             )
         }
@@ -281,6 +304,17 @@ function CodeBlockView({
   onApply,
   onCopy,
 }: CodeBlockViewProps) {
+  if (lang.toLowerCase() === "mermaid") {
+    return (
+      <MermaidBlock
+        code={code}
+        unclosed={unclosed}
+        isStreaming={isStreaming}
+        onCopy={onCopy}
+      />
+    )
+  }
+
   const [copied, setCopied] = useState(false)
   // Read activeTab locally so only CodeBlockView re-renders on tab change,
   // not the expensive MarkdownRenderer parser above it.
@@ -349,11 +383,17 @@ function CodeBlockView({
       </div>
       <pre className="markdown-code-pre">
         <code>
-          {lines.map((line, lineIdx) => (
-            <span key={lineIdx} className="block leading-relaxed">
-              {tokenizeLine(line)}
+          {isStreaming ? (
+            <span className="whitespace-pre-wrap block leading-relaxed">
+              {code}
             </span>
-          ))}
+          ) : (
+            lines.map((line, lineIdx) => (
+              <span key={lineIdx} className="block leading-relaxed">
+                {tokenizeLine(line)}
+              </span>
+            ))
+          )}
           {unclosed && isStreaming && <span className="streaming-cursor" />}
         </code>
       </pre>
