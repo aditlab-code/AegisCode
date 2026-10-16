@@ -4,6 +4,7 @@ import {
   createWorkspaceSlice,
   markBufferSavedLogic,
   updateBufferContentLogic,
+  updateDirtyFilesLogic,
   normalizeWorkspacePath,
 } from "@/store/slices/createWorkspaceSlice"
 import { createEditorSlice } from "@/store/slices/createEditorSlice"
@@ -489,6 +490,79 @@ describe("MP-5.3 Buffer Lifecycle Integrity & Concurrency Race Guards", () => {
       expect(useTestStore.getState().fileBuffers["target.ts"]?.content).toBe(
         "v2-content",
       )
+    })
+  })
+
+  describe("OPT-DIRTY-01: Decoupled Dirty Files Map & Reference Stability", () => {
+    it("updateDirtyFilesLogic preserves reference when status remains dirty", () => {
+      const initialDirty = { "a.ts": true }
+      const nextDirty = updateDirtyFilesLogic(initialDirty, "a.ts", true)
+      expect(Object.is(initialDirty, nextDirty)).toBe(true)
+    })
+
+    it("updateDirtyFilesLogic creates new reference when transitioning from clean to dirty", () => {
+      const initialDirty = {}
+      const nextDirty = updateDirtyFilesLogic(initialDirty, "a.ts", true)
+      expect(nextDirty["a.ts"]).toBe(true)
+      expect(Object.is(initialDirty, nextDirty)).toBe(false)
+    })
+
+    it("updateDirtyFilesLogic creates new reference and deletes key when transitioning from dirty to clean", () => {
+      const initialDirty = { "a.ts": true, "b.ts": true }
+      const nextDirty = updateDirtyFilesLogic(initialDirty, "a.ts", false)
+      expect(nextDirty["a.ts"]).toBeUndefined()
+      expect(nextDirty["b.ts"]).toBe(true)
+      expect(Object.is(initialDirty, nextDirty)).toBe(false)
+    })
+
+    it("store preserves dirtyFiles reference identity across repeated keystrokes on dirty buffer", async () => {
+      const editorCreator = createEditorSlice as any
+      const workspaceCreator = createWorkspaceSlice as any
+      const useTestStore = create<WorkbenchStore>()((set, get, store) => ({
+        ...editorCreator(set, get, store),
+        ...workspaceCreator(set, get, store),
+      }))
+
+      useTestStore.setState({
+        fileBuffers: {
+          "code.ts": {
+            content: "function test() {}",
+            savedContent: "function test() {}",
+            isDirty: false,
+            language: "typescript",
+          },
+        },
+        dirtyFiles: {},
+      })
+
+      // 1st keystroke: clean -> dirty (dirtyFiles reference MUST change)
+      useTestStore
+        .getState()
+        .updateFileContent("code.ts", "function test() { a")
+      const dirty1 = useTestStore.getState().dirtyFiles
+      expect(dirty1["code.ts"]).toBe(true)
+
+      // 2nd keystroke: dirty -> dirty (dirtyFiles reference MUST be preserved!)
+      useTestStore
+        .getState()
+        .updateFileContent("code.ts", "function test() { ab")
+      const dirty2 = useTestStore.getState().dirtyFiles
+      expect(dirty2["code.ts"]).toBe(true)
+      expect(Object.is(dirty1, dirty2)).toBe(true)
+
+      // 3rd keystroke: dirty -> dirty (dirtyFiles reference MUST be preserved!)
+      useTestStore
+        .getState()
+        .updateFileContent("code.ts", "function test() { abc")
+      const dirty3 = useTestStore.getState().dirtyFiles
+      expect(dirty3["code.ts"]).toBe(true)
+      expect(Object.is(dirty2, dirty3)).toBe(true)
+
+      // Revert: dirty -> clean
+      useTestStore.getState().revertBufferContent("code.ts")
+      const dirtyReverted = useTestStore.getState().dirtyFiles
+      expect(dirtyReverted["code.ts"]).toBeFalsy()
+      expect(Object.is(dirty3, dirtyReverted)).toBe(false)
     })
   })
 })

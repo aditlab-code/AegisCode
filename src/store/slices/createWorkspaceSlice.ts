@@ -23,6 +23,7 @@ import { isGitDiffTab } from "../../utils/gitDiffTab"
 
 let linterDebounceTimer: ReturnType<typeof setTimeout> | null = null
 let linterAbortController: AbortController | null = null
+let contentDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
 interface OffloadLintPayload {
   filename: string
@@ -199,6 +200,42 @@ export function updateBufferContentLogic(
     },
   }
 }
+
+export function updateDirtyFilesLogic(
+  prevDirtyFiles: Record<string, boolean> = {},
+  filename: string,
+  isDirty: boolean,
+  aliasFilename?: string,
+): Record<string, boolean> {
+  const current =
+    Boolean(prevDirtyFiles[filename]) ||
+    Boolean(aliasFilename && prevDirtyFiles[aliasFilename])
+  if (current === isDirty) {
+    return prevDirtyFiles
+  }
+  if (!isDirty) {
+    const next = { ...prevDirtyFiles }
+    delete next[filename]
+    if (aliasFilename) {
+      delete next[aliasFilename]
+    }
+    return next
+  }
+  return {
+    ...prevDirtyFiles,
+    [filename]: true,
+  }
+}
+
+export const initialDirtyFiles: Record<string, boolean> = Object.entries(
+  initialFileBuffers,
+).reduce(
+  (acc, [key, buf]) => {
+    if (buf?.isDirty) acc[key] = true
+    return acc
+  },
+  {} as Record<string, boolean>,
+)
 
 export function syncBufferWithDiskLogic(
   buffers: Record<string, FileBuffer>,
@@ -409,6 +446,7 @@ export async function loadWorkspaceInternal(
         rootWorkspaceName: "",
         files: [],
         fileBuffers: {},
+        dirtyFiles: {},
       })
       if (typeof get().closeAllTabs === "function") {
         get().closeAllTabs()
@@ -424,7 +462,7 @@ export async function loadWorkspaceInternal(
     const prevRoot = get().rootWorkspacePath
     const normalizedRoot = normalizeWorkspacePath(info.rootPath)
     if (prevRoot && prevRoot !== normalizedRoot) {
-      set({ fileBuffers: {} })
+      set({ fileBuffers: {}, dirtyFiles: {} })
     }
     try {
       window.localStorage?.setItem("aegis_root_workspace", normalizedRoot)
@@ -714,6 +752,7 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
         rootWorkspaceName: "",
         files: [],
         fileBuffers: {},
+        dirtyFiles: {},
       })
       if (typeof get().resetAllGroups === "function") {
         get().resetAllGroups()
@@ -812,9 +851,17 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
         set,
         get().rootWorkspacePath || undefined,
       )
-      set((state) => ({
-        files: renameFileInTreeLogic(state.files, oldPath, newPath),
-      }))
+      set((state) => {
+        const nextDirty = { ...state.dirtyFiles }
+        if (nextDirty[oldPath] !== undefined) {
+          nextDirty[newPath] = nextDirty[oldPath]
+          delete nextDirty[oldPath]
+        }
+        return {
+          files: renameFileInTreeLogic(state.files, oldPath, newPath),
+          dirtyFiles: nextDirty,
+        }
+      })
       if (typeof get().renameTabsInBothGroups === "function") {
         get().renameTabsInBothGroups(oldPath, newPath)
       }
@@ -836,8 +883,12 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
         const rootPath = get().rootWorkspacePath
         const clean = rootPath ? normalizeWorkspacePath(name, rootPath) : name
         if (clean) delete nextBuffers[clean]
+        const nextDirty = { ...state.dirtyFiles }
+        delete nextDirty[name]
+        if (clean) delete nextDirty[clean]
         return {
           fileBuffers: nextBuffers,
+          dirtyFiles: nextDirty,
           files: removeFileFromTreeLogic(state.files, name),
         }
       })
@@ -853,11 +904,20 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
   },
 
   fileBuffers: initialFileBuffers,
+  dirtyFiles: initialDirtyFiles,
   setFileBuffers: (updater) =>
-    set((state) => ({
-      fileBuffers:
-        typeof updater === "function" ? updater(state.fileBuffers) : updater,
-    })),
+    set((state) => {
+      const nextBuffers =
+        typeof updater === "function" ? updater(state.fileBuffers) : updater
+      const nextDirty: Record<string, boolean> = {}
+      for (const [k, b] of Object.entries(nextBuffers)) {
+        if (b?.isDirty) nextDirty[k] = true
+      }
+      return {
+        fileBuffers: nextBuffers,
+        dirtyFiles: nextDirty,
+      }
+    }),
 
   updateFileContent: (filename: string, content: string) => {
     const rootPath = get().rootWorkspacePath
@@ -869,13 +929,24 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
       : get().fileBuffers[filename]
         ? filename
         : clean
-    set((state) => ({
-      fileBuffers: updateBufferContentLogic(
+    set((state) => {
+      const nextBuffers = updateBufferContentLogic(
         state.fileBuffers,
         targetKey,
         content,
-      ),
-    }))
+      )
+      const isDirty = Boolean(nextBuffers[targetKey]?.isDirty)
+      const nextDirty = updateDirtyFilesLogic(
+        state.dirtyFiles,
+        targetKey,
+        isDirty,
+        clean !== targetKey ? clean : filename,
+      )
+      return {
+        fileBuffers: nextBuffers,
+        dirtyFiles: nextDirty,
+      }
+    })
 
     const linterSettings = get().linterSettings
     if (
@@ -890,6 +961,17 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
         set,
         300,
       )
+    }
+
+    if (typeof window !== "undefined") {
+      if (contentDebounceTimer) clearTimeout(contentDebounceTimer)
+      contentDebounceTimer = setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent("aegis:file-content-debounced", {
+            detail: { file: clean },
+          }),
+        )
+      }, 350)
     }
   },
 
@@ -908,6 +990,12 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
         state.fileBuffers,
         targetKey,
         content,
+      ),
+      dirtyFiles: updateDirtyFilesLogic(
+        state.dirtyFiles,
+        targetKey,
+        false,
+        clean !== targetKey ? clean : filename,
       ),
     }))
   },
@@ -973,6 +1061,12 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
               lastSaved: Date.now(),
             },
           },
+          dirtyFiles: updateDirtyFilesLogic(
+            state.dirtyFiles,
+            targetKey,
+            false,
+            clean,
+          ),
         }
       }
 
@@ -981,7 +1075,16 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
         targetKey,
         contentToSave,
       )
-      return { fileBuffers: marked }
+      const stillDirty = Boolean(marked[targetKey]?.isDirty)
+      return {
+        fileBuffers: marked,
+        dirtyFiles: updateDirtyFilesLogic(
+          state.dirtyFiles,
+          targetKey,
+          stillDirty,
+          clean,
+        ),
+      }
     })
 
     const linterSettings = get().linterSettings
@@ -1070,7 +1173,16 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
         language: detectLanguage(cleanPath),
         lastSaved: Date.now(),
       }
-      return { fileBuffers: nextBuffers }
+      const nextDirty = updateDirtyFilesLogic(
+        state.dirtyFiles,
+        cleanPath,
+        isDirty,
+        rawPath,
+      )
+      return {
+        fileBuffers: nextBuffers,
+        dirtyFiles: nextDirty,
+      }
     })
 
     if (typeof get().refreshGit === "function") {
@@ -1100,6 +1212,12 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
         : clean
     set((state) => ({
       fileBuffers: revertBufferContentLogic(state.fileBuffers, targetKey),
+      dirtyFiles: updateDirtyFilesLogic(
+        state.dirtyFiles,
+        targetKey,
+        false,
+        clean,
+      ),
     }))
     const buf = get().fileBuffers[targetKey]
     const reverted = buf?.savedContent ?? buf?.content ?? ""
@@ -1452,13 +1570,22 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
         const contentToSave = buf.content
         try {
           await saveWorkspaceFile(filename, contentToSave, false)
-          set((state) => ({
-            fileBuffers: markBufferSavedLogic(
+          set((state) => {
+            const marked = markBufferSavedLogic(
               state.fileBuffers,
               filename,
               contentToSave,
-            ),
-          }))
+            )
+            const stillDirty = Boolean(marked[filename]?.isDirty)
+            return {
+              fileBuffers: marked,
+              dirtyFiles: updateDirtyFilesLogic(
+                state.dirtyFiles,
+                filename,
+                stillDirty,
+              ),
+            }
+          })
         } catch (err) {
           console.warn(`Failed to auto-save dirty buffer for ${filename}:`, err)
         }

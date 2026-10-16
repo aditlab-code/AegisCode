@@ -1,18 +1,8 @@
 import { useEffect, useRef, useState } from "react"
-import { Icon } from "../../ui/Icon"
-import { IconButton } from "../../ui/IconButton"
 import { useWorkbenchStore, useShallow } from "../../../store"
-import { EditorTabs } from "./EditorTabs"
-import { EditorBreadcrumbs } from "./EditorBreadcrumbs"
-import { CodePane } from "./CodePane"
-import { DiffEditorPane } from "./DiffEditorPane"
-import { EditorFindWidget } from "./EditorFindWidget"
-import { EditorEmptyState } from "./EditorEmptyState"
 import { DebugToolbar } from "./DebugToolbar"
-import { isGitDiffTab } from "../../../utils/gitDiffTab"
-import { getViewerTypeForFile, isSettingsTab } from "./viewers/viewerTypes"
-import { ViewerPane } from "./viewers/ViewerPane"
-import { SettingsView } from "../settings/SettingsView"
+import { EditorGroup } from "./EditorGroup"
+import { EditorEmptyState } from "./EditorEmptyState"
 
 export function Editor() {
   const {
@@ -48,9 +38,6 @@ export function Editor() {
 
   const hasTabsGroup1 = group1.tabs.length > 0 && Boolean(group1.activeTab)
   const hasTabsGroup2 = group2.tabs.length > 0 && Boolean(group2.activeTab)
-
-  const viewerTypeG1 = getViewerTypeForFile(group1.activeTab)
-  const viewerTypeG2 = getViewerTypeForFile(group2.activeTab)
 
   useEffect(() => {
     if (!isResizing) return
@@ -96,39 +83,18 @@ export function Editor() {
         data-active-file={group1.activeTab || ""}
       >
         <DebugToolbar />
-        <EditorTabs
+        <EditorGroup
+          activeTab={group1.activeTab}
+          className="border-r-0"
+          findState={findStateGroup1}
           groupId="group1"
-          isFindOpen={findStateGroup1.isOpen}
+          hasTabs={hasTabsGroup1}
+          isFocused={focusedGroup === "group1"}
+          onCloseFind={() => closeFind("group1")}
+          onFocus={() => useWorkbenchStore.getState().setFocusedGroup("group1")}
           onToggleFind={() => toggleFind("group1")}
+          paneId="primary"
         />
-        <EditorBreadcrumbs file={group1.activeTab} />
-        <EditorFindWidget
-          filename={group1.activeTab}
-          groupId="group1"
-          isOpen={findStateGroup1.isOpen}
-          isReplaceOpen={findStateGroup1.isReplaceOpen}
-          onClose={() => closeFind("group1")}
-          onToggleReplace={() => toggleFind("group1", true)}
-        />
-        <div className="editor-panes">
-          {isGitDiffTab(group1.activeTab) ? (
-            <DiffEditorPane groupId="group1" tab={group1.activeTab} />
-          ) : isSettingsTab(group1.activeTab) ? (
-            <SettingsView />
-          ) : viewerTypeG1 !== "code" ? (
-            <ViewerPane
-              filename={group1.activeTab}
-              groupId="group1"
-              viewerType={viewerTypeG1}
-            />
-          ) : (
-            <CodePane
-              filename={group1.activeTab}
-              isFocused={focusedGroup === "group1"}
-              paneId="primary"
-            />
-          )}
-        </div>
       </section>
     )
   }
@@ -139,58 +105,18 @@ export function Editor() {
       {isResizing && <div className="split-resize-overlay" />}
 
       {/* Group 1 Window */}
-      <div
-        className={`editor-window-group ${!hasTabsGroup1 ? "group-empty" : ""}`}
-        data-active-file={group1.activeTab || ""}
+      <EditorGroup
+        activeTab={group1.activeTab}
+        findState={findStateGroup1}
+        groupId="group1"
+        hasTabs={hasTabsGroup1}
+        isFocused={focusedGroup === "group1"}
+        onCloseFind={() => closeFind("group1")}
+        onFocus={() => useWorkbenchStore.getState().setFocusedGroup("group1")}
+        onToggleFind={() => toggleFind("group1")}
+        paneId="primary"
         style={{ width: `${splitRatio}%` }}
-      >
-        {hasTabsGroup1 ? (
-          <>
-            <EditorTabs
-              groupId="group1"
-              isFindOpen={findStateGroup1.isOpen}
-              onToggleFind={() => toggleFind("group1")}
-            />
-            <EditorBreadcrumbs file={group1.activeTab} />
-            <EditorFindWidget
-              filename={group1.activeTab}
-              groupId="group1"
-              isOpen={findStateGroup1.isOpen}
-              isReplaceOpen={findStateGroup1.isReplaceOpen}
-              onClose={() => closeFind("group1")}
-              onToggleReplace={() => toggleFind("group1", true)}
-            />
-            <div className="editor-panes">
-              {isGitDiffTab(group1.activeTab) ? (
-                <DiffEditorPane groupId="group1" tab={group1.activeTab} />
-              ) : isSettingsTab(group1.activeTab) ? (
-                <SettingsView />
-              ) : viewerTypeG1 !== "code" ? (
-                <ViewerPane
-                  filename={group1.activeTab}
-                  groupId="group1"
-                  viewerType={viewerTypeG1}
-                />
-              ) : (
-                <CodePane
-                  filename={group1.activeTab}
-                  isFocused={focusedGroup === "group1"}
-                  paneId="primary"
-                />
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="empty-group-container flex flex-col h-full w-full">
-            <div className="empty-group-header flex items-center justify-between px-3 py-1.5 border-b border-line">
-              <span className="text-[10px] tracking-wider uppercase text-ink-muted">
-                Group 1 (Empty)
-              </span>
-            </div>
-            <EditorEmptyState groupId="group1" />
-          </div>
-        )}
-      </div>
+      />
 
       {/* Draggable Divider Sash */}
       <div
@@ -209,61 +135,20 @@ export function Editor() {
       </div>
 
       {/* Group 2 Window */}
-      <div
-        className={`editor-window-group ${!hasTabsGroup2 ? "group-empty" : ""}`}
-        data-active-file={group2.activeTab || ""}
+      <EditorGroup
+        activeTab={group2.activeTab}
+        findState={findStateGroup2}
+        groupId="group2"
+        hasTabs={hasTabsGroup2}
+        isFocused={focusedGroup === "group2"}
+        onCloseFind={() => closeFind("group2")}
+        onCloseGroup={closeSplitEditor}
+        onFocus={() => useWorkbenchStore.getState().setFocusedGroup("group2")}
+        onToggleFind={() => toggleFind("group2")}
+        paneId="secondary"
         style={{ width: `calc(${100 - splitRatio}% - 4px)` }}
-      >
-        {hasTabsGroup2 ? (
-          <>
-            <EditorTabs
-              groupId="group2"
-              isFindOpen={findStateGroup2.isOpen}
-              onToggleFind={() => toggleFind("group2")}
-            />
-            <EditorBreadcrumbs file={group2.activeTab} />
-            <EditorFindWidget
-              filename={group2.activeTab}
-              groupId="group2"
-              isOpen={findStateGroup2.isOpen}
-              isReplaceOpen={findStateGroup2.isReplaceOpen}
-              onClose={() => closeFind("group2")}
-              onToggleReplace={() => toggleFind("group2", true)}
-            />
-            <div className="editor-panes">
-              {isGitDiffTab(group2.activeTab) ? (
-                <DiffEditorPane groupId="group2" tab={group2.activeTab} />
-              ) : isSettingsTab(group2.activeTab) ? (
-                <SettingsView />
-              ) : viewerTypeG2 !== "code" ? (
-                <ViewerPane
-                  filename={group2.activeTab}
-                  groupId="group2"
-                  viewerType={viewerTypeG2}
-                />
-              ) : (
-                <CodePane
-                  filename={group2.activeTab}
-                  isFocused={focusedGroup === "group2"}
-                  paneId="secondary"
-                />
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="empty-group-container flex flex-col h-full w-full">
-            <div className="empty-group-header flex items-center justify-between px-3 py-1.5 border-b border-line">
-              <span className="text-[10px] tracking-wider uppercase text-ink-muted">
-                Group 2 (Empty)
-              </span>
-              <IconButton label="Close Split Group" onClick={closeSplitEditor}>
-                <Icon name="close" size={13} />
-              </IconButton>
-            </div>
-            <EditorEmptyState groupId="group2" />
-          </div>
-        )}
-      </div>
+      />
     </section>
   )
 }
+export default Editor

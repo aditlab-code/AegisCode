@@ -141,8 +141,12 @@ function AppShell() {
         <ActivityRail />
         {sidebarOpen && <Sidebar />}
         <div
-          className={`workbench ${panelOpen ? "" : "workbench-panel-closed"} ${
-            panelOpen && panelMaximized ? "workbench-panel-maximized" : ""
+          className={`editor-panel-group workbench ${
+            panelOpen ? "" : "editor-panel-group-closed workbench-panel-closed"
+          } ${
+            panelOpen && panelMaximized
+              ? "editor-panel-group-maximized workbench-panel-maximized"
+              : ""
           }`}
           style={
             {

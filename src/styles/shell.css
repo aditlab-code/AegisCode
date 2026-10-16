@@ -50,6 +50,7 @@
   order: 3;
 }
 
+.workspace-sidebar-right .editor-panel-group,
 .workspace-sidebar-right .workbench {
   order: 1;
 }
@@ -82,6 +83,7 @@
   grid-template-columns: minmax(0, 1fr) var(--chat-width, 500px) 44px;
 }
 
+.editor-panel-group,
 .workbench {
   display: grid;
   grid-template-rows: minmax(180px, 1fr) var(--bottom-height, 180px);
@@ -96,16 +98,22 @@
   z-index: 1;
 }
 
+.editor-panel-group-closed,
 .workbench-panel-closed {
   grid-template-rows: minmax(0, 1fr) 28px !important;
 }
 
+.editor-panel-group-maximized,
 .workbench-panel-maximized {
   grid-template-rows: 1fr !important;
 }
 
+.editor-panel-group-maximized .editor,
+.editor-panel-group-maximized .editor-split-container,
+.editor-panel-group-maximized .editor-group,
 .workbench-panel-maximized .editor,
-.workbench-panel-maximized .editor-split-container {
+.workbench-panel-maximized .editor-split-container,
+.workbench-panel-maximized .editor-group {
   display: none !important;
 }
 

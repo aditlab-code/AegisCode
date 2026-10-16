@@ -1,21 +1,19 @@
-# Table Phase: Aegis Copilot Deep Concurrency & Buffer Race Remediation
+# Table Phase: Dirty File State Synchronization & Buffer Optimization
 
-> **Dokumen Rencana Wave & Micro-Phase (Phase 2)**  
-> Dibuat oleh Kanna sesuai `#WORKFLOW` pada `task/0-0-Orchestrator.md`.  
-> Status Global: `PASSED & VERIFIED`  
+> **Dokumen Rencana Wave & Micro-Phase (Phase 4)**  
+> Dibuat oleh Shun sesuai `#WORKFLOW` pada `task/0-0-Orchestrator.md`.  
+> Status Global: `COMPLETED & VERIFIED`  
 > Referensi Spesifikasi: [`task/0-spec-Orchestrator.md`](0-spec-Orchestrator.md)
 
 ---
 
 ## 1. Execution Topology & Waves Overview
 
-Alur eksekusi dibagi menjadi 4 Wave terstruktur dengan prinsip fail-fast dan dependensi linier:
-
 ```mermaid
 flowchart TD
-    W1["Wave 1: Chat Stream Zombie Guard & Persistence Isolation<br/>(MP-W1.1 Zombie Guard, MP-W1.2 Session Map, MP-W1.3 Smart Hydrate)"] --> W2["Wave 2: Buffer & Tab Normalization<br/>(MP-W2.1 Keystroke Preservation, MP-W2.2 Canonical Tabs)"]
-    W2 --> W3["Wave 3: Task Parser Robustness<br/>(MP-W3.1 Wave Regex Multi-Header)"]
-    W3 --> W4["Wave 4: Verification Gates & Concurrency Tests<br/>(go test -race, vitest, build, format)"]
+    W1["Wave 1: Store-Level Dirty State Decoupling<br/>(MP-W1.1 WorkspaceSlice dirtyFiles Map, MP-W1.2 Store Logic Invariant Tests)"] --> W2["Wave 2: Sidebar Explorer Decoupling & Lazy Outline<br/>(MP-W2.1 ExplorerPanel Switch to dirtyFiles, MP-W2.2 Debounced Symbol Extraction)"]
+    W2 --> W3["Wave 3: EditorTabs Decoupling<br/>(MP-W3.1 Tab Bar Switch to dirtyFiles Map)"]
+    W3 --> W4["Wave 4: Verification Gates & Concurrency Smoke Tests<br/>(MP-W4.1 Vitest Suite & Race Tests, MP-W4.2 Build & Format Gates)"]
 ```
 
 ---
@@ -23,11 +21,10 @@ flowchart TD
 ## 2. Detailed Micro-Phases
 
 | Phase ID | Wave | Name / Description | Target File(s) | Topology | Dependencies | Verification Gate | Status |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **MP-W1.1-ZOMBIE-GUARD** | 1 | **Stream Token Identity Guard**: Pada `createChatSlice.ts`, periksa identitas controller sebelum mengatur `isGenerating: false` dan `chatAbortController = null`. Mencegah callback abort dari sesi lama mematikan status streaming sesi baru atau menghilangkan tombol Stop. | `src/store/slices/createChatSlice.ts` | Linear | None | `rtk npm run test:frontend` | `PASSED` |
-| **MP-W1.2-SESSION-MAP** | 1 | **Per-Session Debounce Map**: Ganti variabel timer tunggal pada `debouncedSaveBackendSession` dengan `Map<string, Timeout>` per-session ID, agar pergantian sesi cepat tidak saling membatalkan jadwal simpan ke backend. | `src/store/slices/createChatSlice.ts` | Linear | MP-W1.1-ZOMBIE-GUARD | `rtk npm run test:frontend` | `PASSED` |
-| **MP-W1.3-SMART-HYDRATE** | 1 | **Lossless Startup Hydration Merge**: Pada `fetchBackendChatSummaries` startup hydration di `createChatSlice.ts`, bandingkan jumlah pesan lokal dengan backend. Jangan pernah menimpa sesi lokal jika pengguna sudah mengirim pesan baru saat hydration berjalan. | `src/store/slices/createChatSlice.ts` | Linear | MP-W1.2-SESSION-MAP | `rtk npm run test:frontend` | `PASSED` |
-| **MP-W2.1-BUFFER-SAVE** | 2 | **Mid-Flight Keystroke Preservation**: Di `applyCodeWithReview` (`createWorkspaceSlice.ts`), preservasi isi buffer terkini yang masuk selama jeda network `await saveWorkspaceFile`, dan hitung `isDirty` dinamis alih-alih hard overwrite `isDirty: false`. | `src/store/slices/createWorkspaceSlice.ts` | Linear | Wave 1 | `rtk npm run test:frontend` | `PASSED` |
-| **MP-W2.2-CANONICAL-TAB** | 2 | **Canonical Workspace Path di `openFileInGroup`**: Di `createEditorSlice.ts`, pastikan path berkas dinormalisasi menggunakan `normalizeWorkspacePath` sebelum dimasukkan ke `group.tabs`, mencegah tab duplikat dengan key absolut vs relatif. | `src/store/slices/createEditorSlice.ts` | Linear | MP-W2.1-BUFFER-SAVE | `rtk npm run test:frontend` | `PASSED` |
-| **MP-W3.1-WAVE-REGEX** | 3 | **Multi-Level Wave Header Support**: Di `task_sync.go` (`ExtractWaveStatus`), perluas regex wave header menjadi `(?i)^#{2,4}\s*Wave\s*(\d+)[:\s]*(.*)` agar kompatibel dengan ragam output LLM (`## Wave`, `### Wave`, `#### Wave`). | `server/internal/agent/task_sync.go`, `server/internal/agent/agent_test.go` | Linear | Wave 2 | `rtk go test ./...` | `PASSED` |
-| **MP-W4.1-GATES** | 4 | **Strict Verification Gates & Zero Regression**: Jalankan `rtk go test -race ./...` (race detector), `rtk npm run test:frontend` (Vitest), `rtk npm run build` (Rolldown 0 errors), dan `rtk npm run format` (oxfmt). | Full Repository | Linear | All Waves | All Gates Passed | `PASSED` |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **MP-W1.1-STORE-DIRTY-MAP** | 1 | **WorkspaceSlice `dirtyFiles` Decoupling**: Tambahkan `dirtyFiles: Record<string, boolean>` ke `WorkspaceSlice`. Di `updateBufferContentLogic`, perbarui referensi `dirtyFiles` HANYA jika boolean `isDirty` berubah status (`false ➔ true` atau sebaliknya). Sinkronkan di `markBufferSavedLogic`, `syncBufferWithDiskLogic`, dan `revertBufferContentLogic`. | `src/store/types.ts`<br/>`src/store/slices/createWorkspaceSlice.ts` | Linear | None | `rtk npm run test:frontend` | `PASSED` |
+| **MP-W1.2-INVARIANT-TESTS** | 1 | **Store Invariant & Reference Stability Tests**: Buat/perbarui unit test untuk memverifikasi bahwa keystroke berturut-turut pada file yang sudah dirty TIDAK mengubah referensi objek `dirtyFiles`, dan bahwa `OPT-BUF-01` in-flight save tetap 100% aman. | `test/frontend/core/bufferLifecycleIntegrity.test.ts` | Linear | MP-W1.1-STORE-DIRTY-MAP | `rtk npm run test:frontend` | `PASSED` |
+| **MP-W2.1-EXPLORER-DECOUPLING** | 2 | **Sidebar Explorer Switch to `dirtyFiles`**: Di `ExplorerPanel.tsx`, hapus subscription ke seluruh objek `fileBuffers`. Gunakan `dirtyFiles` untuk `buildExplorerGitDecorations` dan penanda folder dirty. | `src/components/layout/sidebar/ExplorerPanel.tsx` | Linear | Wave 1 | `rtk npm run test:frontend` | `PASSED` |
+| **MP-W2.2-OUTLINE-DEBOUNCE** | 2 | **Debounced & Lazy Outline Parsing**: Di `ExplorerPanel.tsx`, debounce pemanggilan `extractSymbols` (250ms) dan pastikan tidak dipanggil jika akordeon Outline sedang tertutup (`!outlineOpen`). | `src/components/layout/sidebar/ExplorerPanel.tsx` | Linear | MP-W2.1-EXPLORER-DECOUPLING | `rtk npm run test:frontend` | `PASSED` |
+| **MP-W3.1-TABS-DECOUPLING** | 3 | **EditorTabs Switch to `dirtyFiles`**: Di `EditorTabs.tsx`, gantikan pengecekan `fileBuffers` untuk dirty indicator dengan `dirtyFiles[tab]`. Pastikan tab bar tidak re-render saat mengetik di file yang sudah dirty. | `src/components/layout/editor/EditorTabs.tsx` | Linear | Wave 2 | `rtk npm run test:frontend` | `PASSED` |
+| **MP-W4.1-GATES-AND-REGRESSIONS** | 4 | **Mandatory Gates & Concurrency Smoke Tests**: Jalankan seluruh test suite Vitest (318+ tests), build check dengan Rolldown, dan format check dengan oxfmt. Verifikasi sinkronisasi dirty state Text Editor ↔ Sidebar ↔ Drawer AI berjalan mulus tanpa race condition. | Full Repository | Linear | All Waves | `npm run build && npm run test:frontend && npm run format` | `PASSED` |

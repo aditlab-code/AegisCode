@@ -264,6 +264,7 @@ export interface WorkspaceSlice {
   renameFile: (oldPath: string, newName: string) => Promise<void>
   deleteFile: (name: string) => Promise<void>
   fileBuffers: Record<string, FileBuffer>
+  dirtyFiles: Record<string, boolean>
   setFileBuffers: (
     updater: Record<string, FileBuffer> | ((
       prev: Record<string, FileBuffer>,

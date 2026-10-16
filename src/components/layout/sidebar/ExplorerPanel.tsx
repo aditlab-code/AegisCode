@@ -236,7 +236,7 @@ export function ExplorerPanel() {
     setActiveTabInGroup,
     closeTabInGroup,
     closeAllTabs,
-    fileBuffers,
+    dirtyFiles,
     setCursorPosition,
     showToast,
     recentProjects,
@@ -269,7 +269,7 @@ export function ExplorerPanel() {
       setActiveTabInGroup: s.setActiveTabInGroup,
       closeTabInGroup: s.closeTabInGroup,
       closeAllTabs: s.closeAllTabs,
-      fileBuffers: s.fileBuffers,
+      dirtyFiles: s.dirtyFiles,
       setCursorPosition: s.setCursorPosition,
       showToast: s.showToast,
       recentProjects: s.recentProjects,
@@ -286,8 +286,8 @@ export function ExplorerPanel() {
   )
 
   const { gitStatusMap, dirtyFoldersSet } = useMemo(
-    () => buildExplorerGitDecorations(stagedChanges, gitChanges, fileBuffers),
-    [stagedChanges, gitChanges, fileBuffers],
+    () => buildExplorerGitDecorations(stagedChanges, gitChanges, dirtyFiles),
+    [stagedChanges, gitChanges, dirtyFiles],
   )
 
   const timelineMaxVisible = settings?.features?.timeline?.maxVisibleItems ?? 30
@@ -641,31 +641,65 @@ export function ExplorerPanel() {
     }
   }, [outlineOpen, currentTab])
 
+  const [lexicalSymbols, setLexicalSymbols] = useState<OutlineSymbol[]>([])
+
+  useEffect(() => {
+    if (!outlineOpen) {
+      setLexicalSymbols([])
+      return
+    }
+    const targetKey = activeEditorFile || currentTab
+    if (!targetKey) {
+      setLexicalSymbols([])
+      return
+    }
+
+    const computeSymbols = () => {
+      const state = useWorkbenchStore.getState()
+      const baseTarget = targetKey?.split("/").pop() || ""
+      const baseCurrent = currentTab?.split("/").pop() || ""
+      const buf =
+        state.fileBuffers[targetKey] ||
+        state.fileBuffers[currentTab] ||
+        state.fileBuffers[baseTarget] ||
+        state.fileBuffers[baseCurrent] ||
+        Object.entries(state.fileBuffers).find(
+          ([k]) =>
+            k === targetKey ||
+            k === currentTab ||
+            (baseTarget && k.endsWith("/" + baseTarget)) ||
+            (baseCurrent && k.endsWith("/" + baseCurrent)) ||
+            k.endsWith("/" + targetKey) ||
+            targetKey.endsWith("/" + k) ||
+            k.endsWith("/" + currentTab) ||
+            currentTab.endsWith("/" + k),
+        )?.[1]
+      const code = buf?.content
+      setLexicalSymbols(extractSymbols(code))
+    }
+
+    computeSymbols()
+
+    const handleContentChange = (e: Event) => {
+      const customEvent = e as CustomEvent<{ file?: string }>
+      if (!customEvent.detail?.file || customEvent.detail.file === targetKey) {
+        computeSymbols()
+      }
+    }
+    window.addEventListener("aegis:file-content-debounced", handleContentChange)
+
+    return () => {
+      window.removeEventListener(
+        "aegis:file-content-debounced",
+        handleContentChange,
+      )
+    }
+  }, [outlineOpen, activeEditorFile, currentTab, dirtyFiles])
+
   // Outline symbols of active tab (CodeGraph AST enriched with local lexical fallback)
   const activeSymbols = useMemo(() => {
-    const targetKey = activeEditorFile || currentTab
-    const baseTarget = targetKey?.split("/").pop() || ""
-    const baseCurrent = currentTab?.split("/").pop() || ""
-    const buf =
-      fileBuffers[targetKey] ||
-      fileBuffers[currentTab] ||
-      fileBuffers[baseTarget] ||
-      fileBuffers[baseCurrent] ||
-      Object.entries(fileBuffers).find(
-        ([k]) =>
-          k === targetKey ||
-          k === currentTab ||
-          (baseTarget && k.endsWith("/" + baseTarget)) ||
-          (baseCurrent && k.endsWith("/" + baseCurrent)) ||
-          k.endsWith("/" + targetKey) ||
-          targetKey.endsWith("/" + k) ||
-          k.endsWith("/" + currentTab) ||
-          currentTab.endsWith("/" + k),
-      )?.[1]
-    const code = buf?.content
-    const lexical = extractSymbols(code)
-    return lexical.length > 0 ? lexical : codeGraphSymbols
-  }, [fileBuffers, currentTab, activeEditorFile, codeGraphSymbols])
+    return lexicalSymbols.length > 0 ? lexicalSymbols : codeGraphSymbols
+  }, [lexicalSymbols, codeGraphSymbols])
 
   const handleCreateSubmit = useCallback(() => {
     if (isSubmittingRef.current) return
@@ -915,7 +949,7 @@ export function ExplorerPanel() {
               {group2.tabs.map((tab) => {
                 const isActive =
                   tab === group2.activeTab && focusedGroup === "group2"
-                const isDirty = fileBuffers[tab]?.isDirty
+                const isDirty = Boolean(dirtyFiles[tab])
                 return (
                   <div
                     className={`file-row open-editor-row ${
@@ -953,7 +987,7 @@ export function ExplorerPanel() {
           ) : (
             group1.tabs.map((tab) => {
               const isActive = tab === group1.activeTab
-              const isDirty = fileBuffers[tab]?.isDirty
+              const isDirty = Boolean(dirtyFiles[tab])
               return (
                 <div
                   className={`file-row open-editor-row ${

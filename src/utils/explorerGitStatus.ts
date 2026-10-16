@@ -55,7 +55,7 @@ export function mapGitChangeToBadge(change: GitChange): ExplorerGitBadge {
 export function buildExplorerGitDecorations(
   stagedChanges: GitChange[] = [],
   unstagedChanges: GitChange[] = [],
-  fileBuffers?: Record<string, FileBuffer>,
+  fileBuffersOrDirtyMap?: Record<string, FileBuffer | boolean | undefined>,
 ): ExplorerGitDecorations {
   const gitStatusMap = new Map<string, ExplorerGitBadge>()
   const dirtyFoldersSet = new Set<string>()
@@ -82,10 +82,11 @@ export function buildExplorerGitDecorations(
     }
   }
 
-  // 2. In-memory unsaved edits (fileBuffers.isDirty)
-  if (fileBuffers) {
-    for (const [rawFile, buf] of Object.entries(fileBuffers)) {
-      if (buf?.isDirty) {
+  // 2. In-memory unsaved edits (fileBuffers.isDirty or dirtyFiles map)
+  if (fileBuffersOrDirtyMap) {
+    for (const [rawFile, val] of Object.entries(fileBuffersOrDirtyMap)) {
+      const isDirty = typeof val === "boolean" ? val : Boolean(val?.isDirty)
+      if (isDirty) {
         const cleanPath = normalizePath(rawFile)
         if (!cleanPath) continue
 

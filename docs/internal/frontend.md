@@ -15,11 +15,11 @@ The AegisCode interface utilizes a multi-column, multi-panel desktop shell (`.ap
 +----------------------------------------------------------------------------------------------------+
 |  HEADER BAR (Window Controls, App Menu, Global Search ⌘K, Layout Toggles, Companion QR)            |
 +---+----------------------+----------------------------------------------+--------------------------+
-| A | SIDEBAR              | WORKBENCH CODE EDITOR                        | AEGIS AI AGENT DRAWER    |
+| A | SIDEBAR              | EDITOR PANEL GROUP (.editor-panel-group)     | AEGIS AI AGENT DRAWER    |
 | C |                      |                                              |                          |
 | T | - Explorer (CRUD)    | [EditorTabs: Group 1]   [EditorTabs: Group 2]| - Session Master List    |
 | I | - Git Source Control | [EditorBreadcrumbs]                          | - Streaming Message View |
-| V | - Search & Replace   | [CodePane + Gutter]                          | - Autocomplete (/ & @)   |
+| V | - Search & Replace   | [CodePane (.text-editor) + Gutter]           | - Autocomplete (/ & @)   |
 | I |                      | [Minimap]                                    | - Model Selector         |
 | T |                      +----------------------------------------------+                          |
 | Y |                      | BOTTOM PANEL (Expanded: 180px / Dock: 28px)  |                          |
@@ -40,7 +40,7 @@ The desktop shell (`.workspace`) distributes columns dynamically according to pa
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Activity Rail** | 44px (width) | 44px | 44px | N/A (permanent) | Permanent |
 | **Primary Sidebar** | 260px (width) | 220px | 460px | Drag < 160px | Last width or 260px |
-| **Workbench Editor** | `minmax(0, 1fr)` | 320px (target) | Viewport-bound | N/A | Flexible |
+| **Editor Panel Group** (`.editor-panel-group`) | `minmax(0, 1fr)` | 320px (target) | Viewport-bound | N/A | Flexible |
 | **Chat Drawer (Normal)** | 340px (width) | 300px | 600px | Drag < 180px | Last width or 340px |
 | **Chat Drawer (+Sessions)**| 500px (width) | 480px | 600px | Drag < 320px | Last width or 500px |
 | **Bottom Panel (Open)** | 180px (height) | 100px (height) | 800px (height) | Drag < 80px (collapses to dock) | Last height or 180px |
@@ -124,13 +124,31 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
     - **Conflict Marker Detection & Commit Guard**: Automatic detection of Git merge conflict markers (`<<<<<<< HEAD`, `=======`, `>>>>>>>`) across open buffers and unmerged files (`code === "U"`). Renders a warning banner above the commit input, disables the Commit button and dropdown options, intercepts `⌘Enter` shortcuts with alert toasts, and displays a yellow `CONFLICT` badge on editor tabs.
     - **Unified Diff Smooth Scrolling**: CodeMirror unified merge view configured without collapsing unchanged lines, rendered in a 100% height container with full vertical and horizontal scrolling matching split view behavior.
 
-### 4. Workbench Text Editor (`editor/`)
+### 4. Editor Panel Group & Text Editor (`editor/`)
 - **Path**: [`src/components/layout/editor/`](../../src/components/layout/editor)
-- **Primary Components**: `Editor.tsx`, `EditorTabs.tsx`, `EditorBreadcrumbs.tsx`, `CodePane.tsx`, `DiffEditorPane.tsx`, `Minimap.tsx`, `EditorFindWidget.tsx`, `DiagnosticHoverCard.tsx`, `editor.css`
+- **Primary Components**: `Editor.tsx`, `EditorGroup.tsx`, `EditorTabs.tsx`, `EditorBreadcrumbs.tsx`, `CodePane.tsx`, `DiffEditorPane.tsx`, `Minimap.tsx`, `EditorFindWidget.tsx`, `DiagnosticHoverCard.tsx`, `editor.css`
 - **Tab View Specialized Viewers Sub-module (`editor/viewers/`)**: `ViewerPane.tsx`, `ImageViewer.tsx`, `MarkdownViewer.tsx`, `PdfViewer.tsx`, `CsvViewer.tsx`, `viewerTypes.ts`, `viewers.css`
-- **Visual Design**:
-  - **Dual Window Groups (Split Pane)**: Group 1 and Group 2 side-by-side or stacked, divided by a draggable splitter sash.
+- **Visual Design & Modernized Hierarchy**:
+  - **Editor Panel Group (`.editor-panel-group`)**: The outer vertical split-stage in `src/App.tsx` and `shell.css` housing `<Editor />` on top and `<BottomPanel />` at the bottom, replacing legacy `.workbench` naming to eliminate semantic ambiguity with global `useWorkbenchStore`.
+    > [!WARNING] **[DEPRECATED: `.workbench` Selector]**  
+    > The class selector `.workbench` is deprecated in favor of `.editor-panel-group`. It is retained exclusively as a backward-compatibility CSS alias in `src/styles/shell.css`.
+  - **Unified Editor Group (`.editor-group`, `EditorGroup.tsx`)**: Symmetrical window group architecture shared between single-window and split-window modes without JSX duplication. Encapsulates `EditorTabs` (35px), `EditorBreadcrumbs` (28px), floating `EditorFindWidget`, and polymorphic content slot (`.editor-group-content`).
+  - **Streamlined Text Editor (`.text-editor`, `CodePane.tsx`)**: Replaces previously deeply-nested wrappers (`.editor-pane` ➔ `.code-editor` ➔ `.code-editor-layout`) with a clean two-tier layout:
+    - `.text-editor`: Root container handling editor focus outline and hosting optional `.text-editor-banners` (merge conflict, external disk change, large file, and inline AI prompt).
+    - `.text-editor-body`: Flex row hosting CodeMirror surface (`.text-editor-surface` / `CMEditor`) alongside `Minimap`.
+    - **Backward Compatibility**: Fully retains `.editor-pane` and `.code-editor` aliases in CSS during layout transitions.
+    > [!WARNING] **[DEPRECATED: Multi-Tier Nested Wrappers]**  
+    > Deeply nested editor wrappers (`.editor-pane` ➔ `.code-editor` ➔ `.code-editor-layout`) are deprecated in favor of `.text-editor` and `.text-editor-body`. Legacy class names are maintained solely as CSS aliases.
+  - **Polymorphic Content Slot Coexistence**: If the active tab is code/text, renders `<CodePane />` (`.text-editor`); if non-code (.md, .csv, .pdf, .png), dynamically renders `<ViewerPane />` via lazy loading without touching `.text-editor` styles or memory.
   - **Editor Tabs**: Tab bar supporting drag-and-drop (HTML5 native DND) between groups, dirty unsaved indicator dot, close button.
+  - **Decoupled Dirty State Architecture (`dirtyFiles` Map)**:
+    - Text editor keystrokes no longer trigger cascading re-renders across Sidebar (`ExplorerPanel`) and `EditorTabs`.
+    - Zustand store tracks `dirtyFiles: Record<string, boolean>` which preserves reference identity across successive keystrokes on an already-dirty buffer.
+    - `ExplorerPanel` subscribes only to `dirtyFiles` for Git decorations and ancestor folder dirty badges, eliminating main-thread typing stutters.
+    - `EditorTabs` computes a shallow-equal string flags map `tabFlagsMap` (`${isDirty}:${hasDiskConflict}:${isDeletedOnDisk}:${hasConflict}`) that stays identical while typing.
+    - Outline lexical symbol extraction in `ExplorerPanel` is lazy and debounced (350ms), running only when the Outline accordion is actually open (`outlineOpen`) and user has paused typing.
+    > [!WARNING] **[DEPRECATED: Direct `fileBuffers` Subscriptions & Synchronous Outline Extraction]**  
+    > Subscribing UI chrome components (`ExplorerPanel`, `EditorTabs`) directly to `fileBuffers` is deprecated due to $O(K)$ render cascades per keystroke. Synchronous main-thread symbol extraction on typing is deprecated in favor of lazy, debounced extraction (`aegis:file-content-debounced`).
     - **Pinned Tab Persistence**: Pinned tabs are centralized in Zustand `createEditorSlice.ts` (`pinnedTabs: Set<string>`), persisted across sessions in `localStorage` (`aegis_pinned_tabs`), and filtered out from batch close operations ("Close Others", "Close All").
     - **Canonical POSIX-Relative Buffer Indexing**: Single canonical POSIX-relative key indexing (`clean`), JIT (Just-In-Time) on-demand background tab loading, explicit `BufferStatus` (`idle` | `loading` | `ready` | `error`) with loading skeleton UI in `CodePane.tsx` (preventing blank string mounting that causes false Outline errors), and `workspaceEpoch` stale request guards.
     - **Contextual Tab Icons**: Displays semantic file icons dynamically (`image` for PNG/JPG/SVG, `table` for CSV/TSV, `git` for diff tabs, `trash` for deleted files, `code` for source files).
@@ -457,6 +475,7 @@ AegisCode v2 utilizes a unified, modular Zustand architecture ([`src/store/index
 - **In-Flight Network Save Keystroke Protection (`OPT-BUF-01`)**: During `saveFile()`, the buffer snapshot (`contentToSave`) is captured prior to dispatching network requests. Upon async completion, `markBufferSavedLogic` compares `currentBuf.content === contentToSave`. If keystrokes were typed while the save was in-flight, `isDirty` remains `true`, completely eliminating race condition data loss.
 - **Self-Save Watcher Echo Suppression (`OPT-BUF-02`)**: Saving updates `buf.lastSaved = Date.now()`. When the Go filesystem watcher broadcasts a disk modification event within an 800ms window, or if on-disk content matches `buf.savedContent`, reload is suppressed. This eliminates editor unmounting, loading spinner flicker, and false `hasDiskConflict` alerts.
 - **Per-File Async Fetch Sequence Guard (`OPT-BUF-05`)**: `fetchBufferSafely` maintains per-file monotonic tokens (`fileFetchTokens[clean]`). If rapid folder switches or tab clicks fire overlapping reads, older resolved responses with stale tokens are discarded immediately.
+- **Decoupled Dirty Flag Projection (`OPT-BUF-06`)**: Direct UI subscriptions to `fileBuffers` for tracking unsaved dirty indicators are deprecated. The store maintains a standalone `dirtyFiles: Record<string, boolean>` dictionary with referential stability guarantees (`Object.is(prev, next) === true` when remaining dirty) and projected tab bar flag strings (`tabFlagsMap`), completely shielding sidebar explorer trees and tab bars from per-keystroke re-render cascades.
 
 ---
 
@@ -519,4 +538,31 @@ Whenever frontend code in `src/` is modified, the following quality gates must p
 - **Asymmetric Left-Aligned Status Popovers**: `left-0` alignment causing viewport overflow on narrow screens. Replaced with centered anchors `left-1/2 -translate-x-1/2`.
 - **Unix-Only Terminal Shell Dropdown**: Hardcoded options list lacking Windows `pwsh`/`powershell`/`cmd` detection. Replaced with `detectDefaultShell()`.
 - **Assistant Header Dual Model Identifier Pill**: Redundant model badge inside every individual assistant chat bubble. Replaced with provider badge only, leaving model indicator in composer and session sidebar.
+
+### E. Deprecated Layout Selectors & Structural Hierarchy (Phase 4 Refactor)
+- **`[DEPRECATED]` Center Stage Selector (`.workbench`)**:
+  - *Legacy Pattern*: Using `.workbench` as the class name for the center vertical split-stage housing the active editor and bottom panel.
+  - *Issue*: Caused semantic ambiguity with global `useWorkbenchStore` (which manages entire IDE state, not just center pane).
+  - *Actual Replacement*: `.editor-panel-group` in `src/App.tsx` and `src/styles/shell.css`.
+  - *Status*: `.workbench` is retained strictly as a secondary fallback CSS alias.
+- **`[DEPRECATED]` Multi-Tier Nested Editor Wrappers (`.editor-pane` ➔ `.code-editor` ➔ `.code-editor-layout`)**:
+  - *Legacy Pattern*: Multiple nested intermediate wrapper `div` layers wrapping the editor surface.
+  - *Actual Replacement*: Streamlined two-tier hierarchy in `CodePane.tsx`:
+    1. `.text-editor`: Root container hosting focus rings and banner alerts (`.text-editor-banners`).
+    2. `.text-editor-body`: Flex row hosting the editor surface (`.text-editor-surface` / `CMEditor`) alongside `Minimap`.
+  - *Status*: Legacy classes `.editor-pane` and `.code-editor` are mapped as CSS aliases in `src/components/layout/editor/editor.css` for backward compatibility.
+
+### F. Deprecated UI Chrome Buffer Subscriptions (High-Frequency Re-render Anti-Pattern)
+- **`[DEPRECATED]` Direct `fileBuffers` Subscriptions in UI Chrome**:
+  - *Legacy Pattern*: `ExplorerPanel.tsx` and `EditorTabs.tsx` subscribing directly to `state.fileBuffers` (or accessing buffer maps during render) to check for unsaved dirty files or compute Git tree decorations.
+  - *Issue*: Every keystroke modified the buffer string, causing React to re-render the entire sidebar explorer tree, open editors list, and tab headers $O(K)$ times per keystroke.
+  - *Actual Replacement*:
+    1. `dirtyFiles: Record<string, boolean>` in `createWorkspaceSlice.ts` with referential stability guarantees (`Object.is(prev, next) === true` when a file remains dirty across keystrokes).
+    2. Shallow-equal tab bar string projection `tabFlagsMap: Record<string, string>` (`${isDirty}:${hasDiskConflict}:${isDeletedOnDisk}:${hasConflict}`) via `useShallow`, completely shielding tab headers from active typing re-renders.
+    3. `ExplorerPanel.tsx` reads dirty flags via `Boolean(dirtyFiles[tab])`.
+- **`[DEPRECATED]` Synchronous Main-Thread Outline Parsing in Explorer**:
+  - *Legacy Pattern*: Synchronously running `extractSymbols()` with regex scans on the main JavaScript thread whenever any open buffer updated.
+  - *Issue*: Heavy AST/regex scanning on every keystroke froze the typing experience on large files.
+  - *Actual Replacement*: Lazy debounced extraction gated by `outlineOpen` and triggered on a 350ms window debounce (`aegis:file-content-debounced`).
+
 

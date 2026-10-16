@@ -42,7 +42,7 @@ export function EditorTabs({
     splitEditor,
     toggleSplitEditor,
     closeSplitEditor,
-    fileBuffers,
+    dirtyFiles,
     saveFile,
     revertFile,
     requestRevertFile,
@@ -67,7 +67,7 @@ export function EditorTabs({
       splitEditor: s.splitEditor,
       toggleSplitEditor: s.toggleSplitEditor,
       closeSplitEditor: s.closeSplitEditor,
-      fileBuffers: s.fileBuffers,
+      dirtyFiles: s.dirtyFiles,
       saveFile: s.saveFile,
       revertFile: s.revertFile,
       requestRevertFile: s.requestRevertFile,
@@ -80,6 +80,42 @@ export function EditorTabs({
       pinnedTabs: s.pinnedTabs,
       togglePinTab: s.togglePinTab,
     })),
+  )
+
+  const currentGroup = groupId === "group2" ? group2 : group1
+  const isFocused = focusedGroup === currentGroup.id
+
+  const tabFlagsMap = useWorkbenchStore(
+    useShallow((s) => {
+      const flags: Record<string, string> = {}
+      for (const tab of currentGroup.tabs) {
+        const isDiff = isGitDiffTab(tab)
+        const rawTabFile = isDiff ? parseGitDiffTab(tab)?.file || "" : tab
+        const cleanTabFile = normalizeWorkspacePath(
+          rawTabFile,
+          s.rootWorkspacePath,
+        )
+        const buf =
+          s.fileBuffers[cleanTabFile] ||
+          s.fileBuffers[rawTabFile] ||
+          s.fileBuffers[tab]
+        const isDirty = Boolean(
+          s.dirtyFiles[cleanTabFile] ||
+            s.dirtyFiles[rawTabFile] ||
+            s.dirtyFiles[tab] ||
+            buf?.isDirty,
+        )
+        const hasDiskConflict = Boolean(buf?.hasDiskConflict)
+        const isDeletedOnDisk = Boolean(buf?.isDeletedOnDisk)
+        const hasConflict = Boolean(
+          buf?.content && hasConflictMarkers(buf.content),
+        )
+        flags[tab] = `${isDirty ? 1 : 0}:${hasDiskConflict ? 1 : 0}:${
+          isDeletedOnDisk ? 1 : 0
+        }:${hasConflict ? 1 : 0}`
+      }
+      return flags
+    }),
   )
 
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
@@ -143,9 +179,6 @@ export function EditorTabs({
   }, [])
 
   const tabListRef = useRef<HTMLDivElement>(null)
-
-  const currentGroup = groupId === "group2" ? group2 : group1
-  const isFocused = focusedGroup === currentGroup.id
 
   useEffect(() => {
     if (!tabListRef.current) return
@@ -269,16 +302,17 @@ export function EditorTabs({
             rawTabFile,
             rootWorkspacePath,
           )
-          const buf =
-            fileBuffers[cleanTabFile] ||
-            fileBuffers[rawTabFile] ||
-            fileBuffers[tab]
-          const isDirty = Boolean(buf?.isDirty)
-          const hasDiskConflict = Boolean(buf?.hasDiskConflict)
-          const isDeletedOnDisk = Boolean(buf?.isDeletedOnDisk)
-          const hasConflict = Boolean(
-            buf?.content && hasConflictMarkers(buf.content),
-          )
+          const flags = tabFlagsMap[tab] || "0:0:0:0"
+          const [
+            isDirtyFlag,
+            hasDiskConflictFlag,
+            isDeletedOnDiskFlag,
+            hasConflictFlag,
+          ] = flags.split(":")
+          const isDirty = isDirtyFlag === "1"
+          const hasDiskConflict = hasDiskConflictFlag === "1"
+          const isDeletedOnDisk = isDeletedOnDiskFlag === "1"
+          const hasConflict = hasConflictFlag === "1"
 
           return (
             <button
@@ -424,8 +458,9 @@ export function EditorTabs({
             activeRaw,
             rootWorkspacePath,
           )
-          const activeBuf = fileBuffers[activeClean] || fileBuffers[activeRaw]
-          const isCurrentDirty = Boolean(activeBuf?.isDirty)
+          const isCurrentDirty = Boolean(
+            dirtyFiles[activeClean] || dirtyFiles[activeRaw],
+          )
           return (
             <IconButton
               disabled={!isCurrentDirty}
@@ -677,7 +712,7 @@ export function EditorTabs({
             <div className="context-menu-separator" />
             <button
               className="context-menu-item"
-              disabled={!fileBuffers[contextMenu.tab]?.isDirty}
+              disabled={!dirtyFiles[contextMenu.tab]}
               onClick={() => {
                 requestRevertFile(contextMenu.tab)
                 setContextMenu(null)
@@ -689,7 +724,7 @@ export function EditorTabs({
             </button>
             <button
               className="context-menu-item"
-              disabled={!fileBuffers[contextMenu.tab]?.isDirty}
+              disabled={!dirtyFiles[contextMenu.tab]}
               onClick={() => {
                 saveFile(contextMenu.tab)
                 setContextMenu(null)

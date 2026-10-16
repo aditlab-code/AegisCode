@@ -376,8 +376,8 @@ export function CodePane({
   return (
     <div
       ref={paneRef}
-      className={`editor-pane relative ${
-        isFocused ? "editor-pane-focused" : ""
+      className={`text-editor editor-pane relative ${
+        isFocused ? "text-editor-focused editor-pane-focused" : ""
       }`}
       onClick={() => setFocusedPane(paneId)}
     >
@@ -639,7 +639,7 @@ export function CodePane({
 
       <div
         aria-label={`${filename} code editor`}
-        className={`code-editor ${
+        className={`text-editor-body code-editor ${
           minimapSide === "left" ? "minimap-side-left" : ""
         }`}
         data-accessibility-page-size={accessibilityPageSize}
@@ -673,7 +673,7 @@ export function CodePane({
             </span>
           </div>
         ) : (
-          <div className="code-editor-layout">
+          <div className="text-editor-surface code-editor-layout">
             <CMEditor
               ref={editorRef}
               filename={filename}
