@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbenchStore, useShallow } from "../../../store"
-import { hasConflictMarkers } from "../../../utils/gitConflict"
 import { pickFolderNative } from "../../../utils/workspaceApi"
 import type { GitCommitNode } from "../../../types/workbench"
 
@@ -62,7 +61,6 @@ export function SourceControlPanel() {
     setCompareBaseCommit,
     compareCommits,
     clearCompare,
-    fileBuffers,
   } = useWorkbenchStore(
     useShallow((s) => ({
       isGitRepo: s.isGitRepo,
@@ -120,7 +118,6 @@ export function SourceControlPanel() {
       setCompareBaseCommit: s.setCompareBaseCommit,
       compareCommits: s.compareCommits,
       clearCompare: s.clearCompare,
-      fileBuffers: s.fileBuffers,
     })),
   )
 
@@ -188,20 +185,13 @@ export function SourceControlPanel() {
 
   const conflictedFiles = useMemo(() => {
     const list = new Set<string>()
-    if (fileBuffers) {
-      for (const [file, buf] of Object.entries(fileBuffers)) {
-        if (buf?.content && hasConflictMarkers(buf.content)) {
-          list.add(file)
-        }
-      }
-    }
     for (const c of [...stagedChanges, ...gitChanges]) {
       if (c.code === "U") {
         list.add(c.file)
       }
     }
     return Array.from(list)
-  }, [fileBuffers, stagedChanges, gitChanges])
+  }, [stagedChanges, gitChanges])
 
   const hasConflicts = conflictedFiles.length > 0
   const isDirty = gitChanges.length > 0 || stagedChanges.length > 0

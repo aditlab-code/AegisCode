@@ -40,7 +40,6 @@ export function EditorFindWidget({
     secondaryActiveTab,
     focusedPane,
     splitEditor,
-    fileBuffers,
     updateFileContent,
     setCursorPosition,
     showToast,
@@ -50,7 +49,6 @@ export function EditorFindWidget({
       secondaryActiveTab: s.secondaryActiveTab,
       focusedPane: s.focusedPane,
       splitEditor: s.splitEditor,
-      fileBuffers: s.fileBuffers,
       updateFileContent: s.updateFileContent,
       setCursorPosition: s.setCursorPosition,
       showToast: s.showToast,
@@ -89,10 +87,12 @@ export function EditorFindWidget({
     (focusedPane === "secondary" && splitEditor
       ? secondaryActiveTab
       : activeTab)
-  const content = fileBuffers[currentFile]?.content || ""
+  const content = useWorkbenchStore((s) =>
+    currentFile ? s.fileBuffers[currentFile]?.content || "" : "",
+  )
 
   const matches = useMemo<EditorMatch[]>(() => {
-    if (!query.trim()) return []
+    if (!isOpen || !query.trim() || !content) return []
     try {
       let pattern = query
       if (!isRegex) {
@@ -158,7 +158,7 @@ export function EditorFindWidget({
     } catch {
       return []
     }
-  }, [content, query, caseSensitive, matchWord, isRegex])
+  }, [isOpen, content, query, caseSensitive, matchWord, isRegex])
 
   const safeIndex =
     matches.length > 0

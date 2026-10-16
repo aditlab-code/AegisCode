@@ -12,9 +12,18 @@ interface DiffEditorPaneProps {
 }
 
 export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
+  const diffInfo = parseGitDiffTab(tab)
+  const file = diffInfo?.file || ""
+  const staged = Boolean(diffInfo?.staged)
+  const commit = diffInfo?.commit || ""
+  const base = diffInfo?.base || ""
+
+  const buffer = useWorkbenchStore((s) =>
+    file ? s.fileBuffers[file] : undefined,
+  )
+
   const {
     fetchDiff,
-    fileBuffers,
     updateFileContent,
     saveFile,
     openFileInPane,
@@ -31,7 +40,6 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
   } = useWorkbenchStore(
     useShallow((s) => ({
       fetchDiff: s.fetchDiff,
-      fileBuffers: s.fileBuffers,
       updateFileContent: s.updateFileContent,
       saveFile: s.saveFile,
       openFileInPane: s.openFileInPane,
@@ -62,12 +70,6 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
     ? (settings?.editor?.lineHeight ?? 22)
     : 20
   const currentTabSize = settings?.editor?.tabSize ?? tabSize ?? 2
-
-  const diffInfo = parseGitDiffTab(tab)
-  const file = diffInfo?.file || ""
-  const staged = Boolean(diffInfo?.staged)
-  const commit = diffInfo?.commit || ""
-  const base = diffInfo?.base || ""
 
   const [diffData, setDiffData] = useState<GitDiffResult | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -106,8 +108,6 @@ export function DiffEditorPane({ groupId, tab }: DiffEditorPaneProps) {
 
   const editorRef = useRef<CMEditorHandle>(null)
 
-  // Working copy live buffer
-  const buffer = fileBuffers[file]
   const isWorkingCopyEditable = !staged && !commit && !base
 
   // Fetch diff from backend

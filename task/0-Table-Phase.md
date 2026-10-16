@@ -1,6 +1,6 @@
-# Table Phase: Dirty File State Synchronization & Buffer Optimization
+# Table Phase: Minimap Synchronization, Windowing & Rendering Accuracy
 
-> **Dokumen Rencana Wave & Micro-Phase (Phase 4)**  
+> **Dokumen Rencana Wave & Micro-Phase (Phase 6)**  
 > Dibuat oleh Shun sesuai `#WORKFLOW` pada `task/0-0-Orchestrator.md`.  
 > Status Global: `COMPLETED & VERIFIED`  
 > Referensi Spesifikasi: [`task/0-spec-Orchestrator.md`](0-spec-Orchestrator.md)
@@ -11,9 +11,10 @@
 
 ```mermaid
 flowchart TD
-    W1["Wave 1: Store-Level Dirty State Decoupling<br/>(MP-W1.1 WorkspaceSlice dirtyFiles Map, MP-W1.2 Store Logic Invariant Tests)"] --> W2["Wave 2: Sidebar Explorer Decoupling & Lazy Outline<br/>(MP-W2.1 ExplorerPanel Switch to dirtyFiles, MP-W2.2 Debounced Symbol Extraction)"]
-    W2 --> W3["Wave 3: EditorTabs Decoupling<br/>(MP-W3.1 Tab Bar Switch to dirtyFiles Map)"]
-    W3 --> W4["Wave 4: Verification Gates & Concurrency Smoke Tests<br/>(MP-W4.1 Vitest Suite & Race Tests, MP-W4.2 Build & Format Gates)"]
+    W1["Wave 1: CodeMirror Scroll Callback & Imperative Scroll<br/>(CMEditor.tsx: onScroll prop + scrollToLine method)"] --> W2["Wave 2: Reliable Scroll Binding in CodePane<br/>(CodePane.tsx: connect onScroll & pass filename to Minimap)"]
+    W2 --> W3["Wave 3: Content-Aware Token Cache & Instant Fallback<br/>(Minimap.tsx: filename-aware cache, per-line validation, raw text rendering)"]
+    W3 --> W4["Wave 4: 1:1 Slider Positioning & Safe Windowing<br/>(Minimap.tsx: proportional slider, self-measuring ResizeObserver)"]
+    W4 --> W5["Wave 5: Verification Gates & Concurrency Tests<br/>(Vitest suite, build, format, zero regressions)"]
 ```
 
 ---
@@ -21,10 +22,9 @@ flowchart TD
 ## 2. Detailed Micro-Phases
 
 | Phase ID | Wave | Name / Description | Target File(s) | Topology | Dependencies | Verification Gate | Status |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **MP-W1.1-STORE-DIRTY-MAP** | 1 | **WorkspaceSlice `dirtyFiles` Decoupling**: Tambahkan `dirtyFiles: Record<string, boolean>` ke `WorkspaceSlice`. Di `updateBufferContentLogic`, perbarui referensi `dirtyFiles` HANYA jika boolean `isDirty` berubah status (`false ➔ true` atau sebaliknya). Sinkronkan di `markBufferSavedLogic`, `syncBufferWithDiskLogic`, dan `revertBufferContentLogic`. | `src/store/types.ts`<br/>`src/store/slices/createWorkspaceSlice.ts` | Linear | None | `rtk npm run test:frontend` | `PASSED` |
-| **MP-W1.2-INVARIANT-TESTS** | 1 | **Store Invariant & Reference Stability Tests**: Buat/perbarui unit test untuk memverifikasi bahwa keystroke berturut-turut pada file yang sudah dirty TIDAK mengubah referensi objek `dirtyFiles`, dan bahwa `OPT-BUF-01` in-flight save tetap 100% aman. | `test/frontend/core/bufferLifecycleIntegrity.test.ts` | Linear | MP-W1.1-STORE-DIRTY-MAP | `rtk npm run test:frontend` | `PASSED` |
-| **MP-W2.1-EXPLORER-DECOUPLING** | 2 | **Sidebar Explorer Switch to `dirtyFiles`**: Di `ExplorerPanel.tsx`, hapus subscription ke seluruh objek `fileBuffers`. Gunakan `dirtyFiles` untuk `buildExplorerGitDecorations` dan penanda folder dirty. | `src/components/layout/sidebar/ExplorerPanel.tsx` | Linear | Wave 1 | `rtk npm run test:frontend` | `PASSED` |
-| **MP-W2.2-OUTLINE-DEBOUNCE** | 2 | **Debounced & Lazy Outline Parsing**: Di `ExplorerPanel.tsx`, debounce pemanggilan `extractSymbols` (250ms) dan pastikan tidak dipanggil jika akordeon Outline sedang tertutup (`!outlineOpen`). | `src/components/layout/sidebar/ExplorerPanel.tsx` | Linear | MP-W2.1-EXPLORER-DECOUPLING | `rtk npm run test:frontend` | `PASSED` |
-| **MP-W3.1-TABS-DECOUPLING** | 3 | **EditorTabs Switch to `dirtyFiles`**: Di `EditorTabs.tsx`, gantikan pengecekan `fileBuffers` untuk dirty indicator dengan `dirtyFiles[tab]`. Pastikan tab bar tidak re-render saat mengetik di file yang sudah dirty. | `src/components/layout/editor/EditorTabs.tsx` | Linear | Wave 2 | `rtk npm run test:frontend` | `PASSED` |
-| **MP-W4.1-GATES-AND-REGRESSIONS** | 4 | **Mandatory Gates & Concurrency Smoke Tests**: Jalankan seluruh test suite Vitest (318+ tests), build check dengan Rolldown, dan format check dengan oxfmt. Verifikasi sinkronisasi dirty state Text Editor ↔ Sidebar ↔ Drawer AI berjalan mulus tanpa race condition. | Full Repository | Linear | All Waves | `npm run build && npm run test:frontend && npm run format` | `PASSED` |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **MP-M1.1-CM-SCROLL-CALLBACK** | 1 | **CodeMirror Scroll Callback & Native `scrollToLine`**: Tambahkan prop `onScroll` pada `CMEditorProps` dan implementasikan listener scroll pada `view.scrollDOM`. Ekspos `scrollToLine` pada `CMEditorHandle` menggunakan `EditorView.scrollIntoView(line.from, { y: 'center' })`. | `src/components/layout/editor/CMEditor.tsx` | Linear | None | `rtk npm run test:frontend` | `PASSED` |
+| **MP-M2.1-CODEPANE-SCROLLER-BINDING** | 2 | **Reliable Scroll Binding & Prop Wiring in `CodePane`**: Hubungkan prop `onScroll` dari `CMEditor` ke state `scrollInfo` di `CodePane.tsx`. Berikan delegasi `handleScrollToLine` ke `editorRef.current.scrollToLine`. Kirim prop `filename` ke `<Minimap />`. | `src/components/layout/editor/CodePane.tsx` | Linear | MP-M1.1 | `rtk npm run test:frontend` | `PASSED` |
+| **MP-M3.1-MINIMAP-CACHE-AND-FALLBACK** | 3 | **File & Content Aware Token Cache with Instant Text Fallback**: Di `Minimap.tsx`, terima prop `filename`. Bersihkan cache saat `filename` berubah. Validasi cache per-baris terhadap `lineText`. Jika token belum siap dari worker, render `lineText` langsung dengan micro-font style, bukan skeleton bar kosong. | `src/components/layout/editor/Minimap.tsx` | Linear | MP-M2.1 | `rtk npm run test:frontend` | `PASSED` |
+| **MP-M4.1-MINIMAP-SLIDER-AND-WINDOWING** | 4 | **1:1 Slider Positioning & Self-Measuring Container**: Perbaiki perhitungan `sliderHeightPx` dan `sliderTopPx` agar merefleksikan rasio viewport sesungguhnya dan selalu sejajar dengan baris yang ditampilkan. Pasang `ResizeObserver` pada `containerRef` minimap agar tidak kolaps saat clientHeight luar terlambat. | `src/components/layout/editor/Minimap.tsx` | Linear | MP-M3.1 | `rtk npm run test:frontend` | `PASSED` |
+| **MP-M5.1-GATES-AND-REGRESSIONS** | 5 | **Mandatory Verification Gates & Regression Validation**: Jalankan seluruh gate verifikasi (`npm run build`, `npm run format`, `npm run test:frontend`, dan Go backend tests) untuk memastikan minimap responsif, akurat, dan tidak ada regresi. | Full Repository | Linear | All Waves | `npm run build && npm run test:frontend && npm run format` | `PASSED` |

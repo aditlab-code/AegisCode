@@ -26,7 +26,6 @@ interface FileSearchResult {
 
 export function SearchPanel() {
   const {
-    fileBuffers,
     updateFileContent,
     syncBufferWithDisk,
     openFileInGroup,
@@ -35,7 +34,6 @@ export function SearchPanel() {
     showToast,
   } = useWorkbenchStore(
     useShallow((s) => ({
-      fileBuffers: s.fileBuffers,
       updateFileContent: s.updateFileContent,
       syncBufferWithDisk: s.syncBufferWithDisk,
       openFileInGroup: s.openFileInGroup,
@@ -221,9 +219,10 @@ export function SearchPanel() {
 
     try {
       let content = ""
-      const hasBuffer = Boolean(fileBuffers[match.filename])
+      const buffers = useWorkbenchStore.getState().fileBuffers
+      const hasBuffer = Boolean(buffers[match.filename])
       if (hasBuffer) {
-        content = fileBuffers[match.filename].content
+        content = buffers[match.filename].content
       } else {
         content = await fetchFileContent(match.filename)
       }
@@ -269,9 +268,10 @@ export function SearchPanel() {
       const regex = new RegExp(pattern, flags)
 
       let content = ""
-      const hasBuffer = Boolean(fileBuffers[filename])
+      const buffers = useWorkbenchStore.getState().fileBuffers
+      const hasBuffer = Boolean(buffers[filename])
       if (hasBuffer) {
-        content = fileBuffers[filename].content
+        content = buffers[filename].content
       } else {
         content = await fetchFileContent(filename)
       }
@@ -312,8 +312,9 @@ export function SearchPanel() {
         `Replaced ${result.count} occurrences across ${result.modifiedFiles.length} files`,
       )
 
+      const buffers = useWorkbenchStore.getState().fileBuffers
       for (const path of result.modifiedFiles) {
-        if (fileBuffers[path]) {
+        if (buffers[path]) {
           const freshContent = await fetchFileContent(path).catch(() => "")
           if (freshContent) {
             syncBufferWithDisk(path, freshContent)

@@ -149,11 +149,18 @@ export interface CMEditorDiffConfig {
 
 export type MarkdownFormatType = "bold" | "italic" | "h1" | "h2" | "h3" | "bullet-list" | "numbered-list" | "task-list" | "quote" | "link" | "table" | "code-block"
 
+export interface CMEditorScrollInfo {
+  scrollTop: number
+  scrollHeight: number
+  clientHeight: number
+}
+
 export interface CMEditorHandle {
   goToNextChunk: () => void
   goToPrevChunk: () => void
   focus: () => void
   insertMarkdown: (type: MarkdownFormatType) => void
+  scrollToLine: (lineIndex: number, smooth?: boolean) => void
 }
 
 export interface CMEditorProps {
@@ -181,6 +188,7 @@ export interface CMEditorProps {
   ) => void
   onSave?: () => void
   onFind?: () => void
+  onScroll?: (info: CMEditorScrollInfo) => void
   formatOnSave?: boolean
   insertSpaces?: boolean
 }
@@ -380,6 +388,7 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
       onNavigateDefinition,
       onSave,
       onFind,
+      onScroll,
       formatOnSave = true,
       insertSpaces = true,
       isDark = true,
@@ -395,16 +404,31 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
     const onToggleBreakpointRef = useRef(onToggleBreakpoint)
     onToggleBreakpointRef.current = onToggleBreakpoint
 
+    const onScrollRef = useRef(onScroll)
+    onScrollRef.current = onScroll
+
+    const emitScrollInfo = useCallback((view: EditorView | null) => {
+      if (!onScrollRef.current || !view) return
+      const scroller = view.scrollDOM
+      if (!scroller) return
+      onScrollRef.current({
+        scrollTop: scroller.scrollTop,
+        scrollHeight: scroller.scrollHeight || 1,
+        clientHeight: scroller.clientHeight || 1,
+      })
+    }, [])
+
     const readOnlyCompartment = useRef(new Compartment())
     const wrapCompartment = useRef(new Compartment())
     const themeCompartment = useRef(new Compartment())
     const contentRef = useRef(content)
     contentRef.current = content
+    const lastEmittedContentRef = useRef<string>(content)
 
     const langInfo = resolveLanguage(filename)
     const lspChangeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-    // Expose imperative handle for toolbar controls (e.g. diff chunk navigation, markdown insertion)
+    // Expose imperative handle for toolbar controls (e.g. diff chunk navigation, markdown insertion, minimap jump)
     useImperativeHandle(
       ref,
       () => ({
@@ -437,6 +461,20 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
           if (activeView) {
             applyMarkdownFormatToView(activeView, type)
           }
+        },
+        scrollToLine(lineIndex: number, smooth: boolean = true) {
+          const activeView =
+            viewRef.current || mergeViewRef.current?.b || unifiedViewRef.current
+          if (!activeView) return
+          const maxLines = activeView.state.doc.lines
+          const lineNum = Math.max(1, Math.min(lineIndex + 1, maxLines))
+          const line = activeView.state.doc.line(lineNum)
+          activeView.dispatch({
+            effects: EditorView.scrollIntoView(line.from, {
+              y: "center",
+              behavior: smooth ? "smooth" : "auto",
+            }),
+          })
         },
       }),
       [diff?.renderSideBySide],
@@ -770,6 +808,14 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
         },
       })
 
+      // Minimap & viewport scroll synchronization handler
+      const scrollDomHandler = EditorView.domEventHandlers({
+        scroll(event, view) {
+          emitScrollInfo(view)
+          return false
+        },
+      })
+
       // Mode: DIFF MODE
       if (diff) {
         const originalContent = diff.original ?? ""
@@ -810,6 +856,7 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
             EditorView.editable.of(!isReadOnly),
             blurDomHandler,
             clickDomHandler,
+            scrollDomHandler,
             customKeymaps,
             keymap.of([
               ...closeBracketsKeymap,
@@ -819,8 +866,12 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
             autocompletion({ override: [lspCompletionSource] }),
             lspHoverExtension(),
             EditorView.updateListener.of((update) => {
+              if (update.geometryChanged) {
+                emitScrollInfo(update.view)
+              }
               if (update.docChanged && !isReadOnly) {
                 const val = update.state.doc.toString()
+                lastEmittedContentRef.current = val
                 onChange(val)
                 if (lspChangeTimerRef.current) {
                   clearTimeout(lspChangeTimerRef.current)
@@ -851,6 +902,11 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
           unifiedViewRef.current = null
           viewRef.current = null
 
+          emitScrollInfo(mergeView.b)
+          requestAnimationFrame(() => {
+            emitScrollInfo(mergeViewRef.current?.b || null)
+          })
+
           return () => {
             if (lspChangeTimerRef.current) {
               clearTimeout(lspChangeTimerRef.current)
@@ -872,6 +928,7 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
             }),
             blurDomHandler,
             clickDomHandler,
+            scrollDomHandler,
             customKeymaps,
             keymap.of([
               ...closeBracketsKeymap,
@@ -881,8 +938,12 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
             autocompletion({ override: [lspCompletionSource] }),
             lspHoverExtension(),
             EditorView.updateListener.of((update) => {
+              if (update.geometryChanged) {
+                emitScrollInfo(update.view)
+              }
               if (update.docChanged && !isReadOnly) {
                 const val = update.state.doc.toString()
+                lastEmittedContentRef.current = val
                 onChange(val)
                 if (lspChangeTimerRef.current) {
                   clearTimeout(lspChangeTimerRef.current)
@@ -905,6 +966,11 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
           unifiedViewRef.current = unifiedView
           mergeViewRef.current = null
           viewRef.current = null
+
+          emitScrollInfo(unifiedView)
+          requestAnimationFrame(() => {
+            emitScrollInfo(unifiedViewRef.current)
+          })
 
           return () => {
             if (lspChangeTimerRef.current) {
@@ -956,13 +1022,18 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
         lintGutter(),
         blurDomHandler,
         clickDomHandler,
+        scrollDomHandler,
         customKeymaps,
         keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap]),
         autocompletion({ override: [lspCompletionSource] }),
         lspHoverExtension(),
         EditorView.updateListener.of((update) => {
+          if (update.geometryChanged) {
+            emitScrollInfo(update.view)
+          }
           if (update.docChanged) {
             const val = update.state.doc.toString()
+            lastEmittedContentRef.current = val
             onChange(val)
             if (lspChangeTimerRef.current) {
               clearTimeout(lspChangeTimerRef.current)
@@ -1002,6 +1073,11 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
       viewRef.current = view
       mergeViewRef.current = null
       unifiedViewRef.current = null
+
+      emitScrollInfo(view)
+      requestAnimationFrame(() => {
+        emitScrollInfo(viewRef.current)
+      })
 
       if (breakpoints.length > 0) {
         view.dispatch({
@@ -1067,8 +1143,18 @@ export const CMEditor = forwardRef<CMEditorHandle, CMEditorProps>(
       }
     }, [activeDebugLine, filename])
 
+    // Reset lastEmittedContentRef when filename changes
+    useEffect(() => {
+      lastEmittedContentRef.current = content
+    }, [filename])
+
     // Sync external content updates to the active view
     useEffect(() => {
+      if (content === lastEmittedContentRef.current) {
+        return
+      }
+      lastEmittedContentRef.current = content
+
       if (viewRef.current) {
         const currentDoc = viewRef.current.state.doc.toString()
         if (content !== currentDoc) {

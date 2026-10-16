@@ -24,6 +24,18 @@ import { isGitDiffTab } from "../../utils/gitDiffTab"
 let linterDebounceTimer: ReturnType<typeof setTimeout> | null = null
 let linterAbortController: AbortController | null = null
 let contentDebounceTimer: ReturnType<typeof setTimeout> | null = null
+let saveGitRefreshTimer: ReturnType<typeof setTimeout> | null = null
+
+function triggerDebouncedGitRefresh(get: () => any, delay = 400): void {
+  if (saveGitRefreshTimer) clearTimeout(saveGitRefreshTimer)
+  saveGitRefreshTimer = setTimeout(() => {
+    saveGitRefreshTimer = null
+    const refresh = (get() as { refreshGit?: () => Promise<void> }).refreshGit
+    if (typeof refresh === "function") {
+      void refresh()
+    }
+  }, delay)
+}
 
 interface OffloadLintPayload {
   filename: string
@@ -1101,10 +1113,8 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
       void notifyLspDidSave(clean, contentToSave, lang)
     }
 
-    // Cross-slice Git refresh
-    if (typeof get().refreshGit === "function") {
-      void get().refreshGit()
-    }
+    // Cross-slice Git refresh (debounced to avoid process storms during auto-save or rapid saves)
+    triggerDebouncedGitRefresh(get, 400)
 
     get().showToast?.(`Saved ${clean}`)
   },

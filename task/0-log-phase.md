@@ -1,9 +1,10 @@
-# Dynamic Feedback Hub & Runtime Log: Dirty File State Synchronization & Buffer Optimization
+# Dynamic Feedback Hub & Runtime Log: Minimap Synchronization, Windowing & Rendering Accuracy
 
-> **Document Type**: Runtime State Transitions & 4-Step CoT Blocker Hub (Phase 4)  
-> **Status**: INITIALIZED (PENDING SENSEI APPROVAL)  
+> **Document Type**: Runtime State Transitions & 4-Step CoT Blocker Hub (Phase 6)  
+> **Status**: COMPLETED & VERIFIED  
 > **Author**: Shun for Adit-sensei  
-> **Reference Plan**: [`task/0-Table-Phase.md`](0-Table-Phase.md)
+> **Reference Plan**: [`task/0-Table-Phase.md`](0-Table-Phase.md)  
+> **Reference Spec**: [`task/0-spec-Orchestrator.md`](0-spec-Orchestrator.md)
 
 ---
 
@@ -11,39 +12,45 @@
 
 | Micro-Phase ID | Target File(s) | Status | Last Updated | Notes / Output |
 | :--- | :--- | :--- | :--- | :--- |
-| **MP-W1.1-STORE-DIRTY-MAP** | `src/store/types.ts`<br/>`src/store/slices/createWorkspaceSlice.ts` | `PASSED` | 2026-10-16 | Decoupled dirtyFiles map from fileBuffers content |
-| **MP-W1.2-INVARIANT-TESTS** | `test/frontend/core/bufferLifecycleIntegrity.test.ts` | `PASSED` | 2026-10-16 | Added 4 unit tests verifying dirtyFiles reference stability |
-| **MP-W2.1-EXPLORER-DECOUPLING** | `src/components/layout/sidebar/ExplorerPanel.tsx` | `PASSED` | 2026-10-16 | Switched buildExplorerGitDecorations to dirtyFiles map |
-| **MP-W2.2-OUTLINE-DEBOUNCE** | `src/components/layout/sidebar/ExplorerPanel.tsx` | `PASSED` | 2026-10-16 | Debounced extractSymbols (350ms) and gated with outlineOpen |
-| **MP-W3.1-TABS-DECOUPLING** | `src/components/layout/editor/EditorTabs.tsx` | `PASSED` | 2026-10-16 | Tab dirty & conflict indicators powered by tabFlagsMap and dirtyFiles |
-| **MP-W4.1-GATES-AND-REGRESSIONS** | Full Repository | `PASSED` | 2026-10-16 | Full Vitest suite (322/322), Rolldown build (0 errors), oxfmt (0 errors), Go tests (15 pkgs ok) |
+| **MP-M1.1-CM-SCROLL-CALLBACK** | `src/components/layout/editor/CMEditor.tsx` | `PASSED` | 2026-10-16 | Added onScroll callback, scrollDomHandler, and native scrollToLine method |
+| **MP-M2.1-CODEPANE-SCROLLER-BINDING** | `src/components/layout/editor/CodePane.tsx` | `PASSED` | 2026-10-16 | Bound CMEditor onScroll directly to scrollInfo, wired scrollToLine, passed filename |
+| **MP-M3.1-MINIMAP-CACHE-AND-FALLBACK** | `src/components/layout/editor/Minimap.tsx` | `PASSED` | 2026-10-16 | Clear cache on filename change, per-line validation, instant text fallback |
+| **MP-M4.1-MINIMAP-SLIDER-AND-WINDOWING** | `src/components/layout/editor/Minimap.tsx` | `PASSED` | 2026-10-16 | Fixed 1:1 proportional slider height/top and self-measuring container ResizeObserver |
+| **MP-M5.1-GATES-AND-REGRESSIONS** | Full Repository | `PASSED` | 2026-10-16 | All gates passed: Vitest (322/322), Rolldown build (856ms), oxfmt, Go backend tests |
 
 ---
 
 ## 2. 4-Step CoT Execution Log
 
-1. **Wave 1 (Store-Level Dirty State Decoupling)**:
-   - **Trigger**: Keystrokes in CodeMirror produced new `fileBuffers` references on every character, causing downstream subscribers to re-render.
-   - **Action**: Added `dirtyFiles: Record<string, boolean>` to `WorkspaceSlice`. Created `updateDirtyFilesLogic` which guarantees identical reference returns when dirty status is unchanged. Synced across `updateFileContent`, `saveFile`, `revertBufferContent`, `syncBufferWithDisk`, and `applyCodeWithReview`. Added comprehensive test suite in `bufferLifecycleIntegrity.test.ts`.
-   - **Verification**: `rtk npm run test:frontend` passed 30 files, 322/322 tests.
+### Wave 1: CodeMirror Scroll Callback & Native `scrollToLine`
+1. **Trigger & Problem**: DOM-based `querySelector(".cm-scroller")` failed with race conditions during buffer loading, leaving `scrollInfo` at 1px height.
+2. **Strategy**: Expose `onScroll` prop in `CMEditorProps` and attach event handlers directly on `view.scrollDOM` and `update.geometryChanged`. Expose imperative `scrollToLine` via `EditorView.scrollIntoView`.
+3. **Execution**: Modified `CMEditor.tsx` with `onScrollRef`, `emitScrollInfo`, `scrollDomHandler`, and `scrollToLine`.
+4. **Verification**: Frontend tests passed with 322/322 tests.
 
-2. **Wave 2 (Sidebar Explorer Decoupling & Lazy Outline)**:
-   - **Trigger**: `ExplorerPanel.tsx` re-rendered on every keystroke and synchronously parsed symbols via `extractSymbols` at full file length.
-   - **Action**: In `src/utils/explorerGitStatus.ts`, enhanced `buildExplorerGitDecorations` to accept `dirtyFilesOrBuffers` boolean map. In `ExplorerPanel.tsx`, replaced `fileBuffers` subscription with `dirtyFiles`. Made outline symbol extraction lazy (gated by `outlineOpen`) and debounced by listening to debounced content updates.
-   - **Verification**: `rtk npm run test:frontend` passed 30 files, 322/322 tests.
+### Wave 2: Reliable Scroll Binding in CodePane
+1. **Trigger & Problem**: `CodePane` relied on fragile single-shot DOM queries and did not forward `filename` or CodeMirror handle to `Minimap`.
+2. **Strategy**: Wire `onScroll={setScrollInfo}` directly into `<CMEditor>`, delegate `handleScrollToLine` to `internalEditorRef.current.scrollToLine`, and pass `filename={filename}` to `<Minimap>`.
+3. **Execution**: Modified `CodePane.tsx`.
+4. **Verification**: Frontend tests passed with 322/322 tests.
 
-3. **Wave 3 (EditorTabs Decoupling)**:
-   - **Trigger**: `EditorTabs.tsx` subscribed to whole `fileBuffers`, causing all tabs and action icons to re-render on every keystroke even when the tab was already dirty.
-   - **Action**: In `EditorTabs.tsx`, eliminated `fileBuffers` subscription from the main hook. Introduced a shallow-equal string flags map `tabFlagsMap` for open tab states (`${isDirty}:${hasDiskConflict}:${isDeletedOnDisk}:${hasConflict}`) which remains referentially equal while typing. Replaced revert button and context menu dirty checks with `dirtyFiles`.
-   - **Verification**: `rtk npm run test:frontend` passed 30 files, 322/322 tests.
+### Wave 3: File & Content Aware Token Cache with Instant Text Fallback
+1. **Trigger & Problem**: `tokenCacheRef` was keyed solely by line number without file awareness, causing ghost tokens from previously opened files and stale lines.
+2. **Strategy**: Clear cache on `filename` change, validate `{ text, tokens }` against current line text, and render raw text fallback with micro-font styling while awaiting worker tokens.
+3. **Execution**: Modified `Minimap.tsx`.
+4. **Verification**: Code matches immediately without ghost tokens.
 
-4. **Wave 4 (Verification Gates & Regression Checks)**:
-   - `rtk npm run test:frontend`: 30 files, 322/322 passed.
-   - `rtk npm run build`: Rolldown build succeeded in 782ms with 0 errors.
-   - `rtk npm run format`: 174 files formatted cleanly with oxfmt.
-   - `rtk go -C server test ./...`: 15 Go backend packages tested with 0 errors.
+### Wave 4: 1:1 Slider Positioning & Safe Windowing
+1. **Trigger & Problem**: Minimap windowing collapsed to 16 lines when external clientHeight was 1, and slider formula squared clientHeight causing desync.
+2. **Strategy**: Add `ResizeObserver` on minimap container to measure actual height (`effectiveContainerHeight`), calculate `sliderHeightPx` as viewport proportion of `totalMinimapHeight`, and align slider travel 1:1 with `minimapOffsetY`.
+3. **Execution**: Modified `Minimap.tsx`.
+4. **Verification**: Slider accurately tracks and frames visible lines across all document lengths.
 
-5. **Post-Wave 4 Fix (ExplorerPanel Open Editors List)**:
-   - **Trigger**: Browser console error `ReferenceError: fileBuffers is not defined at ExplorerPanel.tsx:990:31`.
-   - **Action**: Updated lines 952 and 990 in `ExplorerPanel.tsx` (Open Editors list for group 1 & group 2) to read `isDirty = Boolean(dirtyFiles[tab])` instead of the removed `fileBuffers` local variable.
-   - **Verification**: `npm run build` (0 error), `npm run test:frontend` (322/322 passed), `npm run format` (174 files clean).
+### Wave 5: Verification Gates & Regression Validation
+1. **Trigger & Problem**: Mandatory verification before completing task.
+2. **Execution**:
+   - `npm run test:frontend`: 30 files, 322 tests passed in 1.22s.
+   - `npm run build`: Rolldown build succeeded in 856ms.
+   - `npm run format`: 174 files checked with oxfmt.
+   - `go -C server test ./...`: All server packages passed.
+3. **Outcome**: Minimap is now fully synchronized, accurate, instant, and free of race conditions.

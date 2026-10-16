@@ -61,6 +61,7 @@ export function computeMinimapScaleConfig(
 }
 
 interface MinimapProps {
+  filename?: string
   lines: string[]
   scrollTop: number
   scrollHeight: number
@@ -71,7 +72,13 @@ interface MinimapProps {
   editorLineHeight?: number
 }
 
+interface CachedLineTokens {
+  text: string
+  tokens: RawSyntaxToken[]
+}
+
 export const Minimap = memo(function Minimap({
+  filename,
   lines,
   scrollTop,
   scrollHeight,
@@ -82,6 +89,25 @@ export const Minimap = memo(function Minimap({
   editorLineHeight = 22,
 }: MinimapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const [measuredHeight, setMeasuredHeight] = useState<number>(0)
+
+  // Measure actual container height directly to prevent collapsing when external clientHeight is delayed
+  useEffect(() => {
+    if (!containerRef.current) return
+    const el = containerRef.current
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.height > 0) {
+          setMeasuredHeight(entry.contentRect.height)
+        }
+      }
+    })
+    ro.observe(el)
+    if (el.clientHeight > 0) {
+      setMeasuredHeight(el.clientHeight)
+    }
+    return () => ro.disconnect()
+  }, [])
 
   const scaleConfig = computeMinimapScaleConfig(
     scale,
@@ -89,53 +115,54 @@ export const Minimap = memo(function Minimap({
     editorLineHeight,
   )
 
+  const effectiveContainerHeight = Math.max(
+    16,
+    measuredHeight || clientHeight || 600,
+  )
   const effectiveScrollHeight = Math.max(1, scrollHeight)
   const effectiveClientHeight = Math.max(1, clientHeight)
   const totalMinimapHeight = lines.length * scaleConfig.lineHeight
 
-  // Viewport ratio in main editor
+  // Fraction of document visible in main editor
+  const viewportRatio = Math.min(
+    1,
+    effectiveClientHeight / effectiveScrollHeight,
+  )
+  const minimapViewportHeight = viewportRatio * totalMinimapHeight
+
+  // Slider height reflects the visible viewport on minimap scale (min 20px)
+  const sliderHeightPx = Math.max(
+    20,
+    Math.min(effectiveContainerHeight, minimapViewportHeight),
+  )
+
+  // Viewport ratio in main editor for travel
   const maxEditorScroll = Math.max(
     1,
     effectiveScrollHeight - effectiveClientHeight,
   )
   const scrollRatio = Math.max(0, Math.min(1, scrollTop / maxEditorScroll))
 
-  // If total minimap lines height > container height, scroll the minimap content proportionally
-  const isOverflowing = totalMinimapHeight > effectiveClientHeight
+  // Does the minimap content exceed the container height?
+  const isOverflowing = totalMinimapHeight > effectiveContainerHeight
   const maxMinimapScroll = Math.max(
     0,
-    totalMinimapHeight - effectiveClientHeight,
+    totalMinimapHeight - effectiveContainerHeight,
   )
   const minimapOffsetY = isOverflowing ? scrollRatio * maxMinimapScroll : 0
 
-  // Calculate viewport slider box position in pixels
+  // Position of slider box aligned 1:1 with visible lines
   let sliderTopPx = 0
-  let sliderHeightPx = 0
-
   if (isOverflowing) {
-    sliderHeightPx = Math.max(
-      16,
-      Math.min(
-        effectiveClientHeight,
-        (effectiveClientHeight / effectiveScrollHeight) * effectiveClientHeight,
-      ),
-    )
-    const maxSliderTravel = effectiveClientHeight - sliderHeightPx
-    sliderTopPx = scrollRatio * maxSliderTravel
+    const maxSliderTravel = effectiveContainerHeight - sliderHeightPx
+    sliderTopPx = maxSliderTravel > 0 ? scrollRatio * maxSliderTravel : 0
   } else {
-    sliderHeightPx = Math.max(
-      16,
-      Math.min(
-        totalMinimapHeight,
-        (effectiveClientHeight / effectiveScrollHeight) * totalMinimapHeight,
-      ),
-    )
     const maxSliderTravel = totalMinimapHeight - sliderHeightPx
     sliderTopPx = maxSliderTravel > 0 ? scrollRatio * maxSliderTravel : 0
   }
 
   // Windowing for smooth 60fps rendering across large files
-  const bufferLines = 15
+  const bufferLines = 20
   const visibleStart = Math.max(
     0,
     Math.floor(minimapOffsetY / scaleConfig.lineHeight) - bufferLines,
@@ -143,29 +170,34 @@ export const Minimap = memo(function Minimap({
   const visibleEnd = Math.min(
     lines.length,
     Math.ceil(
-      (minimapOffsetY + effectiveClientHeight) / scaleConfig.lineHeight,
+      (minimapOffsetY + effectiveContainerHeight) / scaleConfig.lineHeight,
     ) + bufferLines,
   )
 
   const topPadding = visibleStart * scaleConfig.lineHeight
   const bottomPadding = (lines.length - visibleEnd) * scaleConfig.lineHeight
   const visibleLines = lines.slice(visibleStart, visibleEnd)
-  const tokenCacheRef = useRef<Map<number, RawSyntaxToken[]>>(new Map())
+  const tokenCacheRef = useRef<Map<number, CachedLineTokens>>(new Map())
   const [, setTokenVersion] = useState(0)
 
-  // Asynchronously request tokens for visible lines not yet in tokenCacheRef
+  // Invalidate cache immediately whenever filename changes to eliminate ghost tokens
+  useEffect(() => {
+    tokenCacheRef.current.clear()
+    setTokenVersion((v) => v + 1)
+  }, [filename])
+
+  // Asynchronously request tokens for visible lines not yet cached or whose text has changed
   useEffect(() => {
     const missingLineIndices: number[] = []
     const missingLineTexts: string[] = []
 
     for (let i = 0; i < visibleLines.length; i++) {
       const lineIdx = visibleStart + i
-      if (
-        !tokenCacheRef.current.has(lineIdx) &&
-        visibleLines[i]?.trim().length > 0
-      ) {
+      const lineText = visibleLines[i] ?? ""
+      const cached = tokenCacheRef.current.get(lineIdx)
+      if ((!cached || cached.text !== lineText) && lineText.trim().length > 0) {
         missingLineIndices.push(lineIdx)
-        missingLineTexts.push(visibleLines[i])
+        missingLineTexts.push(lineText)
       }
     }
 
@@ -182,7 +214,10 @@ export const Minimap = memo(function Minimap({
       .then((res) => {
         if (!res?.tokens) return
         for (let j = 0; j < missingLineIndices.length; j++) {
-          tokenCacheRef.current.set(missingLineIndices[j], res.tokens[j])
+          tokenCacheRef.current.set(missingLineIndices[j], {
+            text: missingLineTexts[j],
+            tokens: res.tokens[j],
+          })
         }
         setTokenVersion((v) => v + 1)
       })
@@ -193,7 +228,7 @@ export const Minimap = memo(function Minimap({
     return () => {
       controller.abort()
     }
-  }, [visibleStart, visibleEnd, visibleLines, lines])
+  }, [visibleStart, visibleEnd, visibleLines, lines, filename])
 
   const isDraggingRef = useRef(false)
 
@@ -263,7 +298,11 @@ export const Minimap = memo(function Minimap({
       >
         {visibleLines.map((lineText, idx) => {
           const actualLineIdx = visibleStart + idx
-          const cachedTokens = tokenCacheRef.current.get(actualLineIdx)
+          const cachedEntry = tokenCacheRef.current.get(actualLineIdx)
+          const cachedTokens =
+            cachedEntry && cachedEntry.text === lineText
+              ? cachedEntry.tokens
+              : null
 
           return (
             <div
@@ -277,7 +316,7 @@ export const Minimap = memo(function Minimap({
             >
               {!lineText ? (
                 "\u00a0"
-              ) : cachedTokens ? (
+              ) : cachedTokens && cachedTokens.length > 0 ? (
                 cachedTokens.map((tok, tIdx) =>
                   tok.className ? (
                     <span className={tok.className} key={tIdx}>
@@ -288,12 +327,7 @@ export const Minimap = memo(function Minimap({
                   ),
                 )
               ) : (
-                <span
-                  className="minimap-skeleton-bar"
-                  style={{
-                    width: `${Math.min(100, Math.max(15, lineText.trim().length * 4))}%`,
-                  }}
-                />
+                <span className="minimap-raw-text opacity-70">{lineText}</span>
               )}
             </div>
           )

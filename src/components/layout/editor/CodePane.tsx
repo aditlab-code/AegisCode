@@ -113,6 +113,19 @@ export function CodePane({
   const renderWhitespace = settings?.editor?.renderWhitespace ?? "selection"
 
   const paneRef = useRef<HTMLDivElement>(null)
+  const internalEditorRef = useRef<CMEditorHandle | null>(null)
+  const setEditorRef = useCallback(
+    (handle: CMEditorHandle | null) => {
+      internalEditorRef.current = handle
+      if (typeof editorRef === "function") {
+        editorRef(handle)
+      } else if (editorRef && "current" in editorRef) {
+        ;(editorRef as React.MutableRefObject<CMEditorHandle | null>).current =
+          handle
+      }
+    },
+    [editorRef],
+  )
   const inlineInputRef = useRef<HTMLInputElement>(null)
   const cursorPositionRef = useRef<CursorCoordinates>({ line: 1, col: 1 })
   const selectionRef = useRef<EditorSelectionRange>({
@@ -210,12 +223,30 @@ export function CodePane({
   const content = buffer?.content ?? ""
   const isDirty = buffer?.isDirty ?? false
   const lines = useMemo(() => content.split("\n"), [content])
+  const [minimapLines, setMinimapLines] = useState(() => content.split("\n"))
+
+  useEffect(() => {
+    if (content.length < 5000) {
+      setMinimapLines(content.split("\n"))
+      return
+    }
+    const timer = setTimeout(() => {
+      setMinimapLines(content.split("\n"))
+    }, 120)
+    return () => clearTimeout(timer)
+  }, [content])
+
+  useEffect(() => {
+    setMinimapLines(content.split("\n"))
+  }, [filename])
+
   const filteredDiagnostics = useMemo(
     () => diagnostics.filter((d) => d.location.startsWith(filename)),
     [diagnostics, filename],
   )
 
   const conflictRegions = useMemo(() => {
+    if (!content.includes("<<<<<<<")) return []
     return parseConflictRegions(content)
   }, [content])
 
@@ -357,10 +388,14 @@ export function CodePane({
       scroller.removeEventListener("scroll", onScroll)
       ro.disconnect()
     }
-  }, [filename])
+  }, [filename, buffer?.status])
 
   const handleScrollToLine = useCallback(
     (lineIndex: number, smooth: boolean = true) => {
+      if (internalEditorRef.current?.scrollToLine) {
+        internalEditorRef.current.scrollToLine(lineIndex, smooth)
+        return
+      }
       const scroller = paneRef.current?.querySelector(".cm-scroller")
       if (!scroller) return
       const target = Math.max(0, lineIndex * editorLineHeight - 60)
@@ -675,7 +710,7 @@ export function CodePane({
         ) : (
           <div className="text-editor-surface code-editor-layout">
             <CMEditor
-              ref={editorRef}
+              ref={setEditorRef}
               filename={filename}
               content={content}
               isReadOnly={Boolean(buffer?.isLargeFile || buffer?.isBinary)}
@@ -704,6 +739,7 @@ export function CodePane({
               onToggleBreakpoint={(line) => toggleBreakpoint(filename, line)}
               onSave={() => saveFile(filename)}
               onFind={() => openFind(focusedGroup, false)}
+              onScroll={setScrollInfo}
               formatOnSave={formatOnSave}
               insertSpaces={insertSpaces}
             />
@@ -711,10 +747,11 @@ export function CodePane({
         )}
         {minimapEnabled && (
           <Minimap
+            filename={filename}
             clientHeight={scrollInfo.clientHeight}
             editorFontSize={editorFontSize}
             editorLineHeight={editorLineHeight}
-            lines={lines}
+            lines={minimapLines}
             onScrollToLine={handleScrollToLine}
             scale={minimapScale}
             scrollHeight={scrollInfo.scrollHeight}

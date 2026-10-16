@@ -112,6 +112,7 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
     - **Hover-Only File & Match Actions**: Count badges displayed by default; Replace in File (`[edit]`), Dismiss File (`[✕]`), and Replace Match (`[edit]`) action buttons revealed dynamically on row hover (`:hover`) with `flex-shrink: 0` to prevent layout breaking.
     - **Clean Directory Path & Filename Truncation**: Filename and subfolder paths use `min-width: 0` with ellipsis truncation and native `title` tooltips for full path inspection.
     - **Direct Backend Engine**: Live workspace regex search and granular replace (single occurrence, file-level, workspace-wide) backed directly by Go server API with immediate search result refresh.
+    - **Decoupled Buffer Access (`OPT-ASYNC-01`)**: `SearchPanel` does not subscribe reactively to `fileBuffers`. During user typing in the editor, `SearchPanel` consumes zero re-renders. When executing single or multi-file replacements, it reads active buffers on-demand via `useWorkbenchStore.getState().fileBuffers[file]`.
   - **Source Control Panel**:
     - **Header & Action Menu**: Action bar with Refresh Git status (`⟳`) and '...' menu (Pull, Push, Fetch & Sync, Create Tag, Push Tags, Add Remote).
     - **Repositories Section**: Displays active repository folder, responsive branch badge pill (constrained to `max-w-[110px]` with ellipsis and full tooltip), and live Sync button with ahead/behind counters (`↓behind ↑ahead`).
@@ -121,7 +122,7 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
     - **Interactive SVG Commit Graph**: Visual commit log with clickable branch pills (clicking switches branch via `checkoutBranch`), tag badges, author, and timestamp.
     - **Dynamic Git Profile Footer**: Reads real user profile directly from `git config user.name`/`user.email` without hardcoding.
     - **Zero Fake Fallback Empty States**: Clean "Initialize Repository" and "No Folder Open" guide screens when no Git repo or folder is loaded.
-    - **Conflict Marker Detection & Commit Guard**: Automatic detection of Git merge conflict markers (`<<<<<<< HEAD`, `=======`, `>>>>>>>`) across open buffers and unmerged files (`code === "U"`). Renders a warning banner above the commit input, disables the Commit button and dropdown options, intercepts `⌘Enter` shortcuts with alert toasts, and displays a yellow `CONFLICT` badge on editor tabs.
+    - **Conflict Marker Detection & Commit Guard (`OPT-ASYNC-02`)**: SCM panel is completely decoupled from active `fileBuffers` state. Conflicted files are derived directly from Git status change codes (`code === "U"`), eliminating full-text regex scanning of open buffers on every keystroke.
     - **Unified Diff Smooth Scrolling**: CodeMirror unified merge view configured without collapsing unchanged lines, rendered in a 100% height container with full vertical and horizontal scrolling matching split view behavior.
 
 ### 4. Editor Panel Group & Text Editor (`editor/`)
@@ -189,11 +190,24 @@ All layout modules live in [`src/components/layout/`](../../src/components/layou
     - **Standardized Navigation Contract**: Breadcrumb navigation strictly emits standard `{ file, line, col: 1 }` on `aegis:editor-goto-line`.
   - **Editor Context Menu & Selection Bridge (`EditorContextMenu.tsx`)**:
     - **Ask AEGIS AI Bridge**: Directly activates `setChatOpen(true)` and bridges highlighted text into the active session's context chips.
-  - **Code Pane**: Lightweight custom buffer editor with line numbers, active line highlight, auto-indentation, and syntax highlighting via semantic token parser.
-  - **Inline Find Widget**: Floating widget in top-right corner (`Ctrl+F`) with match count and Next/Previous navigation.
-  - **Minimap (`Minimap.tsx`)**:
-    - **Fast-Lane Web Worker Tokenizer**: Fast Lane Web Worker tokenization (`tokenizerTask.ts` via `WorkerBroker`) with instant visual skeleton bars during fast scroll.
-    - Scaled visual overview on the right edge of the editor buffer with click-to-scroll viewport box.
+  - **Code Pane (`CodePane.tsx`)**:
+    - High-performance CodeMirror host with syntax highlighting, gutter breakpoints, diagnostics, active debug line decoration, and inline AI prompt.
+    - **Computational Throttling (`OPT-ASYNC-04`)**: Fast primitive check `if (!content.includes("<<<<<<<")) return []` eliminates heavy regex parsing for merge conflicts during normal editing.
+    - **Minimap Line Throttle**: 120ms throttled line-splitting prevents array re-allocation thrashing, preserving `React.memo` stability on `<Minimap />`.
+    - **Direct Scroll Binding (`MINIMAP-01`)**: Subscribes directly to `onScroll` callbacks from `CMEditor`, eliminating legacy DOM polling and race conditions.
+  - **Inline Find Widget (`EditorFindWidget.tsx`)**:
+    - Floating search & replace widget in top-right corner (`Ctrl+F` / `⌘F`) with match counts, navigation, and replace operations.
+    - **Scoped Selector & Execution Guard (`OPT-ASYNC-03`)**: Scoped to the active file (`s.fileBuffers[currentFile]`) and early-exits matching computation when closed or query is empty.
+  - **CodeMirror Integration Engine (`CMEditor.tsx`)**:
+    - **Keystroke Echo Bypass (`OPT-ASYNC-03`)**: Stores `lastEmittedContentRef` in update listeners; when incoming `content` prop matches the emitted value, skips expensive `view.state.doc.toString()` rope conversion. External edits (disk reload, git checkout, AI apply) remain 100% synchronized.
+    - **Event-Driven Scroll Metrics (`MINIMAP-01`)**: Attaches native scroll handlers to `view.scrollDOM` and emits metrics on `update.geometryChanged`, providing real-time `scrollTop`, `scrollHeight`, and `clientHeight`.
+    - **Imperative `scrollToLine` (`MINIMAP-05`)**: Exposes native `EditorView.scrollIntoView(line.from, { y: "center" })` through `CMEditorHandle`.
+  - **Interactive Minimap (`Minimap.tsx`)**:
+    - **Event-Driven Scroll Sync & Safe Windowing (`MINIMAP-01`, `MINIMAP-04`)**: Driven directly by CodeMirror metrics without DOM queries. Self-measures container height via internal `ResizeObserver`, preventing height collapse on delayed mounts.
+    - **File & Content Aware Token Cache (`MINIMAP-02`)**: Clears token cache on `filename` changes to eliminate ghost tokens from other files, and validates cached lines against current text.
+    - **Instant Raw Text Fallback (`MINIMAP-02`)**: Renders actual code text immediately with micro-font styling while Fast-Lane Web Worker tokenization (`tokenizerTask.ts` via `WorkerBroker`) runs in the background. Eliminates empty skeleton bars and ensures code is visible instantly.
+    - **1:1 Proportional Viewport Slider (`MINIMAP-03`)**: Calculates `sliderHeightPx` as a true proportion of `totalMinimapHeight * (clientHeight / scrollHeight)`, perfectly aligning slider box travel with visible editor lines.
+    - **Interactive Navigation**: Dragging the slider or clicking anywhere in the minimap smoothly scrolls CodeMirror to the target line via native `scrollToLine`.
   - **Heuristic Linter (`WorkbenchLifecycle.ts`)**:
     - **Batch-Lane Web Worker Syntax Validation**: Offloads syntax validation to Batch Lane Web Worker (`linterTask.ts` via `WorkerBroker`) debounced at 300ms with `AbortController` cancellation.
   - **VantageCraft CodeGraph Studio (`src/components/codegraph/`, ADR 0014 & ADR 0015)**:
@@ -560,9 +574,32 @@ Whenever frontend code in `src/` is modified, the following quality gates must p
     1. `dirtyFiles: Record<string, boolean>` in `createWorkspaceSlice.ts` with referential stability guarantees (`Object.is(prev, next) === true` when a file remains dirty across keystrokes).
     2. Shallow-equal tab bar string projection `tabFlagsMap: Record<string, string>` (`${isDirty}:${hasDiskConflict}:${isDeletedOnDisk}:${hasConflict}`) via `useShallow`, completely shielding tab headers from active typing re-renders.
     3. `ExplorerPanel.tsx` reads dirty flags via `Boolean(dirtyFiles[tab])`.
-- **`[DEPRECATED]` Synchronous Main-Thread Outline Parsing in Explorer**:
-  - *Legacy Pattern*: Synchronously running `extractSymbols()` with regex scans on the main JavaScript thread whenever any open buffer updated.
-  - *Issue*: Heavy AST/regex scanning on every keystroke froze the typing experience on large files.
-  - *Actual Replacement*: Lazy debounced extraction gated by `outlineOpen` and triggered on a 350ms window debounce (`aegis:file-content-debounced`).
+- **`[DEPRECATED]` Global `fileBuffers` Subscriptions in Search & SCM Panels (`OPT-ASYNC-01`, `OPT-ASYNC-02`)**:
+  - *Legacy Pattern*: `SearchPanel.tsx` and `SourceControlPanel.tsx` subscribing to the entire `state.fileBuffers` dictionary.
+  - *Issue*: Every keystroke in the editor triggered full re-renders of the search results panel and executed expensive regex conflict scanning across all open buffers in SCM.
+  - *Actual Replacement*: `SearchPanel` reads buffers on-demand via `useWorkbenchStore.getState().fileBuffers[file]` only during replace operations. `SourceControlPanel` derives conflicted files directly from Git change codes (`code === "U"`).
+- **`[DEPRECATED]` CodeMirror Keystroke Echo Loop in `CMEditor.tsx` (`OPT-ASYNC-03`)**:
+  - *Legacy Pattern*: Typing in CodeMirror updated Zustand `buffer.content`, which immediately fed back as a prop into `CMEditor.tsx`'s `useEffect([content])`, calling `view.state.doc.toString()` to verify changes.
+  - *Issue*: Serializing the entire CodeMirror document rope into a JavaScript string on every keystroke caused noticeable typing stutters.
+  - *Actual Replacement*: `lastEmittedContentRef` bypass. If incoming `content === lastEmittedContentRef.current`, string conversion is skipped completely. External changes (disk reload, git checkout, AI apply) sync normally.
+- **`[DEPRECATED]` Full-Buffer Scanning & Process Storms in Auto-Save (`OPT-ASYNC-05`)**:
+  - *Legacy Pattern*: Iterating `Object.entries(state.fileBuffers)` during auto-save delays and triggering immediate `refreshGit()` calls per saved file.
+  - *Issue*: Iterated clean buffers pointlessly and spawned multiple concurrent Git background processes on auto-save cycles.
+  - *Actual Replacement*: Targeted lookup via `Object.keys(state.dirtyFiles)` and trailing 400ms debounce for post-save `refreshGit()`.
+
+### G. Deprecated Minimap Architecture & DOM Polling (Phase 6 Synchronization Fix)
+- **`[DEPRECATED]` Fragile DOM Scroller Querying (`querySelector(".cm-scroller")`)**:
+  - *Legacy Pattern*: `CodePane.tsx` using a single-shot `useEffect(..., [filename])` to query `.cm-scroller` via DOM.
+  - *Issue*: Because CodeMirror mounts asynchronously after buffer loading completes, `querySelector` returned `null`, leaving `scrollInfo` at default `{ scrollTop: 0, scrollHeight: 1, clientHeight: 1 }`. This caused windowing to collapse to 16 lines (vertical truncation) and broke scroll synchronization.
+  - *Actual Replacement*: Direct event-driven `onScroll` callback from `CMEditor.tsx` attached to `view.scrollDOM` and `update.geometryChanged`, with self-measuring container `ResizeObserver` in `Minimap.tsx`.
+- **`[DEPRECATED]` Unbounded Global Line Index Token Cache (`MINIMAP-02`)**:
+  - *Legacy Pattern*: `tokenCacheRef` storing `Map<number, RawSyntaxToken[]>` across component lifetime without file or text awareness.
+  - *Issue*: Switching files displayed ghost tokens from the previous file at matching line numbers. Editing a line preserved old tokens. If worker tokens were pending, rendered empty skeleton bars without text.
+  - *Actual Replacement*: Immediate cache invalidation on `filename` changes, `{ text, tokens }` per-line validation, and instant raw text fallback rendering with micro-font styling.
+- **`[DEPRECATED]` Squared ClientHeight Slider Calculation (`MINIMAP-03`)**:
+  - *Legacy Pattern*: `sliderHeightPx = (clientHeight / scrollHeight) * clientHeight`.
+  - *Issue*: Squaring `clientHeight` decoupled the slider box size and travel from the minimap line scale, causing the slider to drift away from the code being viewed.
+  - *Actual Replacement*: 1:1 proportional slider sizing `sliderHeightPx = (clientHeight / scrollHeight) * totalMinimapHeight`, ensuring the slider box accurately surrounds and tracks the visible lines in the editor.
+
 
 

@@ -275,9 +275,9 @@ export function useWorkbenchLifecycle() {
       if (state.fileBuffers === prevFileBuffers) return
       prevFileBuffers = state.fileBuffers
 
-      const dirtyFiles = Object.entries(state.fileBuffers)
-        .filter(([_, buf]) => buf.isDirty)
-        .map(([filename]) => filename)
+      const dirtyFiles = Object.keys(state.dirtyFiles).filter(
+        (filename) => state.dirtyFiles[filename],
+      )
 
       if (dirtyFiles.length === 0) return
 
@@ -304,9 +304,9 @@ export function useWorkbenchLifecycle() {
       const state = store.getState()
       if (state.settings.files.autoSave !== "onFocusChange") return
 
-      const dirtyFiles = Object.entries(state.fileBuffers)
-        .filter(([_, buf]) => buf.isDirty)
-        .map(([filename]) => filename)
+      const dirtyFiles = Object.keys(state.dirtyFiles).filter(
+        (filename) => state.dirtyFiles[filename],
+      )
 
       for (const file of dirtyFiles) {
         void state.saveFile(file)
