@@ -24,7 +24,9 @@ export function AgentRulesCard() {
     try {
       const data = await fetchAgentRulesStatus()
       setStatus(data)
-      if (data.presets.length > 0 && !selectedPresetId) {
+      if (data.activePersona && data.activePersona !== "custom") {
+        setSelectedPresetId(data.activePersona)
+      } else if (data.presets.length > 0 && !selectedPresetId) {
         setSelectedPresetId(data.presets[0].id)
       }
     } catch {
@@ -110,7 +112,11 @@ export function AgentRulesCard() {
         {status?.hasWorkspaceRules ? (
           <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-400">
             <Icon name="check" size={12} />
-            Active (Workspace Override)
+            Active (
+            {status.activePersona === "custom"
+              ? "Custom Rules"
+              : `${status.activePersona.toUpperCase()} Persona`}
+            )
           </span>
         ) : (
           <span className="flex items-center gap-1.5 rounded-full border border-line bg-surface-hover px-2.5 py-0.5 text-[11px] font-medium text-muted">

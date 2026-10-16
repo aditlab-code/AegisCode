@@ -88,6 +88,62 @@ func (s *Server) handleAgentRulesStatus(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+func (s *Server) handleAgentWorkspaceStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var rootPath string
+	if s.ws != nil {
+		rootPath, _ = s.ws.GetRoot()
+	}
+
+	status := agent.GetWorkspaceCopilotStatus(rootPath)
+	presets := agent.GetAvailablePresets()
+
+	jsonResponse(w, http.StatusOK, map[string]any{
+		"isInitialized": status.IsInitialized,
+		"hasAegisDir":   status.HasAegisDir,
+		"hasTasksDir":   status.HasTasksDir,
+		"hasAgentsMd":   status.HasAgentsMd,
+		"rulesPath":     status.RulesPath,
+		"activePersona": status.ActivePersona,
+		"taskCount":     status.TaskCount,
+		"presets":       presets,
+	})
+}
+
+func (s *Server) handleAgentInitWorkspace(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var rootPath string
+	if s.ws != nil {
+		rootPath, _ = s.ws.GetRoot()
+	}
+	if rootPath == "" {
+		jsonError(w, http.StatusBadRequest, "no active workspace opened")
+		return
+	}
+
+	var req agent.InitWorkspaceOptions
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	res, err := agent.InitWorkspace(rootPath, req)
+	if err != nil {
+		jsonError(w, http.StatusInternalServerError, "failed to initialize copilot workspace: "+err.Error())
+		return
+	}
+
+	s.BroadcastCopilotEvent("workspace_initialized", res)
+	jsonResponse(w, http.StatusOK, res)
+}
+
 type CreateTaskRequest struct {
 	Slug   string `json:"slug"`
 	Title  string `json:"title"`

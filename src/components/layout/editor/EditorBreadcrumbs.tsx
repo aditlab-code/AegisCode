@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbenchStore, useShallow } from "../../../store"
 import { isGitDiffTab, parseGitDiffTab } from "../../../utils/gitDiffTab"
-import { isGraphTab, parseGraphTab } from "./viewers/viewerTypes"
+import { isGraphTab, isSettingsTab, parseGraphTab } from "./viewers/viewerTypes"
 import {
   fetchActiveFileGraph,
   type UIGraphNode,
@@ -85,7 +85,12 @@ export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
     ""
 
   useEffect(() => {
-    if (!currentFile || isGitDiffTab(currentFile) || isGraphTab(currentFile)) {
+    if (
+      !currentFile ||
+      isGitDiffTab(currentFile) ||
+      isGraphTab(currentFile) ||
+      isSettingsTab(currentFile)
+    ) {
       setFileSymbols([])
       return
     }
@@ -146,6 +151,19 @@ export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
           <Icon name="chevron" size={11} />
           <Icon className="text-accent shrink-0" name="zap" size={12} />
           <span>{graphInfo.displayName}</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (isSettingsTab(currentFile)) {
+    return (
+      <div className="breadcrumbs">
+        <div className="breadcrumb-path">
+          <Icon className="text-accent shrink-0" name="settings" size={12} />
+          <span>Preferences</span>
+          <Icon name="chevron" size={11} />
+          <span>Settings</span>
         </div>
       </div>
     )

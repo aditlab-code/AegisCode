@@ -13,19 +13,23 @@
 
 .chat-main-pane {
   flex: 1;
-  display: grid;
-  grid-template-rows: 49px minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   height: 100%;
+  overflow: hidden;
 }
 
 .chat-header {
+  flex-shrink: 0;
+  height: 49px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 8px 0 14px;
   border-bottom: 1px solid var(--color-line);
 }
+
 
 .chat-heading {
   display: flex;
@@ -57,6 +61,7 @@
 
 
 .messages {
+  flex: 1 1 0%;
   min-height: 0;
   padding: 14px 12px;
   overflow-y: auto;
@@ -1287,6 +1292,7 @@
 .composer-wrapper {
   position: relative;
   overflow: visible;
+  flex-shrink: 0;
 }
 
 .command-popover {

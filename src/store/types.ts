@@ -43,6 +43,11 @@ import type { CursorCoordinates } from "./slices/createWorkspaceSlice"
 import type { ConfirmCloseState } from "../types/workbench"
 import type { AiTraceState } from "../utils/codegraphApi"
 import type { CodeGraphSlice } from "./slices/codegraphSlice"
+import type {
+  WorkspaceCopilotStatus,
+  InitWorkspaceOptions,
+  InitWorkspaceResponse,
+} from "../utils/agentApi"
 
 export type SliceCreator<T> = StateCreator<WorkbenchStore, [], [], T>
 
@@ -80,6 +85,7 @@ export interface LayoutSlice {
   settingsModalCategory: string
   setSettingsModalCategory: (cat: string) => void
   openSettingsModal: (category?: string) => void
+  openSettingsTab: (category?: string) => void
   toggleSettingsModal: () => void
   theme: ThemeMode
   themePalette: ThemePaletteId
@@ -432,6 +438,15 @@ export interface ChatSlice {
     },
   ) => void
   clearAiTrace: () => void
+  isCopilotInitialized: boolean | null
+  copilotStatus: WorkspaceCopilotStatus | null
+  isCopilotInitModalOpen: boolean
+  checkCopilotStatus: () => Promise<WorkspaceCopilotStatus | null>
+  openCopilotInitModal: () => void
+  closeCopilotInitModal: () => void
+  initializeCopilotWorkspace: (
+    options?: InitWorkspaceOptions,
+  ) => Promise<InitWorkspaceResponse>
 }
 
 export interface DebugSlice {

@@ -110,6 +110,19 @@ function AppShell() {
     [chatOpen, chatSessionsOpen, sidebarOpen],
   )
 
+  const openSettingsTab = useWorkbenchStore((s) => s.openSettingsTab)
+
+  useEffect(() => {
+    function handleGlobalKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+        e.preventDefault()
+        openSettingsTab()
+      }
+    }
+    window.addEventListener("keydown", handleGlobalKeyDown)
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown)
+  }, [openSettingsTab])
+
   return (
     <div className="app-shell">
       <BrowserAiSyncEffect />

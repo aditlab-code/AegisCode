@@ -8,6 +8,14 @@ export function isGraphTab(filename: string): boolean {
   )
 }
 
+export function isSettingsTab(filename: string): boolean {
+  return (
+    filename === "Settings" ||
+    filename === "aegis://settings" ||
+    filename.startsWith("settings:")
+  )
+}
+
 export interface ParsedGraphTab {
   displayName: string
   target: string

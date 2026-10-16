@@ -10,8 +10,9 @@ import { EditorFindWidget } from "./EditorFindWidget"
 import { EditorEmptyState } from "./EditorEmptyState"
 import { DebugToolbar } from "./DebugToolbar"
 import { isGitDiffTab } from "../../../utils/gitDiffTab"
-import { getViewerTypeForFile } from "./viewers/viewerTypes"
+import { getViewerTypeForFile, isSettingsTab } from "./viewers/viewerTypes"
 import { ViewerPane } from "./viewers/ViewerPane"
+import { SettingsView } from "../settings/SettingsView"
 
 export function Editor() {
   const {
@@ -112,6 +113,8 @@ export function Editor() {
         <div className="editor-panes">
           {isGitDiffTab(group1.activeTab) ? (
             <DiffEditorPane groupId="group1" tab={group1.activeTab} />
+          ) : isSettingsTab(group1.activeTab) ? (
+            <SettingsView />
           ) : viewerTypeG1 !== "code" ? (
             <ViewerPane
               filename={group1.activeTab}
@@ -160,6 +163,8 @@ export function Editor() {
             <div className="editor-panes">
               {isGitDiffTab(group1.activeTab) ? (
                 <DiffEditorPane groupId="group1" tab={group1.activeTab} />
+              ) : isSettingsTab(group1.activeTab) ? (
+                <SettingsView />
               ) : viewerTypeG1 !== "code" ? (
                 <ViewerPane
                   filename={group1.activeTab}
@@ -228,6 +233,8 @@ export function Editor() {
             <div className="editor-panes">
               {isGitDiffTab(group2.activeTab) ? (
                 <DiffEditorPane groupId="group2" tab={group2.activeTab} />
+              ) : isSettingsTab(group2.activeTab) ? (
+                <SettingsView />
               ) : viewerTypeG2 !== "code" ? (
                 <ViewerPane
                   filename={group2.activeTab}

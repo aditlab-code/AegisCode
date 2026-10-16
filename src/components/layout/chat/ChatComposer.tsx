@@ -44,6 +44,8 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
       isGenerating: s.isGenerating,
       stopGenerating: s.stopGenerating,
       skills: s.skills,
+      isCopilotInitialized: s.isCopilotInitialized,
+      openCopilotInitModal: s.openCopilotInitModal,
     })),
   )
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -86,9 +88,22 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
 
   function handleSendWithCheck() {
     if (isGenerating) return
+
+    // Contextual Interceptor: Intercept autonomous commands when workspace lacks .aegis/
+    const trimmed = value.trim()
+    const isAutonomousCommand =
+      trimmed.startsWith("/plan") || trimmed.startsWith("/goal")
+    if (isAutonomousCommand && isCopilotInitialized === false) {
+      showToast(
+        "Workspace must be initialized with Aegis Copilot to run autonomous tasks.",
+      )
+      openCopilotInitModal()
+      return
+    }
+
     if (!configured) {
       showToast(
-        `Kredensial untuk ${activeProvider} belum diatur. Mengalihkan ke Settings...`,
+        `Credentials for ${activeProvider} are not configured. Opening Settings...`,
       )
       setSettingsModalOpen(true)
       return

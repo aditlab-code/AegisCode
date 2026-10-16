@@ -1,34 +1,34 @@
-# Runtime Execution Log & 4-Step CoT
+# Dynamic Feedback Hub & Runtime Log: Aegis Copilot Workspace Initialization
 
-> **Single Source of Truth untuk State Transisi & Blocker Resolution**  
-> Dibuat oleh Kanna sesuai `#WORKFLOW` pada `task/0-0-Orchestrator.md`.  
-> Status Global: `COMPLETED`  
-> Referensi Plan: [`task/0-Table-Phase.md`](0-Table-Phase.md)
-
----
-
-## 1. Micro-Phase Runtime Registry
-
-| Micro-Phase ID | Wave | Target Layer | Status | Start Time | Completion Time | Notes / Gate Result |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **MP-W1-SYNC** | 1 | `server/internal/agent/task_sync.go` | `PASSED` | 13:35 | 13:36 | TaskManager file I/O, auto scaffolding, template generation verified. |
-| **MP-W1-RULE** | 1 | `server/internal/agent/rules.go` | `PASSED` | 13:35 | 13:36 | Ingest AGENTS.md, preset templates, in-memory fallback verified. |
-| **MP-W1-TEST** | 1 | `server/internal/agent/agent_test.go` | `PASSED` | 13:35 | 13:36 | Unit test suite 2/2 passed with 0 failures. |
-| **MP-W2-API** | 2 | `server/internal/api/agent_handlers.go` | `PASSED` | 13:36 | 13:38 | REST endpoints rules & tasks terverifikasi dengan TestAgentHandlers. |
-| **MP-W2-SSE** | 2 | `server/internal/api/events_hub.go` | `PASSED` | 13:36 | 13:38 | EventHub broadcast topic 'copilot' terverifikasi. |
-| **MP-W3-CARD** | 3 | `src/components/layout/settings/` | `PASSED` | 13:38 | 13:40 | AgentRulesCard terpasang di SettingsModal AI section (Zero Emojis). |
-| **MP-W3-API** | 3 | `src/utils/agentApi.ts` | `PASSED` | 13:38 | 13:40 | Client API methods terhubung ke Go backend dan openFileInGroup. |
-| **MP-W4-LINKS** | 4 | `src/components/layout/chat/ChatHeader.tsx` | `PASSED` | 13:40 | 13:42 | Header Quick Links [Open Spec], [Open Plan], [Open Log] terpasang. |
-| **MP-W4-STEP** | 4 | `src/components/layout/chat/ChatWaveStepper.tsx` | `PASSED` | 13:40 | 13:42 | ChatWaveStepper horizontal track terintegrasi di ChatDrawer (Zero Emojis). |
-| **MP-W5-VER** | 5 | Workspace Full Verification | `PASSED` | 13:42 | 13:43 | 313 vitest tests passed, 71 Go tests passed, zero compile or formatting errors. |
-| **MP-W6-BE** | 6 | `server/internal/agent/` & `api/` | `PASSED` | 13:53 | 13:57 | Custom content payload & InitWorkspaceRulesWithContent verified (70 Go tests passed). |
-| **MP-W6-FE** | 6 | `src/components/layout/settings/` | `PASSED` | 13:57 | 14:00 | Controlled monospace textarea, reset to default action, zero emojis verified. |
-| **MP-W6-GATE** | 6 | Workspace Verification | `PASSED` | 14:00 | 14:01 | Full build (✓ built in 835ms), format (166 files), vitest (313 passed), go test passed. |
-
+> **Document Type**: Runtime State Transitions & 4-Step CoT Blocker Hub  
+> **Status**: COMPLETED  
+> **Author**: Kanna for Adit  
+> **Reference Plan**: [`task/0-Table-Phase.md`](0-Table-Phase.md)
 
 ---
 
+## 1. Runtime State Overview
 
-## 2. Dynamic 4-Step CoT & Blocker Resolution Log
+| Micro-Phase ID | Target File(s) | Status | Last Updated | Notes / Output |
+| :--- | :--- | :--- | :--- | :--- |
+| **MP-W1-BE-STATUS** | `server/internal/agent/workspace_init.go` | `PASSED` | 2026-10-16 | GetWorkspaceCopilotStatus & GET /api/v1/agent/workspace-status verified |
+| **MP-W1-BE-INIT** | `server/internal/agent/workspace_init.go` | `PASSED` | 2026-10-16 | InitWorkspace scaffolding, config.json, .gitignore, TestWorkspaceInit passed (229/229 Go tests) |
+| **MP-W2-FE-API** | `src/utils/agentApi.ts` | `PASSED` | 2026-10-16 | WorkspaceCopilotStatus & initWorkspaceCopilot client methods verified |
+| **MP-W2-FE-STORE** | `src/store/slices/createChatSlice.ts` | `PASSED` | 2026-10-16 | Zustand chat slice copilot state, checkCopilotStatus, modal controls verified |
+| **MP-W3-UI-BANNER** | `src/components/layout/chat/CopilotInitBanner.tsx` | `PASSED` | 2026-10-16 | Chat onboarding banner component, ChatWaveStepper reactivity verified |
+| **MP-W3-UI-MODAL** | `src/components/layout/chat/CopilotInitModal.tsx` | `PASSED` | 2026-10-16 | Preset selector & confirmation modal with Tailwind semantic tokens verified |
+| **MP-W4-INTERCEPT** | `src/components/layout/chat/ChatComposer.tsx` | `PASSED` | 2026-10-16 | /plan and /goal contextual interceptor verified in ChatComposer.tsx |
+| **MP-W4-SETTINGS** | `src/components/layout/settings/AISettingsPane.tsx` | `PASSED` | 2026-10-16 | Settings Copilot Workspace setup card integrated |
+| **MP-W5-GATES** | Full Workspace | `PASSED` | 2026-10-16 | Go tests (229/229 passed), Vitest (317/317 passed), build (0 error), and oxfmt (173 files) |
 
-*(Log CoT akan diisi secara dinamis saat ada gap, kegagalan build/test, atau blocker selama siklus eksekusi).*
+---
+
+## 2. 4-Step CoT Blocker Log (Strict Loop)
+
+- **Wave 1 Execution**: Implemented `server/internal/agent/workspace_init.go` with `GetWorkspaceCopilotStatus` and `InitWorkspace`.
+- **API Registration**: Added endpoints `/api/v1/agent/workspace-status` and `/api/v1/agent/init-workspace` in `agent_handlers.go` and `api.go`.
+- **Validation**: Added `TestWorkspaceInit` in `agent_test.go`. Ran `rtk go test ./...` in `server` — 229 passed in 15 packages with 0 errors. No blockers.
+- **Wave 2 Execution**: Added typed interfaces and client helpers in `src/utils/agentApi.ts`. Wired `isCopilotInitialized`, `copilotStatus`, `isCopilotInitModalOpen`, `checkCopilotStatus`, and `initializeCopilotWorkspace` into Zustand `createChatSlice.ts`. Verified with `rtk npm run build` (passed with 0 errors).
+- **Wave 3 Execution**: Implemented `CopilotInitBanner.tsx` and `CopilotInitModal.tsx` with 100% English copy and Tailwind semantic tokens. Integrated into `ChatDrawer.tsx` and updated `ChatWaveStepper.tsx` to automatically reload tasks upon initialization.
+- **Wave 4 Execution**: Updated `ChatComposer.tsx` to intercept autonomous planning commands (`/plan`, `/goal`) when workspace is uninitialized, opening the configuration modal and retaining user input. Added Copilot Setup card in `AISettingsPane.tsx`.
+- **Wave 5 Verification**: Added frontend tests in `test/frontend/chat/copilotInit.test.ts`. All 317 Vitest tests passed. All 229 Go backend tests passed. Production build passed with 0 errors, and all 173 files are formatted cleanly with oxfmt.

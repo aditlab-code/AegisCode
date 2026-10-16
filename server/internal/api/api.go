@@ -320,6 +320,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/ai/chat", s.handleAIChatStream)
 
 	// Aegis Copilot Autonomous Orchestrator Endpoints
+	mux.HandleFunc("/api/v1/agent/workspace-status", s.handleAgentWorkspaceStatus)
+	mux.HandleFunc("/api/v1/agent/init-workspace", s.handleAgentInitWorkspace)
 	mux.HandleFunc("/api/v1/agent/init-rules", s.handleAgentInitRules)
 	mux.HandleFunc("/api/v1/agent/rules-status", s.handleAgentRulesStatus)
 	mux.HandleFunc("/api/v1/agent/tasks", s.handleAgentTasks)

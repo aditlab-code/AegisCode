@@ -13,6 +13,8 @@ import {
 } from "../../../store/slices/createLayoutSlice"
 import { ChatHeader } from "./ChatHeader"
 import { ChatWaveStepper } from "./ChatWaveStepper"
+import { CopilotInitBanner } from "./CopilotInitBanner"
+import { CopilotInitModal } from "./CopilotInitModal"
 import { ChatMessageList } from "./ChatMessageList"
 import { ChatComposer } from "./ChatComposer"
 import { ChatSessionSidebar } from "./ChatSessionSidebar"
@@ -124,9 +126,10 @@ export function ChatDrawer() {
       {chatSessionsOpen && <ChatSessionSidebar />}
       <div className="chat-main-pane">
         <ChatHeader />
+        <CopilotInitBanner />
         <ChatWaveStepper />
         {aiTrace && (
-          <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-accent/10 border-b border-accent/30 text-[11px] select-none">
+          <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-accent/10 border-b border-accent/30 text-[11px] select-none shrink-0">
             <div className="flex items-center gap-1.5 min-w-0">
               <span
                 className={`w-2 h-2 rounded-full shrink-0 ${
@@ -171,6 +174,7 @@ export function ChatDrawer() {
           value={inputMessage}
         />
       </div>
+      <CopilotInitModal />
     </aside>
   )
 }

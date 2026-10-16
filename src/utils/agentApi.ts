@@ -14,6 +14,33 @@ export interface AgentRulesStatus {
   presets: PersonaPreset[]
 }
 
+export interface WorkspaceCopilotStatus {
+  isInitialized: boolean
+  hasAegisDir: boolean
+  hasTasksDir: boolean
+  hasAgentsMd: boolean
+  rulesPath: string
+  activePersona: string
+  taskCount: number
+  presets: PersonaPreset[]
+}
+
+export interface InitWorkspaceOptions {
+  preset?: string
+  addToGitignore?: boolean
+  createSample?: boolean
+  customRules?: string
+  overwriteRules?: boolean
+}
+
+export interface InitWorkspaceResponse {
+  success: boolean
+  aegisPath: string
+  agentsPath: string
+  gitignored: boolean
+  taskSlug?: string
+}
+
 export interface AgentTaskItem {
   id: string
   title: string
@@ -141,4 +168,35 @@ export async function updateAgentTaskFile(
   if (!res.ok) {
     throw new Error(`Failed to update task file: ${res.statusText}`)
   }
+}
+
+/**
+ * Fetches current workspace Copilot readiness status.
+ */
+export async function fetchWorkspaceCopilotStatus(): Promise<WorkspaceCopilotStatus> {
+  const res = await fetch(`${API_BASE}/api/v1/agent/workspace-status`)
+  if (!res.ok) {
+    throw new Error(`Failed to fetch workspace status: ${res.statusText}`)
+  }
+  return res.json()
+}
+
+/**
+ * Initializes workspace directory (.aegis), tasks ledger, and rules.
+ */
+export async function initWorkspaceCopilot(
+  options: InitWorkspaceOptions = {},
+): Promise<InitWorkspaceResponse> {
+  const res = await fetch(`${API_BASE}/api/v1/agent/init-workspace`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(options),
+  })
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}))
+    throw new Error(
+      errData.error || `Failed to initialize copilot: ${res.statusText}`,
+    )
+  }
+  return res.json()
 }

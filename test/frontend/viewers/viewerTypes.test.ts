@@ -7,6 +7,7 @@ import {
   detectCsvDelimiter,
   parseCsv,
   isGraphTab,
+  isSettingsTab,
   parseGraphTab,
 } from "../../../src/components/layout/editor/viewers/viewerTypes"
 import { queryWorkspaceCsv } from "../../../src/utils/workspaceApi"
@@ -80,6 +81,16 @@ describe("viewerTypes utility", () => {
         target: "auth/session.go",
         isWorkspace: false,
       })
+    })
+  })
+
+  describe("isSettingsTab", () => {
+    it("identifies settings tabs accurately", () => {
+      expect(isSettingsTab("Settings")).toBe(true)
+      expect(isSettingsTab("aegis://settings")).toBe(true)
+      expect(isSettingsTab("settings:ai")).toBe(true)
+      expect(isSettingsTab("main.go")).toBe(false)
+      expect(isSettingsTab("SettingsModal.tsx")).toBe(false)
     })
   })
 

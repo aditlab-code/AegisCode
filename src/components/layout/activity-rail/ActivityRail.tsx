@@ -19,6 +19,7 @@ export function ActivityRail() {
     setSidebarOpen,
     settingsModalOpen,
     toggleSettingsModal,
+    openSettingsTab,
     theme,
     toggleTheme,
     showToast,
@@ -30,6 +31,7 @@ export function ActivityRail() {
       setSidebarOpen: s.setSidebarOpen,
       settingsModalOpen: s.settingsModalOpen,
       toggleSettingsModal: s.toggleSettingsModal,
+      openSettingsTab: s.openSettingsTab,
       theme: s.theme,
       toggleTheme: s.toggleTheme,
       showToast: s.showToast,
@@ -83,7 +85,7 @@ export function ActivityRail() {
         <IconButton
           active={settingsModalOpen}
           label="Settings (Cmd+,)"
-          onClick={toggleSettingsModal}
+          onClick={() => openSettingsTab()}
         >
           <Icon name="settings" size={21} />
         </IconButton>

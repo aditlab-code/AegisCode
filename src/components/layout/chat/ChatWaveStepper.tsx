@@ -14,6 +14,7 @@ export function ChatWaveStepper() {
   const [collapsed, setCollapsed] = useState(false)
 
   const openFileInGroup = useWorkbenchStore((s) => s.openFileInGroup)
+  const isCopilotInitialized = useWorkbenchStore((s) => s.isCopilotInitialized)
 
   const loadActiveTask = useCallback(async () => {
     try {
@@ -40,7 +41,7 @@ export function ChatWaveStepper() {
       void loadActiveTask()
     }, 10000)
     return () => clearInterval(interval)
-  }, [loadActiveTask])
+  }, [loadActiveTask, isCopilotInitialized])
 
   if (!activeTask || !taskDetail || taskDetail.waves.length === 0) {
     return null
@@ -51,7 +52,7 @@ export function ChatWaveStepper() {
   const logPath = `${activeTask.path}/0-log.md`
 
   return (
-    <div className="flex flex-col border-b border-line bg-surface/90 text-ink select-none text-[11px] transition-all">
+    <div className="flex flex-col border-b border-line bg-surface/90 text-ink select-none text-[11px] transition-all shrink-0">
       {/* Top Banner Bar */}
       <div className="flex items-center justify-between px-3 py-1.5 gap-2">
         <div className="flex items-center gap-1.5 min-w-0">

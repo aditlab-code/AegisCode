@@ -126,6 +126,9 @@ func TestRulesManager(t *testing.T) {
 	if !statusAfter.HasWorkspaceRules {
 		t.Errorf("expected HasWorkspaceRules true after init")
 	}
+	if statusAfter.ActivePersona != PresetArchitect {
+		t.Errorf("expected ActivePersona '%s', got '%s'", PresetArchitect, statusAfter.ActivePersona)
+	}
 
 	// 5. GetEffectiveSystemRules should now return Architect content
 	effective := GetEffectiveSystemRules(tempDir)
@@ -144,4 +147,81 @@ func TestRulesManager(t *testing.T) {
 		t.Errorf("expected custom content '%s', got '%s'", customContent, string(data))
 	}
 }
+
+func TestWorkspaceInit(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "aegis-ws-init-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// 1. Uninitialized status
+	initialStatus := GetWorkspaceCopilotStatus(tempDir)
+	if initialStatus.IsInitialized {
+		t.Errorf("expected IsInitialized=false for empty directory")
+	}
+	if initialStatus.HasAegisDir {
+		t.Errorf("expected HasAegisDir=false for empty directory")
+	}
+
+	// 2. Run InitWorkspace
+	opts := InitWorkspaceOptions{
+		Preset:         PresetMinimalist,
+		AddToGitignore: true,
+		CreateSample:   true,
+	}
+	result, err := InitWorkspace(tempDir, opts)
+	if err != nil {
+		t.Fatalf("InitWorkspace failed: %v", err)
+	}
+	if !result.Success {
+		t.Errorf("expected result.Success=true")
+	}
+	if result.TaskSlug != "001-welcome" {
+		t.Errorf("expected TaskSlug '001-welcome', got '%s'", result.TaskSlug)
+	}
+	if !result.Gitignored {
+		t.Errorf("expected Gitignored=true")
+	}
+
+	// 3. Verify status after initialization
+	afterStatus := GetWorkspaceCopilotStatus(tempDir)
+	if !afterStatus.IsInitialized {
+		t.Errorf("expected IsInitialized=true after InitWorkspace")
+	}
+	if !afterStatus.HasAegisDir {
+		t.Errorf("expected HasAegisDir=true after InitWorkspace")
+	}
+	if !afterStatus.HasTasksDir {
+		t.Errorf("expected HasTasksDir=true after InitWorkspace")
+	}
+	if !afterStatus.HasAgentsMd {
+		t.Errorf("expected HasAgentsMd=true after InitWorkspace")
+	}
+	if afterStatus.TaskCount != 1 {
+		t.Errorf("expected TaskCount=1, got %d", afterStatus.TaskCount)
+	}
+
+	// 4. Verify config.json exists
+	cfgPath := filepath.Join(tempDir, ".aegis", "config.json")
+	if _, err := os.Stat(cfgPath); os.IsNotExist(err) {
+		t.Errorf("expected config.json to exist at %s", cfgPath)
+	}
+
+	// 5. Verify .gitignore content
+	gitContent, err := os.ReadFile(filepath.Join(tempDir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("failed to read .gitignore: %v", err)
+	}
+	if !strings.Contains(string(gitContent), ".aegis/tasks/") {
+		t.Errorf("expected .gitignore to contain '.aegis/tasks/', got: %s", string(gitContent))
+	}
+
+	// 6. Test idempotent gitignore
+	addedAgain := ensureGitignoreEntry(tempDir, ".aegis/tasks/")
+	if !addedAgain {
+		t.Errorf("expected ensureGitignoreEntry to return true for existing entry")
+	}
+}
+
 

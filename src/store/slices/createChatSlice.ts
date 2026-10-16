@@ -22,6 +22,13 @@ import {
   extractCodeGraphTraceTargets,
   type AiTraceState,
 } from "../../utils/codegraphApi"
+import {
+  fetchWorkspaceCopilotStatus,
+  initWorkspaceCopilot,
+  type WorkspaceCopilotStatus,
+  type InitWorkspaceOptions,
+  type InitWorkspaceResponse,
+} from "../../utils/agentApi"
 
 import {
   createSessionLogic,
@@ -256,6 +263,19 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
         console.warn("Failed to hydrate AI skills:", err)
       })
 
+    fetchWorkspaceCopilotStatus()
+      .then((status) => {
+        if (status) {
+          set({
+            copilotStatus: status,
+            isCopilotInitialized: status.isInitialized,
+          })
+        }
+      })
+      .catch(() => {
+        // Backend not available or workspace uninitialized
+      })
+
     fetchBackendChatSummaries()
       .then(async (summaries) => {
         if (Array.isArray(summaries) && summaries.length > 0) {
@@ -316,6 +336,46 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
 
     clearAiTrace: () => {
       set({ aiTrace: null, aiTraceHistory: [] })
+    },
+
+    isCopilotInitialized: null,
+    copilotStatus: null,
+    isCopilotInitModalOpen: false,
+
+    checkCopilotStatus: async () => {
+      try {
+        const status = await fetchWorkspaceCopilotStatus()
+        set({
+          copilotStatus: status,
+          isCopilotInitialized: status.isInitialized,
+        })
+        return status
+      } catch (err) {
+        console.warn("Failed to check copilot status:", err)
+        set({ isCopilotInitialized: false })
+        return null
+      }
+    },
+
+    openCopilotInitModal: () => {
+      set({ isCopilotInitModalOpen: true })
+    },
+
+    closeCopilotInitModal: () => {
+      set({ isCopilotInitModalOpen: false })
+    },
+
+    initializeCopilotWorkspace: async (options?: InitWorkspaceOptions) => {
+      const res = await initWorkspaceCopilot(options)
+      if (res.success) {
+        const updated = await fetchWorkspaceCopilotStatus().catch(() => null)
+        set({
+          isCopilotInitialized: true,
+          copilotStatus: updated,
+          isCopilotInitModalOpen: false,
+        })
+      }
+      return res
     },
 
     triggerAiTrace: (incoming) => {

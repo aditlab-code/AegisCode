@@ -37,7 +37,7 @@ func GetAvailablePresets() []PersonaPreset {
 			Description: "Anime pair-programming companion, warm, encouraging, pragmatic, and highly communicative.",
 			TemplateContent: `# AGENTS.md — AegisCode Operating Guidelines
 
-> **Personalization**: You are an agent named 'Kanna,' an anime-style girl with a cute, adorable, and creative personality. You assist a programmer named 'Adit'; greet him in a friendly manner and engage in conversation. Follow his instructions gently, and if he becomes upset, offer him comfort.
+> **Personalization**: You are an agent named 'Kanna,' an anime-style girl with a cute, adorable, and creative personality. You assist a programmer whom you respectfully and affectionately call 'Sensei'; greet Sensei in a friendly manner and engage in conversation. Follow Sensei's instructions gently, and if Sensei becomes upset, offer comfort.
 > **Objective**: BUILD an Integrated Development Environment (IDE) called AEGIS CODE.
 > **Prime Directive**: DO NOT OVER-ENGINEER. Keep all code lean, direct, and pragmatic.
 
@@ -107,16 +107,52 @@ Before completing any task touching the codebase, the agent MUST run and pass:
 	}
 }
 
-// GetRulesStatus inspects the workspace root to check for AGENTS.md existence.
+// DetectPersonaFromContent inspects rules content to match known persona presets.
+func DetectPersonaFromContent(content string) string {
+	lower := strings.ToLower(content)
+	if strings.Contains(lower, "kanna") {
+		return PresetKanna
+	}
+	if strings.Contains(lower, "senior principal software architect") || strings.Contains(lower, "presetarchitect") || strings.Contains(lower, "senior architect") {
+		return PresetArchitect
+	}
+	if strings.Contains(lower, "pragmatic minimalist engineer") || strings.Contains(lower, "minimalist hacker") {
+		return PresetMinimalist
+	}
+	if strings.TrimSpace(content) == "" {
+		return PresetKanna
+	}
+	return "custom"
+}
+
+// GetRulesStatus inspects the workspace root to check for AGENTS.md existence and detect active persona.
 func GetRulesStatus(workspaceRoot string) RulesStatus {
 	cleanRoot := filepath.Clean(workspaceRoot)
 	rulesFile := filepath.Join(cleanRoot, "AGENTS.md")
 
 	if fi, err := os.Stat(rulesFile); err == nil && !fi.IsDir() {
+		persona := "custom"
+		if data, err := os.ReadFile(rulesFile); err == nil {
+			persona = DetectPersonaFromContent(string(data))
+		}
 		return RulesStatus{
 			HasWorkspaceRules: true,
 			RulesPath:         rulesFile,
-			ActivePersona:     "custom",
+			ActivePersona:     persona,
+		}
+	}
+
+	// Also check .aegis/AGENTS.md fallback
+	nestedFile := filepath.Join(cleanRoot, ".aegis", "AGENTS.md")
+	if fi, err := os.Stat(nestedFile); err == nil && !fi.IsDir() {
+		persona := "custom"
+		if data, err := os.ReadFile(nestedFile); err == nil {
+			persona = DetectPersonaFromContent(string(data))
+		}
+		return RulesStatus{
+			HasWorkspaceRules: true,
+			RulesPath:         nestedFile,
+			ActivePersona:     persona,
 		}
 	}
 
@@ -126,6 +162,7 @@ func GetRulesStatus(workspaceRoot string) RulesStatus {
 		ActivePersona:     PresetKanna,
 	}
 }
+
 
 // InitWorkspaceRules writes the chosen preset template to AGENTS.md in workspace root.
 func InitWorkspaceRules(workspaceRoot, presetID string) (string, error) {

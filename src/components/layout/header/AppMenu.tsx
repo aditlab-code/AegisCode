@@ -10,6 +10,7 @@ const menus: MenuGroup[] = [
       ["Open Folder…", "Ctrl+O", "open-folder"],
       ["Close Folder", "Ctrl+K F", "close-folder"],
       ["Save", "Ctrl+S", "save"],
+      ["Preferences: Open Settings", "Ctrl+,", "settings"],
     ],
   },
   {

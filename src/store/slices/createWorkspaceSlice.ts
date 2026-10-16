@@ -15,7 +15,10 @@ import {
 import { detectLanguage, isLspLanguage } from "../../utils/linter"
 import { notifyLspDidSave } from "../../utils/lspApi"
 import { offloadService } from "../../utils/offloadService"
-import { isGraphTab } from "../../components/layout/editor/viewers/viewerTypes"
+import {
+  isGraphTab,
+  isSettingsTab,
+} from "../../components/layout/editor/viewers/viewerTypes"
 import { isGitDiffTab } from "../../utils/gitDiffTab"
 
 let linterDebounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -1087,7 +1090,13 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
   },
 
   ensureFileBuffer: (filename: string) => {
-    if (!filename || isGraphTab(filename) || isGitDiffTab(filename)) return
+    if (
+      !filename ||
+      isGraphTab(filename) ||
+      isGitDiffTab(filename) ||
+      isSettingsTab(filename)
+    )
+      return
     const rootPath = get().rootWorkspacePath
     const clean = rootPath
       ? normalizeWorkspacePath(filename, rootPath)
@@ -1110,7 +1119,13 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
   },
 
   fetchBufferSafely: async (filename: string): Promise<void> => {
-    if (!filename || isGraphTab(filename) || isGitDiffTab(filename)) return
+    if (
+      !filename ||
+      isGraphTab(filename) ||
+      isGitDiffTab(filename) ||
+      isSettingsTab(filename)
+    )
+      return
     let rootPath = get().rootWorkspacePath
     if (!rootPath) {
       try {

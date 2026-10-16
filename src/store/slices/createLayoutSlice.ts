@@ -254,6 +254,12 @@ export function runActionLogic(
     if (typeof get().runFileInTerminal === "function") {
       void get().runFileInTerminal()
     }
+  } else if (action === "settings" || action === "open-settings") {
+    if (typeof get().openSettingsTab === "function") {
+      get().openSettingsTab()
+    } else if (typeof get().openSettingsModal === "function") {
+      get().openSettingsModal()
+    }
   } else {
     get().showToast(actionMessages[action] ?? "Command completed")
   }
@@ -469,6 +475,15 @@ export const createLayoutSlice: SliceCreator<LayoutSlice> = (set, get) => {
         settingsModalOpen: true,
         ...(category ? { settingsModalCategory: category } : {}),
       })
+    },
+    openSettingsTab: (category?: string) => {
+      if (category) {
+        set({ settingsModalCategory: category })
+      }
+      const st = get() as any
+      if (typeof st.openFileInGroup === "function") {
+        st.openFileInGroup("Settings")
+      }
     },
     toggleSettingsModal: () => {
       set((state) => ({ settingsModalOpen: !state.settingsModalOpen }))
