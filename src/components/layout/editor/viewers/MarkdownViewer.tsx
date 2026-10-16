@@ -84,72 +84,104 @@ export default function MarkdownViewer({
     if (!syncScroll || mode !== "split") return
 
     const previewPane = previewScrollRef.current
-    const editorScroller =
-      containerRef.current?.querySelector<HTMLDivElement>(".cm-scroller")
-    if (!previewPane || !editorScroller) return
+    let editorScroller: HTMLDivElement | null =
+      containerRef.current?.querySelector<HTMLDivElement>(".cm-scroller") ||
+      null
+    let pollTimer: ReturnType<typeof setInterval> | null = null
+    let handleEditorScroll: (() => void) | null = null
+    let handlePreviewScroll: (() => void) | null = null
+    let isDisposed = false
 
     const THRESHOLD_PX = 4
 
-    // Editor scroll -> syncs preview
-    const handleEditorScroll = () => {
-      if (isSyncingScroll.current) return
+    const attachEditorListener = (scroller: HTMLDivElement) => {
+      if (editorScroller || isDisposed) return
+      editorScroller = scroller
+      handleEditorScroll = () => {
+        if (isSyncingScroll.current || !previewPane) return
 
-      const eScrollable =
-        editorScroller.scrollHeight - editorScroller.clientHeight
-      if (eScrollable <= 0) return
+        const eScrollable = scroller.scrollHeight - scroller.clientHeight
+        if (eScrollable <= 0) return
 
-      const ratio = editorScroller.scrollTop / eScrollable
-      lastScrollRatio.current = ratio
-      const pScrollable = previewPane.scrollHeight - previewPane.clientHeight
-      const targetTop = ratio * pScrollable
+        const ratio = scroller.scrollTop / eScrollable
+        lastScrollRatio.current = ratio
+        const pScrollable = previewPane.scrollHeight - previewPane.clientHeight
+        const targetTop = ratio * pScrollable
 
-      if (Math.abs(previewPane.scrollTop - targetTop) >= THRESHOLD_PX) {
-        isSyncingScroll.current = true
-        previewPane.scrollTop = targetTop
+        if (Math.abs(previewPane.scrollTop - targetTop) >= THRESHOLD_PX) {
+          isSyncingScroll.current = true
+          previewPane.scrollTop = targetTop
 
-        if (syncTimeoutRef.current !== null)
-          clearTimeout(syncTimeoutRef.current)
-        syncTimeoutRef.current = window.setTimeout(() => {
-          isSyncingScroll.current = false
-        }, 50)
+          if (syncTimeoutRef.current !== null)
+            clearTimeout(syncTimeoutRef.current)
+          syncTimeoutRef.current = window.setTimeout(() => {
+            isSyncingScroll.current = false
+          }, 50)
+        }
       }
+      scroller.addEventListener("scroll", handleEditorScroll, {
+        passive: true,
+      })
     }
 
-    // Preview scroll -> syncs editor
-    const handlePreviewScroll = () => {
-      if (isSyncingScroll.current) return
-
-      const pScrollable = previewPane.scrollHeight - previewPane.clientHeight
-      if (pScrollable <= 0) return
-
-      const ratio = previewPane.scrollTop / pScrollable
-      lastScrollRatio.current = ratio
-      const eScrollable =
-        editorScroller.scrollHeight - editorScroller.clientHeight
-      const targetTop = ratio * eScrollable
-
-      if (Math.abs(editorScroller.scrollTop - targetTop) >= THRESHOLD_PX) {
-        isSyncingScroll.current = true
-        editorScroller.scrollTop = targetTop
-
-        if (syncTimeoutRef.current !== null)
-          clearTimeout(syncTimeoutRef.current)
-        syncTimeoutRef.current = window.setTimeout(() => {
-          isSyncingScroll.current = false
-        }, 50)
-      }
+    if (editorScroller) {
+      attachEditorListener(editorScroller)
+    } else {
+      let attempts = 0
+      pollTimer = setInterval(() => {
+        if (isDisposed) {
+          if (pollTimer) clearInterval(pollTimer)
+          return
+        }
+        const found =
+          containerRef.current?.querySelector<HTMLDivElement>(".cm-scroller")
+        if (found) {
+          attachEditorListener(found)
+          if (pollTimer) clearInterval(pollTimer)
+        } else if (++attempts > 20) {
+          if (pollTimer) clearInterval(pollTimer)
+        }
+      }, 50)
     }
 
-    editorScroller.addEventListener("scroll", handleEditorScroll, {
-      passive: true,
-    })
-    previewPane.addEventListener("scroll", handlePreviewScroll, {
-      passive: true,
-    })
+    if (previewPane) {
+      handlePreviewScroll = () => {
+        if (isSyncingScroll.current || !editorScroller) return
+
+        const pScrollable = previewPane.scrollHeight - previewPane.clientHeight
+        if (pScrollable <= 0) return
+
+        const ratio = previewPane.scrollTop / pScrollable
+        lastScrollRatio.current = ratio
+        const eScrollable =
+          editorScroller.scrollHeight - editorScroller.clientHeight
+        const targetTop = ratio * eScrollable
+
+        if (Math.abs(editorScroller.scrollTop - targetTop) >= THRESHOLD_PX) {
+          isSyncingScroll.current = true
+          editorScroller.scrollTop = targetTop
+
+          if (syncTimeoutRef.current !== null)
+            clearTimeout(syncTimeoutRef.current)
+          syncTimeoutRef.current = window.setTimeout(() => {
+            isSyncingScroll.current = false
+          }, 50)
+        }
+      }
+      previewPane.addEventListener("scroll", handlePreviewScroll, {
+        passive: true,
+      })
+    }
 
     return () => {
-      editorScroller.removeEventListener("scroll", handleEditorScroll)
-      previewPane.removeEventListener("scroll", handlePreviewScroll)
+      isDisposed = true
+      if (pollTimer) clearInterval(pollTimer)
+      if (editorScroller && handleEditorScroll) {
+        editorScroller.removeEventListener("scroll", handleEditorScroll)
+      }
+      if (previewPane && handlePreviewScroll) {
+        previewPane.removeEventListener("scroll", handlePreviewScroll)
+      }
       if (syncTimeoutRef.current !== null) clearTimeout(syncTimeoutRef.current)
     }
   }, [syncScroll, mode, debouncedContent])

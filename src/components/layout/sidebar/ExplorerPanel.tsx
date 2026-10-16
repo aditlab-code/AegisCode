@@ -887,7 +887,7 @@ export function ExplorerPanel() {
               {group1.tabs.map((tab) => {
                 const isActive =
                   tab === group1.activeTab && focusedGroup === "group1"
-                const isDirty = fileBuffers[tab]?.isDirty
+                const isDirty = Boolean(dirtyFiles[tab])
                 return (
                   <div
                     className={`file-row open-editor-row ${

@@ -1261,7 +1261,8 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
         !current.isDirty &&
         !current.isLargeFile &&
         !current.isBinary &&
-        current.status !== "ready")
+        current.status !== "ready" &&
+        current.status !== "error")
     ) {
       return get().fetchBufferSafely(filename)
     }

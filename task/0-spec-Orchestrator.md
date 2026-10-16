@@ -1,71 +1,92 @@
-# Specification: Minimap Synchronization, Windowing & Rendering Accuracy
+# Specification: Residual Edge Cases Remediation (DOM Async, Terminal Cleanup, Empty Buffer & Resilient Viewers)
 
-> **Document Type**: Architecture & Component Boundary Specification (Phase 6)  
-> **Target**: Minimap Component (`Minimap.tsx`), CodePane (`CodePane.tsx`), and CodeMirror Integration (`CMEditor.tsx`)  
-> **Status**: SPECIFIED & PENDING EXECUTION  
+> **Document Type**: Architecture & Component Boundary Specification (Phase 7)  
+> **Targets**: 
+> - `TerminalView.tsx` (Terminal cleanup & disposed async write guard)
+> - `CsvViewer.tsx` (Empty buffer condition & fetch loop guard)
+> - `MarkdownViewer.tsx` (Split-scroll DOM attachment timing resilience)
+> - `CodePane.tsx` (Buffer error visual fallback & retry mechanism)
+> **Status**: SPECIFIED & PENDING USER REVIEW  
 > **Author**: Shun for Adit-sensei  
 
 ---
 
-## 1. Problem Statement & Root Cause Analysis
+## 1. Problem Statements & Root Cause Analysis
 
-### 1.1 "Tidak Sesuai dengan Isi Code" (Token Cache Zombie & Content Desync)
-- **Root Cause**: `tokenCacheRef` di `Minimap.tsx` adalah instance `useRef<Map<number, RawSyntaxToken[]>>` yang tidak memiliki file namespace, tidak di-reset saat file berganti, dan tidak mencocokkan hash/isi baris teks.
-- **Dampak**: Berpindah file menyebabkan minimap menampilkan potongan token dari file sebelumnya pada indeks baris yang sama. Mengedit kode membuat baris yang diedit tetap menampilkan token usang. Jika token belum siap, minimap hanya menampilkan skeleton bar horizontal abu-abu tanpa teks.
+### 1.1 MAL-01: Terminal Asynchronous Disposed Write & Uncleaned Timers
+- **Target**: [`src/components/layout/bottom-panel/TerminalView.tsx`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/bottom-panel/TerminalView.tsx#L148-L281)
+- **Root Cause**:
+  1. `setTimeout(syncSize, 100)` pada baris 172 tidak disimpan dalam ref dan tidak dibatalkan pada fungsi cleanup `useEffect`. Jika tab terminal ditutup mendadak dalam <100ms, fungsi `syncSize()` memanggil `fitAddon.fit()` dan `resizeTerminalApi(...)` pada objek terminal yang sudah di-dispose (`term.dispose()`).
+  2. Handler `sse.addEventListener("data", ...)` dan `exit` tidak memeriksa apakah terminal telah di-dispose sebelum memanggil `term.write()`. Paket data SSE downlink yang sudah berada di event queue browser saat unmount memicu error: `Error: Terminal is disposed`.
+- **Dampak**: Unhandled runtime error di console browser dan potensi memory leak saat membuka/menutup terminal berulang kali.
 
-### 1.2 "Seperti Kepotong" (Windowing Height Collapse & Horizontal Monospace Truncation)
-- **Root Cause**: `scrollInfo` di `CodePane.tsx` diinisialisasi ke `{ scrollTop: 0, scrollHeight: 1, clientHeight: 1 }`. `useEffect(..., [filename])` mencari `.cm-scroller` via `querySelector`, yang bernilai `null` saat file baru dibuka atau saat buffer masih berstatus `"loading"`.
-- **Dampak**: `clientHeight` bernilai 1. Formula windowing di `Minimap.tsx` menghitung `visibleEnd = Math.ceil((0 + 1) / lineHeight) + 15 = 16`. Minimap hanya merender 16 baris dan memotong sisa file secara vertikal.
+### 1.2 MAL-02: CsvViewer Empty File Infinite Fetch Loop
+- **Target**: [`src/components/layout/editor/viewers/CsvViewer.tsx`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/editor/viewers/CsvViewer.tsx#L111-L135)
+- **Root Cause**:
+  Pada baris 114, kondisi `if (buffer?.content)` bernilai `false` (falsy) ketika file CSV berukuran 0 byte (`content === ""`). Hal ini membuat komponen selalu masuk ke blok `else` dan mengeksekusi `fetch(getRawFileUrl(filename))` berulang kali.
+- **Dampak**: Spam HTTP request ke backend Go untuk file CSV kosong, membuang bandwidth dan resource CPU.
 
-### 1.3 "Tidak Sync dengan Code" (Scroller Listener Race & Slider Mathematics Drift)
-- **Root Cause 1**: Karena `.cm-scroller` bernilai `null` saat buffer loading, listener scroll tidak pernah terpasang. Scrolling di editor tidak memperbarui `scrollInfo`.
-- **Root Cause 2**: Rumus `sliderHeightPx = (clientHeight / scrollHeight) * clientHeight` menggunakan kuadrat clientHeight, bukannya merefleksikan tinggi viewport pada skala minimap (`(clientHeight / scrollHeight) * totalMinimapHeight`). Kotak slider bergerak dengan kecepatan yang berbeda dari konten minimap yang sedang bergeser.
-- **Root Cause 3**: Pemanggilan scroll saat minimap diklik (`handleScrollToLine`) menggunakan estimasi kasar `lineIndex * editorLineHeight - 60` yang melenceng pada file dengan word-wrap atau font sizing berbeda.
+### 1.3 MAL-03: MarkdownViewer Initial Split-Scroll Listener Timing
+- **Target**: [`src/components/layout/editor/viewers/MarkdownViewer.tsx`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/editor/viewers/MarkdownViewer.tsx#L83-L150)
+- **Root Cause**:
+  Pada split mode, `useEffect` langsung mencari `.cm-scroller` via `querySelector` satu kali saat mount. Karena CodeMirror dirender secara asinkron oleh `CodePane`, elemen `.cm-scroller` seringkali belum ada di DOM saat efek dieksekusi pertama kali, sehingga listener scroll editor tidak terpasang sama sekali hingga mode ditoggle bolak-balik.
+- **Dampak**: Pengguna scroll di editor teks, tetapi panel preview markdown di sebelahnya tidak bergerak sinkron pada render awal.
+
+### 1.4 MAL-04: CodePane Error Buffer User Feedback Banner
+- **Target**: [`src/components/layout/editor/CodePane.tsx`](file:///Users/aditwicaksono/Documents/Project-AI/AegisCodev2/src/components/layout/editor/CodePane.tsx#L208-L225)
+- **Root Cause**:
+  Ketika buffer gagal di-fetch dari backend (`buffer.status === "error"`), `CodePane` tidak memberikan umpan balik visual dan membiarkan kanvas editor kosong tanpa tombol retry.
+- **Dampak**: Pengguna bingung apakah file sedang loading, kosong, atau gagal dibaca dari disk.
 
 ---
 
 ## 2. Invariants & Architecture Contracts
 
-### Invariant `MINIMAP-01`: Event-Driven CodeMirror Scroll Metrics
-- `CMEditor` wajib memancarkan metrik scroll langsung dari CodeMirror (`view.scrollDOM` / event `scroll` dan initial layout) melalui prop `onScroll?: (info: { scrollTop: number; scrollHeight: number; clientHeight: number }) => void`.
-- `CodePane` tidak boleh bergantung pada polling atau single-shot `querySelector` yang rentan race condition saat buffer berstatus `"loading"`.
+### Invariant `MAL-SPEC-01`: Disposed Terminal Guard
+- `TerminalView` wajib memelihara flag `isDisposed = false` di dalam scope `useEffect`.
+- Setiap operasi terhadap terminal (`term.write`, `fitAddon.fit`, `syncSize`) wajib memeriksa `if (isDisposed) return`.
+- Timer inisialisasi `setTimeout(syncSize, 100)` wajib disimpan dalam variabel dan dibatalkan via `clearTimeout` saat unmount.
 
-### Invariant `MINIMAP-02`: File & Content Aware Token Cache
-- `Minimap` wajib menerima prop `filename: string`.
-- Setiap kali `filename` berubah, `tokenCacheRef` wajib di-reset (`clear()`).
-- Cache baris wajib mencocokkan string baris asli (`{ text: string, tokens: RawSyntaxToken[] }`). Jika baris diedit, entri lama dianggap usang dan di-retokenize.
-- Saat token belum tersedia dari worker, `Minimap` wajib merender `lineText` asli secara langsung dengan micro-font styling yang rapi, bukan skeleton bar kosong, sehingga kode selalu terlihat 100% instan.
+### Invariant `MAL-SPEC-02`: Accurate Type Check for Empty Buffers
+- `CsvViewer` wajib menggunakan pemeriksaan tipe eksplisit: `if (typeof buffer?.content === "string")`.
+- Jika string kosong `""`, set state `rawText` menjadi `""`, set loading `false`, dan jangan lakukan fetch HTTP ke disk/raw endpoint.
 
-### Invariant `MINIMAP-03`: Precise 1:1 Viewport Slider & Offset Alignment
-- Tinggi viewport slider wajib dihitung dari proporsi dokumen terhadap total tinggi minimap:
-  $$\text{sliderHeightPx} = \max\left(20, \min\left(\text{containerHeight}, \frac{\text{clientHeight}}{\text{scrollHeight}} \times \text{totalMinimapHeight}\right)\right)$$
-- Saat dokumen melebihi tinggi container (`totalMinimapHeight > containerHeight`), pergeseran minimap (`minimapOffsetY`) dan posisi slider (`sliderTopPx`) wajib diselaraskan secara proporsional sehingga kotak slider membingkai baris yang sedang terlihat di CodeMirror.
+### Invariant `MAL-SPEC-03`: Resilient DOM Element Binding for Scroller
+- `MarkdownViewer` wajib menggunakan polling ringan atau observer yang mencoba mengaitkan listener ke `.cm-scroller` hingga elemen tersedia atau komponen di-unmount, memastikan scroll dua arah selalu aktif tanpa perlu intervensi manual.
 
-### Invariant `MINIMAP-04`: Safe Container Height via Self-Measurement
-- `Minimap` mengukur tinggi container-nya sendiri menggunakan `ResizeObserver` atau `getBoundingClientRect()`, sehingga jika `clientHeight` dari luar sempat bernilai default (1px), tampilan minimap tidak kolaps.
-
-### Invariant `MINIMAP-05`: Native CodeMirror `scrollToLine` via `CMEditorHandle`
-- `CMEditorHandle` mengekspos fungsi imperatif `scrollToLine: (lineIndex: number, smooth?: boolean) => void` yang menggunakan `EditorView.scrollIntoView()` bawaan CodeMirror 6.
-- Klik atau drag pada Minimap memanggil delegasi ini secara presisi tanpa estimasi piksel kasar.
+### Invariant `MAL-SPEC-04`: Explicit Error State UI
+- `CodePane` wajib merender fallback card yang rapi saat `buffer?.status === "error"`, menampilkan pesan kegagalan dan tombol retry yang memanggil `fetchBufferSafely(filename)`.
 
 ---
 
-## 3. Component Boundary & Data Flow
-
-```mermaid
-flowchart TD
-    CM["CMEditor.tsx<br/>(EditorView.scrollDOM)"] -->|onScroll({scrollTop, scrollHeight, clientHeight})| CP["CodePane.tsx<br/>(Maintains scroll state)"]
-    CP -->|filename, lines, scrollTop, scrollHeight, clientHeight| MM["Minimap.tsx<br/>(Self-resizing, content-aware)"]
-    MM -->|onScrollToLine(targetLine)| CP
-    CP -->|editorRef.current.scrollToLine(targetLine)| CM
-```
+## 3. Verification Criteria
+1. Buka dan tutup tab terminal dengan sangat cepat (<100ms): Tidak ada error `Terminal is disposed` di console.
+2. Buka file `.csv` kosong (0 byte): Network tab tidak menunjukkan loop fetch HTTP berulang ke raw endpoint.
+3. Buka file `.md` dalam mode split: Scroll editor langsung menggerakkan preview markdown sejak detik pertama.
+4. Simulasikan file buffer error: Muncul banner error dengan tombol Retry yang dapat memicu fetch ulang.
+5. Mandatory Verification Gates: `rtk npm run build`, `rtk npm run format`, dan `rtk npx vitest run` lulus 100% tanpa error.
 
 ---
 
-## 4. Verification Criteria
-1. Buka file apa saja: Minimap langsung menampilkan baris kode dari baris 1 sampai akhir file tanpa terpotong pada baris 16.
-2. Ganti tab file: Minimap langsung menampilkan kode file yang baru tanpa ada sisa token/teks dari file sebelumnya.
-3. Edit kode pada baris tertentu: Minimap langsung menampilkan perubahan pada baris tersebut.
-4. Scroll CodeMirror: Slider box dan teks minimap bergerak mulus dan selalu sinkron membingkai baris yang sedang aktif terlihat di layar.
-5. Klik baris pada minimap: CodeMirror langsung melompat ke baris yang diklik secara presisi.
-6. Verification Gates: `npm run build`, `npm run format`, dan `npm run test:frontend` lulus 100% dengan 0 error.
+# Phase 8 Specification: Minimap Canvas Silhouette & Viewport Synchronization
+
+> **Targets**: 
+> - `src/components/layout/editor/Minimap.tsx` (Canvas silhouette rendering, viewport slider synchronization, HiDPI Retina support)
+> - `src/components/layout/editor/editor.css` (Clean canvas styling, remove DOM text layout artifacts)
+> **Status**: SPECIFIED & PENDING USER REVIEW  
+> **Author**: Shun for Adit-sensei  
+
+## 1. Problem Statements & Design Goals
+1. **Visual Dual-Scrolling Illusion**: Konten minimap berbasis DOM me-render teks mentah yang bergeser (`translateY`) sementara slider juga meluncur ke bawah, memicu kebingungan visual (paralaks ganda).
+2. **DOM Churn & Layout Glitches**: Merender puluhan hingga ratusan elemen `div` dan `span` kecil di DOM per-frame saat scrolling memperlambat render dan menghasilkan teks terpotong kasar horizontal.
+3. **Design Solution (Option 1 - VS Code Real Monospace Character Canvas)**:
+   - Menggambar **teks kode asli** (huruf, angka, simbol) langsung ke `<canvas>` menggunakan `ctx.fillText()` dengan font monospaced mini yang sangat tajam dan terbaca.
+   - Setiap token syntax (`keyword`, `function`, `string`, `comment`, dll.) diwarnai sesuai palet warna syntax editor asli.
+   - Menstabilkan slider navigasi di atas kanvas dengan sinkronisasi rasio viewport yang presisi dan drag/click direct jump.
+   - Mendukung HiDPI / Retina (`window.devicePixelRatio`) agar karakter font mini tajam tanpa buram.
+
+## 2. Invariants & Architecture Contracts
+- **`MINIMAP-CANVAS-01` (Zero DOM Lines Churn)**: Minimap tidak boleh me-render elemen DOM untuk setiap baris file. Semua karakter teks kode digambar langsung di kanvas via `ctx.fillText()`.
+- **`MINIMAP-CANVAS-02` (Retina Sharpness)**: Kanvas harus diskalakan berdasarkan `window.devicePixelRatio` (biasanya 2x pada layar macOS Sensei) dengan `ctx.scale(dpr, dpr)` agar teks font mini tidak buram.
+- **`MINIMAP-CANVAS-03` (Proportional Viewport Tracking)**: Slider box merefleksikan rasio viewport aktif `clientHeight / scrollHeight` secara proporsional tanpa efek guncangan.
+- **`MINIMAP-CANVAS-04` (Regression Safety)**: Mempertahankan fungsi ekspor `computeMinimapScaleConfig` dan props interface publik agar kompatibel 100% dengan test suites eksis.

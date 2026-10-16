@@ -1,7 +1,7 @@
-# Dynamic Feedback Hub & Runtime Log: Minimap Synchronization, Windowing & Rendering Accuracy
+# Dynamic Feedback Hub & Runtime Log: Residual Edge Cases Remediation (Phase 7)
 
-> **Document Type**: Runtime State Transitions & 4-Step CoT Blocker Hub (Phase 6)  
-> **Status**: COMPLETED & VERIFIED  
+> **Document Type**: Runtime State Transitions & 4-Step CoT Blocker Hub (Phase 7)  
+> **Status**: INITIALIZED & PENDING USER REVIEW  
 > **Author**: Shun for Adit-sensei  
 > **Reference Plan**: [`task/0-Table-Phase.md`](0-Table-Phase.md)  
 > **Reference Spec**: [`task/0-spec-Orchestrator.md`](0-spec-Orchestrator.md)
@@ -12,45 +12,74 @@
 
 | Micro-Phase ID | Target File(s) | Status | Last Updated | Notes / Output |
 | :--- | :--- | :--- | :--- | :--- |
-| **MP-M1.1-CM-SCROLL-CALLBACK** | `src/components/layout/editor/CMEditor.tsx` | `PASSED` | 2026-10-16 | Added onScroll callback, scrollDomHandler, and native scrollToLine method |
-| **MP-M2.1-CODEPANE-SCROLLER-BINDING** | `src/components/layout/editor/CodePane.tsx` | `PASSED` | 2026-10-16 | Bound CMEditor onScroll directly to scrollInfo, wired scrollToLine, passed filename |
-| **MP-M3.1-MINIMAP-CACHE-AND-FALLBACK** | `src/components/layout/editor/Minimap.tsx` | `PASSED` | 2026-10-16 | Clear cache on filename change, per-line validation, instant text fallback |
-| **MP-M4.1-MINIMAP-SLIDER-AND-WINDOWING** | `src/components/layout/editor/Minimap.tsx` | `PASSED` | 2026-10-16 | Fixed 1:1 proportional slider height/top and self-measuring container ResizeObserver |
-| **MP-M5.1-GATES-AND-REGRESSIONS** | Full Repository | `PASSED` | 2026-10-16 | All gates passed: Vitest (322/322), Rolldown build (856ms), oxfmt, Go backend tests |
+| **MP-7.1-TERMINAL-DISPOSE-GUARD** | `src/components/layout/bottom-panel/TerminalView.tsx` | `COMPLETED` | 2026-10-17 | Added `isDisposed` flag, cleared `initialSyncTimer`, guarded SSE/data write handlers. |
+| **MP-7.2-CSV-EMPTY-BUFFER-GUARD** | `src/components/layout/editor/viewers/CsvViewer.tsx` | `COMPLETED` | 2026-10-17 | Replaced `if (buffer?.content)` with `if (typeof buffer?.content === "string")`. Prevents 0-byte infinite loops. |
+| **MP-7.3-MARKDOWN-SCROLL-RESILIENCE** | `src/components/layout/editor/viewers/MarkdownViewer.tsx` | `COMPLETED` | 2026-10-17 | Added resilient polling attachment (up to 20 attempts x 50ms) for `.cm-scroller`. |
+| **MP-7.4-CODEPANE-ERROR-FEEDBACK** | `src/components/layout/editor/CodePane.tsx` | `COMPLETED` | 2026-10-17 | Rendered error card with "Retry Loading" action on `buffer.status === "error"`. Guarded `ensureFileBuffer`. |
+| **MP-7.5-VERIFICATION-GATES** | Full Repository | `COMPLETED` | 2026-10-17 | Fixed `ReferenceError: fileBuffers is not defined` in `ExplorerPanel.tsx`. 325 tests passed, build clean, oxfmt clean. |
 
 ---
 
 ## 2. 4-Step CoT Execution Log
 
-### Wave 1: CodeMirror Scroll Callback & Native `scrollToLine`
-1. **Trigger & Problem**: DOM-based `querySelector(".cm-scroller")` failed with race conditions during buffer loading, leaving `scrollInfo` at 1px height.
-2. **Strategy**: Expose `onScroll` prop in `CMEditorProps` and attach event handlers directly on `view.scrollDOM` and `update.geometryChanged`. Expose imperative `scrollToLine` via `EditorView.scrollIntoView`.
-3. **Execution**: Modified `CMEditor.tsx` with `onScrollRef`, `emitScrollInfo`, `scrollDomHandler`, and `scrollToLine`.
-4. **Verification**: Frontend tests passed with 322/322 tests.
+### MP-7.1: TerminalView Lifecycle & Write Guards
+- Added `isDisposed` boolean flag in `TerminalView.tsx` `useEffect`.
+- Captured `initialSyncTimer = setTimeout(syncSize, 100)` and properly cancelled on cleanup.
+- Guarded `term.write` against disposed xterm instance during late SSE packet arrival.
+- Verification: `rtk npx vitest run test/frontend/bottom-panel/` PASSED.
 
-### Wave 2: Reliable Scroll Binding in CodePane
-1. **Trigger & Problem**: `CodePane` relied on fragile single-shot DOM queries and did not forward `filename` or CodeMirror handle to `Minimap`.
-2. **Strategy**: Wire `onScroll={setScrollInfo}` directly into `<CMEditor>`, delegate `handleScrollToLine` to `internalEditorRef.current.scrollToLine`, and pass `filename={filename}` to `<Minimap>`.
-3. **Execution**: Modified `CodePane.tsx`.
-4. **Verification**: Frontend tests passed with 322/322 tests.
+### MP-7.2: CsvViewer Empty Buffer Handling
+- Replaced truthy `if (buffer?.content)` check with `if (typeof buffer?.content === "string")`.
+- Ensured 0-byte empty CSVs terminate loading state (`setIsLoading(false)`) without repeatedly dispatching network fetches.
+- Verification: `rtk npx vitest run test/frontend/viewers/` PASSED.
 
-### Wave 3: File & Content Aware Token Cache with Instant Text Fallback
-1. **Trigger & Problem**: `tokenCacheRef` was keyed solely by line number without file awareness, causing ghost tokens from previously opened files and stale lines.
-2. **Strategy**: Clear cache on `filename` change, validate `{ text, tokens }` against current line text, and render raw text fallback with micro-font styling while awaiting worker tokens.
-3. **Execution**: Modified `Minimap.tsx`.
-4. **Verification**: Code matches immediately without ghost tokens.
+### MP-7.3: MarkdownViewer Split-Scroll DOM Resilience
+- Implemented polling attachment (20 attempts with 50ms interval) to bind `.cm-scroller` event listeners even if CodeMirror DOM mounts slightly after MarkdownViewer.
+- Added timer cleanup on unmount.
+- Verification: `rtk npx vitest run test/frontend/viewers/` PASSED.
 
-### Wave 4: 1:1 Slider Positioning & Safe Windowing
-1. **Trigger & Problem**: Minimap windowing collapsed to 16 lines when external clientHeight was 1, and slider formula squared clientHeight causing desync.
-2. **Strategy**: Add `ResizeObserver` on minimap container to measure actual height (`effectiveContainerHeight`), calculate `sliderHeightPx` as viewport proportion of `totalMinimapHeight`, and align slider travel 1:1 with `minimapOffsetY`.
-3. **Execution**: Modified `Minimap.tsx`.
-4. **Verification**: Slider accurately tracks and frames visible lines across all document lengths.
+### MP-7.4: CodePane Error State Feedback & Retry
+- Rendered user-friendly error card when `buffer.status === "error"` with file details and a "Retry Loading" action invoking `fetchBufferSafely(filename)`.
+- Prevented automatic reload loops in `createWorkspaceSlice.ts` by checking `current.status !== "error"`.
+- Verification: Tested with Vitest SSR simulation suite.
 
-### Wave 5: Verification Gates & Regression Validation
-1. **Trigger & Problem**: Mandatory verification before completing task.
-2. **Execution**:
-   - `npm run test:frontend`: 30 files, 322 tests passed in 1.22s.
-   - `npm run build`: Rolldown build succeeded in 856ms.
-   - `npm run format`: 174 files checked with oxfmt.
-   - `go -C server test ./...`: All server packages passed.
-3. **Outcome**: Minimap is now fully synchronized, accurate, instant, and free of race conditions.
+### Additional Fix: ExplorerPanel fileBuffers ReferenceError
+- User reported runtime crash: `ExplorerPanel.tsx:890 Uncaught ReferenceError: fileBuffers is not defined`.
+- Cause: Line 890 referenced `fileBuffers[tab]?.isDirty`, but `fileBuffers` was not in scope (store selector selects `dirtyFiles`, not `fileBuffers`, to avoid excessive re-renders on every keystroke). Line 952 for group 2 correctly used `Boolean(dirtyFiles[tab])`.
+- Fix: Updated line 890 to `const isDirty = Boolean(dirtyFiles[tab])`.
+- Verification: Vitest full suite (31 files, 325 tests) passed; `npm run build` passed with 0 errors; `npm run format` passed.
+
+---
+
+## 3. Phase 8 Runtime State Overview (Minimap Canvas Silhouette)
+
+| Micro-Phase ID | Target File(s) | Status | Last Updated | Notes / Output |
+| :--- | :--- | :--- | :--- | :--- |
+| **MP-8.1-CANVAS-TEXT-ENGINE** | `src/components/layout/editor/Minimap.tsx` | `COMPLETED` | 2026-10-17 | Rendered real monospace code characters via `ctx.fillText` with token syntax colors on high-DPI Retina canvas. |
+| **MP-8.2-VIEWPORT-SLIDER-SYNC** | `src/components/layout/editor/Minimap.tsx` | `COMPLETED` | 2026-10-17 | Proportional viewport slider geometry with direct click/drag jump and wheel event delegation. Dual-scroll visual jitter eliminated. |
+| **MP-8.3-MINIMAP-CSS-CLEANUP** | `src/components/layout/editor/editor.css` | `COMPLETED` | 2026-10-17 | Added `.minimap-canvas` styling, preserved semantic color tokens (`bg-canvas`, `border-line`, `accent`). |
+| **MP-8.4-REGRESSION-GATES** | Full Repository | `COMPLETED` | 2026-10-17 | 327 tests passed across 31 test files. `npm run build` 0 error, `npm run format` clean. |
+
+---
+
+## 4. Phase 8 4-Step CoT Execution Log
+
+### Trigger
+Sensei noted that the existing Minimap was confusing and visually jarring when opened ("minimap di nya aneh, setiap dibuka ia akan seperti apa ya, bingung. intinya visualnya seluruh file di visualisasikan, menurutku harusnya sesuai dengan dom yang tertampil. :3").
+
+### Root Cause
+1. **Dual-Scrolling Distortion**: In long documents, the slider translated downward while the background DOM lines simultaneously translated upward (`translateY(-${minimapOffsetY}px)`), creating an optical parallax illusion.
+2. **DOM Churn & Clipped Text**: Rendering raw HTML text per-line with tiny fonts (7.4px) caused severe horizontal clipping, jagged subpixel rendering, and hundreds of DOM nodes per editor pane.
+
+### Remediation
+1. Replaced the DOM lines container with a high-performance `<canvas>` element in `src/components/layout/editor/Minimap.tsx`.
+2. Implemented syntax-colored code silhouette drawing (syntax tokens + indentation aware bars) with HiDPI 2x scale on Retina displays.
+3. Synchronized the viewport slider box 1:1 with CodeMirror's `clientHeight / scrollHeight` ratio.
+4. Added unit tests for canvas rendering and zero DOM lines in `test/frontend/core/residualEdgeCases.test.tsx`.
+
+### Verification
+- `rtk npx vitest run test/frontend/core/workbenchCore.test.ts` (38/38 tests PASSED).
+- `rtk npx vitest run test/frontend/core/residualEdgeCases.test.tsx` (5/5 tests PASSED).
+- `rtk npx vitest run` (327/327 tests PASSED across 31 files).
+- `rtk npm run build` (PASSED with 0 errors).
+- `rtk npm run format` (PASSED with 0 errors).

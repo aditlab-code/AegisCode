@@ -71,6 +71,7 @@ export function CodePane({
       return {
         buffer: s.fileBuffers[clean] || s.fileBuffers[filename],
         ensureFileBuffer: s.ensureFileBuffer,
+        fetchBufferSafely: s.fetchBufferSafely,
         rootWorkspacePath: s.rootWorkspacePath,
         updateFileContent: s.updateFileContent,
         setCursorPosition: s.setCursorPosition,
@@ -213,7 +214,8 @@ export function CodePane({
         (buffer.content === "" &&
           !buffer.isDirty &&
           buffer.status !== "ready" &&
-          buffer.status !== "loading")) &&
+          buffer.status !== "loading" &&
+          buffer.status !== "error")) &&
       typeof ensureFileBuffer === "function"
     ) {
       void ensureFileBuffer(filename)
@@ -706,6 +708,31 @@ export function CodePane({
             <span className="font-mono text-[11px]">
               Loading {filename.split("/").pop()}...
             </span>
+          </div>
+        ) : buffer.status === "error" ? (
+          <div className="flex-1 w-full h-full flex flex-col items-center justify-center bg-canvas text-ink p-6 text-center gap-3 select-none">
+            <span className="w-10 h-10 rounded-full bg-red-500/15 text-red-500 flex items-center justify-center">
+              <Icon name="warning" size={20} />
+            </span>
+            <div className="max-w-md">
+              <h4 className="text-sm font-semibold mb-1 text-ink">
+                Failed to load file
+              </h4>
+              <p className="text-xs text-ink-muted break-words font-mono mb-4">
+                Unable to read {filename.split("/").pop()} from workspace
+                storage or disk.
+              </p>
+              <div className="flex items-center justify-center gap-2">
+                <button
+                  onClick={() => fetchBufferSafely(filename)}
+                  className="px-3 py-1.5 rounded bg-accent text-canvas hover:bg-accent-hover transition-colors text-xs font-medium flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  type="button"
+                >
+                  <Icon name="refresh" size={13} />
+                  <span>Retry Loading</span>
+                </button>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="text-editor-surface code-editor-layout">

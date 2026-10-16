@@ -111,11 +111,12 @@ export default function CsvViewer({
   useEffect(() => {
     if (isServerSideMode) return
 
-    if (buffer?.content) {
+    if (typeof buffer?.content === "string") {
       setRawText(buffer.content)
       const detected = detectCsvDelimiter(buffer.content)
       setAutoDetectedDelimiter(detected)
       setActiveDelimiter(detected)
+      setIsLoading(false)
     } else {
       setIsLoading(true)
       fetch(getRawFileUrl(filename))

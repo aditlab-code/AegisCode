@@ -144,8 +144,11 @@ export function TerminalView() {
 
     // 2. Synchronize dimensions
     let isConnected = false
+    let isDisposed = false
+    let initialSyncTimer: ReturnType<typeof setTimeout> | null = null
 
     const syncSize = () => {
+      if (isDisposed) return
       try {
         if (
           !containerRef.current ||
@@ -169,13 +172,13 @@ export function TerminalView() {
     resizeObserver.observe(containerRef.current)
 
     // Initial resize sync after layout stabilizes
-    setTimeout(syncSize, 100)
+    initialSyncTimer = setTimeout(syncSize, 100)
 
     // 3. Keystroke capture with micro-batching and serialized in-flight queue
     let sendPromiseChain: Promise<boolean> = Promise.resolve(true)
 
     const flushInput = () => {
-      if (!isLive || !isConnected) {
+      if (!isLive || !isConnected || isDisposed) {
         // Retain pending keystrokes until SSE connection handshake completes
         return
       }
@@ -190,6 +193,7 @@ export function TerminalView() {
     }
 
     const onDataDisposable = term.onData((data) => {
+      if (isDisposed) return
       inputBufferRef.current += data
       if (!flushTimerRef.current) {
         flushTimerRef.current = setTimeout(flushInput, 5)
@@ -202,6 +206,7 @@ export function TerminalView() {
       sse = new EventSource(`${API_BASE}/api/v1/events/terminal/${sessionId}`)
 
       sse.addEventListener("connected", () => {
+        if (isDisposed) return
         isConnected = true
         setTerminalRunning(true)
         syncSize()
@@ -209,6 +214,7 @@ export function TerminalView() {
       })
 
       sse.addEventListener("data", (event) => {
+        if (isDisposed) return
         try {
           const parsed = JSON.parse(event.data) as { payload?: string }
           if (parsed.payload) {
@@ -217,17 +223,23 @@ export function TerminalView() {
             for (let i = 0; i < binary.length; i++) {
               bytes[i] = binary.charCodeAt(i)
             }
-            term.write(bytes)
+            if (!isDisposed) {
+              term.write(bytes)
+            }
           }
         } catch {
-          term.write(event.data)
+          if (!isDisposed) {
+            term.write(event.data)
+          }
         }
       })
 
       sse.addEventListener("exit", () => {
         isConnected = false
         setTerminalRunning(false)
-        term.write("\r\n\x1b[90m[Process finished]\x1b[0m\r\n")
+        if (!isDisposed) {
+          term.write("\r\n\x1b[90m[Process finished]\x1b[0m\r\n")
+        }
       })
 
       sse.onerror = () => {
@@ -248,6 +260,7 @@ export function TerminalView() {
     }
 
     const handleClearEvent = (e: Event) => {
+      if (isDisposed) return
       const custom = e as CustomEvent<{ sessionId?: string }>
       if (!custom.detail?.sessionId || custom.detail.sessionId === sessionId) {
         term.clear()
@@ -255,6 +268,7 @@ export function TerminalView() {
     }
 
     const handleCopyEvent = () => {
+      if (isDisposed) return
       term.selectAll()
       const content = term.getSelection()
       term.clearSelection()
@@ -267,6 +281,11 @@ export function TerminalView() {
     window.addEventListener("aegis:terminal-copy", handleCopyEvent)
 
     return () => {
+      isDisposed = true
+      if (initialSyncTimer) {
+        clearTimeout(initialSyncTimer)
+        initialSyncTimer = null
+      }
       window.removeEventListener("aegis:terminal-clear", handleClearEvent)
       window.removeEventListener("aegis:terminal-copy", handleCopyEvent)
       resizeObserver.disconnect()

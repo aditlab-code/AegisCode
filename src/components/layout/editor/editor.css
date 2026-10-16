@@ -404,6 +404,14 @@
   background: color-mix(in srgb, var(--color-surface) 60%, transparent);
 }
 
+.minimap-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  pointer-events: none;
+}
+
 .minimap-content {
   position: absolute;
   top: 0;
