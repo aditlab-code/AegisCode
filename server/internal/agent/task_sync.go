@@ -43,6 +43,14 @@ func NewTaskManager(workspaceRoot string) *TaskManager {
 	}
 }
 
+// WorkspaceRoot returns the base directory of the workspace.
+func (tm *TaskManager) WorkspaceRoot() string {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+	return tm.workspaceRoot
+}
+
+
 var safeSlugRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // SanitizeSlug normalizes and validates a task slug to prevent path traversal.
@@ -303,7 +311,7 @@ func ExtractWaveStatus(planContent string) []WaveStatus {
 	var waves []WaveStatus
 	var currentWave *WaveStatus
 
-	waveRegex := regexp.MustCompile(`(?i)^###\s*Wave\s*(\d+)[:\s]*(.*)`)
+	waveRegex := regexp.MustCompile(`(?i)^#{2,4}\s*Wave\s*(\d+)[:\s]*(.*)`)
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)

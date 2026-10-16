@@ -1010,13 +1010,24 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
     targetPath: string,
     code: string,
   ): Promise<boolean> => {
-    const cleanPath = targetPath.trim()
-    if (!cleanPath) {
+    const rawPath = targetPath.trim()
+    if (!rawPath) {
       get().showToast?.("Cannot apply: target file path is empty")
       return false
     }
 
-    const existingBuf = get().fileBuffers[cleanPath]
+    const rootPath = get().rootWorkspacePath
+    const cleanPath = rootPath
+      ? normalizeWorkspacePath(rawPath, rootPath)
+      : normalizeWorkspacePath(rawPath)
+
+    if (!cleanPath) {
+      get().showToast?.("Cannot apply: invalid file path")
+      return false
+    }
+
+    const existingBuf =
+      get().fileBuffers[cleanPath] || get().fileBuffers[rawPath]
     if (existingBuf?.isDirty) {
       const confirmOverwrite =
         typeof window !== "undefined" && window.confirm
@@ -1038,19 +1049,29 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
       return false
     }
 
-    set((state) => ({
-      fileBuffers: {
-        ...state.fileBuffers,
-        [cleanPath]: {
-          content: code,
-          savedContent: code,
-          isDirty: false,
-          hasDiskConflict: false,
-          language: detectLanguage(cleanPath),
-          lastSaved: Date.now(),
-        },
-      },
-    }))
+    set((state) => {
+      const nextBuffers = { ...state.fileBuffers }
+      if (rawPath !== cleanPath && nextBuffers[rawPath]) {
+        delete nextBuffers[rawPath]
+      }
+      const curBuf = state.fileBuffers[cleanPath] || state.fileBuffers[rawPath]
+      // Preserve any keystrokes typed by the user while saveWorkspaceFile was in flight
+      const currentContent =
+        curBuf && curBuf.content !== existingBuf?.content
+          ? curBuf.content
+          : code
+      const isDirty = currentContent !== code
+
+      nextBuffers[cleanPath] = {
+        content: currentContent,
+        savedContent: code,
+        isDirty,
+        hasDiskConflict: false,
+        language: detectLanguage(cleanPath),
+        lastSaved: Date.now(),
+      }
+      return { fileBuffers: nextBuffers }
+    })
 
     if (typeof get().refreshGit === "function") {
       await get().refreshGit()

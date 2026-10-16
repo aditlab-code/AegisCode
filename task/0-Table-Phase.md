@@ -1,22 +1,21 @@
-# Table Phase: Aegis Copilot Workspace Initialization (Combo 1 & 3)
+# Table Phase: Aegis Copilot Deep Concurrency & Buffer Race Remediation
 
-> **Dokumen Rencana Wave & Micro-Phase**  
+> **Dokumen Rencana Wave & Micro-Phase (Phase 2)**  
 > Dibuat oleh Kanna sesuai `#WORKFLOW` pada `task/0-0-Orchestrator.md`.  
-> Status Global: `COMPLETED`  
+> Status Global: `PASSED & VERIFIED`  
 > Referensi Spesifikasi: [`task/0-spec-Orchestrator.md`](0-spec-Orchestrator.md)
 
 ---
 
 ## 1. Execution Topology & Waves Overview
 
-Alur pengerjaan dibagi menjadi 4 Wave terstruktur dari backend domain hingga antarmuka chat dan interseptor perintah:
+Alur eksekusi dibagi menjadi 4 Wave terstruktur dengan prinsip fail-fast dan dependensi linier:
 
 ```mermaid
 flowchart TD
-    W1["Wave 1: Backend Scaffolding & Workspace Status API<br/>(server/internal/agent, server/internal/api)"] --> W2["Wave 2: Frontend API Client & Workbench Store Integration<br/>(src/utils/agentApi.ts, createChatSlice.ts)"]
-    W2 --> W3["Wave 3: Chat UI Onboarding Banner & Init Modal<br/>(CopilotInitBanner.tsx, CopilotInitModal.tsx)"]
-    W3 --> W4["Wave 4: Contextual Command Interceptor & Settings Integration<br/>(ChatComposer.tsx, /plan /goal hooks, AISettingsPane.tsx)"]
-    W4 --> W5["Wave 5: Strict Verification Gates & Integration Tests<br/>(rtk go test, rtk npm run test:frontend, npm run build & format)"]
+    W1["Wave 1: Chat Stream Zombie Guard & Persistence Isolation<br/>(MP-W1.1 Zombie Guard, MP-W1.2 Session Map, MP-W1.3 Smart Hydrate)"] --> W2["Wave 2: Buffer & Tab Normalization<br/>(MP-W2.1 Keystroke Preservation, MP-W2.2 Canonical Tabs)"]
+    W2 --> W3["Wave 3: Task Parser Robustness<br/>(MP-W3.1 Wave Regex Multi-Header)"]
+    W3 --> W4["Wave 4: Verification Gates & Concurrency Tests<br/>(go test -race, vitest, build, format)"]
 ```
 
 ---
@@ -25,12 +24,10 @@ flowchart TD
 
 | Phase ID | Wave | Name / Description | Target File(s) | Topology | Dependencies | Verification Gate | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **MP-W1-BE-STATUS** | 1 | **Workspace Status Detection Engine**: Buat method `GetWorkspaceCopilotStatus(rootPath string)` di `server/internal/agent/workspace_init.go` untuk mendeteksi apakah `.aegis/`, `.aegis/tasks/`, dan `AGENTS.md` ada di workspace. Ekspos endpoint `GET /api/v1/agent/workspace-status`. | `server/internal/agent/workspace_init.go`, `server/internal/api/agent_handlers.go`, `server/internal/api/api.go` | Linear | None | `rtk go test ./...` | `PASSED` |
-| **MP-W1-BE-INIT** | 1 | **Workspace Initialization Service**: Buat `InitWorkspace(rootPath string, opts InitOptions)` yang membuat `.aegis/`, `.aegis/tasks/`, `.aegis/config.json`, dan `AGENTS.md` dengan template preset. Tambahkan support penambahan idempotent ke `.gitignore`. Ekspos `POST /api/v1/agent/init-workspace`. | `server/internal/agent/workspace_init.go`, `server/internal/agent/agent_test.go`, `server/internal/api/agent_handlers.go` | Linear | MP-W1-BE-STATUS | `rtk go test ./...` | `PASSED` |
-| **MP-W2-FE-API** | 2 | **Frontend Agent API & Type Contracts**: Tambahkan interface `WorkspaceCopilotStatus`, `InitWorkspaceOptions` dan fungsi `fetchWorkspaceCopilotStatus()`, `initWorkspaceCopilot()` di `src/utils/agentApi.ts`. | `src/utils/agentApi.ts` | Linear | Wave 1 | `rtk npm run build` | `PASSED` |
-| **MP-W2-FE-STORE** | 2 | **Chat Slice Copilot State**: Tambahkan `isCopilotInitialized`, `copilotStatus`, `isCopilotInitModalOpen`, `checkCopilotStatus`, `openCopilotInitModal`, dan `closeCopilotInitModal` ke `createChatSlice.ts`. Hubungkan dengan EventHub topic `"copilot"`. | `src/store/slices/createChatSlice.ts`, `src/store/types.ts` | Linear | MP-W2-FE-API | `rtk npm run build` | `PASSED` |
-| **MP-W3-UI-BANNER** | 3 | **Chat Onboarding Banner (Option 1)**: Buat komponen `CopilotInitBanner.tsx` yang tampil di bagian atas Chat drawer jika `isCopilotInitialized === false`. Tampilkan icon Aegis, status ringkas, dan tombol "Set Up Copilot". Perbarui `ChatWaveStepper.tsx` agar ramah saat workspace uninitialized. | `src/components/layout/chat/CopilotInitBanner.tsx`, `src/components/layout/chat/ChatDrawer.tsx`, `src/components/layout/chat/ChatWaveStepper.tsx` | Linear | Wave 2 | `rtk npm run build` | `PASSED` |
-| **MP-W3-UI-MODAL** | 3 | **Copilot Init Modal**: Buat `CopilotInitModal.tsx` yang memungkinkan pengguna memilih Persona preset (Kanna, Senior Architect, Minimalist), opsi auto `.gitignore`, dan konfirmasi inisialisasi dengan Tailwind v4 semantic tokens. | `src/components/layout/chat/CopilotInitModal.tsx`, `src/components/layout/chat/index.ts` | Linear | MP-W3-UI-BANNER | `rtk npm run build` | `PASSED` |
-| **MP-W4-INTERCEPT** | 4 | **Contextual Slash-Command Interceptor (Option 3)**: Tambahkan pengecekan di `ChatComposer.tsx` saat user mengirim perintah perencanaan / autonomous (`/plan`, `/goal`): jika `isCopilotInitialized === false`, tahan pesan dan buka `CopilotInitModal` dengan konteks aksi. Setelah diinisialisasi, lanjutkan pengiriman otomatis. | `src/components/layout/chat/ChatComposer.tsx`, `src/components/layout/command-palette/CommandPalette.tsx` | Linear | Wave 3 | `rtk npm run build` | `PASSED` |
-| **MP-W4-SETTINGS** | 4 | **Settings Copilot Workspace Integration**: Tambahkan opsi `Auto-initialize .aegis on workspace open` di sub-tab Runtime & Guardrails / Copilot pada SettingsView. | `src/components/layout/settings/AISettingsPane.tsx`, `src/store/slices/createSettingsSlice.ts` | Linear | MP-W4-INTERCEPT | `rtk npm run build` | `PASSED` |
-| **MP-W5-GATES** | 5 | **Strict Verification Gates & Unit Tests**: Tulis unit tests untuk fungsi inisialisasi dan status di backend & frontend. Jalankan `rtk go test ./...`, `rtk npm run test:frontend`, `rtk npm run build` (0 error), dan `rtk npm run format`. | Full Workspace | Linear | All Waves | `rtk go test ./... && rtk npm run test:frontend && rtk npm run build && rtk npm run format` | `PASSED` |
+| **MP-W1.1-ZOMBIE-GUARD** | 1 | **Stream Token Identity Guard**: Pada `createChatSlice.ts`, periksa identitas controller sebelum mengatur `isGenerating: false` dan `chatAbortController = null`. Mencegah callback abort dari sesi lama mematikan status streaming sesi baru atau menghilangkan tombol Stop. | `src/store/slices/createChatSlice.ts` | Linear | None | `rtk npm run test:frontend` | `PASSED` |
+| **MP-W1.2-SESSION-MAP** | 1 | **Per-Session Debounce Map**: Ganti variabel timer tunggal pada `debouncedSaveBackendSession` dengan `Map<string, Timeout>` per-session ID, agar pergantian sesi cepat tidak saling membatalkan jadwal simpan ke backend. | `src/store/slices/createChatSlice.ts` | Linear | MP-W1.1-ZOMBIE-GUARD | `rtk npm run test:frontend` | `PASSED` |
+| **MP-W1.3-SMART-HYDRATE** | 1 | **Lossless Startup Hydration Merge**: Pada `fetchBackendChatSummaries` startup hydration di `createChatSlice.ts`, bandingkan jumlah pesan lokal dengan backend. Jangan pernah menimpa sesi lokal jika pengguna sudah mengirim pesan baru saat hydration berjalan. | `src/store/slices/createChatSlice.ts` | Linear | MP-W1.2-SESSION-MAP | `rtk npm run test:frontend` | `PASSED` |
+| **MP-W2.1-BUFFER-SAVE** | 2 | **Mid-Flight Keystroke Preservation**: Di `applyCodeWithReview` (`createWorkspaceSlice.ts`), preservasi isi buffer terkini yang masuk selama jeda network `await saveWorkspaceFile`, dan hitung `isDirty` dinamis alih-alih hard overwrite `isDirty: false`. | `src/store/slices/createWorkspaceSlice.ts` | Linear | Wave 1 | `rtk npm run test:frontend` | `PASSED` |
+| **MP-W2.2-CANONICAL-TAB** | 2 | **Canonical Workspace Path di `openFileInGroup`**: Di `createEditorSlice.ts`, pastikan path berkas dinormalisasi menggunakan `normalizeWorkspacePath` sebelum dimasukkan ke `group.tabs`, mencegah tab duplikat dengan key absolut vs relatif. | `src/store/slices/createEditorSlice.ts` | Linear | MP-W2.1-BUFFER-SAVE | `rtk npm run test:frontend` | `PASSED` |
+| **MP-W3.1-WAVE-REGEX** | 3 | **Multi-Level Wave Header Support**: Di `task_sync.go` (`ExtractWaveStatus`), perluas regex wave header menjadi `(?i)^#{2,4}\s*Wave\s*(\d+)[:\s]*(.*)` agar kompatibel dengan ragam output LLM (`## Wave`, `### Wave`, `#### Wave`). | `server/internal/agent/task_sync.go`, `server/internal/agent/agent_test.go` | Linear | Wave 2 | `rtk go test ./...` | `PASSED` |
+| **MP-W4.1-GATES** | 4 | **Strict Verification Gates & Zero Regression**: Jalankan `rtk go test -race ./...` (race detector), `rtk npm run test:frontend` (Vitest), `rtk npm run build` (Rolldown 0 errors), dan `rtk npm run format` (oxfmt). | Full Repository | Linear | All Waves | All Gates Passed | `PASSED` |

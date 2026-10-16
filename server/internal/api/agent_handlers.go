@@ -3,18 +3,27 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/aditwicaksono/aegiscode/server/internal/agent"
 )
 
-// getTaskManager returns an initialized agent.TaskManager anchored to the active workspace.
+// getTaskManager returns the synchronized agent.TaskManager anchored to the active workspace.
 func (s *Server) getTaskManager() *agent.TaskManager {
 	var rootPath string
 	if s.ws != nil {
 		rootPath, _ = s.ws.GetRoot()
 	}
-	return agent.NewTaskManager(rootPath)
+	cleanRoot := filepath.Clean(rootPath)
+
+	s.taskMu.Lock()
+	defer s.taskMu.Unlock()
+
+	if s.taskManager == nil || s.taskManager.WorkspaceRoot() != cleanRoot {
+		s.taskManager = agent.NewTaskManager(cleanRoot)
+	}
+	return s.taskManager
 }
 
 // BroadcastCopilotEvent publishes an agent / copilot event to the central EventHub.

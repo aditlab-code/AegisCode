@@ -1,9 +1,11 @@
 package agent
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -76,6 +78,22 @@ func TestTaskManager(t *testing.T) {
 	if waves[1].Status != "PENDING" || waves[1].TotalSteps != 1 {
 		t.Errorf("expected Wave 2 to be PENDING with 0/1 steps, got %+v", waves[1])
 	}
+
+	// 4b. Multi-level wave headers (H2 and H4)
+	h2Plan := `# Plan
+## Wave 1: Core
+- [x] step 1
+#### Wave 2: Extra
+- [ ] step 2
+`
+	multiWaves := ExtractWaveStatus(h2Plan)
+	if len(multiWaves) != 2 {
+		t.Fatalf("expected 2 waves from multi-level headers, got %d", len(multiWaves))
+	}
+	if multiWaves[0].Status != "PASSED" || multiWaves[1].Status != "PENDING" {
+		t.Errorf("expected multi-level wave statuses PASSED and PENDING, got %+v", multiWaves)
+	}
+
 
 	// 5. ListTasks
 	tasks, err := tm.ListTasks()
@@ -223,5 +241,69 @@ func TestWorkspaceInit(t *testing.T) {
 		t.Errorf("expected ensureGitignoreEntry to return true for existing entry")
 	}
 }
+
+func TestTaskManagerConcurrency(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "aegis-task-concurrent-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	tm := NewTaskManager(tempDir)
+	if tm.WorkspaceRoot() != filepath.Clean(tempDir) {
+		t.Errorf("expected WorkspaceRoot '%s', got '%s'", filepath.Clean(tempDir), tm.WorkspaceRoot())
+	}
+
+	var wg sync.WaitGroup
+	workers := 16
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			slug := fmt.Sprintf("task-%02d", workerID)
+			title := fmt.Sprintf("Concurrent Task %d", workerID)
+
+			// 1. Concurrent InitTask
+			_, err := tm.InitTask(slug, title, "Testing race conditions")
+			if err != nil {
+				t.Errorf("worker %d InitTask failed: %v", workerID, err)
+				return
+			}
+
+			// 2. Concurrent ListTasks
+			_, _ = tm.ListTasks()
+
+			// 3. Concurrent UpdateTaskFile
+			plan := fmt.Sprintf("# Execution Plan: %s\n\n### Wave 1\n- [x] MP-1.1\n", title)
+			if err := tm.UpdateTaskFile(slug, "0-plan.md", plan); err != nil {
+				t.Errorf("worker %d UpdateTaskFile failed: %v", workerID, err)
+			}
+
+			// 4. Concurrent GetTaskFiles
+			spec, planContent, _, err := tm.GetTaskFiles(slug)
+			if err != nil {
+				t.Errorf("worker %d GetTaskFiles failed: %v", workerID, err)
+			}
+			if !strings.Contains(spec, title) {
+				t.Errorf("worker %d spec missing title", workerID)
+			}
+			if !strings.Contains(planContent, "Wave 1") {
+				t.Errorf("worker %d plan missing Wave 1", workerID)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	tasks, err := tm.ListTasks()
+	if err != nil {
+		t.Fatalf("ListTasks failed: %v", err)
+	}
+	if len(tasks) != workers {
+		t.Errorf("expected %d tasks, got %d", workers, len(tasks))
+	}
+}
+
 
 

@@ -359,7 +359,17 @@ export function useWorkbenchLifecycle() {
     }
   }, [store])
 
-  // 8. Global Keyboard Shortcuts
+  // 8. Copilot Workspace & Tasks SSE listener via centralized eventHub
+  useEffect(() => {
+    const unsub = eventHub.subscribe("copilot", () => {
+      void store.getState().checkCopilotStatus()
+    })
+    return () => {
+      unsub()
+    }
+  }, [store])
+
+  // 9. Global Keyboard Shortcuts
   useEffect(() => {
     if (typeof window === "undefined") return
 

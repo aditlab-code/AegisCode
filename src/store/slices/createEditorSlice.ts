@@ -332,13 +332,21 @@ export const createEditorSlice: SliceCreator<EditorSlice> = (set, get) => ({
     if (!filename) return
     const targetGroup = group || get().focusedGroup
 
+    // Canonical path normalization for non-virtual tabs
+    const isVirtual = filename.includes(":")
+    const rootPath = (get() as any).rootWorkspacePath
+    const canonicalName =
+      !isVirtual && rootPath
+        ? normalizeWorkspacePath(filename, rootPath)
+        : filename
+
     // Cross-slice buffer loading
     if (typeof get().ensureFileBuffer === "function") {
-      void get().ensureFileBuffer(filename)
+      void get().ensureFileBuffer(canonicalName)
     }
 
     if (targetGroup === "group2") {
-      const nextG2 = openTabInGroupLogic(get().group2, filename)
+      const nextG2 = openTabInGroupLogic(get().group2, canonicalName)
       set({
         group2: nextG2,
         splitEditor: true,
@@ -346,7 +354,7 @@ export const createEditorSlice: SliceCreator<EditorSlice> = (set, get) => ({
         ...getDerivedEditorState(get().group1, nextG2, "group2", true),
       })
     } else {
-      const nextG1 = openTabInGroupLogic(get().group1, filename)
+      const nextG1 = openTabInGroupLogic(get().group1, canonicalName)
       set({
         group1: nextG1,
         focusedGroup: "group1",

@@ -7,6 +7,7 @@ import {
   type AgentTaskDetail,
 } from "../../../utils/agentApi"
 import { useWorkbenchStore } from "../../../store"
+import { eventHub } from "../../../services/WorkbenchEventHub"
 
 export function ChatWaveStepper() {
   const [activeTask, setActiveTask] = useState<AgentTaskItem | null>(null)
@@ -36,11 +37,21 @@ export function ChatWaveStepper() {
 
   useEffect(() => {
     void loadActiveTask()
-    // Poll / refresh lightly every 10 seconds or when triggered
+
+    // Real-time instant reaction to task creation / wave changes
+    const unsub = eventHub.subscribe("copilot", () => {
+      void loadActiveTask()
+    })
+
+    // Periodic fallback poll every 10 seconds
     const interval = setInterval(() => {
       void loadActiveTask()
     }, 10000)
-    return () => clearInterval(interval)
+
+    return () => {
+      unsub()
+      clearInterval(interval)
+    }
   }, [loadActiveTask, isCopilotInitialized])
 
   if (!activeTask || !taskDetail || taskDetail.waves.length === 0) {

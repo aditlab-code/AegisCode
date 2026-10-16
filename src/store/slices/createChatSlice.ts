@@ -80,18 +80,23 @@ export {
 export type { ChatCreateResult, ChatDeleteResult }
 
 let chatAbortController: AbortController | null = null
-let chatSaveTimer: ReturnType<typeof setTimeout> | null = null
-let pendingSaveSession: ChatSession | null = null
+const chatSaveTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const pendingSaveSessions = new Map<string, ChatSession>()
 
 function debouncedSaveBackendSession(session: ChatSession) {
-  pendingSaveSession = session
-  if (chatSaveTimer) clearTimeout(chatSaveTimer)
-  chatSaveTimer = setTimeout(() => {
+  pendingSaveSessions.set(session.id, session)
+  const existing = chatSaveTimers.get(session.id)
+  if (existing) clearTimeout(existing)
+
+  const timer = setTimeout(() => {
     saveBackendChatSession(session).catch((err) =>
-      console.warn("Failed to debounced-save chat session:", err),
+      console.warn(`Failed to debounced-save chat session ${session.id}:`, err),
     )
-    pendingSaveSession = null
-  }, 3000)
+    chatSaveTimers.delete(session.id)
+    pendingSaveSessions.delete(session.id)
+  }, 2500)
+
+  chatSaveTimers.set(session.id, timer)
 }
 
 function persistSessions(sessions: ChatSession[], activeSessionId?: string) {
@@ -286,12 +291,28 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
           }
           if (loadedSessions.length > 0) {
             const state = get()
+            const currentSessions = state.sessions
+            // Smart merge: preserve any active in-flight or newer messages created locally before hydration resolved
+            const merged = loadedSessions.map((loaded) => {
+              const local = currentSessions.find((p) => p.id === loaded.id)
+              if (!local) return loaded
+              if (local.messages.length >= loaded.messages.length) {
+                return {
+                  ...loaded,
+                  ...local,
+                  messages: local.messages,
+                }
+              }
+              return loaded
+            })
             const loadedIds = new Set(loadedSessions.map((l) => l.id))
-            const localOnly = state.sessions.filter((p) => !loadedIds.has(p.id))
-            const merged = [...loadedSessions, ...localOnly]
-            persistSessions(merged)
+            const localOnly = currentSessions.filter(
+              (p) => !loadedIds.has(p.id),
+            )
+            const finalMerged = [...merged, ...localOnly]
+            persistSessions(finalMerged)
             set({
-              ...getActiveChatState(merged, state.activeSessionId),
+              ...getActiveChatState(finalMerged, state.activeSessionId),
             })
           }
         }
@@ -301,13 +322,20 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
       })
 
     const handleUnload = () => {
-      if (pendingSaveSession) {
-        saveBackendChatSession(pendingSaveSession, {
-          keepalive: true,
-        }).catch((err) => {
-          console.warn("Failed to save chat session on page unload:", err)
-        })
-        pendingSaveSession = null
+      if (pendingSaveSessions.size > 0) {
+        for (const [id, session] of pendingSaveSessions.entries()) {
+          saveBackendChatSession(session, {
+            keepalive: true,
+          }).catch((err) => {
+            console.warn(
+              `Failed to save chat session ${id} on page unload:`,
+              err,
+            )
+          })
+        }
+        pendingSaveSessions.clear()
+        chatSaveTimers.forEach((timer) => clearTimeout(timer))
+        chatSaveTimers.clear()
       }
     }
     window.addEventListener("beforeunload", handleUnload)
@@ -603,6 +631,27 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
       let lastFlushTime = 0
       const BATCH_INTERVAL_MS = 40
 
+      const applyStreamingSessionUpdate = (
+        updatedSessions: ChatSession[],
+        extraState?: Record<string, any>,
+      ) => {
+        const currentActiveId = get().activeSessionId
+        if (currentActiveId === activeSessionId) {
+          set({
+            ...getActiveChatState(updatedSessions, activeSessionId),
+            ...extraState,
+          })
+        } else {
+          // Background session update: user has navigated to another session.
+          // Persist the updated sessions array without hijacking user's active view.
+          persistSessions(updatedSessions, currentActiveId)
+          set({
+            sessions: updatedSessions,
+            ...extraState,
+          })
+        }
+      }
+
       const flushDeltasSync = () => {
         if (flushRafId !== null) {
           if (typeof cancelAnimationFrame !== "undefined") {
@@ -628,9 +677,7 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
             ...(thinkingToApply ? { thinking: thinkingToApply } : {}),
           }),
         )
-        set({
-          ...getActiveChatState(updated, activeSessionId),
-        })
+        applyStreamingSessionUpdate(updated)
       }
 
       const scheduleFlush = () => {
@@ -667,9 +714,7 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
                 ? { ...s, conversationId: event.conversationId }
                 : s,
             )
-            set({
-              ...getActiveChatState(updated, activeSessionId),
-            })
+            applyStreamingSessionUpdate(updated)
           } else if (event.type === "thinking") {
             if (event.thinking) {
               pendingThinking = event.thinking
@@ -721,9 +766,7 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
                   return { ...m, toolCalls: nextTCs }
                 },
               )
-              set({
-                ...getActiveChatState(updated, activeSessionId),
-              })
+              applyStreamingSessionUpdate(updated)
             }
           } else if (event.type === "chunk") {
             if (event.delta) {
@@ -746,10 +789,14 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
               }),
             )
             persistSessions(updated)
-            set({
-              ...getActiveChatState(updated, activeSessionId),
-              isGenerating: false,
-            })
+            const isSuperseded =
+              chatAbortController !== null && chatAbortController !== controller
+            if (!isSuperseded) {
+              chatAbortController = null
+              applyStreamingSessionUpdate(updated, { isGenerating: false })
+            } else {
+              applyStreamingSessionUpdate(updated)
+            }
             const finalActive = updated.find((s) => s.id === activeSessionId)
             if (finalActive) {
               debouncedSaveBackendSession(finalActive)
@@ -761,7 +808,6 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
                 status: "completed",
               })
             }
-            chatAbortController = null
           } else if (event.type === "error") {
             flushDeltasSync()
             const cur = get()
@@ -778,51 +824,42 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
               }),
             )
             persistSessions(updated)
-            set({
-              ...getActiveChatState(updated, activeSessionId),
-              isGenerating: false,
-            })
-            chatAbortController = null
+            const isSuperseded =
+              chatAbortController !== null && chatAbortController !== controller
+            if (!isSuperseded) {
+              chatAbortController = null
+              applyStreamingSessionUpdate(updated, { isGenerating: false })
+            } else {
+              applyStreamingSessionUpdate(updated)
+            }
           }
         },
         controller.signal,
       ).catch((err) => {
         flushDeltasSync()
         const cur = get()
-        if (controller.signal.aborted) {
-          const updated = updateAgentMessageInSessions(
-            cur.sessions,
-            activeSessionId,
-            agentMsgId,
-            (m) => ({
-              ...m,
-              isStreaming: false,
-              error: "Generation stopped by user.",
-            }),
-          )
-          persistSessions(updated)
-          set({
-            ...getActiveChatState(updated, activeSessionId),
-            isGenerating: false,
-          })
+        const isAborted = controller.signal.aborted
+        const updated = updateAgentMessageInSessions(
+          cur.sessions,
+          activeSessionId,
+          agentMsgId,
+          (m) => ({
+            ...m,
+            isStreaming: false,
+            error: isAborted
+              ? "Generation stopped by user."
+              : err?.message || "Connection to AI disconnected.",
+          }),
+        )
+        persistSessions(updated)
+        const isSuperseded =
+          chatAbortController !== null && chatAbortController !== controller
+        if (!isSuperseded) {
+          chatAbortController = null
+          applyStreamingSessionUpdate(updated, { isGenerating: false })
         } else {
-          const updated = updateAgentMessageInSessions(
-            cur.sessions,
-            activeSessionId,
-            agentMsgId,
-            (m) => ({
-              ...m,
-              isStreaming: false,
-              error: err?.message || "Connection to AI disconnected.",
-            }),
-          )
-          persistSessions(updated)
-          set({
-            ...getActiveChatState(updated, activeSessionId),
-            isGenerating: false,
-          })
+          applyStreamingSessionUpdate(updated)
         }
-        chatAbortController = null
       })
     },
 

@@ -99,3 +99,38 @@ describe("Path Sanitization and Normalization", () => {
     ).toBe("src/utils/workspaceApi.ts")
   })
 })
+
+describe("applyCodeWithReview Canonical Path Normalization", () => {
+  it("normalizes path and sets clean fileBuffer key without ghost keys", async () => {
+    const { useWorkbenchStore } = await import("../../../src/store")
+    const workspaceApi = await import("../../../src/utils/workspaceApi")
+    vi.spyOn(workspaceApi, "saveWorkspaceFile").mockResolvedValue({
+      success: true,
+      path: "src/calc.ts",
+      size: 42,
+      modTime: "2026-10-16T12:00:00Z",
+    } as any)
+
+    useWorkbenchStore.setState({
+      rootWorkspacePath: "/home/user/myproject",
+      fileBuffers: {},
+    })
+
+    const applied = await useWorkbenchStore
+      .getState()
+      .applyCodeWithReview(
+        "/home/user/myproject/src/calc.ts",
+        "export const sum = (a: number, b: number) => a + b;",
+      )
+
+    expect(applied).toBe(true)
+    const state = useWorkbenchStore.getState()
+    expect(state.fileBuffers["src/calc.ts"]).toBeDefined()
+    expect(state.fileBuffers["src/calc.ts"].content).toBe(
+      "export const sum = (a: number, b: number) => a + b;",
+    )
+    expect(
+      state.fileBuffers["/home/user/myproject/src/calc.ts"],
+    ).toBeUndefined()
+  })
+})

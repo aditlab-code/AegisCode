@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/aditwicaksono/aegiscode/server/internal/agent"
 	"github.com/aditwicaksono/aegiscode/server/internal/codegraph"
 	"github.com/aditwicaksono/aegiscode/server/internal/debug"
 	"github.com/aditwicaksono/aegiscode/server/internal/git"
@@ -25,24 +26,27 @@ import (
 
 // Server coordinates HTTP transport over Core Server domain modules.
 type Server struct {
-	ws         *workspace.Manager
-	picker     platform.FolderPicker
-	git        *git.Service
-	terminal   *terminal.Manager
-	supervisor *supervisor.Manager
-	store      *store.Store
-	debug      *debug.Manager
-	lsp        *lsp.Manager
-	codegraph  *codegraph.Manager
-	mcp        *mcp.Server
+	ws           *workspace.Manager
+	picker       platform.FolderPicker
+	git          *git.Service
+	terminal     *terminal.Manager
+	supervisor   *supervisor.Manager
+	store        *store.Store
+	debug        *debug.Manager
+	lsp          *lsp.Manager
+	codegraph    *codegraph.Manager
+	mcp          *mcp.Server
 	pairing      *PairingManager
 	eventHub     *EventHub
+	taskManager  *agent.TaskManager
+	taskMu       sync.Mutex
 	logMu        sync.RWMutex
 	logSubs      map[chan LogEvent]struct{}
 	workerMu     sync.RWMutex
 	workerSubs   map[chan supervisor.CrashEvent]struct{}
 	shutdownChan chan struct{}
 }
+
 
 func NewServer(ws *workspace.Manager, picker platform.FolderPicker, customStore ...*store.Store) *Server {
 	var st *store.Store
@@ -71,10 +75,11 @@ func NewServer(ws *workspace.Manager, picker platform.FolderPicker, customStore 
 		lsp:        lsp.NewManager(rootPath),
 		codegraph:  codegraph.NewManager(rootPath),
 		mcp:        mcp.NewServer(rootPath),
-		pairing:    NewPairingManager(8080),
-		eventHub:   NewEventHub(),
-		logSubs:    make(map[chan LogEvent]struct{}),
-		workerSubs: make(map[chan supervisor.CrashEvent]struct{}),
+		pairing:     NewPairingManager(8080),
+		eventHub:    NewEventHub(),
+		taskManager: agent.NewTaskManager(rootPath),
+		logSubs:     make(map[chan LogEvent]struct{}),
+		workerSubs:  make(map[chan supervisor.CrashEvent]struct{}),
 	}
 	s.supervisor = supervisor.NewManager(func(evt supervisor.CrashEvent) {
 		s.BroadcastLog("Tasks", fmt.Sprintf("[Supervisor] Worker %s (%s) crashed: %v", evt.Name, evt.WorkerID, evt.Error), "error")
