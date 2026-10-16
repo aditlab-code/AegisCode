@@ -96,7 +96,7 @@ export function SearchPanel() {
           if (response.isCapped) {
             setSearchWarning(
               response.warning ||
-                "Banyak file cocok (dibatasi 100 matches). Persempit kata kunci jika file belum ditemukan.",
+                "Many files matched (capped at 100 matches). Narrow your query if target files are not found.",
             )
           } else {
             setSearchWarning(null)
@@ -494,7 +494,7 @@ export function SearchPanel() {
             >
               <Icon name="error" size={14} className="shrink-0 mt-0.5" />
               <div className="flex-1 leading-snug">
-                <span className="font-semibold">Kesalahan Pemrosesan:</span>{" "}
+                <span className="font-semibold">Processing Error:</span>{" "}
                 {searchError}
               </div>
             </div>
@@ -507,8 +507,7 @@ export function SearchPanel() {
             >
               <Icon name="warning" size={14} className="shrink-0 mt-0.5" />
               <div className="flex-1 leading-snug">
-                <span className="font-semibold">Perhatian:</span>{" "}
-                {searchWarning}
+                <span className="font-semibold">Notice:</span> {searchWarning}
               </div>
             </div>
           )}
@@ -516,7 +515,7 @@ export function SearchPanel() {
           <div className="result-summary flex items-center justify-between">
             <span>
               {isSearching ? (
-                <span className="text-ink-muted italic">Mencari...</span>
+                <span className="text-ink-muted italic">Searching...</span>
               ) : (
                 <>
                   {totalMatchesCount}{" "}

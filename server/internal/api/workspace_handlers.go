@@ -506,7 +506,7 @@ func (s *Server) handleWorkspaceSearch(w http.ResponseWriter, r *http.Request) {
 
 	warning := ""
 	if outcome.IsCapped {
-		warning = "Hasil dibatasi maksimal 100 matches demi performa. Persempit kata kunci jika file belum ditemukan."
+		warning = "Results are capped at 100 matches for performance. Narrow your query if target files are not found."
 	}
 
 	jsonResponse(w, http.StatusOK, SearchResponse{
