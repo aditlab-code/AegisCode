@@ -50,15 +50,15 @@ __debug_bin*
 .codegraph
 
 # Internal Agent Instructions & Local Specs
-#/AGENTS.md
-#/CLAUDE.md
+/AGENTS.md
+/CLAUDE.md
 /.scratch/
-#/task/
+/task/
 .mise.toml
-#GIT_RULES.md
+GIT_RULES.md
 
 # Internal Developer Documentation
-#docs/internal/
+docs/internal/
 docs/agents/
 docs/report/
 
