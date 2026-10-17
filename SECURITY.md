@@ -1,4 +1,4 @@
-# Security Policy & Vulnerability Disclosure
+# Security Policy & Vulnerability Disclosure 🛡️
 
 Security is a foundational priority for **AegisCode**. Because AegisCode manages local file operations, terminal sessions, debugging interfaces, and AI tool execution on developer machines, we maintain rigorous isolation and security controls.
 
@@ -6,31 +6,39 @@ Security is a foundational priority for **AegisCode**. Because AegisCode manages
 
 ## 1. Supported Versions
 
-We provide active security patches and updates for the following versions:
+We provide active security updates for the following versions:
 
 | Version | Supported | Status |
 | :--- | :---: | :--- |
-| `1.0.0-beta.x` | :white_check_mark: | Active Preview / Beta |
+| `1.0.0-beta.x` | :white_check_mark: | Active Community Preview |
 | `< 1.0.0-beta` | :x: | Deprecated |
 
 ---
 
-## 2. Threat Model & Security Architecture
+## 2. Threat Model & Security Architecture (Community Baseline)
 
-AegisCode implements defense-in-depth architectural guarantees designed to safeguard developer host environments:
+AegisCode Community Edition implements a lightweight, developer-friendly defense-in-depth model designed to safeguard developer host workstations without intrusive lockouts or excessive resource overhead:
 
-### Localhost & Socket Isolation
-* **Strict Loopback Binding**: The embedded Go HTTP and WebSocket servers bind exclusively to `127.0.0.1` (localhost). External network interfaces are never opened unless the user explicitly enables companion broadcast mode.
+### Strict Loopback & Socket Isolation
+* **Exclusive Loopback Binding**: The embedded Go HTTP and WebSocket servers bind exclusively to `127.0.0.1` (IPv4) and `::1` (IPv6). External network interfaces are never opened, keeping your workbench invisible to other devices on local Wi-Fi / LAN networks.
 * **Unix Domain Sockets / Local IPC**: Inter-process communication between supervisor agents and workers utilizes private local sockets (`~/.aegis/ipc/`) with filesystem permission bits restricted to the active OS user (`0700`).
 
-### Workspace Confinement & Path Traversal Guards
-* All file system APIs (`createFile`, `deleteFile`, `saveFile`, `git.Discard`, `git.GetDiff`) enforce strict workspace root boundary checks. Any attempt to access, traverse (`../`), or overwrite files outside the active workspace directory is rejected with HTTP `403 Forbidden` / `400 Bad Request`.
+### Cross-Site Protection & Origin Verification (Anti-CSWSH)
+* **Fail-Fast Origin Filter**: Backend Go strictly verifies the `Origin` header on WebSocket and REST handshakes. Untrusted third-party origins and sandboxed `null` iframe origins are immediately rejected with HTTP `403 Forbidden`.
+* **Zero Wildcard CORS**: Cross-origin requests never receive wildcard `*` headers.
 
-### Subprocess Supervision & Port Teardown
-* Background processes (PTY shells, Delve debugger instances, MCP tool runners) are supervised with process-group boundaries (`setpgid`). When AegisCode shuts down or crashes, all child process trees receive `SIGTERM` followed by a fail-safe `SIGKILL` watchdog to ensure no orphaned processes or open ports linger.
+### Workspace Confinement & Symlink Traversal Guards
+* All file system APIs enforce strict workspace root boundary checks.
+* Physical symlink evaluation (`filepath.EvalSymlinks`) ensures malicious repository symlinks cannot traverse (`../`) or escape into sensitive host directories (e.g. `~/.ssh` or `/etc/passwd`).
 
-### Zero-CGO Portable Isolation
-* AegisCode standardizes on pure-Go database engines (`modernc.org/sqlite`). This eliminates memory safety vulnerabilities common in C-based dependencies (e.g., buffer overflows or unsafe pointer misuse from unvetted C bindings).
+### Content Security Policy & Safe Viewer Rendering
+* **Strict CSP**: HTTP headers disallow dynamic `eval()` execution and third-party script injection (`script-src 'self'`).
+* **DOM Sanitization**: Markdown previews and AI chat responses are purified via `DOMPurify` before rendering to prevent stored XSS attacks.
+* **Terminal Escape Sequence Filtering**: xterm.js PTY buffers filter out dangerous Operating System Command (OSC) escape sequences (e.g. clipboard theft).
+
+### Local Secret Protection & Tolerant Auth
+* AI provider API keys (OpenAI, Anthropic, Gemini) are stored locally in an AES-256-GCM encrypted SQLite vault (`~/.aegis/` with `0600` file permissions) rather than exposed in browser `localStorage`.
+* Master Passphrase authentication uses a progressive soft cooldown (30 seconds) on failed attempts without destructive panic shutdowns or unrecoverable quarantine states.
 
 ---
 
@@ -39,7 +47,7 @@ AegisCode implements defense-in-depth architectural guarantees designed to safeg
 > [!IMPORTANT]
 > **DO NOT** report security vulnerabilities through public GitHub issues, discussions, or pull requests.
 
-If you believe you have discovered a security vulnerability in AegisCode, please report it privately through **GitHub Security Advisories**:
+If you discover a security vulnerability in AegisCode, please report it privately through **GitHub Security Advisories**:
 
 1. Navigate to the [AegisCode Security Advisories](https://github.com/aditlab-code/AegisCode/security/advisories) page.
 2. Click **"Report a vulnerability"**.

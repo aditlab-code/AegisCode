@@ -48,6 +48,7 @@ Technical specifications, internal design modules, and formal decision records g
 | **[Feature Assessment Report](internal/report.md)** | Standardized feature scorecard and phase-by-phase health audits. |
 | **[Database Schema & Partitioning](architecture/database-schema.md)** | SQLite3 data dictionary (`aegis.db` and workspace `graphs/*.db`), WAL mode, and FTS5. |
 | **[ADR Catalog](adr/README.md)** | Categorized index of Architecture Decision Records (ADR 0001 through ADR 0016). |
+| **[Security Architecture (SEC-INV-24)](internal/security/README.md)** | Modular defense-in-depth: perimeter, sandbox, vault crypto, and incident policy. |
 
 ---
 

@@ -100,18 +100,6 @@ func HashSecret(secret, salt string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// DeriveKey derives a 32-byte AES key from passphrase and salt using 64,000 rounds of SHA-256.
-func DeriveKey(passphrase, salt string) []byte {
-	buf := []byte(salt + ":" + passphrase)
-	for i := 0; i < 64000; i++ {
-		sum := sha256.Sum256(buf)
-		buf = sum[:]
-	}
-	key := make([]byte, 32)
-	copy(key, buf)
-	return key
-}
-
 // GenerateRecoveryKey creates a 16-character base32/alphanumeric emergency recovery token
 // formatted as AEGIS-RECV-XXXX-XXXX-XXXX-XXXX.
 func GenerateRecoveryKey() (string, error) {

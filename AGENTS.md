@@ -81,6 +81,7 @@ For detailed technical specifications, architecture decisions, and design refere
 - **Internal Installation & Setup**: [`docs/internal/installation.md`](docs/internal/installation.md)
 - **Architecture Decision Records**: [`docs/adr/`](docs/adr)
 - **Skills & Engineering Workflow**: [`docs/internal/skills.md`](docs/internal/skills.md)
+- **Security Architecture (SEC-INV-24)**: [`docs/internal/security/README.md`](docs/internal/security/README.md)
 - **Git Rules & Release Boundary**: [`docs/internal/GIT_RULES.md`](docs/internal/GIT_RULES.md)
 
 ---

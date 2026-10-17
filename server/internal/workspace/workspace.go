@@ -292,6 +292,12 @@ func (m *Manager) ResolvePath(relPath string) (string, error) {
 	return m.resolvePath(relPath)
 }
 
+// ValidateSafePath validates that relPath safely resolves within workspaceRoot without symlink escape.
+func ValidateSafePath(workspaceRoot, relPath string) (string, error) {
+	m := &Manager{rootPath: workspaceRoot}
+	return m.resolvePath(relPath)
+}
+
 func (m *Manager) resolvePath(relPath string) (string, error) {
 	m.mu.RLock()
 	root := m.rootPath

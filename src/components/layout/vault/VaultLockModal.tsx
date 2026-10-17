@@ -196,46 +196,24 @@ export function VaultLockModal() {
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <div className="vault-title">
                 {isQuarantined
-                  ? "System Quarantined (Panic Deadlock)"
+                  ? "System Quarantined"
                   : !isInitialized
                     ? "Initialize Master Vault"
                     : isRecoverMode
                       ? "Emergency Vault Recovery"
                       : isLocked
-                        ? "AegisCode Locked"
+                        ? "Unlock AegisCode"
                         : "Master Security Vault"}
               </div>
-              {vaultStatus?.edition && (
-                <span
-                  style={{
-                    fontSize: "10px",
-                    fontWeight: 600,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px",
-                    padding: "2px 6px",
-                    borderRadius: "4px",
-                    background:
-                      vaultStatus.edition === "enterprise"
-                        ? "color-mix(in srgb, var(--color-accent) 20%, transparent)"
-                        : "color-mix(in srgb, var(--color-ink) 12%, transparent)",
-                    color:
-                      vaultStatus.edition === "enterprise"
-                        ? "var(--color-accent)"
-                        : "var(--color-ink-faint)",
-                  }}
-                >
-                  {vaultStatus.edition}
-                </span>
-              )}
             </div>
             <div className="vault-subtitle">
               {isQuarantined
-                ? "IDE access frozen for security after consecutive failed attempts"
+                ? "Access frozen for protection after consecutive failed attempts"
                 : !isInitialized
-                  ? "Setup 2-Door Cryptography & Zero-Knowledge Vault"
+                  ? "Set a master passphrase to protect your AI keys and workspace secrets"
                   : isLocked
-                    ? "Door 1: Enter master passphrase to unlock IDE"
-                    : "Dual-crypt encryption system active & protected"}
+                    ? "Enter your master passphrase to resume your workspace"
+                    : "Local encryption active and secure"}
             </div>
           </div>
           {canClose && (
@@ -269,9 +247,9 @@ export function VaultLockModal() {
               <div className="vault-alert warning">
                 <strong>Save Your Emergency Recovery Key!</strong>
                 <br />
-                This key is the only instrument to recover access if the system
-                is quarantined due to repeated failed attempts or a forgotten
-                passphrase. AegisCode never stores this key in plaintext.
+                Keep this key in a secure place. You can use it to reset your
+                passphrase if it is forgotten. AegisCode never stores this key
+                in plaintext.
               </div>
               <div className="vault-recovery-display">{generatedKey}</div>
               <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
@@ -304,8 +282,8 @@ export function VaultLockModal() {
             >
               <div className="vault-alert danger">
                 {isQuarantined
-                  ? "The system detected 10 unauthorized attempts. Fail-Secure Panic Kill mode is active. Enter your 24-character Emergency Recovery Key to release quarantine."
-                  : "Enter the 24-character Emergency Recovery Key saved during initial setup."}
+                  ? "System in quarantine mode after repeated unsuccessful attempts. Please enter your 24-character Emergency Recovery Key to restore access."
+                  : "Enter the 24-character Emergency Recovery Key saved during setup."}
               </div>
 
               <div className="vault-field">
@@ -365,9 +343,9 @@ export function VaultLockModal() {
               style={{ display: "flex", flexDirection: "column", gap: "14px" }}
             >
               <div className="vault-alert warning">
-                Protect your workspace and AI secret keys with a Master
-                Passphrase (Door 1). The server only stores a salted SHA-256
-                hash.
+                Protect your workspace and AI credentials with a Master
+                Passphrase. Your passphrase is never stored in plaintext and
+                unlocks your vault in memory.
               </div>
 
               <div className="vault-field">
@@ -416,9 +394,10 @@ export function VaultLockModal() {
             >
               {isDeadlocked && (
                 <div className="vault-alert warning">
-                  <strong>Soft Deadlock Active!</strong>
-                  <br />5 consecutive failed attempts detected. System locked
-                  for <strong>{secondsLeft} seconds</strong>.
+                  <strong>Temporary Cooldown Active</strong>
+                  <br />
+                  Multiple incorrect attempts detected. Please wait{" "}
+                  <strong>{secondsLeft} seconds</strong> before trying again.
                 </div>
               )}
 
@@ -426,12 +405,9 @@ export function VaultLockModal() {
                 vaultStatus.failed_attempts > 0 &&
                 !isDeadlocked && (
                   <div className="vault-alert warning">
-                    Security warning: {vaultStatus.failed_attempts} failed
-                    attempt(s). Remaining attempt(s) before{" "}
-                    {vaultStatus.edition === "enterprise"
-                      ? "panic quarantine shutdown"
-                      : "temporary lockout"}
-                    : <strong>{vaultStatus.remaining_attempts}</strong>.
+                    Incorrect passphrase. Please double-check your Caps Lock.
+                    Remaining attempt(s):{" "}
+                    <strong>{vaultStatus.remaining_attempts}</strong>.
                   </div>
                 )}
 
@@ -470,7 +446,7 @@ export function VaultLockModal() {
                   }}
                   type="button"
                 >
-                  Forgot passphrase? Use Recovery Key
+                  Forgot passphrase? Reset with Recovery Key
                 </button>
               </div>
 
