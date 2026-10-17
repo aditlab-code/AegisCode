@@ -73,7 +73,34 @@ if (swiftcResult.status !== 0) {
 }
 fs.chmodSync(appExecutable, 0o755)
 
-// 3. Create Info.plist
+// 3. Ensure native AppIcon.icns exists and copy to Contents/Resources
+const icnsSource = path.resolve(rootDir, "scripts/macos-wrapper/AppIcon.icns")
+if (!fs.existsSync(icnsSource)) {
+  console.log(
+    "🎨 Generating native high-res AppIcon.icns from public/favicon.svg...",
+  )
+  const genScript = path.resolve(
+    rootDir,
+    "scripts/macos-wrapper/generate-icon.swift",
+  )
+  const svgSource = path.resolve(rootDir, "public/favicon.svg")
+  const genResult = spawnSync("swift", [genScript, svgSource, icnsSource], {
+    stdio: "inherit",
+  })
+  if (genResult.status !== 0) {
+    console.warn("⚠️ Warning: Failed to generate AppIcon.icns automatically.")
+  }
+}
+
+if (fs.existsSync(icnsSource)) {
+  const icnsDest = path.resolve(resourcesDir, "AppIcon.icns")
+  fs.copyFileSync(icnsSource, icnsDest)
+  // Also copy to volume icon for mounted DMG
+  fs.copyFileSync(icnsSource, path.resolve(stagingDir, ".VolumeIcon.icns"))
+  console.log("✅ Attached native AppIcon.icns to macOS App bundle.")
+}
+
+// 4. Create Info.plist
 const infoPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -99,15 +126,53 @@ const infoPlist = `<?xml version="1.0" encoding="UTF-8"?>
 `
 fs.writeFileSync(path.resolve(appDir, "Contents/Info.plist"), infoPlist, "utf8")
 
-// 4. Create Applications symlink for drag-and-drop installation
+// 5. Ad-Hoc Code Signing for Apple Silicon (ARM64) & Intel AMFI compliance
+console.log(
+  "🔏 Applying Ad-Hoc Code Signature (Apple Silicon / ARM64 AMFI compliant)...",
+)
+// Sign internal server binary first
+spawnSync("codesign", ["--force", "--sign", "-", serverBinDest], {
+  stdio: "ignore",
+})
+// Sign main executable
+spawnSync("codesign", ["--force", "--sign", "-", appExecutable], {
+  stdio: "ignore",
+})
+// Deep-sign the entire AegisCode.app bundle
+const codesignResult = spawnSync(
+  "codesign",
+  ["--force", "--deep", "--sign", "-", appDir],
+  { stdio: "inherit" },
+)
+
+if (codesignResult.status !== 0) {
+  console.warn(
+    "⚠️ Warning: Ad-hoc code signing failed, proceeding with unsigned bundle.",
+  )
+} else {
+  console.log("✅ Successfully signed AegisCode.app with ad-hoc signature (-).")
+  // Verify signature status
+  const verifyResult = spawnSync(
+    "codesign",
+    ["--verify", "--deep", "--strict", appDir],
+    {
+      stdio: "pipe",
+    },
+  )
+  if (verifyResult.status === 0) {
+    console.log("✅ Signature verification passed (deep & strict).")
+  }
+}
+
+// 6. Create Applications symlink for drag-and-drop installation
 spawnSync("ln", [
   "-s",
   "/Applications",
   path.resolve(stagingDir, "Applications"),
 ])
 
-// 5. Build DMG with hdiutil
-console.log("Creating DMG with hdiutil...")
+// 7. Build DMG with hdiutil
+console.log("📦 Creating DMG with hdiutil...")
 const hdiutilResult = spawnSync(
   "hdiutil",
   [
