@@ -214,6 +214,7 @@ export function loadStoredSettings(): AppSettings {
       agent: {
         ...DEFAULT_APP_SETTINGS.agent,
         ...(parsed?.agent || {}),
+        providerKeys: {}, // ADR 0017: Credentials must not be hydrated from localStorage
       },
     }
   } catch {
@@ -224,7 +225,15 @@ export function loadStoredSettings(): AppSettings {
 export function saveStoredSettings(settings: AppSettings): void {
   if (typeof window === "undefined") return
   try {
-    const serialized = JSON.stringify(settings)
+    // ADR 0017: Strip providerKeys before persisting to localStorage
+    const safeSettings: AppSettings = {
+      ...settings,
+      agent: {
+        ...settings.agent,
+        providerKeys: {},
+      },
+    }
+    const serialized = JSON.stringify(safeSettings)
     window.localStorage.setItem(SETTINGS_STORAGE_KEY, serialized)
     window.localStorage.setItem("aegis_settings_v1", serialized)
 

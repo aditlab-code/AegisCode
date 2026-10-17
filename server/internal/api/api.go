@@ -3,13 +3,13 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/aditwicaksono/aegiscode/server/internal/agent"
 	"github.com/aditwicaksono/aegiscode/server/internal/codegraph"
@@ -21,6 +21,7 @@ import (
 	"github.com/aditwicaksono/aegiscode/server/internal/store"
 	"github.com/aditwicaksono/aegiscode/server/internal/supervisor"
 	"github.com/aditwicaksono/aegiscode/server/internal/terminal"
+	"github.com/aditwicaksono/aegiscode/server/internal/vault"
 	"github.com/aditwicaksono/aegiscode/server/internal/workspace"
 )
 
@@ -37,6 +38,7 @@ type Server struct {
 	codegraph    *codegraph.Manager
 	mcp          *mcp.Server
 	pairing      *PairingManager
+	vault        *vault.Vault
 	eventHub     *EventHub
 	taskManager  *agent.TaskManager
 	taskMu       sync.Mutex
@@ -81,6 +83,7 @@ func NewServer(ws *workspace.Manager, picker platform.FolderPicker, customStore 
 		logSubs:     make(map[chan LogEvent]struct{}),
 		workerSubs:  make(map[chan supervisor.CrashEvent]struct{}),
 	}
+	s.pairing.SetLocked(defaultCompanionLocked)
 	s.supervisor = supervisor.NewManager(func(evt supervisor.CrashEvent) {
 		s.BroadcastLog("Tasks", fmt.Sprintf("[Supervisor] Worker %s (%s) crashed: %v", evt.Name, evt.WorkerID, evt.Error), "error")
 		s.BroadcastWorkerCrash(evt)
@@ -90,8 +93,33 @@ func NewServer(ws *workspace.Manager, picker platform.FolderPicker, customStore 
 			s.lsp.SetCustomServers(cfg.LspServers)
 		}
 	}
+	if st != nil {
+		s.vault = vault.New(st)
+		s.vault.SetPanicKillHook(func() {
+			fmt.Println("🛑 CRITICAL HARD DEADLOCK BREACH DETECTED: 10 consecutive failed unlock attempts. Panic shutdown initiated.")
+			go func() {
+				time.Sleep(50 * time.Millisecond)
+				if s.shutdownChan != nil {
+					select {
+					case s.shutdownChan <- struct{}{}:
+					default:
+					}
+				}
+				p, err := os.FindProcess(os.Getpid())
+				if err == nil {
+					_ = p.Signal(syscall.SIGKILL)
+				}
+				os.Exit(1)
+			}()
+		})
+	}
 	s.initEventHubBridges()
 	return s
+}
+
+// Vault returns the master cryptographic vault manager.
+func (s *Server) Vault() *vault.Vault {
+	return s.vault
 }
 
 // EventHub returns the active centralized event broker.
@@ -102,6 +130,14 @@ func (s *Server) EventHub() *EventHub {
 // Pairing returns the companion pairing and session manager.
 func (s *Server) Pairing() *PairingManager {
 	return s.pairing
+}
+
+// SessionToken returns an ephemeral local session token for the server (ADR 0017).
+func (s *Server) SessionToken() string {
+	if s.pairing == nil {
+		return ""
+	}
+	return s.pairing.CreateLocalSession()
 }
 
 // Codegraph returns the active CodeGraph Manager.
@@ -151,8 +187,11 @@ func jsonError(w http.ResponseWriter, status int, message string) {
 }
 
 func (s *Server) isOriginAllowed(origin string, r *http.Request) bool {
-	if origin == "" || origin == "null" {
-		return true
+	if origin == "" {
+		return true // Direct navigation, CLI / curl clients
+	}
+	if origin == "null" {
+		return false // Reject sandboxed iframes or opaque origins (ADR 0017)
 	}
 
 	// 1. Loopback origins
@@ -191,16 +230,6 @@ func (s *Server) isOriginAllowed(origin string, r *http.Request) bool {
 		}
 	}
 
-	// 4. Check if origin is private LAN subnet (RFC 1918)
-	u, err := url.Parse(origin)
-	if err == nil {
-		hostOnly := u.Hostname()
-		ip := net.ParseIP(hostOnly)
-		if ip != nil && (strings.HasPrefix(ip.String(), "192.168.") || strings.HasPrefix(ip.String(), "10.") || isClassBPrivate(ip)) {
-			return true
-		}
-	}
-
 	return false
 }
 
@@ -213,12 +242,12 @@ func (s *Server) corsAndAuthMiddleware(next http.Handler) http.Handler {
 		origin := r.Header.Get("Origin")
 		allowed := s.isOriginAllowed(origin, r)
 
-		if allowed {
-			if origin != "" {
-				w.Header().Set("Access-Control-Allow-Origin", origin)
-			} else {
-				w.Header().Set("Access-Control-Allow-Origin", "*")
+		if origin != "" {
+			if !allowed {
+				jsonError(w, http.StatusForbidden, "forbidden: cross-origin request rejected")
+				return
 			}
+			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Session-Token, X-Pairing-Token")
 			w.Header().Set("Vary", "Origin")
@@ -238,6 +267,15 @@ func (s *Server) corsAndAuthMiddleware(next http.Handler) http.Handler {
 			}
 		}
 
+		// Invariant SEC-INV-19 & SEC-INV-20: If Vault is initialized and locked, block protected endpoints
+		if s.vault != nil && !strings.HasPrefix(r.URL.Path, "/api/v1/vault/") {
+			status, err := s.vault.GetStatus()
+			if err == nil && status.IsInitialized && status.IsLocked {
+				jsonError(w, http.StatusLocked, "vault is locked: master passphrase required")
+				return
+			}
+		}
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -245,6 +283,13 @@ func (s *Server) corsAndAuthMiddleware(next http.Handler) http.Handler {
 // Routes constructs the HTTP handler mux mapping all 13 workspace and vcs endpoints.
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
+
+	// Master Crypt Vault & Quarantine Deadlock Endpoints (Phase 12)
+	mux.HandleFunc("/api/v1/vault/status", s.handleVaultStatus)
+	mux.HandleFunc("/api/v1/vault/setup", s.handleVaultSetup)
+	mux.HandleFunc("/api/v1/vault/unlock", s.handleVaultUnlock)
+	mux.HandleFunc("/api/v1/vault/lock", s.handleVaultLock)
+	mux.HandleFunc("/api/v1/vault/recover", s.handleVaultRecover)
 
 	// Workspace API endpoints
 	mux.HandleFunc("/api/v1/workspace/info", s.handleWorkspaceInfo)

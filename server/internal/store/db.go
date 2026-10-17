@@ -17,9 +17,10 @@ func OpenDB(dbPath string) (*sql.DB, error) {
 	}
 
 	dir := filepath.Dir(dbPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create directory for database: %w", err)
 	}
+	_ = os.Chmod(dir, 0700)
 
 	// Open connection with pure-Go modernc.org/sqlite driver, ensuring every connection
 	// in the pool inherits WAL, foreign_keys, busy_timeout, and immediate tx lock via DSN URI parameters.
@@ -28,6 +29,11 @@ func OpenDB(dbPath string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite database %s: %w", dbPath, err)
+	}
+
+	// Restrict database file permissions to user-only (0600) (ADR 0017)
+	if stat, sErr := os.Stat(dbPath); sErr == nil && !stat.IsDir() {
+		_ = os.Chmod(dbPath, 0600)
 	}
 
 	// Configure connection pool
@@ -47,6 +53,11 @@ func OpenDB(dbPath string) (*sql.DB, error) {
 			_ = db.Close()
 			return nil, fmt.Errorf("failed to execute %s: %w", pragma, pErr)
 		}
+	}
+
+	// Restrict newly created WAL/shm files if present
+	if stat, sErr := os.Stat(dbPath); sErr == nil && !stat.IsDir() {
+		_ = os.Chmod(dbPath, 0600)
 	}
 
 	// Execute initial schema DDL migrations
@@ -214,6 +225,23 @@ func migrateSchema(db *sql.DB) error {
 		INSERT INTO chat_fts(rowid, session_id, id, text, reasoning)
 		VALUES (new.rowid, new.session_id, new.id, new.text, coalesce(new.reasoning, ''));
 	END;
+
+	-- 7. Master Vault & Quarantine Deadlock State
+	CREATE TABLE IF NOT EXISTS master_vault (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		is_initialized INTEGER NOT NULL DEFAULT 0,
+		master_salt TEXT NOT NULL DEFAULT '',
+		master_hash TEXT NOT NULL DEFAULT '',
+		recovery_salt TEXT NOT NULL DEFAULT '',
+		recovery_hash TEXT NOT NULL DEFAULT '',
+		deadlock_quarantine INTEGER NOT NULL DEFAULT 0,
+		failed_attempts INTEGER NOT NULL DEFAULT 0,
+		lockout_until INTEGER NOT NULL DEFAULT 0,
+		encrypted_secrets_json TEXT NOT NULL DEFAULT '{}',
+		updated_at INTEGER NOT NULL
+	);
+	INSERT OR IGNORE INTO master_vault (id, is_initialized, master_salt, master_hash, recovery_salt, recovery_hash, deadlock_quarantine, failed_attempts, lockout_until, encrypted_secrets_json, updated_at)
+	VALUES (1, 0, '', '', '', '', 0, 0, 0, '{}', 0);
 	`
 
 	_, err := db.Exec(schema)

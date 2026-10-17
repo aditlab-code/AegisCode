@@ -320,6 +320,21 @@ export function Icon({ name, size = 16, className = "" }: IconProps) {
         <path d="M7 15V9a3 3 0 0 1 3-3h4" />
       </>
     ),
+    lock: (
+      <>
+        <rect x="5" y="11" width="14" height="10" rx="2" />
+        <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+      </>
+    ),
+    unlock: (
+      <>
+        <rect x="5" y="11" width="14" height="10" rx="2" />
+        <path d="M8 11V7a4 4 0 0 1 8 0" />
+      </>
+    ),
+    shield: (
+      <path d="M12 2.8 4.5 6v5.4c0 4.8 3.1 8.8 7.5 10.2 4.4-1.4 7.5-5.4 7.5-10.2V6L12 2.8Z" />
+    ),
   }
 
   return (

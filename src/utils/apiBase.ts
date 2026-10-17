@@ -17,3 +17,18 @@ export function getApiBase(): string {
 }
 
 export const API_BASE = getApiBase()
+
+/**
+ * Retrieves the ephemeral session token injected into index.html by the Go backend (ADR 0017).
+ * If present, this token authenticates local SSE and PTY streams.
+ */
+export function getSessionToken(): string {
+  if (typeof document === "undefined") return ""
+  const meta = document.querySelector<HTMLMetaElement>(
+    'meta[name="aegis-session-token"]',
+  )
+  if (meta?.content && meta.content.trim() !== "") {
+    return meta.content.trim()
+  }
+  return ""
+}

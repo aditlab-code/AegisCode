@@ -10,6 +10,8 @@ export function HeaderActions() {
     toggleSidebar,
     chatOpen,
     toggleChat,
+    openVaultModal,
+    vaultStatus,
   } = useWorkbenchStore(
     useShallow((s) => ({
       panelOpen: s.panelOpen,
@@ -18,11 +20,19 @@ export function HeaderActions() {
       toggleSidebar: s.toggleSidebar,
       chatOpen: s.chatOpen,
       toggleChat: s.toggleChat,
+      openVaultModal: s.openVaultModal,
+      vaultStatus: s.vaultStatus,
     })),
   )
 
   return (
     <div className="header-actions">
+      <IconButton
+        label="Master Vault (Lock / Security Status)"
+        onClick={openVaultModal}
+      >
+        <Icon name={vaultStatus?.is_locked ? "lock" : "unlock"} />
+      </IconButton>
       <IconButton
         active={sidebarOpen}
         label="Toggle primary sidebar (Ctrl+B)"

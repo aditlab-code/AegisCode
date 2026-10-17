@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"io/fs"
 	"mime"
@@ -27,16 +28,21 @@ func init() {
 
 // SPAHandler serves embedded static files with client-side routing fallback to index.html.
 type SPAHandler struct {
-	fsys      fs.FS
-	indexData []byte
-	hasIndex  bool
+	fsys         fs.FS
+	indexData    []byte
+	hasIndex     bool
+	sessionToken string
 }
 
 // NewSPAHandler constructs an http.Handler that serves assets from fsys.
 // If a requested file does not exist, it falls back to serving index.html.
-func NewSPAHandler(fsys fs.FS) http.Handler {
+// Optionally accepts an ephemeral session token to inject into index.html (ADR 0017).
+func NewSPAHandler(fsys fs.FS, sessionToken ...string) http.Handler {
 	handler := &SPAHandler{
 		fsys: fsys,
+	}
+	if len(sessionToken) > 0 {
+		handler.sessionToken = sessionToken[0]
 	}
 
 	if fsys != nil {
@@ -91,7 +97,15 @@ func (h *SPAHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.serveIndex(w, r)
 }
 
+func setSecurityHeaders(w http.ResponseWriter) {
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:* http://127.0.0.1:* http://localhost:* ws://localhost:*; img-src 'self' data: blob:; font-src 'self' data:; object-src 'none'; frame-ancestors 'none';")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Referrer-Policy", "same-origin")
+}
+
 func (h *SPAHandler) serveIndex(w http.ResponseWriter, r *http.Request) {
+	setSecurityHeaders(w)
 	if !h.hasIndex {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
@@ -110,10 +124,22 @@ func (h *SPAHandler) serveIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	modTime := startTime
-	http.ServeContent(w, r, "index.html", modTime, bytes.NewReader(h.indexData))
+
+	finalData := h.indexData
+	if h.sessionToken != "" {
+		metaTag := []byte(fmt.Sprintf(`<meta name="aegis-session-token" content="%s" />`, h.sessionToken))
+		if bytes.Contains(finalData, []byte(`<meta name="aegis-session-token"`)) {
+			finalData = bytes.Replace(finalData, []byte(`<meta name="aegis-session-token" content="" />`), metaTag, 1)
+		} else if bytes.Contains(finalData, []byte(`</head>`)) {
+			finalData = bytes.Replace(finalData, []byte(`</head>`), append(append([]byte("  "), metaTag...), []byte("\n  </head>")...), 1)
+		}
+	}
+
+	http.ServeContent(w, r, "index.html", modTime, bytes.NewReader(finalData))
 }
 
 func (h *SPAHandler) serveFile(w http.ResponseWriter, r *http.Request, filePath string, f fs.File, stat fs.FileInfo) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	ext := filepath.Ext(filePath)
 	mimeType := mime.TypeByExtension(ext)
 	if mimeType != "" {

@@ -59,9 +59,10 @@ func New(baseDir string) (*Store, error) {
 		baseDir = resolved
 	}
 
-	if err := os.MkdirAll(baseDir, 0755); err != nil {
+	if err := os.MkdirAll(baseDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create storage directory %s: %w", baseDir, err)
 	}
+	_ = os.Chmod(baseDir, 0700)
 
 	chatsDir := filepath.Join(baseDir, "chats")
 	blobsDir := filepath.Join(baseDir, "blobs")
@@ -764,4 +765,152 @@ func (s *Store) PurgeLegacyOrphans() error {
 	defer s.mu.Unlock()
 	return PurgeLegacyOrphans(s.baseDir)
 }
+
+// VaultRecord represents the persisted master vault credentials and state in SQLite.
+type VaultRecord struct {
+	IsInitialized      bool              `json:"isInitialized"`
+	MasterSalt         string            `json:"masterSalt"`
+	MasterHash         string            `json:"masterHash"`
+	RecoverySalt       string            `json:"recoverySalt"`
+	RecoveryHash       string            `json:"recoveryHash"`
+	DeadlockQuarantine bool              `json:"deadlockQuarantine"`
+	FailedAttempts     int               `json:"failedAttempts"`
+	LockoutUntil       int64             `json:"lockoutUntil"`
+	EncryptedSecrets   map[string]string `json:"encryptedSecrets"`
+	UpdatedAt          int64             `json:"updatedAt"`
+}
+
+// GetVaultRecord retrieves the singleton master vault record from SQLite.
+func (s *Store) GetVaultRecord() (*VaultRecord, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var rec VaultRecord
+	var isInit, quarantine int
+	var secretsJSON string
+
+	err := s.db.QueryRow(`
+		SELECT is_initialized, master_salt, master_hash, recovery_salt, recovery_hash,
+		       deadlock_quarantine, failed_attempts, lockout_until, encrypted_secrets_json, updated_at
+		FROM master_vault WHERE id = 1
+	`).Scan(
+		&isInit,
+		&rec.MasterSalt,
+		&rec.MasterHash,
+		&rec.RecoverySalt,
+		&rec.RecoveryHash,
+		&quarantine,
+		&rec.FailedAttempts,
+		&rec.LockoutUntil,
+		&secretsJSON,
+		&rec.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get vault record: %w", err)
+	}
+
+	rec.IsInitialized = isInit == 1
+	rec.DeadlockQuarantine = quarantine == 1
+	rec.EncryptedSecrets = make(map[string]string)
+	if secretsJSON != "" {
+		_ = json.Unmarshal([]byte(secretsJSON), &rec.EncryptedSecrets)
+	}
+
+	return &rec, nil
+}
+
+// SaveVaultRecord updates the singleton master vault record in SQLite.
+func (s *Store) SaveVaultRecord(rec *VaultRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	isInit := 0
+	if rec.IsInitialized {
+		isInit = 1
+	}
+	quarantine := 0
+	if rec.DeadlockQuarantine {
+		quarantine = 1
+	}
+	if rec.EncryptedSecrets == nil {
+		rec.EncryptedSecrets = make(map[string]string)
+	}
+	secretsJSON, err := json.Marshal(rec.EncryptedSecrets)
+	if err != nil {
+		return fmt.Errorf("failed to marshal encrypted secrets: %w", err)
+	}
+
+	now := time.Now().UnixMilli()
+	rec.UpdatedAt = now
+
+	_, err = s.db.Exec(`
+		UPDATE master_vault SET
+			is_initialized = ?,
+			master_salt = ?,
+			master_hash = ?,
+			recovery_salt = ?,
+			recovery_hash = ?,
+			deadlock_quarantine = ?,
+			failed_attempts = ?,
+			lockout_until = ?,
+			encrypted_secrets_json = ?,
+			updated_at = ?
+		WHERE id = 1
+	`,
+		isInit,
+		rec.MasterSalt,
+		rec.MasterHash,
+		rec.RecoverySalt,
+		rec.RecoveryHash,
+		quarantine,
+		rec.FailedAttempts,
+		rec.LockoutUntil,
+		string(secretsJSON),
+		now,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save vault record: %w", err)
+	}
+
+	return nil
+}
+
+// RecordVaultFailedAttempt updates failed attempt counter, lockout duration, and quarantine status atomically.
+func (s *Store) RecordVaultFailedAttempt(attempts int, lockoutUntil int64, quarantine bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	qInt := 0
+	if quarantine {
+		qInt = 1
+	}
+	now := time.Now().UnixMilli()
+
+	_, err := s.db.Exec(`
+		UPDATE master_vault SET
+			failed_attempts = ?,
+			lockout_until = ?,
+			deadlock_quarantine = ?,
+			updated_at = ?
+		WHERE id = 1
+	`, attempts, lockoutUntil, qInt, now)
+	return err
+}
+
+// ResetVaultAttempts clears failed attempts and lockout timestamp.
+func (s *Store) ResetVaultAttempts() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now().UnixMilli()
+	_, err := s.db.Exec(`
+		UPDATE master_vault SET
+			failed_attempts = 0,
+			lockout_until = 0,
+			updated_at = ?
+		WHERE id = 1
+	`, now)
+	return err
+}
+
 

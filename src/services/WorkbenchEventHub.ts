@@ -1,4 +1,4 @@
-import { API_BASE } from "../utils/apiBase"
+import { API_BASE, getSessionToken } from "../utils/apiBase"
 
 export type EventHubHandler = (payload: any, type: string) => void
 
@@ -23,7 +23,11 @@ export class WorkbenchEventHub {
       return
 
     try {
-      this.es = new EventSource(`${API_BASE}/api/v1/events`)
+      const token = getSessionToken()
+      const sseUrl = token
+        ? `${API_BASE}/api/v1/events?token=${encodeURIComponent(token)}`
+        : `${API_BASE}/api/v1/events`
+      this.es = new EventSource(sseUrl)
 
       this.es.onopen = () => {
         this.reconnectAttempts = 0

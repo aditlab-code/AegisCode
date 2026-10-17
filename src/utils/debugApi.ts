@@ -3,7 +3,19 @@ import type {
   DebugState,
   StreamDebugEvent,
 } from "../types/workbench"
-import { API_BASE } from "./apiBase"
+import { API_BASE, getSessionToken } from "./apiBase"
+
+function getDebugHeaders(
+  extra?: Record<string, string>,
+): Record<string, string> {
+  const h: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...extra,
+  }
+  const tok = getSessionToken()
+  if (tok) h["X-Session-Token"] = tok
+  return h
+}
 
 export interface StartDebugResult {
   status: string
@@ -25,7 +37,7 @@ export async function startDebugSession(
 ): Promise<StartDebugResult> {
   const resp = await fetch(`${API_BASE}/api/v1/debug/start`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getDebugHeaders(),
     body: JSON.stringify({ program, args, env, cwd, breakpoints, language }),
   })
   const data = await resp.json().catch(() => ({}))
@@ -48,7 +60,7 @@ export async function setBreakpoints(
 ): Promise<Breakpoint[]> {
   const resp = await fetch(`${API_BASE}/api/v1/debug/breakpoints`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getDebugHeaders(),
     body: JSON.stringify({ file, lines }),
   })
   if (!resp.ok) {
@@ -67,7 +79,7 @@ export async function stepDebug(
 ): Promise<void> {
   const resp = await fetch(`${API_BASE}/api/v1/debug/step`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getDebugHeaders(),
     body: JSON.stringify({ action }),
   })
   if (!resp.ok) {
@@ -80,7 +92,9 @@ export async function stepDebug(
  * Retrieves the current snapshot of debug state (stack frames, variables).
  */
 export async function getDebugState(): Promise<DebugState> {
-  const resp = await fetch(`${API_BASE}/api/v1/debug/state`)
+  const resp = await fetch(`${API_BASE}/api/v1/debug/state`, {
+    headers: getDebugHeaders(),
+  })
   if (!resp.ok) {
     throw new Error("Failed to fetch debug state")
   }
@@ -93,6 +107,7 @@ export async function getDebugState(): Promise<DebugState> {
 export async function terminateDebugSession(): Promise<void> {
   const resp = await fetch(`${API_BASE}/api/v1/debug/terminate`, {
     method: "POST",
+    headers: getDebugHeaders(),
   })
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}))

@@ -107,8 +107,26 @@ func (s *Server) handleDebugStart(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
-	if req.Cwd == "" && s.ws != nil {
-		req.Cwd, _ = s.ws.GetRoot()
+	if s.ws != nil {
+		if req.Cwd != "" {
+			resolvedCwd, err := s.ws.ResolvePath(req.Cwd)
+			if err != nil {
+				jsonError(w, http.StatusBadRequest, "debugger cwd must be within active workspace: "+err.Error())
+				return
+			}
+			req.Cwd = resolvedCwd
+		} else {
+			req.Cwd, _ = s.ws.GetRoot()
+		}
+
+		if req.Program != "" {
+			resolvedProg, err := s.ws.ResolvePath(req.Program)
+			if err != nil {
+				jsonError(w, http.StatusBadRequest, "debugger program must be within active workspace: "+err.Error())
+				return
+			}
+			req.Program = resolvedProg
+		}
 	}
 
 	lang := debug.DetectLanguage(req.Language, req.Program)
@@ -314,7 +332,6 @@ func (s *Server) handleDebugEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
@@ -354,6 +371,14 @@ func (s *Server) handleSystemShutdown(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+
+	// Invariant SEC-INV-14: Require session token even for loopback callers
+	token := ExtractToken(r)
+	if s.pairing != nil && !s.pairing.ValidateToken(token) {
+		jsonError(w, http.StatusUnauthorized, "unauthorized: valid session or pairing token required to shutdown server")
+		return
+	}
+
 	jsonResponse(w, http.StatusOK, map[string]string{
 		"status":  "shutting_down",
 		"message": "AegisCode Go Core Server shutting down cleanly",

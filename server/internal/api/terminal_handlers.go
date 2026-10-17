@@ -55,11 +55,22 @@ func (s *Server) handleTerminalCreate(w http.ResponseWriter, r *http.Request) {
 	if cwd == "" {
 		rootPath, _ := s.ws.GetRoot()
 		cwd = rootPath
+	} else if s.ws != nil {
+		resolvedCwd, err := s.ws.ResolvePath(cwd)
+		if err != nil {
+			jsonError(w, http.StatusBadRequest, "terminal cwd must be within workspace: "+err.Error())
+			return
+		}
+		cwd = resolvedCwd
 	}
 
 	sessionID := fmt.Sprintf("term-%d", time.Now().UnixNano())
 	sess, err := s.terminal.CreateSession(sessionID, req.Shell, cwd, req.Cols, req.Rows)
 	if err != nil {
+		if strings.Contains(err.Error(), "disallowed shell") {
+			jsonError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		jsonError(w, http.StatusInternalServerError, "failed to create terminal: "+err.Error())
 		return
 	}
@@ -201,7 +212,6 @@ func (s *Server) handleTerminalEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
@@ -251,7 +261,6 @@ func (s *Server) handleLogsEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
@@ -319,7 +328,6 @@ func (s *Server) handleWorkspaceEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 

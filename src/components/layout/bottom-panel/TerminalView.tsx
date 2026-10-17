@@ -12,7 +12,7 @@ import {
   type ThemePaletteId,
   type ThemeMode,
 } from "../../../themes/themeRegistry"
-import { API_BASE } from "../../../utils/apiBase"
+import { API_BASE, getSessionToken } from "../../../utils/apiBase"
 
 function getDynamicTerminalTheme(
   palette: ThemePaletteId = "default",
@@ -130,7 +130,11 @@ export function TerminalView() {
       fontFamily,
       lineHeight,
       theme: getDynamicTerminalTheme(themePalette, theme),
+      allowProposedApi: false,
     })
+
+    // ADR 0017: Intercept and disable OSC 52 clipboard manipulation to prevent terminal escape injection
+    term.parser.registerOscHandler(52, () => true)
 
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
@@ -203,7 +207,11 @@ export function TerminalView() {
     // 4. SSE Downlink connection
     let sse: EventSource | null = null
     if (isLive) {
-      sse = new EventSource(`${API_BASE}/api/v1/events/terminal/${sessionId}`)
+      const token = getSessionToken()
+      const sseUrl = token
+        ? `${API_BASE}/api/v1/events/terminal/${sessionId}?token=${encodeURIComponent(token)}`
+        : `${API_BASE}/api/v1/events/terminal/${sessionId}`
+      sse = new EventSource(sseUrl)
 
       sse.addEventListener("connected", () => {
         if (isDisposed) return

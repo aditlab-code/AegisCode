@@ -24,6 +24,7 @@ This directory catalogs the **Architecture Decision Records (ADRs)** for **Aegis
 | **[0014](0014-native-colbymchenry-codegraph-and-vantagecraft-ui.md)** | Native CodeGraph & VantageCraft UI | AI & Code Intelligence | `Accepted` | Replaces custom Go extractors with native `@colbymchenry/codegraph` daemon, reverse proxy, and VantageCraft 6-view UI. |
 | **[0015](0015-native-codegraph-contract-alignment-and-zero-swallow.md)** | Native CodeGraph Contract Alignment & Zero Swallow | Code Intelligence & Resilience | `Accepted` | Aligns Go proxy contracts, unwraps MCP envelopes, decommissions legacy routes, and enforces zero silent swallow. |
 | **[0016](0016-http1-socket-starvation-prevention-and-canonical-workspace-buffer-lifecycle.md)** | HTTP/1.1 Socket Starvation Prevention & Buffer Lifecycle | Networking & State Lifecycle | `Accepted` | Prevents browser 6-socket pool starvation via direct backend API_BASE, unified EventHub multiplexer, and single POSIX canonical buffer lifecycle. |
+| **[0017](0017-minimum-security-baseline-and-zero-trust-channel-hardening.md)** | Minimum Security Baseline & Zero-Trust Hardening | Security & Transport | `Proposed` | Implements fail-fast origin validation, exclusive 127.0.0.1 binding, zero-plaintext credential storage, DOMPurify anti-XSS, and CSP. |
 
 ---
 
@@ -37,6 +38,7 @@ This directory catalogs the **Architecture Decision Records (ADRs)** for **Aegis
 ### 2. Process Supervision, IPC & Security
 - **[ADR 0004: Worker Supervision and Agent Isolation](0004-worker-supervision-and-agent-isolation.md)**
 - **[ADR 0005: Unix Domain Sockets for Agent IPC](0005-unix-domain-sockets-for-agent-ipc.md)**
+- **[ADR 0017: Minimum Security Baseline, Origin Hardening, Credential Isolation, and Anti-XSS Sanitization](0017-minimum-security-baseline-and-zero-trust-channel-hardening.md)**
 
 ### 3. Database, Ledger & Search Engine
 - **[ADR 0013: Embedded Pure-Go SQLite Engine and FTS5 Search](0013-embedded-pure-go-sqlite-and-fts5-search.md)**

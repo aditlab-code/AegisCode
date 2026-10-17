@@ -1,12 +1,13 @@
 # Local REST & Server-Sent Events (SSE) API Reference
 
-The AegisCode Go core server exposes a high-performance HTTP and SSE API on `127.0.0.1:8080` (or dynamically allocated port). All endpoints use JSON payloads and enforce strict workspace boundary confinement.
+The AegisCode Go core server exposes a high-performance HTTP and SSE API on `http://127.0.0.1:<PORT>` (allocated dynamically at startup or explicitly configured via `--port` / `AEGIS_PORT`). All endpoints use JSON payloads and enforce strict workspace boundary confinement.
 
 ---
 
 ## 1. General Conventions & Error Standards
 
-* **Host Binding**: Exclusively `127.0.0.1` (localhost) or local LAN in companion mode.
+* **Host Binding & Dynamic Port Discovery**: Exclusively `127.0.0.1` (localhost) or local LAN in companion mode. By default, the server binds to an available port dynamically. The active address is output on stdout at process start (`Listening on http://127.0.0.1:<PORT>`), or can be overridden via `--port <PORT>` / `export AEGIS_PORT=<PORT>`.
+* **Zero-Trust Session Authentication**: Critical or mutating endpoints (`/api/v1/system/shutdown`, `/api/v1/terminal/create`) strictly require the `X-Session-Token` or `X-Pairing-Token` header, even when initiated over loopback.
 * **Content Types**:
   - Standard REST: `application/json; charset=utf-8`
   - Real-Time Streaming: `text/event-stream`

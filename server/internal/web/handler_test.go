@@ -117,6 +117,43 @@ func TestSPAHandler(t *testing.T) {
 			t.Fatalf("expected guidance text, got: %s", body)
 		}
 	})
+
+	t.Run("Serves CSP and framing security headers", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		csp := rec.Header().Get("Content-Security-Policy")
+		if !strings.Contains(csp, "default-src 'self'") || !strings.Contains(csp, "frame-ancestors 'none'") {
+			t.Fatalf("expected strict CSP header, got: %s", csp)
+		}
+		if rec.Header().Get("X-Frame-Options") != "DENY" {
+			t.Fatalf("expected X-Frame-Options: DENY, got: %s", rec.Header().Get("X-Frame-Options"))
+		}
+		if rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+			t.Fatalf("expected X-Content-Type-Options: nosniff, got: %s", rec.Header().Get("X-Content-Type-Options"))
+		}
+	})
+
+	t.Run("Injects ephemeral session token into index.html", func(t *testing.T) {
+		tokenMockFS := fstest.MapFS{
+			"index.html": &fstest.MapFile{
+				Data: []byte("<!DOCTYPE html><html><head><title>Test</title></head><body><div id=\"root\">App Root</div></body></html>"),
+			},
+		}
+		testToken := "abc123xyz789crypto"
+		tokenHandler := NewSPAHandler(tokenMockFS, testToken)
+
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		rec := httptest.NewRecorder()
+		tokenHandler.ServeHTTP(rec, req)
+
+		body := rec.Body.String()
+		expectedMeta := `<meta name="aegis-session-token" content="abc123xyz789crypto" />`
+		if !strings.Contains(body, expectedMeta) {
+			t.Fatalf("expected body to contain meta tag %s, got: %s", expectedMeta, body)
+		}
+	})
 }
 
 func TestGetEmbeddedFS(t *testing.T) {

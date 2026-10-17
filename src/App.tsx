@@ -11,6 +11,7 @@ import {
   StatusBar,
   SettingsModal,
   UnsavedChangesModal,
+  VaultLockModal,
 } from "./components/layout"
 import { Toast } from "./components/ui/Toast"
 import { FolderBrowserModal } from "./components/layout/settings/FolderBrowserModal"
@@ -111,6 +112,11 @@ function AppShell() {
   )
 
   const openSettingsTab = useWorkbenchStore((s) => s.openSettingsTab)
+  const fetchVaultStatus = useWorkbenchStore((s) => s.fetchVaultStatus)
+
+  useEffect(() => {
+    fetchVaultStatus()
+  }, [fetchVaultStatus])
 
   useEffect(() => {
     function handleGlobalKeyDown(e: KeyboardEvent) {
@@ -163,6 +169,7 @@ function AppShell() {
       <SettingsModal />
       <FolderBrowserModal />
       <UnsavedChangesModal />
+      <VaultLockModal />
       {toast && <Toast message={toast} onDismiss={clearToast} />}
     </div>
   )

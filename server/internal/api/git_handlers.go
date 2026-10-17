@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 func (s *Server) handleGitStatus(w http.ResponseWriter, r *http.Request) {
@@ -150,6 +151,13 @@ func (s *Server) handleGitTimeline(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if filePath != "" {
+		if _, err := s.ws.ResolvePath(filePath); err != nil {
+			jsonError(w, http.StatusBadRequest, "invalid file path: "+err.Error())
+			return
+		}
+	}
+
 	commits, err := s.git.GetTimeline(r.Context(), filePath, limit)
 	if err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
@@ -172,6 +180,19 @@ func (s *Server) handleGitStage(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.Files) == 0 && len(req.Paths) > 0 {
 		req.Files = req.Paths
+	}
+
+	if !req.All && len(req.Files) > 0 {
+		for _, f := range req.Files {
+			clean := strings.TrimSpace(f)
+			if clean == "" || clean == "." {
+				continue
+			}
+			if _, err := s.ws.ResolvePath(clean); err != nil {
+				jsonError(w, http.StatusBadRequest, "invalid file path: "+f)
+				return
+			}
+		}
 	}
 
 	if err := s.git.Stage(r.Context(), req.Files, req.All); err != nil {
@@ -197,6 +218,19 @@ func (s *Server) handleGitUnstage(w http.ResponseWriter, r *http.Request) {
 		req.Files = req.Paths
 	}
 
+	if !req.All && len(req.Files) > 0 {
+		for _, f := range req.Files {
+			clean := strings.TrimSpace(f)
+			if clean == "" || clean == "." {
+				continue
+			}
+			if _, err := s.ws.ResolvePath(clean); err != nil {
+				jsonError(w, http.StatusBadRequest, "invalid file path: "+f)
+				return
+			}
+		}
+	}
+
 	if err := s.git.Unstage(r.Context(), req.Files, req.All); err != nil {
 		jsonError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -218,6 +252,19 @@ func (s *Server) handleGitDiscard(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.Files) == 0 && len(req.Paths) > 0 {
 		req.Files = req.Paths
+	}
+
+	if !req.All && len(req.Files) > 0 {
+		for _, f := range req.Files {
+			clean := strings.TrimSpace(f)
+			if clean == "" || clean == "." {
+				continue
+			}
+			if _, err := s.ws.ResolvePath(clean); err != nil {
+				jsonError(w, http.StatusBadRequest, "invalid file path: "+f)
+				return
+			}
+		}
 	}
 
 	if err := s.git.Discard(r.Context(), req.Files, req.All); err != nil {

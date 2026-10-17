@@ -258,6 +258,35 @@ func (m *Manager) GetRoot() (string, string) {
 	return m.rootPath, filepath.Base(m.rootPath)
 }
 
+// ErrProtectedPath is returned when attempting to access or modify protected VCS internal paths.
+var ErrProtectedPath = errors.New("forbidden: cannot access or modify .git internal files or directories")
+
+// IsProtectedPath checks if a relative or absolute path targets protected VCS internals like .git
+func (m *Manager) IsProtectedPath(path string) bool {
+	clean := filepath.ToSlash(filepath.Clean(strings.TrimSpace(path)))
+	clean = strings.TrimPrefix(clean, "/")
+	clean = strings.TrimPrefix(clean, "./")
+
+	if clean == ".git" || strings.HasPrefix(clean, ".git/") {
+		return true
+	}
+
+	m.mu.RLock()
+	root := m.rootPath
+	m.mu.RUnlock()
+
+	if root != "" && filepath.IsAbs(path) {
+		rel, err := filepath.Rel(root, path)
+		if err == nil {
+			slashRel := filepath.ToSlash(rel)
+			if slashRel == ".git" || strings.HasPrefix(slashRel, ".git/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // ResolvePath resolves and validates a workspace-relative or absolute path within the workspace root.
 func (m *Manager) ResolvePath(relPath string) (string, error) {
 	return m.resolvePath(relPath)
@@ -470,6 +499,10 @@ func isBinaryContent(sample []byte) bool {
 // GetFileWithGuard inspects file size and binary markers before reading.
 // For files exceeding MaxEditableFileSize, it returns the first PreviewSampleSize bytes with IsLarge=true.
 func (m *Manager) GetFileWithGuard(relPath string) (*FilePayload, error) {
+	if m.IsProtectedPath(relPath) {
+		return nil, ErrProtectedPath
+	}
+
 	fullPath, err := m.resolvePath(relPath)
 	if err != nil {
 		return nil, err
@@ -530,6 +563,9 @@ func (m *Manager) CreateFolder(relPath string) (string, error) {
 	if strings.TrimSpace(relPath) == "" {
 		return "", errors.New("folder path cannot be empty")
 	}
+	if m.IsProtectedPath(relPath) {
+		return "", ErrProtectedPath
+	}
 
 	fullPath, err := m.resolvePath(relPath)
 	if err != nil {
@@ -544,6 +580,10 @@ func (m *Manager) CreateFolder(relPath string) (string, error) {
 }
 
 func (m *Manager) WriteFile(relPath string, content string) error {
+	if m.IsProtectedPath(relPath) {
+		return ErrProtectedPath
+	}
+
 	fullPath, err := m.resolvePath(relPath)
 	if err != nil {
 		return err
@@ -559,6 +599,10 @@ func (m *Manager) WriteFile(relPath string, content string) error {
 
 // WriteFileExclusive writes file content only if the target file does not already exist.
 func (m *Manager) WriteFileExclusive(relPath string, content string) error {
+	if m.IsProtectedPath(relPath) {
+		return ErrProtectedPath
+	}
+
 	fullPath, err := m.resolvePath(relPath)
 	if err != nil {
 		return err
@@ -584,6 +628,10 @@ func (m *Manager) WriteFileExclusive(relPath string, content string) error {
 }
 
 func (m *Manager) DeleteFile(relPath string) error {
+	if m.IsProtectedPath(relPath) {
+		return ErrProtectedPath
+	}
+
 	fullPath, err := m.resolvePath(relPath)
 	if err != nil {
 		return err
@@ -601,6 +649,10 @@ func (m *Manager) DeleteFile(relPath string) error {
 }
 
 func (m *Manager) Rename(oldRelPath string, newRelPath string) error {
+	if m.IsProtectedPath(oldRelPath) || m.IsProtectedPath(newRelPath) {
+		return ErrProtectedPath
+	}
+
 	oldFullPath, err := m.resolvePath(oldRelPath)
 	if err != nil {
 		return err
@@ -624,6 +676,10 @@ func (m *Manager) Rename(oldRelPath string, newRelPath string) error {
 }
 
 func (m *Manager) Move(sourceRelPath string, targetDirRelPath string) (string, error) {
+	if m.IsProtectedPath(sourceRelPath) || m.IsProtectedPath(targetDirRelPath) {
+		return "", ErrProtectedPath
+	}
+
 	sourceFullPath, err := m.resolvePath(sourceRelPath)
 	if err != nil {
 		return "", err

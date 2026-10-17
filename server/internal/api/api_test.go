@@ -1298,7 +1298,13 @@ func TestSystemShutdownEndpoint(t *testing.T) {
 	ts := httptest.NewServer(handler)
 	defer ts.Close()
 
-	resp, err := http.Post(ts.URL+"/api/v1/system/shutdown", "application/json", nil)
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/system/shutdown", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("X-Session-Token", srv.SessionToken())
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("failed to post system shutdown: %v", err)
 	}

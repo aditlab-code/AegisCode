@@ -1,11 +1,23 @@
 // Centralized API client functions for AegisCode PTY Terminal
-import { API_BASE } from "./apiBase"
+import { API_BASE, getSessionToken } from "./apiBase"
+
+function getTerminalHeaders(
+  extra?: Record<string, string>,
+): Record<string, string> {
+  const h: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...extra,
+  }
+  const tok = getSessionToken()
+  if (tok) h["X-Session-Token"] = tok
+  return h
+}
 
 export async function createTerminalApi(shell = "zsh", cwd?: string) {
   try {
     const res = await fetch(`${API_BASE}/api/v1/terminal/create`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getTerminalHeaders(),
       body: JSON.stringify({ shell, cwd }),
     })
     if (!res.ok) {
@@ -34,7 +46,7 @@ export async function sendTerminalInputApi(
   try {
     const res = await fetch(`${API_BASE}/api/v1/terminal/${sessionId}/input`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getTerminalHeaders(),
       body: JSON.stringify({ data }),
     })
     if (!res.ok) {
@@ -61,7 +73,7 @@ export async function resizeTerminalApi(
   try {
     const res = await fetch(`${API_BASE}/api/v1/terminal/${sessionId}/resize`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getTerminalHeaders(),
       body: JSON.stringify({ cols, rows }),
     })
     if (!res.ok) {
@@ -84,6 +96,7 @@ export async function closeTerminalApi(sessionId: string): Promise<boolean> {
   try {
     const res = await fetch(`${API_BASE}/api/v1/terminal/${sessionId}`, {
       method: "DELETE",
+      headers: getTerminalHeaders(),
     })
     if (!res.ok) {
       console.warn(

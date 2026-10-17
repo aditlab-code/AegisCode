@@ -54,23 +54,27 @@ export function MermaidBlock({
     let isCancelled = false
     const uniqueId = `mermaid_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
 
-    // On-demand code splitting: only load mermaid when needed
-    import("mermaid")
-      .then(async (m) => {
+    // On-demand code splitting: only load mermaid and dompurify when needed (ADR 0017)
+    Promise.all([import("mermaid"), import("dompurify")])
+      .then(async ([m, domPurifyModule]) => {
         if (isCancelled || currentSeq !== renderSeq.current) return
         const mermaid = m.default || m
+        const DOMPurify = domPurifyModule.default || domPurifyModule
 
         try {
           mermaid.initialize({
             startOnLoad: false,
             theme: "dark",
-            securityLevel: "loose",
+            securityLevel: "strict",
             suppressErrorRendering: true,
           })
 
           const { svg } = await mermaid.render(uniqueId, trimmed)
+          const sanitizedSvg = DOMPurify.sanitize(svg, {
+            USE_PROFILES: { svg: true },
+          })
           if (!isCancelled && currentSeq === renderSeq.current) {
-            setSvgContent(svg)
+            setSvgContent(sanitizedSvg)
             setError(null)
             setLoading(false)
           }

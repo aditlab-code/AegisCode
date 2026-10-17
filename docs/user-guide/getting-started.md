@@ -75,8 +75,38 @@ Open the **Settings** panel (gear icon `⚙️` in the bottom left or via keyboa
    - Deep multi-agent local CLI pair-programming engine.
    - AegisCode automatically detects `agy` in your system `PATH` (`~/.local/bin/agy`) and bridges tool calls out-of-process.
 
+### How to Configure AI Keys Securely:
+
+AegisCode strictly follows a **Zero-Plaintext-Leakage** policy: your secrets and API keys should never be committed into any repository.
+
+1. **Option A: Environment Variables (Recommended for CLI & CI/CD)**:
+   Export your provider keys in your shell profile (`~/.zshrc`, `~/.bashrc`, or launch environment):
+   ```bash
+   export GEMINI_API_KEY="AIzaSy...[REDACTED]"
+   export ANTHROPIC_API_KEY="sk-ant-...[REDACTED]"
+   export OPENAI_API_KEY="sk-...[REDACTED]"
+   ```
+   AegisCode automatically detects and securely binds these environment variables at process startup.
+
+2. **Option B: Settings UI Vault (In-Memory)**:
+   - Click the **Settings (`⚙️`)** icon in the bottom-left corner and navigate to the **AI Engine** tab.
+   - Enter your API keys directly into the provider input fields.
+   - *Security Note*: Keys entered via the UI are kept in memory during your session and stripped from cleartext storage on disk (`aegis.db`) to prevent accidental leaks.
+
+3. **Option C: Companion Pairing Token (LAN Mode)**:
+   - When connecting mobile or LAN companion devices, AegisCode dynamically generates an ephemeral 6-character PIN with a 5-minute lockout defense.
+   - The token is displayed directly in your terminal at startup:
+     ```text
+     Companion Pairing: http://<LAN_IP>:<PORT>/?pair=<TOKEN> (TTL: 24h)
+     ```
+   - For headless or containerized environments, you can optionally override this with your own secret token:
+     ```bash
+     export AEGIS_PAIRING_TOKEN="<YOUR_CUSTOM_TOKEN>"
+     ```
+
 ### Automatic MCP Tool Wiring:
 Run `npm run mcp:install` in the AegisCode repository. This executes `codegraph install --yes --location=global --init`, registering the 10 CodeGraph intelligence tools across all detected AI agents (Antigravity, Claude Code, Cursor) globally without modifying individual workspace repos.
+
 
 ---
 
@@ -87,3 +117,26 @@ Run `npm run mcp:install` in the AegisCode repository. This executes `codegraph 
 * **Editor Stage**: Tabbed CodeMirror 6 workspace with split panes, minimap, syntax highlighting, and inline diagnostics.
 * **Integrated Terminal (Bottom)**: Full-featured PTY terminal tabs connected to your default login shell (`bash`, `zsh`, or `pwsh`).
 * **AI Drawer (Right)**: Interactive conversation drawer with collapsible thought chains, tool execution diffs, semantic `[MCP]` badges, and instant `[Open]` file navigation.
+
+---
+
+## 5. Master Vault & Security Recovery (Dual-Door Cryptography)
+
+AegisCode includes a built-in cryptographic security gate to protect your code workspace and AI credentials from unauthorized access.
+
+### A. First-Time Setup
+When you first start AegisCode, you will be prompted to create a **Master Passphrase** (minimum 6 characters).
+1. Enter your chosen Master Passphrase and confirm it.
+2. AegisCode will generate an **Emergency Recovery Key** (formatted as `AEGIS-RECV-XXXX-XXXX-XXXX-XXXX`).
+3. **Important**: Copy this recovery key and store it in a secure offline location or password manager. AegisCode never stores your plain recovery key or passphrase on the server.
+
+### B. Daily Usage: Locking & Unlocking
+* **Unlocking**: Enter your Master Passphrase on the lock screen to decrypt your session and access the workspace.
+* **Locking**: You can lock the IDE at any time by clicking the **Lock** icon (`🔒`) in the upper-right header action bar. Locking the IDE flushes decrypted keys from memory.
+
+### C. Intrusion Protection & Safe Recovery
+* **Attempt Warnings**: If an incorrect passphrase is typed, AegisCode notifies you of remaining attempts.
+* **Temporary Freeze (Soft Deadlock)**: After 5 incorrect attempts, access is paused for 5 minutes.
+* **Emergency Quarantine (Panic Shutdown)**: After 10 consecutive failed attempts, AegisCode shuts down the server to protect your data. When restarted, the system enters quarantine mode.
+* **Restoring Access**: If you forget your passphrase or trigger quarantine mode, click **"Lupa kata sandi? Gunakan Recovery Key"** on the lock screen. Enter your 24-character Emergency Recovery Key and set a new Master Passphrase to safely regain access.
+

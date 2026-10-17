@@ -48,6 +48,12 @@ import type {
   InitWorkspaceOptions,
   InitWorkspaceResponse,
 } from "../utils/agentApi"
+import type {
+  VaultStatusResponse,
+  VaultSetupResult,
+  VaultUnlockResult,
+  VaultRecoverResult,
+} from "../utils/vaultApi"
 
 export type SliceCreator<T> = StateCreator<WorkbenchStore, [], [], T>
 
@@ -491,4 +497,20 @@ export interface DebugSlice {
   ) => void
 }
 
-export type WorkbenchStore = LayoutSlice & SettingsSlice & EditorSlice & WorkspaceSlice & GitSlice & TerminalSlice & ChatSlice & DebugSlice & CodeGraphSlice
+export interface VaultSlice {
+  vaultStatus: VaultStatusResponse | null
+  isVaultModalOpen: boolean
+  setVaultStatus: (status: VaultStatusResponse | null) => void
+  fetchVaultStatus: () => Promise<VaultStatusResponse | null>
+  openVaultModal: () => void
+  closeVaultModal: () => void
+  lockVault: () => Promise<boolean>
+  unlockVault: (passphrase: string) => Promise<VaultUnlockResult>
+  setupVault: (passphrase: string) => Promise<VaultSetupResult>
+  recoverVault: (
+    recoveryKey: string,
+    newPassphrase: string,
+  ) => Promise<VaultRecoverResult>
+}
+
+export type WorkbenchStore = LayoutSlice & SettingsSlice & EditorSlice & WorkspaceSlice & GitSlice & TerminalSlice & ChatSlice & DebugSlice & CodeGraphSlice & VaultSlice

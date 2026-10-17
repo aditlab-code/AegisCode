@@ -55,23 +55,41 @@ func openBrowser(url string) {
 	_ = cmd.Start()
 }
 
-func createListener(envPort string) (net.Listener, int, error) {
-	if envPort != "" {
-		p, err := strconv.Atoi(envPort)
-		if err != nil {
-			return nil, 0, fmt.Errorf("invalid PORT environment variable: %w", err)
-		}
-		l, err := net.Listen("tcp", fmt.Sprintf(":%d", p))
-		return l, p, err
+func resolvePort(flagPort, aegisPort, envPort string) (int, error) {
+	target := flagPort
+	if target == "" {
+		target = aegisPort
+	}
+	if target == "" {
+		target = envPort
+	}
+	if target == "" {
+		return 0, nil
+	}
+	p, err := strconv.Atoi(target)
+	if err != nil || p < 1 || p > 65535 {
+		return 0, fmt.Errorf("invalid port %q: must be an integer between 1 and 65535", target)
+	}
+	return p, nil
+}
+
+func createListener(host string, explicitPort int) (net.Listener, int, string, error) {
+	if host == "" {
+		host = "127.0.0.1"
+	}
+
+	if explicitPort > 0 {
+		l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, explicitPort))
+		return l, explicitPort, host, err
 	}
 
 	for p := 8080; p <= 8095; p++ {
-		l, err := net.Listen("tcp", fmt.Sprintf(":%d", p))
+		l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", host, p))
 		if err == nil {
-			return l, p, nil
+			return l, p, host, nil
 		}
 	}
-	return nil, 0, errors.New("no available ports between 8080 and 8095")
+	return nil, 0, host, errors.New("no available ports between 8080 and 8095")
 }
 
 func main() {
@@ -81,24 +99,45 @@ func main() {
 	}
 
 	shouldOpen := false
-	for _, arg := range os.Args[1:] {
+	host := os.Getenv("AEGIS_HOST")
+	var flagPort string
+	args := os.Args[1:]
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
 		if arg == "--version" || arg == "-v" {
 			fmt.Printf("AegisCode %s\n", Version)
 			return
 		}
 		if arg == "--help" || arg == "-h" {
-			fmt.Printf("AegisCode %s\nUsage:\n  aegiscode [options]                Start Web-based IDE Core Server\n  aegiscode mcp [--workspace <path>] Run native MCP server over stdio\n\nOptions:\n  -o, --open       Open default browser on startup\n  -v, --version    Print version and exit\n  -h, --help       Print help and exit\n", Version)
+			fmt.Printf("AegisCode %s\nUsage:\n  aegiscode [options]                Start Web-based IDE Core Server\n  aegiscode mcp [--workspace <path>] Run native MCP server over stdio\n\nOptions:\n  -p, --port <port> Bind port (default: auto-allocated, or via AEGIS_PORT / PORT)\n  --host <addr>     Bind address (default: 127.0.0.1, use 0.0.0.0 for LAN)\n  -o, --open        Open default browser on startup\n  -v, --version     Print version and exit\n  -h, --help        Print help and exit\n", Version)
 			return
 		}
 		if arg == "--open" || arg == "-o" {
 			shouldOpen = true
+		}
+		if (arg == "--port" || arg == "-p") && i+1 < len(args) {
+			flagPort = args[i+1]
+			i++
+		} else if strings.HasPrefix(arg, "--port=") {
+			flagPort = strings.TrimPrefix(arg, "--port=")
+		}
+		if arg == "--host" && i+1 < len(args) {
+			host = args[i+1]
+			i++
+		} else if strings.HasPrefix(arg, "--host=") {
+			host = strings.TrimPrefix(arg, "--host=")
 		}
 	}
 	if os.Getenv("AEGIS_OPEN") == "1" || os.Getenv("AEGIS_OPEN") == "true" {
 		shouldOpen = true
 	}
 
-	listener, activePort, err := createListener(os.Getenv("PORT"))
+	targetPort, err := resolvePort(flagPort, os.Getenv("AEGIS_PORT"), os.Getenv("PORT"))
+	if err != nil {
+		log.Fatalf("failed to resolve port: %v", err)
+	}
+
+	listener, activePort, boundHost, err := createListener(host, targetPort)
 	if err != nil {
 		log.Fatalf("failed to start server listener: %v", err)
 	}
@@ -125,11 +164,15 @@ func main() {
 	if rootPath != "" {
 		_ = st.AddRecentProject(rootPath)
 	}
-	serverURL := fmt.Sprintf("http://localhost:%d", activePort)
+	serverHost := "localhost"
+	if boundHost != "127.0.0.1" && boundHost != "" {
+		serverHost = boundHost
+	}
+	serverURL := fmt.Sprintf("http://%s:%d", serverHost, activePort)
 	fmt.Printf("AegisCode %s Go Core Server listening on %s\n", Version, serverURL)
-	if activePort != 8080 && os.Getenv("PORT") == "" {
-		fmt.Printf("⚠️  WARNING: Default port 8080 was occupied. Server bound to %s instead.\n", serverURL)
-		fmt.Println("   To free port 8080, run: npm run stop")
+	if activePort != 8080 && targetPort == 0 {
+		fmt.Printf("⚠️  WARNING: Port 8080 was occupied. Server dynamically bound to %s instead.\n", serverURL)
+		fmt.Println("   To specify a custom port, use: aegiscode --port <port> or set AEGIS_PORT=<port>")
 	}
 	if server.Pairing() != nil {
 		pInfo := server.Pairing().GetInfo()
@@ -142,7 +185,8 @@ func main() {
 	}
 
 	apiHandler := server.Routes()
-	spaHandler := web.NewSPAHandler(web.GetEmbeddedFS())
+	sessionToken := server.SessionToken()
+	spaHandler := web.NewSPAHandler(web.GetEmbeddedFS(), sessionToken)
 
 	rootHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {

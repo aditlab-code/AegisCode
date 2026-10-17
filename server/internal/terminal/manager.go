@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -115,10 +116,31 @@ func NewManager() *Manager {
 	}
 }
 
+var allowedShells = map[string]struct{}{
+	"zsh":        {},
+	"bash":       {},
+	"sh":         {},
+	"fish":       {},
+	"pwsh":       {},
+	"powershell": {},
+	"cmd":        {},
+	"cmd.exe":    {},
+}
+
+func isAllowedShell(preferred string) bool {
+	clean := strings.ToLower(filepath.Base(strings.TrimSpace(preferred)))
+	clean = strings.TrimSuffix(clean, ".exe")
+	_, ok := allowedShells[clean]
+	return ok
+}
+
 // resolveShell determines the executable shell path and appropriate startup args (e.g. login shell).
 func resolveShell(preferred string) (string, []string, error) {
 	var shellPath string
 	if preferred != "" && preferred != "default" {
+		if !isAllowedShell(preferred) {
+			return "", nil, fmt.Errorf("disallowed shell '%s': shell must be one of zsh, bash, sh, fish, powershell, or cmd", preferred)
+		}
 		if path, err := exec.LookPath(preferred); err == nil {
 			shellPath = path
 		}

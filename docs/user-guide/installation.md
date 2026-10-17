@@ -40,7 +40,7 @@ On Windows PowerShell:
 .\bin\aegiscode-windows-amd64.exe --open
 ```
 
-Once launched, AegisCode will automatically bind to an available port (default `8080`) and open `http://127.0.0.1:8080`.
+Once launched, AegisCode dynamically binds to an available loopback port and displays the active URL in your terminal (`http://127.0.0.1:<PORT>`). If `--open` is provided, your default web browser opens the active address automatically.
 
 ---
 
@@ -115,19 +115,32 @@ The resulting executable in `./bin/` is completely standalone: it contains no ru
 
 ---
 
-## 6. Command-Line Options
+## 6. Command-Line Options & Port Configuration
 
-You can customize the runtime behavior of the standalone binary using flags:
+You can customize the runtime behavior of the standalone binary using flags or environment variables:
 
-| Flag | Description | Default |
-| :--- | :--- | :--- |
-| `--port <int>` | TCP port for the local HTTP server | `8080` (auto-increments if occupied) |
-| `--host <string>` | Host interface to bind | `127.0.0.1` |
-| `--open` | Automatically open default web browser on start | `false` |
-| `--workspace <path>` | Initial workspace folder directory | Current working directory (`.`) |
-| `--version` | Display version information and exit | — |
+| Flag | Short | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `--port <int>` | `-p` | Bind custom TCP port (overrides `AEGIS_PORT` and `PORT`) | Dynamic auto-scan |
+| `--host <string>` | — | Bind address (`127.0.0.1` for loopback, `0.0.0.0` for LAN) | `127.0.0.1` |
+| `--open` | `-o` | Automatically open default web browser on startup | `false` |
+| `-v, --version` | `-v` | Display version information and exit | — |
+| `-h, --help` | `-h` | Display command-line usage and exit | — |
 
-Example:
-```bash
-./bin/aegiscode-darwin-arm64 --port 8090 --workspace ~/Projects/MyService --open
-```
+### Configuring the Network Port
+
+AegisCode adopts a Zero-Leakage policy: ports are allocated dynamically at runtime so external callers cannot predict a fixed listener port. You can configure a specific port through two methods:
+
+1. **Via CLI Flag (Highest Precedence)**:
+   ```bash
+   ./bin/aegiscode-darwin-arm64 --port <PORT> --open
+   # or using short flag:
+   ./bin/aegiscode-darwin-arm64 -p <PORT> -o
+   ```
+
+2. **Via Environment Variable**:
+   ```bash
+   export AEGIS_PORT=<PORT>
+   ./bin/aegiscode-darwin-arm64 --open
+   ```
+

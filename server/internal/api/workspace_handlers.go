@@ -29,6 +29,30 @@ func (s *Server) handleWorkspaceInfo(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func isForbiddenWorkspaceRoot(path string) bool {
+	clean := filepath.Clean(strings.TrimSpace(path))
+	if clean == "/" || clean == "\\" || clean == "." {
+		return true
+	}
+	if vol := filepath.VolumeName(clean); vol != "" {
+		rest := strings.TrimPrefix(clean, vol)
+		if rest == "" || rest == "\\" || rest == "/" {
+			return true
+		}
+	}
+	lower := strings.ToLower(filepath.ToSlash(clean))
+	forbidden := []string{
+		"/etc", "/usr", "/bin", "/sbin", "/var", "/dev", "/proc", "/sys",
+		"/system", "/library", "/windows", "/winnt", "/program files", "/program files (x86)",
+	}
+	for _, f := range forbidden {
+		if lower == f {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) handleWorkspaceOpen(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		jsonError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -42,6 +66,10 @@ func (s *Server) handleWorkspaceOpen(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cleanedPath := filepath.Clean(strings.TrimSpace(req.Path))
+	if isForbiddenWorkspaceRoot(cleanedPath) {
+		jsonError(w, http.StatusBadRequest, fmt.Sprintf("forbidden: '%s' cannot be mounted as workspace root", cleanedPath))
+		return
+	}
 	absPath, err := s.ws.SetRoot(cleanedPath)
 	if err != nil {
 		jsonError(w, http.StatusBadRequest, err.Error())
@@ -149,6 +177,15 @@ func (s *Server) handleWorkspaceBrowse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Restrict filesystem browsing to authenticated sessions when accessed remotely (ADR 0017)
+	if !IsLoopbackRemote(r) {
+		token := ExtractToken(r)
+		if s.pairing == nil || !s.pairing.ValidateToken(token) {
+			jsonError(w, http.StatusUnauthorized, "unauthorized: valid session or pairing token required to browse filesystem")
+			return
+		}
+	}
+
 	targetPath := r.URL.Query().Get("path")
 	showHidden := r.URL.Query().Get("showHidden") == "true"
 
@@ -178,10 +215,18 @@ func (s *Server) handleWorkspaceCreateFolder(w http.ResponseWriter, r *http.Requ
 		jsonError(w, http.StatusBadRequest, "path cannot be empty")
 		return
 	}
+	if s.ws.IsProtectedPath(target) {
+		jsonError(w, http.StatusForbidden, "forbidden: cannot modify .git internal directory")
+		return
+	}
 
 	absPath, err := s.ws.CreateFolder(target)
 	if err != nil {
-		jsonError(w, http.StatusBadRequest, err.Error())
+		if errors.Is(err, workspace.ErrProtectedPath) || strings.Contains(err.Error(), "forbidden") {
+			jsonError(w, http.StatusForbidden, err.Error())
+		} else {
+			jsonError(w, http.StatusBadRequest, err.Error())
+		}
 		return
 	}
 
@@ -225,10 +270,16 @@ func (s *Server) handleWorkspaceFile(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, http.StatusBadRequest, "missing path query parameter")
 			return
 		}
+		if s.ws.IsProtectedPath(path) {
+			jsonError(w, http.StatusForbidden, "forbidden: cannot access .git internal files")
+			return
+		}
 
 		payload, err := s.ws.GetFileWithGuard(path)
 		if err != nil {
-			if strings.Contains(err.Error(), "escapes root directory") || strings.Contains(err.Error(), "empty path") {
+			if errors.Is(err, workspace.ErrProtectedPath) || strings.Contains(err.Error(), "forbidden") {
+				jsonError(w, http.StatusForbidden, err.Error())
+			} else if strings.Contains(err.Error(), "escapes root directory") || strings.Contains(err.Error(), "empty path") {
 				jsonError(w, http.StatusBadRequest, err.Error())
 			} else {
 				jsonError(w, http.StatusNotFound, err.Error())
@@ -250,6 +301,10 @@ func (s *Server) handleWorkspaceFile(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 			return
 		}
+		if s.ws.IsProtectedPath(req.Path) {
+			jsonError(w, http.StatusForbidden, "forbidden: cannot modify .git internal files")
+			return
+		}
 
 		var opErr error
 		if req.IsFolder {
@@ -261,7 +316,9 @@ func (s *Server) handleWorkspaceFile(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if opErr != nil {
-			if strings.Contains(opErr.Error(), "already exists") {
+			if errors.Is(opErr, workspace.ErrProtectedPath) || strings.Contains(opErr.Error(), "forbidden") {
+				jsonError(w, http.StatusForbidden, opErr.Error())
+			} else if strings.Contains(opErr.Error(), "already exists") {
 				jsonError(w, http.StatusConflict, opErr.Error())
 			} else if strings.Contains(opErr.Error(), "escapes root directory") || strings.Contains(opErr.Error(), "empty path") {
 				jsonError(w, http.StatusBadRequest, opErr.Error())
@@ -282,9 +339,15 @@ func (s *Server) handleWorkspaceFile(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, http.StatusBadRequest, "missing path query parameter")
 			return
 		}
+		if s.ws.IsProtectedPath(path) {
+			jsonError(w, http.StatusForbidden, "forbidden: cannot delete .git internal files")
+			return
+		}
 
 		if err := s.ws.DeleteFile(path); err != nil {
-			if strings.Contains(err.Error(), "escapes root directory") || strings.Contains(err.Error(), "empty path") {
+			if errors.Is(err, workspace.ErrProtectedPath) || strings.Contains(err.Error(), "forbidden") {
+				jsonError(w, http.StatusForbidden, err.Error())
+			} else if strings.Contains(err.Error(), "escapes root directory") || strings.Contains(err.Error(), "empty path") {
 				jsonError(w, http.StatusBadRequest, err.Error())
 			} else {
 				jsonError(w, http.StatusInternalServerError, err.Error())
@@ -311,6 +374,10 @@ func (s *Server) handleWorkspaceFileRaw(w http.ResponseWriter, r *http.Request) 
 	path := r.URL.Query().Get("path")
 	if strings.TrimSpace(path) == "" {
 		jsonError(w, http.StatusBadRequest, "missing path query parameter")
+		return
+	}
+	if s.ws.IsProtectedPath(path) {
+		jsonError(w, http.StatusForbidden, "forbidden: cannot access .git internal files")
 		return
 	}
 
@@ -416,9 +483,15 @@ func (s *Server) handleWorkspaceRename(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "oldPath and newPath cannot be empty")
 		return
 	}
+	if s.ws.IsProtectedPath(req.OldPath) || s.ws.IsProtectedPath(req.NewPath) {
+		jsonError(w, http.StatusForbidden, "forbidden: cannot rename .git internal files or directories")
+		return
+	}
 
 	if err := s.ws.Rename(req.OldPath, req.NewPath); err != nil {
-		if strings.Contains(err.Error(), "already exists") {
+		if errors.Is(err, workspace.ErrProtectedPath) || strings.Contains(err.Error(), "forbidden") {
+			jsonError(w, http.StatusForbidden, err.Error())
+		} else if strings.Contains(err.Error(), "already exists") {
 			jsonError(w, http.StatusConflict, err.Error())
 		} else if strings.Contains(err.Error(), "escapes root directory") || strings.Contains(err.Error(), "empty path") {
 			jsonError(w, http.StatusBadRequest, err.Error())
@@ -453,10 +526,16 @@ func (s *Server) handleWorkspaceMove(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "sourcePath cannot be empty")
 		return
 	}
+	if s.ws.IsProtectedPath(req.SourcePath) || s.ws.IsProtectedPath(req.TargetDirectory) {
+		jsonError(w, http.StatusForbidden, "forbidden: cannot move .git internal files or directories")
+		return
+	}
 
 	newRelPath, err := s.ws.Move(req.SourcePath, req.TargetDirectory)
 	if err != nil {
-		if strings.Contains(err.Error(), "is not a directory") || strings.Contains(err.Error(), "escapes root directory") || strings.Contains(err.Error(), "empty path") {
+		if errors.Is(err, workspace.ErrProtectedPath) || strings.Contains(err.Error(), "forbidden") {
+			jsonError(w, http.StatusForbidden, err.Error())
+		} else if strings.Contains(err.Error(), "is not a directory") || strings.Contains(err.Error(), "escapes root directory") || strings.Contains(err.Error(), "empty path") {
 			jsonError(w, http.StatusBadRequest, err.Error())
 		} else if strings.Contains(err.Error(), "already exists") {
 			jsonError(w, http.StatusConflict, err.Error())

@@ -13,6 +13,7 @@ import {
   registerCodeGraphWorkbenchStore,
   useCodeGraphStore,
 } from "./slices/codegraphSlice"
+import { createVaultSlice } from "./slices/createVaultSlice"
 
 export const useWorkbenchStore = create<WorkbenchStore>()(
   (set, get, store) => ({
@@ -25,6 +26,7 @@ export const useWorkbenchStore = create<WorkbenchStore>()(
     ...createChatSlice(set, get, store),
     ...createDebugSlice(set, get, store),
     ...createCodeGraphSlice(set, get, store),
+    ...createVaultSlice(set, get, store),
   }),
 )
 
