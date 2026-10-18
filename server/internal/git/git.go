@@ -131,8 +131,9 @@ func (s *Service) runGit(ctx context.Context, args ...string) (string, error) {
 	execute := func() (string, string, error) {
 		cmd := exec.CommandContext(ctx, "git", args...)
 		cmd.Dir = root
+		cmd.Env = append(os.Environ(), "LC_ALL=C")
 		if len(args) > 0 && isReadCommand(args[0]) {
-			cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
+			cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0")
 		}
 
 		var stdout bytes.Buffer
@@ -315,10 +316,7 @@ func (s *Service) GetStatus(ctx context.Context) (RepoStatus, error) {
 		}, nil
 	}
 
-	out, err := s.runGit(ctx, "status", "--porcelain=v2", "--branch", "--no-optional-locks", "-uall")
-	if err != nil && strings.Contains(err.Error(), "unknown option") {
-		out, err = s.runGit(ctx, "status", "--porcelain=v2", "--branch", "-uall")
-	}
+	out, err := s.runGit(ctx, "status", "--porcelain=v2", "--branch", "-uall")
 	if err != nil {
 		headPath := filepath.Join(root, ".git", "HEAD")
 		if headBytes, rErr := os.ReadFile(headPath); rErr == nil {

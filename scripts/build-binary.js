@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import zlib from "node:zlib"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -55,11 +56,89 @@ if (
   process.exit(1)
 }
 
-// Step 2: Synchronize dist to server/internal/web/dist
+function formatSize(bytes) {
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+}
+
+// Step 2: Synchronize dist to server/internal/web/dist with pre-compression
 console.log(`\n[2/3] Embedding web assets into server/internal/web/dist...`)
+
+// Clean stale assets folder to prevent ghost chunks from past builds from accumulating
+const destAssetsDir = path.resolve(distDestDir, "assets")
+if (fs.existsSync(destAssetsDir)) {
+  fs.rmSync(destAssetsDir, { recursive: true, force: true })
+}
 fs.mkdirSync(distDestDir, { recursive: true })
+
+// Copy fresh build
 fs.cpSync(distSrcDir, distDestDir, { recursive: true, force: true })
-console.log(`✓ Embedded assets synchronized.`)
+
+// Compress assets to .gz and remove raw uncompressed versions for high-ratio text files
+const COMPRESSIBLE_EXTENSIONS = new Set([
+  ".js",
+  ".mjs",
+  ".css",
+  ".svg",
+  ".json",
+  ".wasm",
+  ".map",
+  ".txt",
+  ".html",
+])
+
+function compressDirectory(dir) {
+  let originalBytes = 0
+  let compressedBytes = 0
+  let count = 0
+
+  function walk(currentDir) {
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true })
+    for (const entry of entries) {
+      const fullPath = path.resolve(currentDir, entry.name)
+      if (entry.isDirectory()) {
+        walk(fullPath)
+      } else if (entry.isFile()) {
+        const ext = path.extname(entry.name).toLowerCase()
+        if (COMPRESSIBLE_EXTENSIONS.has(ext)) {
+          const raw = fs.readFileSync(fullPath)
+          const gzipped = zlib.gzipSync(raw, { level: 9 })
+          originalBytes += raw.length
+          compressedBytes += gzipped.length
+          count++
+
+          // Write <file>.gz
+          fs.writeFileSync(`${fullPath}.gz`, gzipped)
+
+          // For assets/ directory (where the big chunks live), delete the raw uncompressed file
+          // so Go's //go:embed only packs the .gz file into the binary.
+          // Keep root index.html uncompressed as a fallback stub for clean checkout safety.
+          if (entry.name !== "index.html") {
+            fs.unlinkSync(fullPath)
+          }
+        }
+      }
+    }
+  }
+
+  walk(dir)
+  return { count, originalBytes, compressedBytes }
+}
+
+const compressionStats = compressDirectory(distDestDir)
+const savedRatio =
+  compressionStats.originalBytes > 0
+    ? (
+        (1 -
+          compressionStats.compressedBytes / compressionStats.originalBytes) *
+        100
+      ).toFixed(1)
+    : "0.0"
+
+console.log(
+  `✓ Embedded assets synchronized & pre-compressed (${compressionStats.count} files): ${formatSize(
+    compressionStats.originalBytes,
+  )} -> ${formatSize(compressionStats.compressedBytes)} (${savedRatio}% savings)`,
+)
 
 // Step 3: Compile Standalone Go Binary
 console.log(`\n[3/3] Compiling Go standalone executable(s)...`)
@@ -73,10 +152,6 @@ const matrix = [
   { os: "windows", arch: "amd64", ext: ".exe" },
 ]
 
-function formatSize(bytes) {
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
-}
-
 function compileTarget(targetOS, targetArch, outputFile) {
   const isWindows = targetOS === "windows"
   const env = {
@@ -89,6 +164,7 @@ function compileTarget(targetOS, targetArch, outputFile) {
   const ldflags = `-s -w -X main.Version=${version}`
   const goArgs = [
     "build",
+    "-trimpath",
     `-ldflags=${ldflags}`,
     "-o",
     outputFile,

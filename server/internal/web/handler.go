@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"io/fs"
@@ -52,6 +53,15 @@ func NewSPAHandler(fsys fs.FS, sessionToken ...string) http.Handler {
 				handler.indexData = data
 				handler.hasIndex = true
 			}
+		} else if indexGzFile, err := fsys.Open("index.html.gz"); err == nil {
+			defer indexGzFile.Close()
+			if gzReader, err := gzip.NewReader(indexGzFile); err == nil {
+				defer gzReader.Close()
+				if data, err := io.ReadAll(gzReader); err == nil && len(data) > 0 {
+					handler.indexData = data
+					handler.hasIndex = true
+				}
+			}
 		}
 	}
 
@@ -73,15 +83,44 @@ func (h *SPAHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	acceptsGzip := strings.Contains(strings.ToLower(r.Header.Get("Accept-Encoding")), "gzip")
+
 	// Try to open the requested file in the embedded filesystem
 	if h.fsys != nil {
-		f, err := h.fsys.Open(trimmedPath)
-		if err == nil {
-			defer f.Close()
-			stat, err := f.Stat()
-			if err == nil && !stat.IsDir() {
-				h.serveFile(w, r, trimmedPath, f, stat)
-				return
+		if acceptsGzip {
+			// 1. Try compressed variant (.gz) first
+			if fGz, err := h.fsys.Open(trimmedPath + ".gz"); err == nil {
+				defer fGz.Close()
+				if statGz, err := fGz.Stat(); err == nil && !statGz.IsDir() {
+					h.serveGzipFile(w, r, trimmedPath, fGz, statGz)
+					return
+				}
+			}
+			// 2. Fall back to raw uncompressed file
+			if f, err := h.fsys.Open(trimmedPath); err == nil {
+				defer f.Close()
+				if stat, err := f.Stat(); err == nil && !stat.IsDir() {
+					h.serveFile(w, r, trimmedPath, f, stat)
+					return
+				}
+			}
+		} else {
+			// Client does not accept gzip
+			// 1. Try raw uncompressed file first
+			if f, err := h.fsys.Open(trimmedPath); err == nil {
+				defer f.Close()
+				if stat, err := f.Stat(); err == nil && !stat.IsDir() {
+					h.serveFile(w, r, trimmedPath, f, stat)
+					return
+				}
+			}
+			// 2. If only .gz exists, decompress on-the-fly
+			if fGz, err := h.fsys.Open(trimmedPath + ".gz"); err == nil {
+				defer fGz.Close()
+				if statGz, err := fGz.Stat(); err == nil && !statGz.IsDir() {
+					h.serveDecompressedFile(w, r, trimmedPath, fGz, statGz)
+					return
+				}
 			}
 		}
 	}
@@ -123,6 +162,7 @@ func (h *SPAHandler) serveIndex(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Vary", "Accept-Encoding")
 	modTime := startTime
 
 	finalData := h.indexData
@@ -135,7 +175,85 @@ func (h *SPAHandler) serveIndex(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if strings.Contains(strings.ToLower(r.Header.Get("Accept-Encoding")), "gzip") {
+		var buf bytes.Buffer
+		gw := gzip.NewWriter(&buf)
+		if _, err := gw.Write(finalData); err == nil && gw.Close() == nil {
+			w.Header().Set("Content-Encoding", "gzip")
+			http.ServeContent(w, r, "index.html", modTime, bytes.NewReader(buf.Bytes()))
+			return
+		}
+	}
+
 	http.ServeContent(w, r, "index.html", modTime, bytes.NewReader(finalData))
+}
+
+func (h *SPAHandler) serveGzipFile(w http.ResponseWriter, r *http.Request, origPath string, f fs.File, stat fs.FileInfo) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Encoding", "gzip")
+	w.Header().Set("Vary", "Accept-Encoding")
+
+	ext := filepath.Ext(origPath)
+	mimeType := mime.TypeByExtension(ext)
+	if mimeType != "" {
+		w.Header().Set("Content-Type", mimeType)
+	}
+
+	if strings.HasPrefix(origPath, "assets/") {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	}
+
+	modTime := stat.ModTime()
+	if modTime.IsZero() {
+		modTime = startTime
+	}
+
+	seeker, ok := f.(io.ReadSeeker)
+	if !ok {
+		data, err := io.ReadAll(f)
+		if err != nil {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		seeker = bytes.NewReader(data)
+	}
+
+	http.ServeContent(w, r, stat.Name(), modTime, seeker)
+}
+
+func (h *SPAHandler) serveDecompressedFile(w http.ResponseWriter, r *http.Request, origPath string, f fs.File, stat fs.FileInfo) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Vary", "Accept-Encoding")
+
+	ext := filepath.Ext(origPath)
+	mimeType := mime.TypeByExtension(ext)
+	if mimeType != "" {
+		w.Header().Set("Content-Type", mimeType)
+	}
+
+	if strings.HasPrefix(origPath, "assets/") {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	}
+
+	gzReader, err := gzip.NewReader(f)
+	if err != nil {
+		http.Error(w, "failed to decompress asset", http.StatusInternalServerError)
+		return
+	}
+	defer gzReader.Close()
+
+	data, err := io.ReadAll(gzReader)
+	if err != nil {
+		http.Error(w, "failed to read decompressed asset", http.StatusInternalServerError)
+		return
+	}
+
+	modTime := stat.ModTime()
+	if modTime.IsZero() {
+		modTime = startTime
+	}
+
+	http.ServeContent(w, r, path.Base(origPath), modTime, bytes.NewReader(data))
 }
 
 func (h *SPAHandler) serveFile(w http.ResponseWriter, r *http.Request, filePath string, f fs.File, stat fs.FileInfo) {
@@ -168,3 +286,4 @@ func (h *SPAHandler) serveFile(w http.ResponseWriter, r *http.Request, filePath 
 
 	http.ServeContent(w, r, stat.Name(), modTime, seeker)
 }
+

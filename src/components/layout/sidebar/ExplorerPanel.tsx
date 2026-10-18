@@ -19,7 +19,6 @@ import {
   normalizePath,
 } from "../../../utils/explorerGitStatus"
 import { sortFileTree } from "../../../utils/workspaceApi"
-import { fetchActiveFileGraph } from "../../../utils/codegraphApi"
 
 export function extractSymbols(code?: string): OutlineSymbol[] {
   if (!code) return []
@@ -592,55 +591,6 @@ export function ExplorerPanel() {
     }
   }, [visibleFiles, treeScrollTop, treeViewportHeight, renamingFile])
 
-  const [codeGraphSymbols, setCodeGraphSymbols] = useState<OutlineSymbol[]>([])
-
-  useEffect(() => {
-    if (
-      !outlineOpen ||
-      !currentTab ||
-      currentTab.startsWith("codegraph:") ||
-      currentTab.startsWith("diff:")
-    ) {
-      setCodeGraphSymbols([])
-      return
-    }
-    let cancelled = false
-    fetchActiveFileGraph(currentTab)
-      .then((res) => {
-        if (cancelled || !res || !Array.isArray(res.nodes)) return
-        const fileNodes = res.nodes
-          .filter(
-            (n) =>
-              n.filePath === currentTab ||
-              currentTab.endsWith("/" + n.filePath) ||
-              n.filePath.endsWith("/" + currentTab),
-          )
-          .sort((a, b) => a.lineStart - b.lineStart)
-        if (fileNodes.length > 0) {
-          setCodeGraphSymbols(
-            fileNodes.map((n) => ({
-              id: `cg-${n.id}`,
-              name: n.name,
-              kind: (n.kind === "method"
-                ? "function"
-                : n.kind === "struct"
-                  ? "class"
-                  : n.kind) as OutlineSymbol["kind"],
-              line: n.lineStart,
-            })),
-          )
-        } else {
-          setCodeGraphSymbols([])
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setCodeGraphSymbols([])
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [outlineOpen, currentTab])
-
   const [lexicalSymbols, setLexicalSymbols] = useState<OutlineSymbol[]>([])
 
   useEffect(() => {
@@ -696,10 +646,8 @@ export function ExplorerPanel() {
     }
   }, [outlineOpen, activeEditorFile, currentTab, dirtyFiles])
 
-  // Outline symbols of active tab (CodeGraph AST enriched with local lexical fallback)
-  const activeSymbols = useMemo(() => {
-    return lexicalSymbols.length > 0 ? lexicalSymbols : codeGraphSymbols
-  }, [lexicalSymbols, codeGraphSymbols])
+  // Outline symbols of active tab
+  const activeSymbols = lexicalSymbols
 
   const handleCreateSubmit = useCallback(() => {
     if (isSubmittingRef.current) return

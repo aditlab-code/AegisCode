@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/aditwicaksono/aegiscode/server/internal/api"
-	"github.com/aditwicaksono/aegiscode/server/internal/mcp"
 	"github.com/aditwicaksono/aegiscode/server/internal/platform"
 	"github.com/aditwicaksono/aegiscode/server/internal/store"
 	"github.com/aditwicaksono/aegiscode/server/internal/web"
@@ -93,11 +92,6 @@ func createListener(host string, explicitPort int) (net.Listener, int, string, e
 }
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "mcp" {
-		runMCPServer(os.Args[2:])
-		return
-	}
-
 	shouldOpen := false
 	host := os.Getenv("AEGIS_HOST")
 	var flagPort string
@@ -109,7 +103,7 @@ func main() {
 			return
 		}
 		if arg == "--help" || arg == "-h" {
-			fmt.Printf("AegisCode %s\nUsage:\n  aegiscode [options]                Start Web-based IDE Core Server\n  aegiscode mcp [--workspace <path>] Run native MCP server over stdio\n\nOptions:\n  -p, --port <port> Bind port (default: auto-allocated, or via AEGIS_PORT / PORT)\n  --host <addr>     Bind address (default: 127.0.0.1, use 0.0.0.0 for LAN)\n  -o, --open        Open default browser on startup\n  -v, --version     Print version and exit\n  -h, --help        Print help and exit\n", Version)
+			fmt.Printf("AegisCode %s\nUsage:\n  aegiscode [options]                Start Web-based IDE Core Server\n\nOptions:\n  -p, --port <port> Bind port (default: auto-allocated, or via AEGIS_PORT / PORT)\n  --host <addr>     Bind address (default: 127.0.0.1, use 0.0.0.0 for LAN)\n  -o, --open        Open default browser on startup\n  -v, --version     Print version and exit\n  -h, --help        Print help and exit\n", Version)
 			return
 		}
 		if arg == "--open" || arg == "-o" {
@@ -244,10 +238,6 @@ func main() {
 		log.Printf("Supervisor StopAll error: %v", err)
 	}
 
-	if server.Codegraph() != nil {
-		_ = server.Codegraph().Close()
-	}
-
 	if err := httpServer.Shutdown(ctx); err != nil {
 		log.Printf("HTTP server shutdown error: %v", err)
 	}
@@ -256,31 +246,3 @@ func main() {
 	fmt.Println("AegisCode Go Core Server stopped cleanly.")
 }
 
-func runMCPServer(args []string) {
-	wsPath := "."
-	for i := 0; i < len(args); i++ {
-		if (args[i] == "--workspace" || args[i] == "-w") && i+1 < len(args) {
-			wsPath = args[i+1]
-			i++
-		}
-	}
-	if envWs := os.Getenv("WORKSPACE_ROOT"); envWs != "" && wsPath == "." {
-		wsPath = envWs
-	}
-	absWs, err := filepath.Abs(wsPath)
-	if err != nil {
-		absWs = wsPath
-	}
-
-	if _, err := workspace.NewManager(absWs); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to initialize workspace: %v\n", err)
-		os.Exit(1)
-	}
-	srv := mcp.NewServer(absWs)
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-
-	if err := mcp.RunStdio(ctx, srv, os.Stdin, os.Stdout); err != nil && !errors.Is(err, context.Canceled) {
-		fmt.Fprintf(os.Stderr, "mcp server error: %v\n", err)
-	}
-}

@@ -5,12 +5,7 @@ import { IconButton } from "../../ui/IconButton"
 import { useWorkbenchStore, useShallow } from "../../../store"
 import { isGitDiffTab, parseGitDiffTab } from "../../../utils/gitDiffTab"
 import { hasConflictMarkers } from "../../../utils/gitConflict"
-import {
-  getViewerTypeForFile,
-  isGraphTab,
-  isSettingsTab,
-  parseGraphTab,
-} from "./viewers/viewerTypes"
+import { getViewerTypeForFile, isSettingsTab } from "./viewers/viewerTypes"
 import { normalizeWorkspacePath } from "../../../utils/workspaceApi"
 
 interface ContextMenuData {
@@ -286,17 +281,13 @@ export function EditorTabs({
         {currentGroup.tabs.map((tab, index) => {
           const isActive = tab === currentGroup.activeTab
           const isDiff = isGitDiffTab(tab)
-          const isGraph = isGraphTab(tab)
           const isSettings = isSettingsTab(tab)
           const diffInfo = isDiff ? parseGitDiffTab(tab) : null
-          const graphInfo = isGraph ? parseGraphTab(tab) : null
           const tabLabel = diffInfo
             ? diffInfo.displayName
-            : graphInfo
-              ? graphInfo.displayName
-              : isSettings
-                ? "Settings"
-                : tab.split("/").pop() || tab
+            : isSettings
+              ? "Settings"
+              : tab.split("/").pop() || tab
           const rawTabFile = isDiff ? diffInfo?.file || "" : tab
           const cleanTabFile = normalizeWorkspacePath(
             rawTabFile,
@@ -349,28 +340,24 @@ export function EditorTabs({
                 className={
                   isDiff
                     ? "text-(--color-accent) shrink-0"
-                    : isGraph
+                    : isSettings
                       ? "text-accent shrink-0"
-                      : isSettings
-                        ? "text-accent shrink-0"
-                        : isDeletedOnDisk
-                          ? "text-error shrink-0"
-                          : "shrink-0"
+                      : isDeletedOnDisk
+                        ? "text-error shrink-0"
+                        : "shrink-0"
                 }
                 name={
                   isDiff
                     ? "git"
-                    : isGraph
-                      ? "zap"
-                      : isSettings
-                        ? "settings"
-                        : isDeletedOnDisk
-                          ? "trash"
-                          : getViewerTypeForFile(tab) === "image"
-                            ? "image"
-                            : getViewerTypeForFile(tab) === "csv"
-                              ? "table"
-                              : "code"
+                    : isSettings
+                      ? "settings"
+                      : isDeletedOnDisk
+                        ? "trash"
+                        : getViewerTypeForFile(tab) === "image"
+                          ? "image"
+                          : getViewerTypeForFile(tab) === "csv"
+                            ? "table"
+                            : "code"
                 }
                 size={14}
               />

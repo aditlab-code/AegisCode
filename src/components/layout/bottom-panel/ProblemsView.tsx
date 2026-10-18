@@ -1,7 +1,6 @@
 import { useState } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbenchStore, useShallow } from "../../../store"
-import { fetchActiveFileGraph } from "../../../utils/codegraphApi"
 
 export interface DiagnosticLocation {
   filename: string
@@ -159,35 +158,12 @@ export function ProblemsView() {
                       <td style={{ textAlign: "right" }}>
                         <button
                           className="problems-ask-ai-btn"
-                          onClick={async (e) => {
+                          onClick={(e) => {
                             e.stopPropagation()
                             setChatOpen(true)
-                            showToast(
-                              "Analyzing symbol context & sending to Aegis AI...",
-                            )
-                            const lineMatch = lineCol.match(/Ln\s+(\d+)/)
-                            const lineNum = lineMatch
-                              ? parseInt(lineMatch[1], 10)
-                              : 0
-                            let cgInfo = ""
-                            if (filename && lineNum > 0) {
-                              try {
-                                const graph =
-                                  await fetchActiveFileGraph(filename)
-                                const sym = graph?.nodes.find(
-                                  (n) =>
-                                    lineNum >= n.lineStart &&
-                                    lineNum <= n.lineEnd,
-                                )
-                                if (sym) {
-                                  cgInfo = `\nEnclosing Symbol: ${sym.kind} \`${sym.name}\` (L${sym.lineStart}-L${sym.lineEnd})`
-                                }
-                              } catch {
-                                // ignore
-                              }
-                            }
+                            showToast("Sending problem context to Aegis AI...")
                             sendChatMessage(
-                              `Help me fix this ${diag.type} in ${filename} at ${lineCol}: "${diag.title}".${cgInfo}\nReturn the fix using \`\`\`lang:${filename}.`,
+                              `Help me fix this ${diag.type} in ${filename} at ${lineCol}: "${diag.title}".\nReturn the fix using \`\`\`lang:${filename}.`,
                             )
                           }}
                           title="Ask Aegis AI to fix this problem"

@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from "react"
-import { Icon } from "../../ui/Icon"
 import { ResizeSash } from "../../ui/ResizeSash"
 import { useWorkbenchStore, useShallow } from "../../../store"
 import {
@@ -29,10 +28,6 @@ export function ChatDrawer() {
     setChatOpen,
     sidebarOpen,
     sidebarWidth,
-    aiTrace,
-    splitEditor,
-    toggleSplitEditor,
-    openFileInGroup,
   } = useWorkbenchStore(
     useShallow((s) => ({
       sendChatMessage: s.sendChatMessage,
@@ -43,10 +38,6 @@ export function ChatDrawer() {
       setChatOpen: s.setChatOpen,
       sidebarOpen: s.sidebarOpen,
       sidebarWidth: s.sidebarWidth,
-      aiTrace: s.aiTrace,
-      splitEditor: s.splitEditor,
-      toggleSplitEditor: s.toggleSplitEditor,
-      openFileInGroup: s.openFileInGroup,
     })),
   )
   const [inputMessage, setInputMessage] = useState("")
@@ -128,45 +119,6 @@ export function ChatDrawer() {
         <ChatHeader />
         <CopilotInitBanner />
         <ChatWaveStepper />
-        {aiTrace && (
-          <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-accent/10 border-b border-accent/30 text-[11px] select-none shrink-0">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span
-                className={`w-2 h-2 rounded-full shrink-0 ${
-                  aiTrace.status === "completed"
-                    ? "bg-emerald-500"
-                    : aiTrace.status === "error"
-                      ? "bg-red-500"
-                      : "bg-pink-500 animate-ping"
-                }`}
-              />
-              <span className="font-mono uppercase text-[9px] px-1 py-0.2 rounded bg-surface border border-line text-accent shrink-0">
-                {aiTrace.provider}
-              </span>
-              <span className="text-ink-muted font-mono text-[10px] shrink-0">
-                {aiTrace.toolName}:
-              </span>
-              <strong
-                className="font-mono text-ink truncate"
-                title={aiTrace.symbols.join(", ")}
-              >
-                {aiTrace.symbols.join(", ")}
-              </strong>
-            </div>
-            <button
-              className="shrink-0 px-2 py-0.5 rounded bg-accent text-accent-contrast text-[10px] font-medium hover:opacity-90 cursor-pointer flex items-center gap-1"
-              onClick={() => {
-                if (!splitEditor) toggleSplitEditor()
-                openFileInGroup("codegraph:workspace", "group2")
-              }}
-              title="Open CodeGraph in Split Dock (group2)"
-              type="button"
-            >
-              <Icon name="zap" size={10} />
-              <span>Inspect in Graph</span>
-            </button>
-          </div>
-        )}
         <ChatMessageList />
         <ChatComposer
           onChange={setInputMessage}

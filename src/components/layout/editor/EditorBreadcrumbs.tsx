@@ -1,12 +1,10 @@
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
 import { Icon } from "../../ui/Icon"
 import { useWorkbenchStore, useShallow } from "../../../store"
 import { isGitDiffTab, parseGitDiffTab } from "../../../utils/gitDiffTab"
-import { isGraphTab, isSettingsTab, parseGraphTab } from "./viewers/viewerTypes"
-import {
-  fetchActiveFileGraph,
-  type UIGraphNode,
-} from "../../../utils/codegraphApi"
+import { isSettingsTab } from "./viewers/viewerTypes"
+import { extractSymbols } from "../sidebar/ExplorerPanel"
+import type { OutlineSymbol } from "../../../types/workbench"
 
 interface EditorBreadcrumbsProps {
   file?: string
@@ -31,6 +29,7 @@ export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
     secondaryActiveTab,
     activeTab,
     files,
+    fileBuffers,
     openFileInPane,
     cursorPosition,
     setCursorPosition,
@@ -41,6 +40,7 @@ export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
       secondaryActiveTab: s.secondaryActiveTab,
       activeTab: s.activeTab,
       files: s.files,
+      fileBuffers: s.fileBuffers,
       openFileInPane: s.openFileInPane,
       cursorPosition: s.cursorPosition,
       setCursorPosition: s.setCursorPosition,
@@ -48,7 +48,6 @@ export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
   )
 
   const [dropdown, setDropdown] = useState<DropdownState | null>(null)
-  const [fileSymbols, setFileSymbols] = useState<UIGraphNode[]>([])
   const [symbolDropdownOpen, setSymbolDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -84,42 +83,30 @@ export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
       : activeTab) ||
     ""
 
-  useEffect(() => {
+  const bufferContent = fileBuffers[currentFile]?.content
+  const fileSymbols = useMemo<OutlineSymbol[]>(() => {
     if (
       !currentFile ||
       isGitDiffTab(currentFile) ||
-      isGraphTab(currentFile) ||
       isSettingsTab(currentFile)
     ) {
-      setFileSymbols([])
-      return
+      return []
     }
-    let cancelled = false
-    fetchActiveFileGraph(currentFile)
-      .then((res) => {
-        if (cancelled || !res || !Array.isArray(res.nodes)) return
-        const syms = res.nodes
-          .filter(
-            (n) =>
-              n.filePath === currentFile ||
-              currentFile.endsWith("/" + n.filePath) ||
-              n.filePath.endsWith("/" + currentFile),
-          )
-          .sort((a, b) => a.lineStart - b.lineStart)
-        setFileSymbols(syms)
-      })
-      .catch(() => {
-        if (!cancelled) setFileSymbols([])
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [currentFile])
+    return extractSymbols(bufferContent)
+  }, [currentFile, bufferContent])
 
-  const activeSymbol = fileSymbols.find(
-    (s) =>
-      cursorPosition.line >= s.lineStart && cursorPosition.line <= s.lineEnd,
-  )
+  const activeSymbol = useMemo(() => {
+    if (!fileSymbols.length) return undefined
+    let best: OutlineSymbol | undefined
+    for (const sym of fileSymbols) {
+      if (sym.line <= cursorPosition.line) {
+        if (!best || sym.line > best.line) {
+          best = sym
+        }
+      }
+    }
+    return best
+  }, [fileSymbols, cursorPosition.line])
 
   const isDiff = isGitDiffTab(currentFile)
   const diffInfo = isDiff ? parseGitDiffTab(currentFile) : null
@@ -136,21 +123,6 @@ export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
             size={12}
           />
           <span>{diffInfo.displayName}</span>
-        </div>
-      </div>
-    )
-  }
-
-  const isGraph = isGraphTab(currentFile)
-  const graphInfo = isGraph ? parseGraphTab(currentFile) : null
-  if (isGraph && graphInfo) {
-    return (
-      <div className="breadcrumbs">
-        <div className="breadcrumb-path">
-          <span>codegraph</span>
-          <Icon name="chevron" size={11} />
-          <Icon className="text-accent shrink-0" name="zap" size={12} />
-          <span>{graphInfo.displayName}</span>
         </div>
       </div>
     )
@@ -278,13 +250,13 @@ export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
                     key={sym.id}
                     type="button"
                     onClick={() => {
-                      setCursorPosition({ line: sym.lineStart, col: 1 })
+                      setCursorPosition({ line: sym.line, col: 1 })
                       if (typeof window !== "undefined") {
                         window.dispatchEvent(
                           new CustomEvent("aegis:editor-goto-line", {
                             detail: {
                               file: currentFile,
-                              line: sym.lineStart,
+                              line: sym.line,
                               col: 1,
                             },
                           }),
@@ -298,7 +270,7 @@ export function EditorBreadcrumbs({ file }: EditorBreadcrumbsProps) {
                       {sym.name}
                     </span>
                     <span className="text-[10px] text-ink-muted font-mono shrink-0">
-                      {sym.kind} · L{sym.lineStart}
+                      {sym.kind} · L{sym.line}
                     </span>
                   </button>
                 ))}

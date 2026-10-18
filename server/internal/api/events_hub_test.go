@@ -181,20 +181,7 @@ func TestUnifiedEventsHTTP(t *testing.T) {
 		t.Errorf("expected channel workers and type crash, got %s / %s", hubEvt.Channel, hubEvt.Type)
 	}
 
-	// 5. Test BroadcastMCPEvent -> multiplexed "mcp" channel
-	srv.BroadcastMCPEvent("codegraph_explore", map[string]any{"query": "mySymbol"})
-	evt, data = readSSE(2 * time.Second)
-	if evt != "message" {
-		t.Fatalf("expected event: message, got '%s'", evt)
-	}
-	if err := json.Unmarshal([]byte(data), &hubEvt); err != nil {
-		t.Fatalf("failed to unmarshal mcp hub event: %v", err)
-	}
-	if hubEvt.Channel != "mcp" || hubEvt.Type != "tool_invoked" {
-		t.Errorf("expected channel mcp and type tool_invoked, got %s / %s", hubEvt.Channel, hubEvt.Type)
-	}
-
-	// 6. Test Workspace change bridge -> multiplexed "workspace" channel
+	// 5. Test Workspace change bridge -> multiplexed "workspace" channel
 	_ = srv.ws.WriteFile("hub_test.txt", "hello hub")
 	evt, data = readSSE(2 * time.Second)
 	if evt != "message" {
@@ -205,44 +192,6 @@ func TestUnifiedEventsHTTP(t *testing.T) {
 	}
 	if hubEvt.Channel != "workspace" || hubEvt.Type != "change" {
 		t.Errorf("expected channel workspace and type change, got %s / %s", hubEvt.Channel, hubEvt.Type)
-	}
-
-	// 7. Test POST /api/v1/events/mcp (stdio event bridge ingestion)
-	ingestPayload := strings.NewReader(`{"tool":"call_mcp_tool","status":"running","args":{"ServerName":"codegraph","ToolName":"codegraph_explore","Arguments":{"query":"TargetSymbol"}}}`)
-	postMcp, err := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/events/mcp", ingestPayload)
-	if err != nil {
-		t.Fatalf("failed to create MCP ingest request: %v", err)
-	}
-	postMcp.Header.Set("Content-Type", "application/json")
-	postMcpResp, err := http.DefaultClient.Do(postMcp)
-	if err != nil {
-		t.Fatalf("failed to post to /api/v1/events/mcp: %v", err)
-	}
-	_ = postMcpResp.Body.Close()
-	if postMcpResp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200 OK from /api/v1/events/mcp, got %d", postMcpResp.StatusCode)
-	}
-
-	evt, data = readSSE(2 * time.Second)
-	if evt != "message" {
-		t.Fatalf("expected event: message, got '%s'", evt)
-	}
-	if err := json.Unmarshal([]byte(data), &hubEvt); err != nil {
-		t.Fatalf("failed to unmarshal mcp ingest hub event: %v", err)
-	}
-	if hubEvt.Channel != "mcp" {
-		t.Errorf("expected channel mcp, got %s", hubEvt.Channel)
-	}
-	payloadMap, ok := hubEvt.Payload.(map[string]any)
-	if !ok {
-		t.Fatalf("expected payload map, got %T", hubEvt.Payload)
-	}
-	// Verify unwrapped Antigravity call_mcp_tool -> tool name is "codegraph_explore" and symbol is "TargetSymbol"
-	if payloadMap["tool"] != "codegraph_explore" {
-		t.Errorf("expected unwrapped tool codegraph_explore, got %v", payloadMap["tool"])
-	}
-	if payloadMap["symbol"] != "TargetSymbol" {
-		t.Errorf("expected unwrapped symbol TargetSymbol, got %v", payloadMap["symbol"])
 	}
 }
 

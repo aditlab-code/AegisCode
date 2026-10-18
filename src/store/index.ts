@@ -8,11 +8,6 @@ import { createGitSlice } from "./slices/createGitSlice"
 import { createTerminalSlice } from "./slices/createTerminalSlice"
 import { createChatSlice } from "./slices/createChatSlice"
 import { createDebugSlice } from "./slices/createDebugSlice"
-import {
-  createCodeGraphSlice,
-  registerCodeGraphWorkbenchStore,
-  useCodeGraphStore,
-} from "./slices/codegraphSlice"
 import { createVaultSlice } from "./slices/createVaultSlice"
 
 export const useWorkbenchStore = create<WorkbenchStore>()(
@@ -25,12 +20,9 @@ export const useWorkbenchStore = create<WorkbenchStore>()(
     ...createTerminalSlice(set, get, store),
     ...createChatSlice(set, get, store),
     ...createDebugSlice(set, get, store),
-    ...createCodeGraphSlice(set, get, store),
     ...createVaultSlice(set, get, store),
   }),
 )
-
-registerCodeGraphWorkbenchStore(useWorkbenchStore)
 
 declare global {
   interface Window {
@@ -44,4 +36,3 @@ if (typeof window !== "undefined") {
 
 export * from "./types"
 export { useShallow } from "zustand/react/shallow"
-export { useCodeGraphStore }

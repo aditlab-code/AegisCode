@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react"
 import { useWorkbenchStore } from "../store"
-import { extractCodeGraphTraceTargets } from "../utils/codegraphApi"
 import {
   fetchFileDetailed,
   fetchWorkspaceTree,
@@ -127,73 +126,6 @@ export function useWorkbenchLifecycle() {
 
     return () => {
       unsub()
-    }
-  }, [store])
-
-  // 2b. Global MCP Tool Invocation SSE Listener via centralized eventHub
-  useEffect(() => {
-    const unsub = eventHub.subscribe("mcp", (payload: any) => {
-      try {
-        const data = typeof payload === "string" ? JSON.parse(payload) : payload
-        if (!data) return
-        const s = store.getState()
-        const parsed = extractCodeGraphTraceTargets(
-          String(data.tool || "codegraph_explore"),
-          data.args || { query: data.symbol || "" },
-          data.symbol ? String(data.symbol) : undefined,
-        )
-        const traceStatus =
-          data.status === "completed"
-            ? "completed"
-            : data.status === "error"
-              ? "error"
-              : "running"
-        if (parsed.symbols.length > 0) {
-          s.triggerAiTrace({
-            symbols: parsed.symbols,
-            symbolName: parsed.primarySymbol,
-            rawQuery: parsed.rawQuery,
-            filePath: parsed.filePath,
-            toolName: parsed.cleanToolName,
-            provider: data.provider || s.activeProvider,
-            model: data.model || s.activeModel,
-            status: traceStatus,
-          })
-        }
-      } catch {
-        // Ignore malformed SSE payload
-      }
-    })
-
-    const handleTraceEvent = (e: Event) => {
-      const custom = e as CustomEvent
-      if (!custom.detail) return
-      const s = store.getState()
-      const d = custom.detail
-      if (d.status === "done" || d.status === "completed") {
-        if (s.aiTrace && s.aiTrace.status === "running") {
-          s.triggerAiTrace({ ...s.aiTrace, status: "completed" })
-        }
-        return
-      }
-      if (d.symbols || d.symbolName) {
-        s.triggerAiTrace({
-          symbols: d.symbols || (d.symbolName ? [d.symbolName] : []),
-          symbolName: d.symbolName || (d.symbols ? d.symbols[0] : ""),
-          rawQuery: d.rawQuery || d.symbolName || "",
-          filePath: d.filePath,
-          toolName: d.toolName || "codegraph_explore",
-          provider: d.provider || s.activeProvider,
-          model: d.model || s.activeModel,
-          status: d.status || "running",
-        })
-      }
-    }
-    window.addEventListener("aegis:ai-trace-path", handleTraceEvent)
-
-    return () => {
-      unsub()
-      window.removeEventListener("aegis:ai-trace-path", handleTraceEvent)
     }
   }, [store])
 

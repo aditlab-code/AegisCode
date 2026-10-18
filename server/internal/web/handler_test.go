@@ -1,6 +1,8 @@
 package web
 
 import (
+	"bytes"
+	"compress/gzip"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -152,6 +154,103 @@ func TestSPAHandler(t *testing.T) {
 		expectedMeta := `<meta name="aegis-session-token" content="abc123xyz789crypto" />`
 		if !strings.Contains(body, expectedMeta) {
 			t.Fatalf("expected body to contain meta tag %s, got: %s", expectedMeta, body)
+		}
+	})
+
+	t.Run("Serves pre-compressed gzip asset when Accept-Encoding gzip is present", func(t *testing.T) {
+		var gzBuf bytes.Buffer
+		gw := gzip.NewWriter(&gzBuf)
+		_, _ = gw.Write([]byte("console.log('gzipped bundle content');"))
+		_ = gw.Close()
+
+		gzMockFS := fstest.MapFS{
+			"index.html": &fstest.MapFile{
+				Data: []byte("<!DOCTYPE html><html><body>App</body></html>"),
+			},
+			"assets/app.js.gz": &fstest.MapFile{
+				Data: gzBuf.Bytes(),
+			},
+		}
+
+		gzHandler := NewSPAHandler(gzMockFS)
+
+		req := httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
+		req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+		rec := httptest.NewRecorder()
+		gzHandler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+		if rec.Header().Get("Content-Encoding") != "gzip" {
+			t.Fatalf("expected Content-Encoding: gzip, got %q", rec.Header().Get("Content-Encoding"))
+		}
+		if !strings.Contains(rec.Header().Get("Content-Type"), "javascript") {
+			t.Fatalf("expected javascript Content-Type, got %q", rec.Header().Get("Content-Type"))
+		}
+		if !strings.Contains(rec.Header().Get("Vary"), "Accept-Encoding") {
+			t.Fatalf("expected Vary: Accept-Encoding, got %q", rec.Header().Get("Vary"))
+		}
+	})
+
+	t.Run("Decompresses on-the-fly when client does not support gzip", func(t *testing.T) {
+		rawContent := "console.log('decompressed on the fly');"
+		var gzBuf bytes.Buffer
+		gw := gzip.NewWriter(&gzBuf)
+		_, _ = gw.Write([]byte(rawContent))
+		_ = gw.Close()
+
+		gzMockFS := fstest.MapFS{
+			"index.html": &fstest.MapFile{
+				Data: []byte("<!DOCTYPE html><html><body>App</body></html>"),
+			},
+			"assets/app.js.gz": &fstest.MapFile{
+				Data: gzBuf.Bytes(),
+			},
+		}
+
+		gzHandler := NewSPAHandler(gzMockFS)
+
+		req := httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
+		// No Accept-Encoding header
+		rec := httptest.NewRecorder()
+		gzHandler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+		if rec.Header().Get("Content-Encoding") == "gzip" {
+			t.Fatalf("expected no Content-Encoding gzip, got %q", rec.Header().Get("Content-Encoding"))
+		}
+		if rec.Body.String() != rawContent {
+			t.Fatalf("expected body %q, got %q", rawContent, rec.Body.String())
+		}
+	})
+
+	t.Run("Serves gzipped index.html when Accept-Encoding gzip is present", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Accept-Encoding", "gzip")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+		if rec.Header().Get("Content-Encoding") != "gzip" {
+			t.Fatalf("expected Content-Encoding: gzip, got %q", rec.Header().Get("Content-Encoding"))
+		}
+
+		gzReader, err := gzip.NewReader(rec.Body)
+		if err != nil {
+			t.Fatalf("failed to create gzip reader for response: %v", err)
+		}
+		defer gzReader.Close()
+		decompressed, err := io.ReadAll(gzReader)
+		if err != nil {
+			t.Fatalf("failed to read decompressed response: %v", err)
+		}
+		if !strings.Contains(string(decompressed), "App Root") {
+			t.Fatalf("expected decompressed body to contain 'App Root', got: %s", string(decompressed))
 		}
 	})
 }

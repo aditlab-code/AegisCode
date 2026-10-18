@@ -97,17 +97,11 @@ All operations execute through `git.Service` with internal mutex serialization a
 
 ---
 
-## 6. CodeGraph & Native Architecture Proxy
+## 6. Optional External Tooling: Standalone CodeGraph & Custom MCP (Phase 26 Strategic Decoupling)
 
-Native `@colbymchenry/codegraph` daemon integration per ADR-0014 and ADR-0015:
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET` | `/api/codegraph/ui/stats` | Reverse proxy to native CodeGraph daemon statistics |
-| `GET` | `/api/codegraph/ui/search` | Fast symbol search across project AST |
-| `POST` | `/api/codegraph/ui/sync` | Triggers background index synchronization |
-| `POST` | `/api/codegraph/ui/reindex` | Triggers full AST re-scan and graph rebuilding |
-| `GET` | `/api/v1/codegraph/entrypoints` | Returns detected framework routes and application entrypoints |
+> [!NOTE]
+> In Phase 26, CodeGraph reverse proxying and internal MCP JSON-RPC endpoints were decoupled from the default Core Server binary to keep runtime footprint under 30MB and eliminate mandatory background daemon dependencies. Symbol and outline resolution are 100% unified under native **Language Server Protocol (LSP)** (`/api/v1/lsp/*`).  
+> Users wishing to inspect visual call-graphs can run the standalone CodeGraph daemon (`npx @colbymchenry/codegraph ui --port 3333`) independently.
 
 ---
 
@@ -123,7 +117,7 @@ Native `@colbymchenry/codegraph` daemon integration per ADR-0014 and ADR-0015:
 
 ---
 
-## 8. AI Assistant & Model Context Protocol (MCP)
+## 8. AI Assistant & Conversational Ledger Endpoints
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
@@ -131,23 +125,29 @@ Native `@colbymchenry/codegraph` daemon integration per ADR-0014 and ADR-0015:
 | `GET` | `/api/v1/chats` | Lists project-scoped chat sessions from SQLite database |
 | `GET` | `/api/v1/chats/{id}` | Returns append-only event ledger for a session |
 | `GET` | `/api/v1/chats/search?q=<query>` | FTS5 full-text search across past conversations |
-| `POST` | `/api/v1/mcp` | Model Context Protocol JSON-RPC 2.0 tool dispatcher |
+| `GET` | `/api/v1/ai/models` | Discovers available CLI models with 5-minute memory cache |
+| `GET` | `/api/v1/ai/skills` | Dynamic discovery of workspace and system agent skills |
+| `GET` | `/api/v1/ai/transcript/{id}` | Rehydrates chat session history directly from provider logs |
 
 ---
 
 ## 9. Deprecated & Legacy Endpoints (Historical Reference)
 
-The following endpoints have been decommissioned or superseded during Phase 5 optimization and are preserved for historical audit only:
+The following endpoints have been decommissioned or superseded during Phase 5 optimization and Phase 26 Strategic Decoupling and are preserved for historical audit only:
 
 ### A. Purged Dead Endpoints (Removed from ServeMux)
 | Endpoint | Method | Audit ID | Disposition / Replacement |
 | :--- | :---: | :---: | :--- |
 | `/api/v1/auth/handshake` | `POST` | `OPT-API-01` | **Purged**. Zero frontend callers; companion token handshake moved to LAN pairing module. |
 | `/api/v1/pairing/info` | `GET` | `OPT-API-02` | **Purged**. Zero frontend callers; integrated into status bar pairing popover. |
-| `/api/v1/mcp/rpc` | `POST` | `OPT-API-03` | **Purged**. Duplicate alias to `/api/v1/mcp`. Standardized on `/api/v1/mcp`. |
-| `/api/v1/mcp/events` | `GET/POST`| `OPT-API-04` | **Purged**. Dead standalone SSE stream; replaced by unified `/api/v1/events` channel `"mcp"`. |
-| `/api/v1/codegraph/init` | `POST` | `OPT-API-05` | **Purged**. Zero callers; frontend calls native `/api/codegraph/ui/init` via reverse proxy. |
-| `/api/codegraph/entrypoints`| `GET` | `OPT-API-14` | **Purged**. Duplicate route registration; standardized on `/api/v1/codegraph/entrypoints`. |
+| `/api/v1/mcp/rpc` | `POST` | `OPT-API-03` | **Purged**. Duplicate alias to `/api/v1/mcp`. |
+| `/api/v1/mcp/events` | `GET/POST`| `OPT-API-04` | **Purged**. Dead standalone SSE stream; replaced by unified `/api/v1/events`. |
+| `/api/v1/codegraph/init` | `POST` | `OPT-API-05` | **Purged**. Dead index initialization endpoint. |
+| `/api/codegraph/entrypoints`| `GET` | `OPT-API-14` | **Purged**. Duplicate route registration. |
+| `/api/v1/mcp` | `POST` | `PHASE-26` | **Decoupled**. Internal MCP daemon removed from core server; external MCP clients connect standalone. |
+| `/api/v1/events/mcp` | `POST` | `PHASE-26` | **Decoupled**. Ingest bridge purged; real-time event bridges moved to `events_hub.go`. |
+| `/api/v1/codegraph/*` | `ALL` | `PHASE-26` | **Decoupled**. Reverse proxy and stubs removed; symbols/outlines powered natively by LSP (`/api/v1/lsp/*`). |
+| `/api/codegraph/ui/*` | `ALL` | `PHASE-26` | **Decoupled**. CodeGraph UI reverse proxy removed from default server binary. |
 
 ### B. Deprecated Standalone SSE Streams (Superseded by Unified EventHub)
 | Endpoint | Method | Audit ID | Disposition / Replacement |
@@ -157,4 +157,5 @@ The following endpoints have been decommissioned or superseded during Phase 5 op
 | `/api/v1/events/logs` | `GET` | `OPT-API-12` | **Deprecated**. Superseded by `GET /api/v1/events` channel `"logs"` via `WorkbenchEventHub.ts`. |
 | `/api/v1/events/debug` | `GET` | `OPT-API-13` | **Deprecated**. Superseded by `GET /api/v1/events` channel `"debug"`. |
 | `/api/v1/events/lsp` | `GET` | `OPT-API-13` | **Deprecated**. Superseded by `GET /api/v1/events` channel `"lsp"`. |
+
 

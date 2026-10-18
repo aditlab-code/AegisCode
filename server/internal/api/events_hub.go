@@ -134,3 +134,44 @@ func (s *Server) handleUnifiedEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+
+// initEventHubBridges connects workspace changes, debug events, and LSP diagnostics to the unified event hub.
+func (s *Server) initEventHubBridges() {
+	if s.eventHub == nil {
+		return
+	}
+
+	if s.ws != nil {
+		wsCh, _ := s.ws.SubscribeEvents()
+		go func() {
+			for evt := range wsCh {
+				if s.eventHub != nil {
+					s.eventHub.Publish("workspace", "change", evt)
+				}
+			}
+		}()
+	}
+
+	if s.debug != nil {
+		dbgCh, _ := s.debug.Subscribe()
+		go func() {
+			for evt := range dbgCh {
+				if s.eventHub != nil {
+					s.eventHub.Publish("debug", evt.Type, evt)
+				}
+			}
+		}()
+	}
+
+	if s.lsp != nil {
+		lspCh, _ := s.lsp.SubscribeDiagnostics()
+		go func() {
+			for diag := range lspCh {
+				if s.eventHub != nil {
+					s.eventHub.Publish("lsp", "diagnostics", diag)
+				}
+			}
+		}()
+	}
+}
+

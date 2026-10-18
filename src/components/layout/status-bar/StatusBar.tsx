@@ -77,15 +77,6 @@ export function StatusBar() {
     setActivePanel((current) => (current === panel ? null : panel))
   }
 
-  function handleMcpClick() {
-    if (panelOpen && activeBottomTab === "MCP") {
-      setPanelOpen(false)
-    } else {
-      setActiveBottomTab("MCP")
-      setPanelOpen(true)
-    }
-  }
-
   function handleProblemsClick() {
     setPanelOpen(true)
     setActiveBottomTab("Problems")
@@ -205,21 +196,6 @@ export function StatusBar() {
             }`}
           />{" "}
           LSP
-        </button>
-        <button
-          className={`status-item cursor-pointer hover:text-[var(--color-ink)] ${
-            panelOpen && activeBottomTab === "MCP" ? "status-button-active" : ""
-          }`}
-          onClick={handleMcpClick}
-          title="Model Context Protocol (MCP) & CodeGraph Panel (Click to toggle)"
-          type="button"
-        >
-          <span
-            className={`status-dot ${
-              serverConnected ? "status-dot-online" : "status-dot-offline"
-            }`}
-          />{" "}
-          MCP
         </button>
         <IndexStatusPill />
         <PerfStatusPill />

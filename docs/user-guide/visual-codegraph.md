@@ -1,17 +1,25 @@
-# VantageCraft CodeGraph Visual Guide
+# VantageCraft CodeGraph Visual Guide (Optional External Tooling)
 
-AegisCode features a high-performance **VantageCraft CodeGraph Architecture** powered by native `@colbymchenry/codegraph` daemon engine and a Zero-Freeze Web Worker layout pipeline. Instead of generic unstructured node webs, AegisCode organizes codebase exploration into **six specialized views**.
+> [!NOTE]
+> **Optional External Tooling (Phase 26+)**:  
+> CodeGraph is an **optional, standalone codebase visualization tool**. AegisCode Core does not bundle or require an active CodeGraph background daemon; all core code navigation, document symbols, definitions, and outlines in the IDE workbench are powered directly and natively by **Language Server Protocol (LSP)** (`/api/v1/lsp/*`) and fast Go workspace indexing.  
+> Users and AI agents are free to run CodeGraph independently via CLI or launch its UI standalone whenever macro architecture visualization is desired.
 
 ---
 
-## 1. Opening CodeGraph
+## 1. Running Standalone CodeGraph
 
-Open the CodeGraph panel by:
-- Clicking the CodeGraph tab in the Editor or Activity Bar.
-- Selecting **View: Open CodeGraph** from the Command Palette (`Cmd + Shift + P` / `Ctrl + Shift + P`).
-- Clicking the MCP status indicator pill in the Status Bar.
+To launch the VantageCraft CodeGraph interface independently for your workspace:
 
-*(Note: CodeGraph Studio opens independently in its own view, preserving editor layout and eliminating chat drawer split lag).*
+```bash
+# Start the standalone CodeGraph UI daemon in your terminal:
+npx @colbymchenry/codegraph ui --port 3333
+
+# Or explore symbols and call graphs directly from the CLI:
+npx @colbymchenry/codegraph explore "symbol or query"
+```
+
+Once running, navigate to `http://127.0.0.1:3333` in your browser to inspect the visual graph.
 
 ---
 

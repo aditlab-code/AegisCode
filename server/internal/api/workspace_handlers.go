@@ -84,12 +84,6 @@ func (s *Server) handleWorkspaceOpen(w http.ResponseWriter, r *http.Request) {
 	if s.lsp != nil {
 		s.lsp.SetWorkspace(absPath)
 	}
-	if s.codegraph != nil {
-		_ = s.codegraph.SetWorkspace(absPath)
-	}
-	if s.mcp != nil {
-		s.mcp.SetWorkspace(absPath)
-	}
 	jsonResponse(w, http.StatusOK, OpenWorkspaceResponse{
 		Status:   "ok",
 		RootPath: absPath,
@@ -111,12 +105,6 @@ func (s *Server) handleWorkspaceClose(w http.ResponseWriter, r *http.Request) {
 	s.BroadcastLog("Server", "Unmounted active workspace", "info")
 	if s.lsp != nil {
 		s.lsp.SetWorkspace("")
-	}
-	if s.codegraph != nil {
-		_ = s.codegraph.SetWorkspace("")
-	}
-	if s.mcp != nil {
-		s.mcp.SetWorkspace("")
 	}
 	jsonResponse(w, http.StatusOK, CloseWorkspaceResponse{
 		Status: "closed",
@@ -156,12 +144,6 @@ func (s *Server) handleWorkspacePickFolder(w http.ResponseWriter, r *http.Reques
 	_, name := s.ws.GetRoot()
 	if s.lsp != nil {
 		s.lsp.SetWorkspace(absPath)
-	}
-	if s.codegraph != nil {
-		_ = s.codegraph.SetWorkspace(absPath)
-	}
-	if s.mcp != nil {
-		s.mcp.SetWorkspace(absPath)
 	}
 	jsonResponse(w, http.StatusOK, PickFolderResponse{
 		Status:   "ok",

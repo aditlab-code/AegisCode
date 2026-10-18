@@ -15,10 +15,7 @@ import {
 import { detectLanguage, isLspLanguage } from "../../utils/linter"
 import { notifyLspDidSave } from "../../utils/lspApi"
 import { offloadService } from "../../utils/offloadService"
-import {
-  isGraphTab,
-  isSettingsTab,
-} from "../../components/layout/editor/viewers/viewerTypes"
+import { isSettingsTab } from "../../components/layout/editor/viewers/viewerTypes"
 import { isGitDiffTab } from "../../utils/gitDiffTab"
 
 let linterDebounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -455,6 +452,7 @@ export async function loadWorkspaceInternal(
     if (!info || !info.rootPath) {
       set({
         rootWorkspacePath: "",
+        rootPath: "",
         rootWorkspaceName: "",
         files: [],
         fileBuffers: {},
@@ -587,6 +585,7 @@ export async function loadWorkspaceInternal(
 
     set((state: any) => ({
       rootWorkspacePath: normalizedRoot,
+      rootPath: normalizedRoot,
       rootWorkspaceName: info.name,
       files: treeData.flatTree,
       group1: { ...g1, tabs: validG1Tabs, activeTab: activeG1 },
@@ -644,6 +643,7 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
   get,
 ) => ({
   rootWorkspacePath: "",
+  rootPath: "",
   rootWorkspaceName: "AegisCode",
   isWorkspaceLoading: false,
   workspaceEpoch: 0,
@@ -1239,13 +1239,7 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
   },
 
   ensureFileBuffer: (filename: string) => {
-    if (
-      !filename ||
-      isGraphTab(filename) ||
-      isGitDiffTab(filename) ||
-      isSettingsTab(filename)
-    )
-      return
+    if (!filename || isGitDiffTab(filename) || isSettingsTab(filename)) return
     const rootPath = get().rootWorkspacePath
     const clean = rootPath
       ? normalizeWorkspacePath(filename, rootPath)
@@ -1269,13 +1263,7 @@ export const createWorkspaceSlice: SliceCreator<WorkspaceSlice> = (
   },
 
   fetchBufferSafely: async (filename: string): Promise<void> => {
-    if (
-      !filename ||
-      isGraphTab(filename) ||
-      isGitDiffTab(filename) ||
-      isSettingsTab(filename)
-    )
-      return
+    if (!filename || isGitDiffTab(filename) || isSettingsTab(filename)) return
     let rootPath = get().rootWorkspacePath
     if (!rootPath) {
       try {

@@ -41,8 +41,6 @@ import type {
 } from "../types/workbench"
 import type { CursorCoordinates } from "./slices/createWorkspaceSlice"
 import type { ConfirmCloseState } from "../types/workbench"
-import type { AiTraceState } from "../utils/codegraphApi"
-import type { CodeGraphSlice } from "./slices/codegraphSlice"
 import type {
   WorkspaceCopilotStatus,
   InitWorkspaceOptions,
@@ -243,6 +241,7 @@ export interface EditorSlice {
 
 export interface WorkspaceSlice {
   rootWorkspacePath: string
+  rootPath: string
   rootWorkspaceName: string
   isWorkspaceLoading: boolean
   workspaceEpoch: number
@@ -436,15 +435,6 @@ export interface ChatSlice {
   addMentionContext: (path: string, isFolder?: boolean) => Promise<void>
   clearManualMentions: () => void
   refreshAISkills: (provider?: string, workspacePath?: string) => Promise<void>
-  aiTrace: AiTraceState | null
-  aiTraceHistory: AiTraceState[]
-  triggerAiTrace: (
-    trace: Partial<AiTraceState> & {
-      symbolName?: string
-      symbols?: string[]
-    },
-  ) => void
-  clearAiTrace: () => void
   isCopilotInitialized: boolean | null
   copilotStatus: WorkspaceCopilotStatus | null
   isCopilotInitModalOpen: boolean
@@ -513,4 +503,4 @@ export interface VaultSlice {
   ) => Promise<VaultRecoverResult>
 }
 
-export type WorkbenchStore = LayoutSlice & SettingsSlice & EditorSlice & WorkspaceSlice & GitSlice & TerminalSlice & ChatSlice & DebugSlice & CodeGraphSlice & VaultSlice
+export type WorkbenchStore = LayoutSlice & SettingsSlice & EditorSlice & WorkspaceSlice & GitSlice & TerminalSlice & ChatSlice & DebugSlice & VaultSlice

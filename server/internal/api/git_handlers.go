@@ -600,12 +600,6 @@ func (s *Server) handleGitClone(w http.ResponseWriter, r *http.Request) {
 			if s.lsp != nil {
 				s.lsp.SetWorkspace(absPath)
 			}
-			if s.codegraph != nil {
-				_ = s.codegraph.SetWorkspace(absPath)
-			}
-			if s.mcp != nil {
-				s.mcp.SetWorkspace(absPath)
-			}
 		}
 	}
 

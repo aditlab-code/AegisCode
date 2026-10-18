@@ -1,14 +1,17 @@
-# Model Context Protocol (MCP) Specification
+# Model Context Protocol (MCP) Specification (Optional External Tooling)
 
-AegisCode integrates with the native `@colbymchenry/codegraph` daemon engine through an out-of-process Model Context Protocol (MCP) stdio bridge and HTTP JSON-RPC proxy. This architecture gives AI agents and external coding tools full, high-fidelity codebase intelligence powered by Rust AST parsing, cross-file symbol resolution, and framework synthesizers.
+> [!NOTE]
+> **Optional External Modularity (Phase 26+)**:  
+> In AegisCode, Model Context Protocol (MCP) and CodeGraph integrations are designed as **optional external tools**. AegisCode Core operates completely self-contained with zero background MCP daemon requirement, powering all IDE symbol navigation, definitions, and outlines natively via Language Server Protocol (LSP).  
+> Developers and AI agents (such as Claude Desktop, Cursor, or Antigravity) are free to run `@colbymchenry/codegraph serve --mcp` or any custom MCP server externally to gain graph-augmented code intelligence on-demand.
 
 ---
 
-## 1. Transport & Protocol Architecture
+## 1. Transport & Protocol Architecture (External Standalone Tool)
 
 ```mermaid
 flowchart LR
-    A[AegisCode AI Assistant / Client] -->|stdio JSON-RPC 2.0| B[AegisCode MCP Bridge]
+    A[External AI Assistant / Client] -->|stdio JSON-RPC 2.0| B[Standalone MCP Server]
     B -->|roots/list & tool calls| C["@colbymchenry/codegraph serve --mcp"]
     C -->|Single-Writer WAL Lock| D[".codegraph/codegraph.db (FTS5 + SQLite)"]
 ```

@@ -29,7 +29,7 @@ Comprehensive guides for developers using AegisCode as their daily coding workbe
 | **[Editor & Terminal](user-guide/editor-and-terminal.md)** | CodeMirror shortcuts, dirty buffer sync, auto-save on blur, and PTY terminal. |
 | **[Delve Debugger](user-guide/debugging-with-delve.md)** | Zero-config Go debugging with Delve DAP, gutter breakpoints, and variable scopes. |
 | **[AI Assistant & Review Gates](user-guide/ai-assistant-and-review-gates.md)** | Multi-provider streaming, collapsible thoughts, and Git-driven line-by-line diff gates. |
-| **[Visual CodeGraph](user-guide/visual-codegraph.md)** | Navigating Hierarchical (Dagre) and Clustered (CoSE) layouts with live AI tracing. |
+| **[Visual CodeGraph (Optional)](user-guide/visual-codegraph.md)** | Standalone architecture visualization and optional external CLI exploration. |
 | **[Troubleshooting & FAQ](user-guide/troubleshooting-and-faq.md)** | SQLite WAL crash recovery, cache reset, port conflict resolution, and large codebase tuning. |
 
 ---
@@ -59,7 +59,7 @@ Specifications for integrating external tools, custom UI modules, AI agents, and
 | Reference | Description |
 | :--- | :--- |
 | **[Local REST & SSE APIs](developers/local-rest-and-sse-api.md)** | Comprehensive endpoint catalog for workspace, Git, terminal, and AI streams. |
-| **[MCP Specification](developers/mcp-specification.md)** | Model Context Protocol JSON-RPC 2.0 runner and 7 progressive disclosure tools. |
+| **[MCP Specification (Optional)](developers/mcp-specification.md)** | Optional external Model Context Protocol toolchain specifications. |
 | **[Plugin & Extension Guide](developers/plugin-and-extension-guide.md)** | Building custom UI panels, connecting Cursor/Claude via MCP, and AST extractors. |
 | **[Agent Domain Guidelines](agents/domain.md)** | Core domain glossary and single-context architectural rules. |
 | **[Agent Issue Tracker](agents/issue-tracker.md)** | Local markdown issue tracker workflow under `.scratch/`. |

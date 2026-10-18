@@ -137,12 +137,12 @@ export function CommandPalette() {
       },
       {
         id: "view-mcp",
-        label: "View: Show MCP Panel",
+        label: "View: Open MCP Inspector",
         detail: "Inspect Model Context Protocol tools and CodeGraph status",
         icon: "zap",
         action: () => {
-          setActiveBottomTab("MCP")
-          setPanelOpen(true)
+          openFileInPane("codegraph:workspace")
+          setActiveCodeGraphView("mcp")
         },
       },
       {

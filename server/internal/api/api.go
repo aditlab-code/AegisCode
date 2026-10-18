@@ -12,11 +12,9 @@ import (
 	"time"
 
 	"github.com/aditwicaksono/aegiscode/server/internal/agent"
-	"github.com/aditwicaksono/aegiscode/server/internal/codegraph"
 	"github.com/aditwicaksono/aegiscode/server/internal/debug"
 	"github.com/aditwicaksono/aegiscode/server/internal/git"
 	"github.com/aditwicaksono/aegiscode/server/internal/lsp"
-	"github.com/aditwicaksono/aegiscode/server/internal/mcp"
 	"github.com/aditwicaksono/aegiscode/server/internal/platform"
 	"github.com/aditwicaksono/aegiscode/server/internal/store"
 	"github.com/aditwicaksono/aegiscode/server/internal/supervisor"
@@ -35,8 +33,6 @@ type Server struct {
 	store        *store.Store
 	debug        *debug.Manager
 	lsp          *lsp.Manager
-	codegraph    *codegraph.Manager
-	mcp          *mcp.Server
 	pairing      *PairingManager
 	vault        *vault.Vault
 	eventHub     *EventHub
@@ -73,10 +69,8 @@ func NewServer(ws *workspace.Manager, picker platform.FolderPicker, customStore 
 		git:        git.NewService(ws),
 		terminal:   terminal.NewManager(),
 		store:      st,
-		debug:      debug.NewManager(),
-		lsp:        lsp.NewManager(rootPath),
-		codegraph:  codegraph.NewManager(rootPath),
-		mcp:        mcp.NewServer(rootPath),
+		debug:       debug.NewManager(),
+		lsp:         lsp.NewManager(rootPath),
 		pairing:     NewPairingManager(8080),
 		eventHub:    NewEventHub(),
 		taskManager: agent.NewTaskManager(rootPath),
@@ -138,16 +132,6 @@ func (s *Server) SessionToken() string {
 		return ""
 	}
 	return s.pairing.CreateLocalSession()
-}
-
-// Codegraph returns the active CodeGraph Manager.
-func (s *Server) Codegraph() *codegraph.Manager {
-	return s.codegraph
-}
-
-// MCP returns the active native Model Context Protocol server.
-func (s *Server) MCP() *mcp.Server {
-	return s.mcp
 }
 
 // Debug returns the active debugger manager.
@@ -397,19 +381,6 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/lsp/formatting", s.handleLSPFormatting)
 	mux.HandleFunc("/api/v1/lsp/status", s.handleLSPStatus)
 	mux.HandleFunc("/api/v1/events/lsp", s.handleLSPEvents)
-
-	// Model Context Protocol (MCP) & CodeGraph Endpoints
-	mux.HandleFunc("/api/v1/mcp", s.handleMCP)
-	mux.HandleFunc("/api/v1/events/mcp", s.handleMCPEventsIngest)
-	mux.HandleFunc("/api/v1/codegraph/status", s.handleCodeGraphStatus)
-	mux.HandleFunc("/api/v1/codegraph/reindex", s.handleCodeGraphReindex)
-	mux.HandleFunc("/api/v1/codegraph/file", s.handleCodeGraphFile)
-	mux.HandleFunc("/api/v1/codegraph/symbols/search", s.handleCodeGraphSymbolsSearch)
-	mux.HandleFunc("/api/v1/codegraph/entrypoints", s.handleCodeGraphEntrypoints)
-	if s.codegraph != nil {
-		mux.Handle("/api/codegraph/ui/", s.codegraph.ProxyHandler())
-		mux.Handle("/api/codegraph/", s.codegraph.ProxyHandler())
-	}
 
 	// System Management
 	mux.HandleFunc("/api/v1/system/shutdown", s.handleSystemShutdown)

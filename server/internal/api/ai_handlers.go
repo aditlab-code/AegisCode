@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -168,19 +167,6 @@ func (s *Server) handleAIChatStream(w http.ResponseWriter, r *http.Request) {
 		}
 		flusher.Flush()
 		return nil
-	}
-
-	if s.mcp != nil {
-		req.ToolExecutor = func(ctx context.Context, name string, args map[string]any) (string, error) {
-			s.broadcastMCPEventStatus(name, args, "running")
-			out, err := s.mcp.ExecuteTool(ctx, name, args)
-			if err != nil {
-				s.broadcastMCPEventStatus(name, args, "error")
-			} else {
-				s.broadcastMCPEventStatus(name, args, "completed")
-			}
-			return out, err
-		}
 	}
 
 	if err := ai.StreamChat(r.Context(), req, sendEvent); err != nil {

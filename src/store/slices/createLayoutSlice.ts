@@ -28,7 +28,6 @@ export const DEFAULT_BOTTOM_TAB_ORDER: BottomTab[] = [
   "Problems",
   "Output",
   "Debug Console",
-  "MCP",
 ]
 
 // Pure transition functions
@@ -63,29 +62,39 @@ export function loadStoredBottomTabOrder(): BottomTab[] {
     if (raw) {
       const parsed = JSON.parse(raw) as (string | BottomTab)[]
       if (Array.isArray(parsed)) {
-        const migrated = parsed.map((t) =>
-          t === "Debug" ? "Debug Console" : t,
-        ) as BottomTab[]
-        if (
-          migrated.includes("Terminal") &&
-          migrated.includes("Problems") &&
-          migrated.includes("Output")
-        ) {
-          if (!migrated.includes("Debug Console")) {
-            migrated.push("Debug Console")
+        // Strip out legacy MCP and map Debug -> Debug Console
+        const filtered = parsed
+          .filter((t) => t !== "MCP")
+          .map((t) => (t === "Debug" ? "Debug Console" : t)) as BottomTab[]
+
+        const validTabs: BottomTab[] = [
+          "Terminal",
+          "Problems",
+          "Output",
+          "Debug Console",
+        ]
+        const result: BottomTab[] = []
+        for (const tab of filtered) {
+          if (validTabs.includes(tab) && !result.includes(tab)) {
+            result.push(tab)
           }
-          if (!migrated.includes("MCP")) {
-            migrated.push("MCP")
-          }
-          return migrated.filter(
-            (t): t is BottomTab =>
-              t === "Terminal" ||
-              t === "Problems" ||
-              t === "Output" ||
-              t === "Debug Console" ||
-              t === "MCP",
-          )
         }
+        for (const tab of validTabs) {
+          if (!result.includes(tab)) {
+            result.push(tab)
+          }
+        }
+        if (raw.includes("MCP") || result.length !== parsed.length) {
+          try {
+            window.localStorage.setItem(
+              "aegis_bottom_panel_tab_order",
+              JSON.stringify(result),
+            )
+          } catch {
+            // ignore
+          }
+        }
+        return result
       }
     }
   } catch {

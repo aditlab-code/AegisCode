@@ -86,32 +86,134 @@ Compare the output hash against the hash listed in the release notes.
 
 ---
 
-## 5. Building from Source
+## 5. Development Environment & Building from Source
 
-If you prefer to compile AegisCode from scratch, you only need standard Go and Node.js toolchains:
+If you develop or compile AegisCode from source, you need standard Go and Node.js toolchains.
 
-### Prerequisites
-- **Go 1.23+**: [https://golang.org/dl/](https://golang.org/dl/)
-- **Node.js 20+ & npm**: [https://nodejs.org/](https://nodejs.org/)
+### 5.1 Prerequisites by Operating System
 
-### Build Steps
+Select your operating system below to install the required development toolchains:
+
+#### Linux (Arch Linux / CachyOS / Manjaro)
+```bash
+# Update package indices and install Go, Node.js, and npm
+sudo pacman -Syu
+sudo pacman -S go nodejs npm
+```
+
+#### Linux (Ubuntu / Debian / Linux Mint / WSL2)
+```bash
+# Update apt repositories and install Go, Node.js, and npm
+sudo apt update
+sudo apt install -y golang-go nodejs npm
+
+# Optional: To install the latest Node.js LTS via NodeSource or NVM:
+# curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+# nvm install 22
+```
+
+#### Linux (Fedora / RHEL / CentOS Stream)
+```bash
+# Install Go and Node.js via dnf
+sudo dnf install -y golang nodejs npm
+```
+
+#### macOS (Apple Silicon M-Series & Intel x86_64)
+```bash
+# Install using Homebrew (https://brew.sh)
+brew update
+brew install go node
+```
+
+#### Windows 11 / 10 (WSL2 Recommended)
+We strongly recommend running AegisCode development inside **WSL2 (Windows Subsystem for Linux)** with Ubuntu:
+```powershell
+# In PowerShell (Administrator):
+wsl --install -d Ubuntu
+```
+Once inside your WSL Ubuntu shell, follow the Ubuntu/Debian steps above.
+
+Alternatively, for native Windows PowerShell development:
+```powershell
+# Using Windows Package Manager (Winget):
+winget install GoLang.Go
+winget install OpenJS.NodeJS.LTS
+```
+
+---
+
+### 5.2 Pre-Flight Environment Doctor
+
+AegisCode includes an automated environment doctor to verify that your compiler, runtime, package manager, and loopback TCP ports are ready:
+
+```bash
+npm run check:env
+```
+
+Expected diagnostic output:
+```text
+======================================================
+ AegisCode Development Environment Doctor
+======================================================
+Host Platform: CachyOS
+Project Root : /path/to/AegisCode
+
+Component                  Status         Current          Required      
+----------------------------------------------------------------------
+Node.js Runtime            ✓ PASS        v22.23.2         >= 20.0.0     
+npm Package Manager        ✓ PASS        v10.9.8          Any modern npm
+Go Toolchain               ✓ PASS        go1.27.1         >= 1.23.0     
+Frontend Dependencies      ✓ PASS        Installed        node_modules/ 
+Backend Port (8080)        ✓ PASS        Available        Free TCP port 
+Frontend Port (5173)       ✓ PASS        Available        Free TCP port 
+----------------------------------------------------------------------
+✓ All development prerequisites are satisfied!
+```
+
+---
+
+### 5.3 Building & Running from Source
+
 ```bash
 # 1. Clone the repository
 git clone https://github.com/aditlab-code/AegisCode.git
 cd AegisCode
 
-# 2. Install dependencies & build production frontend
+# 2. Install frontend dependencies
 npm install
-npm run build
 
-# 3. Compile standalone single binary (Zero-CGO)
+# 3. Start live development (both Go Core Server and Vite Frontend)
+npm run dev:all
+
+# Or start frontend development only:
+npm run dev
+
+# 4. Compile standalone single binary (Zero-CGO, embeds dist/ into single executable)
 npm run build:binary
 
-# 4. (Optional) Compile native macOS Cocoa wrapper into DMG
+# 5. (macOS only) Package native macOS Cocoa wrapper into DMG
 npm run package:dmg
 ```
 
-The resulting executable in `./bin/` is completely standalone: it contains no runtime dependencies on Node.js, Python, or GCC.
+The resulting executable in `./bin/` is completely standalone: it contains no runtime dependencies on Node.js, Python, or external shared libraries.
+
+---
+
+### 5.4 (Optional) Standalone CodeGraph & External MCP Tools
+
+AegisCode Core operates 100% out-of-the-box using native LSP and fast in-memory Go workspace indexing without requiring external background daemons.
+
+If you wish to use CodeGraph as an optional standalone power-tool for deep architectural call-graphs or connect external MCP tools for your AI coding assistants:
+
+```bash
+# Install CodeGraph CLI globally via npm/npx
+npx @colbymchenry/codegraph install --location=global
+
+# Index your project workspace on-demand
+codegraph explore --init
+```
+
+If unindexed, AegisCode operates silently with zero console warnings, with all symbols and outlines cleanly resolved via native LSP.
 
 ---
 

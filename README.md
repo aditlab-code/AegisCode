@@ -1,6 +1,6 @@
 # AegisCode 🛡️⚡
 
-> **Next-Generation Lightweight Web IDE + Local Cross-Platform Go Core Server + Interactive Visual CodeGraph**
+> **Next-Generation Lightweight Web IDE + Local Cross-Platform Go Core Server + Optional Standalone CodeGraph & MCP Integration**
 
 [![Release](https://img.shields.io/badge/Release-v1.0.0--beta.1-blue.svg)](RELEASE_NOTES.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -30,7 +30,7 @@ http://127.0.0.1:8080
 
 **AegisCode** is an open-source, ultra-responsive developer workbench engineered to replace sluggish, multi-gigabyte memory-heavy IDEs. It couples a modular **React 19** front-end with an efficient **Go Core Server** compiled into a standalone, zero-dependency single executable.
 
-Whether running as a native desktop application on macOS via a lightweight Cocoa WKWebView wrapper, running headless on a local server, or broadcasting an interactive coding session to your tablet, AegisCode guarantees instant cold-start times (<100ms) and minimal RAM utilization.
+Whether running as a native desktop application on macOS via a lightweight Cocoa WKWebView wrapper, running headless on a local server, or broadcasting an interactive coding session to your tablet, AegisCode guarantees instant cold-start times (<100ms) and minimal RAM utilization (<30MB baseline).
 
 ---
 
@@ -47,19 +47,23 @@ mindmap
       In-Process Go Core
       File-First .aegis/tasks
       Zero Codebase Cloud Leaks
-    Visual CodeGraph
-      VantageCraft 6-View Studio
-      Dagre Hierarchical
-      CoSE Clustered Topology
+    Native LSP Single Source
+      gopls, pyright, tsserver
+      Document Symbols & Hover
+      Fast RAM Indexing
     Zero-Freeze Buffers
       Canonical Workspace Store
       Atomic Disk Sync
       Windowed Large File Slicing
+    Optional CodeGraph & MCP
+      Standalone External CLI
+      User-Selected Modularity
 ```
 
 * **Ultra-Fast CodeMirror 6 Engine**: Instant syntax highlighting, intelligent code completion via Language Server Protocol (LSP), and zero lag even in large files.
 * **Integrated Go Delve Debugging**: Full-featured DAP debugger with gutter breakpoints, step execution, call stacks, and variable inspect panels.
-* **VantageCraft CodeGraph Studio**: Interactive visual dependency mapping powered by Cytoscape layouts, real-time AI code tracing, and semantic symbol discovery.
+* **Native Language Server Protocol (LSP)**: Complete single-source-of-truth document symbol queries, definitions, and diagnostics powered natively by `/api/v1/lsp/*`.
+* **Optional CodeGraph & External MCP Tooling**: Compatible with `@colbymchenry/codegraph` CLI and external MCP tools, without requiring a bundled daemon in the core binary.
 * **Lightweight Local-First Security**: Strict loopback binding (`127.0.0.1`), CSWSH cross-site origin protection, physical symlink traversal prevention, and AES-256-GCM encrypted local vault for your AI provider keys.
 
 ---
@@ -70,13 +74,12 @@ mindmap
 flowchart TD
     subgraph UI ["Frontend Studio (React 19 + Tailwind v4 + Modular Zustand)"]
         Editor["CodeMirror 6 Editor"]
-        Chat["AI Assistant Studio [MCP] & Review Gates"]
+        Chat["AI Assistant Studio & Review Gates"]
         WaveStepper["Chat Wave Stepper (~32px)"]
         Terminal["xterm.js PTY Terminals"]
         DebugUI["DAP Debugger View"]
-        GraphUI["VantageCraft CodeGraph Studio (Lazy-Loaded)"]
         Viewers["On-Demand Viewers (Image, PDF, CSV, Markdown)"]
-        Store["Modular Zustand Store (9 Domain Slices)"]
+        Store["Modular Zustand Store (8 Domain Slices)"]
     end
 
     subgraph Core ["Go Core Server (Single Executable, Zero-CGO)"]
@@ -86,7 +89,7 @@ flowchart TD
         Copilot["Aegis Copilot Engine (server/internal/agent)"]
         WS["WebSocket Terminal Hub"]
         DAP["Bundled DAP Runner (Delve Proxy)"]
-        MCP["Native MCP Bridge & Reverse Proxy"]
+        LSPBridge["Native LSP Bridge (gopls, pyright, tsserver)"]
         DB[("Embedded SQLite (WAL + FTS5)")]
     end
 
@@ -94,15 +97,20 @@ flowchart TD
         PTY["Shell (zsh / bash / pwsh)"]
         DLV["Delve Debugger (dlv)"]
         AI["Antigravity CLI / Multi-Provider LLMs"]
-        CGDaemon["CodeGraph Daemon & Kernel (.codegraph/)"]
+        LSPWorkers["Language Server Daemons"]
+    end
+
+    subgraph OptionalExternal ["Optional External Tooling (User-Selected)"]
+        CGDaemon["Standalone CodeGraph CLI / Daemon"]
+        ExtMCP["External MCP Servers"]
     end
 
     Editor <-->|REST / Canonical Buffers| API
+    Editor <-->|Document Symbols / Hover| API
     Chat <-->|SSE Stream / In-Memory Context| API
     WaveStepper <-->|SSE Topic copilot| EventHub
     Terminal <-->|WebSocket / PTY Stream| WS
     DebugUI <-->|REST / DAP Protocol| DAP
-    GraphUI <-->|Reverse Proxy /api/codegraph/ui/*| MCP
     Viewers <-->|Zero-Copy Stream & Windowed Query| API
     Store -.->|State Binding| UI
 
@@ -113,7 +121,9 @@ flowchart TD
     WS --> PTY
     DAP --> DLV
     API --> AI
-    MCP <-->|stdio JSON-RPC / HTTP Proxy| CGDaemon
+    API --> LSPBridge
+    LSPBridge --> LSPWorkers
+    AI -.->|Optional CLI/MCP Queries| OptionalExternal
 ```
 
 ---
@@ -144,8 +154,8 @@ cd AegisCode
 npm install
 npm run build
 
-# 3. Setup global CodeGraph MCP for AI agents (Claude, Cursor, Antigravity)
-npm run mcp:install
+# 3. (Optional) Setup standalone CodeGraph CLI for external agent intelligence
+npx @colbymchenry/codegraph install --location=global
 
 # 4. Compile standalone single binary (Zero-CGO)
 npm run build:binary

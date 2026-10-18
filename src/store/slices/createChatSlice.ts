@@ -19,10 +19,6 @@ import {
 } from "../../utils/storeApi"
 import { fetchFileContent } from "../../utils/workspaceApi"
 import {
-  extractCodeGraphTraceTargets,
-  type AiTraceState,
-} from "../../utils/codegraphApi"
-import {
   fetchWorkspaceCopilotStatus,
   initWorkspaceCopilot,
   type WorkspaceCopilotStatus,
@@ -359,12 +355,6 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
     },
     skills: SKILL_COMMANDS,
     antigravityModels: CHAT_MODELS.antigravity,
-    aiTrace: null,
-    aiTraceHistory: [],
-
-    clearAiTrace: () => {
-      set({ aiTrace: null, aiTraceHistory: [] })
-    },
 
     isCopilotInitialized: null,
     copilotStatus: null,
@@ -404,62 +394,6 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
         })
       }
       return res
-    },
-
-    triggerAiTrace: (incoming) => {
-      const state = get()
-      const nextStatus = incoming.status || "running"
-      const currentTrace = state.aiTrace
-
-      const resolvedSymbols =
-        incoming.symbols && incoming.symbols.length > 0
-          ? incoming.symbols
-          : incoming.symbolName
-            ? [incoming.symbolName]
-            : currentTrace?.symbols || []
-
-      const resolvedPrimary =
-        incoming.symbolName ||
-        resolvedSymbols[0] ||
-        currentTrace?.symbolName ||
-        ""
-
-      if (!resolvedPrimary) {
-        set({ aiTrace: null })
-        return
-      }
-
-      const traceObj: AiTraceState = {
-        symbols:
-          resolvedSymbols.length > 0 ? resolvedSymbols : [resolvedPrimary],
-        symbolName: resolvedPrimary,
-        rawQuery:
-          incoming.rawQuery ||
-          (resolvedSymbols.length > 0
-            ? resolvedSymbols.join(" ")
-            : resolvedPrimary),
-        filePath: incoming.filePath || currentTrace?.filePath,
-        toolName:
-          incoming.toolName || currentTrace?.toolName || "codegraph_explore",
-        provider: incoming.provider || state.activeProvider || DEFAULT_PROVIDER,
-        model: incoming.model || state.activeModel || DEFAULT_MODEL,
-        status: nextStatus,
-        timestamp: Date.now(),
-      }
-
-      set((prev) => ({
-        aiTrace: traceObj,
-        aiTraceHistory: [
-          traceObj,
-          ...prev.aiTraceHistory.filter(
-            (h) =>
-              !(
-                h.rawQuery === traceObj.rawQuery &&
-                h.toolName === traceObj.toolName
-              ),
-          ),
-        ].slice(0, 25),
-      }))
     },
 
     createSession: (provider?: ChatProvider, model?: string) => {
@@ -722,31 +656,6 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
             }
           } else if (event.type === "tool_call") {
             if (event.toolCall) {
-              const tc = event.toolCall
-              const parsedTrace = extractCodeGraphTraceTargets(
-                tc.name || "",
-                tc.args,
-                tc.targetFile,
-              )
-
-              if (parsedTrace.isCodeGraph && parsedTrace.symbols.length > 0) {
-                get().triggerAiTrace({
-                  symbols: parsedTrace.symbols,
-                  symbolName: parsedTrace.primarySymbol,
-                  rawQuery: parsedTrace.rawQuery,
-                  filePath: parsedTrace.filePath,
-                  toolName: parsedTrace.cleanToolName,
-                  provider: activeSession.provider,
-                  model: effectiveModel,
-                  status:
-                    tc.status === "failed" || tc.status === "error"
-                      ? "error"
-                      : tc.status === "success" || tc.status === "done"
-                        ? "completed"
-                        : "running",
-                })
-              }
-
               const cur = get()
               const updated = updateAgentMessageInSessions(
                 cur.sessions,
