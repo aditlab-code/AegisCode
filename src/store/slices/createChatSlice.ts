@@ -359,6 +359,10 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => {
     isCopilotInitialized: null,
     copilotStatus: null,
     isCopilotInitModalOpen: false,
+    taskHudOpen: false,
+
+    setTaskHudOpen: (open: boolean) => set({ taskHudOpen: open }),
+    toggleTaskHud: () => set((state) => ({ taskHudOpen: !state.taskHudOpen })),
 
     checkCopilotStatus: async () => {
       try {

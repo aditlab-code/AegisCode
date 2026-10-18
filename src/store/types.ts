@@ -444,6 +444,9 @@ export interface ChatSlice {
   initializeCopilotWorkspace: (
     options?: InitWorkspaceOptions,
   ) => Promise<InitWorkspaceResponse>
+  taskHudOpen: boolean
+  setTaskHudOpen: (open: boolean) => void
+  toggleTaskHud: () => void
 }
 
 export interface DebugSlice {

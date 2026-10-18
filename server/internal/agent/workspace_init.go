@@ -176,11 +176,11 @@ func InitWorkspace(workspaceRoot string, opts InitWorkspaceOptions) (*InitWorksp
 		gitignored = ensureGitignoreEntry(cleanRoot, ".aegis/tasks/")
 	}
 
-	// 5. Optionally scaffold a sample task
+	// 5. Optionally scaffold a starter task
 	taskSlug := ""
 	if opts.CreateSample {
 		tm := NewTaskManager(cleanRoot)
-		meta, err := tm.InitTask("001-welcome", "Welcome to Aegis Copilot", "Explore workspace and verify system setup")
+		meta, err := tm.InitTask("001-workspace-init", "Workspace Environment Verification", "Explore workspace and verify system setup")
 		if err == nil && meta != nil {
 			taskSlug = meta.ID
 		}

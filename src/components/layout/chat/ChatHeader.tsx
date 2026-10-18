@@ -9,6 +9,8 @@ export function ChatHeader() {
     createSession,
     chatSessionsOpen,
     toggleChatSessions,
+    taskHudOpen,
+    toggleTaskHud,
   } = useWorkbenchStore(
     useShallow((s) => ({
       setChatOpen: s.setChatOpen,
@@ -16,6 +18,8 @@ export function ChatHeader() {
       createSession: s.createSession,
       chatSessionsOpen: s.chatSessionsOpen,
       toggleChatSessions: s.toggleChatSessions,
+      taskHudOpen: s.taskHudOpen,
+      toggleTaskHud: s.toggleTaskHud,
     })),
   )
 
@@ -37,6 +41,13 @@ export function ChatHeader() {
       </div>
 
       <div className="chat-header-actions">
+        <IconButton
+          label={taskHudOpen ? "Hide task timeline" : "Show task timeline"}
+          onClick={toggleTaskHud}
+          className={taskHudOpen ? "active" : ""}
+        >
+          <Icon name="list" size={14} />
+        </IconButton>
         <IconButton label="New chat session" onClick={() => createSession()}>
           <Icon name="plus" size={14} />
         </IconButton>

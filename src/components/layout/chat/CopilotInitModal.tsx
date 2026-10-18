@@ -27,7 +27,7 @@ export function CopilotInitModal() {
 
   const [selectedPreset, setSelectedPreset] = useState(detectedPreset)
   const [addToGitignore, setAddToGitignore] = useState(true)
-  const [createSample, setCreateSample] = useState(true)
+  const [createSample, setCreateSample] = useState(false)
   const [overwriteRules, setOverwriteRules] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -232,12 +232,14 @@ export function CopilotInitModal() {
               />
               <div className="flex flex-col">
                 <span className="text-xs font-medium text-ink">
-                  Generate Starter Welcome Task
+                  Generate Starter Verification Task
                 </span>
                 <span className="text-[11px] text-ink-muted leading-tight">
-                  Creates an initial sample task (
-                  <code className="font-mono text-[10px]">001-welcome</code>) to
-                  test wave tracking.
+                  Creates an initial verification task (
+                  <code className="font-mono text-[10px]">
+                    001-workspace-init
+                  </code>
+                  ) to test wave tracking.
                 </span>
               </div>
             </label>

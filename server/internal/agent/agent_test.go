@@ -94,6 +94,39 @@ func TestTaskManager(t *testing.T) {
 		t.Errorf("expected multi-level wave statuses PASSED and PENDING, got %+v", multiWaves)
 	}
 
+	// 4c. Wave topology extraction test
+	topologyPlan := `# Plan with Topologies
+### Wave 1: Analyze & Discovery [LINEAR]
+- [x] step 1
+
+### Wave 2: Execution & Implementation [PARALLEL]
+- [ ] step 2a
+- [ ] step 2b
+
+### Wave 3: Integration (Hybrid)
+- [ ] step 3
+
+### Wave 4: Validation
+Topology: PARALLEL
+- [ ] step 4
+`
+	topWaves := ExtractWaveStatus(topologyPlan)
+	if len(topWaves) != 4 {
+		t.Fatalf("expected 4 waves from topology plan, got %d", len(topWaves))
+	}
+	if topWaves[0].Topology != "LINEAR" || topWaves[0].Name != "Analyze & Discovery" {
+		t.Errorf("expected Wave 1 to have LINEAR topology and stripped title, got %+v", topWaves[0])
+	}
+	if topWaves[1].Topology != "PARALLEL" || topWaves[1].Name != "Execution & Implementation" {
+		t.Errorf("expected Wave 2 to have PARALLEL topology and stripped title, got %+v", topWaves[1])
+	}
+	if topWaves[2].Topology != "HYBRID" || topWaves[2].Name != "Integration" {
+		t.Errorf("expected Wave 3 to have HYBRID topology and stripped title, got %+v", topWaves[2])
+	}
+	if topWaves[3].Topology != "PARALLEL" || topWaves[3].Name != "Validation" {
+		t.Errorf("expected Wave 4 to have metadata PARALLEL topology, got %+v", topWaves[3])
+	}
+
 
 	// 5. ListTasks
 	tasks, err := tm.ListTasks()
@@ -195,8 +228,8 @@ func TestWorkspaceInit(t *testing.T) {
 	if !result.Success {
 		t.Errorf("expected result.Success=true")
 	}
-	if result.TaskSlug != "001-welcome" {
-		t.Errorf("expected TaskSlug '001-welcome', got '%s'", result.TaskSlug)
+	if result.TaskSlug != "001-workspace-init" {
+		t.Errorf("expected TaskSlug '001-workspace-init', got '%s'", result.TaskSlug)
 	}
 	if !result.Gitignored {
 		t.Errorf("expected Gitignored=true")

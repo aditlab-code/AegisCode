@@ -2415,5 +2415,262 @@
   line-height: 1.55;
 }
 
+/* ==========================================================================
+   Chat Wave Stepper (Autonomous Copilot Orchestration Track)
+   ========================================================================== */
 
+.chat-wave-stepper {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--color-line);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  user-select: none;
+  font-size: 11px;
+}
+
+.chat-wave-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  padding: 3px 10px;
+  gap: 6px;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.chat-wave-title-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.chat-wave-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
+  flex-shrink: 0;
+}
+
+.chat-wave-info {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.chat-wave-slug {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--color-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 170px;
+  letter-spacing: -0.01em;
+}
+
+.chat-wave-status {
+  font-family: monospace;
+  font-size: 8.5px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--color-line);
+  background: var(--color-canvas);
+  color: var(--color-ink-muted);
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.chat-wave-status.status-passed {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  border-color: color-mix(in srgb, var(--color-success) 30%, transparent);
+}
+
+.chat-wave-status.status-running {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+
+.chat-wave-progress-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--color-canvas) 80%, transparent);
+  border: 1px solid var(--color-line);
+  font-family: monospace;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--color-ink-muted);
+  flex-shrink: 0;
+}
+
+.chat-wave-progress-label {
+  color: var(--color-ink);
+}
+
+.chat-wave-progress-pct {
+  color: var(--color-accent);
+}
+
+.chat-wave-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.chat-wave-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid var(--color-line);
+  background: var(--color-canvas);
+  color: var(--color-ink-muted);
+  font-size: 9.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.chat-wave-btn:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-ink);
+  border-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
+}
+
+.chat-wave-btn:active {
+  transform: scale(0.96);
+}
+
+.chat-wave-divider {
+  width: 1px;
+  height: 14px;
+  background: var(--color-line);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
+.chat-wave-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.chat-wave-toggle:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-ink);
+}
+
+.chat-wave-track {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: color-mix(in srgb, var(--color-canvas) 60%, transparent);
+  overflow-x: auto;
+}
+
+.chat-wave-track::-webkit-scrollbar {
+  display: none;
+}
+
+.chat-wave-card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--color-line);
+  background: var(--color-surface);
+  color: var(--color-ink-muted);
+  font-size: 10px;
+  flex-shrink: 0;
+  cursor: default;
+  transition: all 0.12s ease;
+}
+
+.chat-wave-card.wave-card-passed {
+  border-color: color-mix(in srgb, var(--color-success) 35%, transparent);
+  background: color-mix(in srgb, var(--color-success) 10%, transparent);
+  color: var(--color-success);
+  font-weight: 500;
+}
+
+.chat-wave-card.wave-card-running {
+  border-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.chat-wave-step-pill {
+  font-family: monospace;
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--color-surface-hover);
+  color: var(--color-ink-muted);
+}
+
+.chat-wave-topology-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: monospace;
+  font-size: 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 4px;
+  border-radius: 3px;
+  border: 1px solid var(--color-line);
+  background: var(--color-canvas);
+  color: var(--color-ink-muted);
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.chat-wave-topology-pill.topology-parallel {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+
+.chat-wave-topology-pill.topology-hybrid {
+  background: color-mix(in srgb, var(--color-warning) 15%, transparent);
+  color: var(--color-warning);
+  border-color: color-mix(in srgb, var(--color-warning) 30%, transparent);
+}
+
+.chat-wave-topology-pill.topology-linear {
+  background: var(--color-canvas);
+  color: var(--color-ink-muted);
+  border-color: var(--color-line);
+}
 

@@ -50,7 +50,15 @@ func GetAvailablePresets() []PersonaPreset {
 
 ---
 
-## 2. Mandatory Verification Gates
+## 2. Wave 2 Execution Topology Reasoning
+When planning or executing Wave 2 (Implementation) in 0-plan.md, reason about file coupling:
+- **[PARALLEL]**: If sub-phases touch isolated files, decoupled components, or independent tests.
+- **[LINEAR]**: If sub-phases have strict cross-file dependencies (e.g. backend endpoint before frontend fetch, shared store state).
+- **[HYBRID]**: If foundational contracts must be set up first before fanning out to parallel implementations.
+
+---
+
+## 3. Mandatory Verification Gates
 Before completing any task touching the codebase, the agent MUST run and pass:
 - 'npm run build' (Must pass with 0 errors)
 - 'npm run format' (Formatting check with oxfmt)
@@ -75,7 +83,15 @@ Before completing any task touching the codebase, the agent MUST run and pass:
 
 ---
 
-## 2. Verification Gates
+## 2. Orchestration & Wave 2 Topology Invariants
+When formalizing Wave 2 (Execution) in 0-plan.md, explicitly declare execution topology:
+- **[LINEAR]**: Mandatory for cascading state changes, schema-first contracts, or shared mutable state.
+- **[PARALLEL]**: Disjoint file boundaries, isolated UI modules, or independent mock suites.
+- **[HYBRID]**: Contract establishment followed by concurrent decoupled sub-phases.
+
+---
+
+## 3. Verification Gates
 - 'npm run build' (Zero compiler warnings or type errors)
 - 'npm run format' (Consistent formatting across all files)
 `,
@@ -99,7 +115,14 @@ Before completing any task touching the codebase, the agent MUST run and pass:
 
 ---
 
-## 2. Verification Gates
+## 2. Wave 2 Topology
+In 0-plan.md, declare Wave 2 topology:
+- **[PARALLEL]**: Decoupled files/components without shared dependencies.
+- **[LINEAR]**: Sequential cross-file dependencies or schema-first requirements.
+
+---
+
+## 3. Verification Gates
 - 'npm run build'
 - 'npm run format'
 `,

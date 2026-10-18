@@ -25,6 +25,7 @@ type TaskMetadata struct {
 type WaveStatus struct {
 	WaveNumber int    `json:"waveNumber"`
 	Name       string `json:"name"`
+	Topology   string `json:"topology,omitempty"` // "LINEAR" | "PARALLEL" | "HYBRID"
 	TotalSteps int    `json:"totalSteps"`
 	PassedStep int    `json:"passedSteps"`
 	Status     string `json:"status"` // "PENDING" | "IN_PROGRESS" | "PASSED" | "BLOCKED"
@@ -147,15 +148,15 @@ func (tm *TaskManager) InitTask(slug, title, prompt string) (*TaskMetadata, erro
 
 ## Waves & Micro-Phases
 
-### Wave 1: Analyze & Discovery
+### Wave 1: Analyze & Discovery [LINEAR]
 - [ ] MP-1.1: Codebase exploration and dependency mapping
 - [ ] MP-1.2: Specification contract validation
 
-### Wave 2: Execution & Implementation
+### Wave 2: Execution & Implementation [PARALLEL]
 - [ ] MP-2.1: Atomic core modifications
 - [ ] MP-2.2: Unit test coverage
 
-### Wave 3: Validation & Gates
+### Wave 3: Validation & Gates [LINEAR]
 - [ ] MP-3.1: Full compiler build check ('npm run build')
 - [ ] MP-3.2: Formatting verification ('npm run format')
 `, cleanTitle, cleanSlug)
@@ -305,13 +306,15 @@ func (tm *TaskManager) UpdateTaskFile(slug, filename, content string) error {
 	return os.WriteFile(targetPath, []byte(content), 0644)
 }
 
-// ExtractWaveStatus parses lines in 0-plan.md to determine the progress and status of each wave.
+// ExtractWaveStatus parses lines in 0-plan.md to determine the progress, status, and topology of each wave.
 func ExtractWaveStatus(planContent string) []WaveStatus {
 	lines := strings.Split(planContent, "\n")
 	var waves []WaveStatus
 	var currentWave *WaveStatus
 
 	waveRegex := regexp.MustCompile(`(?i)^#{2,4}\s*Wave\s*(\d+)[:\s]*(.*)`)
+	topologyRegex := regexp.MustCompile(`(?i)\[(LINEAR|PARALLEL|HYBRID)\]|\((LINEAR|PARALLEL|HYBRID)\)`)
+	metaTopologyRegex := regexp.MustCompile(`(?i)^\s*(?:\*\*)?Topology(?:\*\*)?\s*:\s*([A-Za-z]+)`)
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -322,15 +325,39 @@ func ExtractWaveStatus(planContent string) []WaveStatus {
 			}
 			var waveNum int
 			fmt.Sscanf(matches[1], "%d", &waveNum)
+			rawName := strings.TrimSpace(matches[2])
+			topology := "LINEAR"
+
+			// Check if topology tag is in the header line (e.g. "Execution & Implementation [PARALLEL]")
+			if topMatch := topologyRegex.FindStringSubmatch(rawName); len(topMatch) > 0 {
+				for i := 1; i < len(topMatch); i++ {
+					if topMatch[i] != "" {
+						topology = strings.ToUpper(topMatch[i])
+						break
+					}
+				}
+				rawName = strings.Trim(topologyRegex.ReplaceAllString(rawName, ""), " :-")
+			}
+
 			currentWave = &WaveStatus{
 				WaveNumber: waveNum,
-				Name:       strings.TrimSpace(matches[2]),
+				Name:       rawName,
+				Topology:   topology,
 				Status:     "PENDING",
 			}
 			continue
 		}
 
 		if currentWave != nil {
+			// Check if metadata line specifies Topology (e.g., "Topology: PARALLEL" or "**Topology**: PARALLEL")
+			if metaMatch := metaTopologyRegex.FindStringSubmatch(trimmed); len(metaMatch) >= 2 {
+				parsedTop := strings.ToUpper(metaMatch[1])
+				if parsedTop == "LINEAR" || parsedTop == "PARALLEL" || parsedTop == "HYBRID" {
+					currentWave.Topology = parsedTop
+				}
+				continue
+			}
+
 			if strings.HasPrefix(trimmed, "- [x]") || strings.HasPrefix(trimmed, "- [X]") {
 				currentWave.TotalSteps++
 				currentWave.PassedStep++

@@ -52,6 +52,7 @@ export interface AgentTaskItem {
 export interface WaveStatus {
   waveNumber: number
   name: string
+  topology?: "LINEAR" | "PARALLEL" | "HYBRID" | string
   totalSteps: number
   passedSteps: number
   status: "PENDING" | "IN_PROGRESS" | "PASSED" | "BLOCKED"
