@@ -2,13 +2,13 @@ import { useCallback, useRef } from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
 import { ResizeSash } from "../../ui/ResizeSash"
-import { useWorkbenchStore, useShallow } from "@/store"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import {
   DEFAULT_SIDEBAR_WIDTH,
   MIN_SIDEBAR_WIDTH,
   MAX_SIDEBAR_WIDTH,
   COLLAPSE_SIDEBAR_THRESHOLD,
-} from "@/store/slices/createLayoutSlice"
+} from "../../../store/slices/createLayoutSlice"
 import type { ActivityType } from "../../../types/workbench"
 import { ExplorerPanel } from "./ExplorerPanel"
 import { SearchPanel } from "./SearchPanel"

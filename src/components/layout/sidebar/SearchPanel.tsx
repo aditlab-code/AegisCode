@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react"
 import { Icon } from "../../ui/Icon"
 import { IconButton } from "../../ui/IconButton"
-import { useWorkbenchStore, useShallow } from "@/store"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import {
   searchWorkspace,
   replaceAllWorkspace,

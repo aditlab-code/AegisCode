@@ -8,7 +8,7 @@ import {
 } from "react"
 import { createPortal } from "react-dom"
 import { Icon } from "../../ui/Icon"
-import { useWorkbenchStore, useShallow } from "@/store"
+import { useWorkbenchStore, useShallow } from "../../../store"
 import type {
   FileItem,
   GitCommitNode,
