@@ -25,7 +25,7 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
     addMentionContext,
     activeProvider,
     settings,
-    setSettingsModalOpen,
+    openSettingsTab,
     showToast,
     isGenerating,
     stopGenerating,
@@ -39,7 +39,7 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
       addMentionContext: s.addMentionContext,
       activeProvider: s.activeProvider,
       settings: s.settings,
-      setSettingsModalOpen: s.setSettingsModalOpen,
+      openSettingsTab: s.openSettingsTab,
       showToast: s.showToast,
       isGenerating: s.isGenerating,
       stopGenerating: s.stopGenerating,
@@ -105,7 +105,7 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
       showToast(
         `Credentials for ${activeProvider} are not configured. Opening Settings...`,
       )
-      setSettingsModalOpen(true)
+      openSettingsTab("AI")
       return
     }
     onSend()
@@ -395,7 +395,7 @@ export function ChatComposer({ value, onChange, onSend }: ChatComposerProps) {
               <button
                 type="button"
                 className="composer-setup-warning flex items-center gap-1"
-                onClick={() => setSettingsModalOpen(true)}
+                onClick={() => openSettingsTab("AI")}
                 title="Click to configure credentials in Settings"
               >
                 <Icon name="warning" size={11} />

@@ -17,8 +17,7 @@ export function ActivityRail() {
     setActiveActivity,
     sidebarOpen,
     setSidebarOpen,
-    settingsModalOpen,
-    toggleSettingsModal,
+    activeTab,
     openSettingsTab,
     theme,
     toggleTheme,
@@ -29,8 +28,10 @@ export function ActivityRail() {
       setActiveActivity: s.setActiveActivity,
       sidebarOpen: s.sidebarOpen,
       setSidebarOpen: s.setSidebarOpen,
-      settingsModalOpen: s.settingsModalOpen,
-      toggleSettingsModal: s.toggleSettingsModal,
+      activeTab:
+        s.splitEditor && s.focusedGroup === "group2"
+          ? s.group2.activeTab
+          : s.group1.activeTab,
       openSettingsTab: s.openSettingsTab,
       theme: s.theme,
       toggleTheme: s.toggleTheme,
@@ -83,7 +84,7 @@ export function ActivityRail() {
           />
         </IconButton>
         <IconButton
-          active={settingsModalOpen}
+          active={activeTab === "Settings" || activeTab === "aegis://settings"}
           label="Settings (Cmd+,)"
           onClick={() => openSettingsTab()}
         >

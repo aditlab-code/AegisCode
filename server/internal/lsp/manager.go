@@ -88,6 +88,10 @@ func normalizeLang(lang string) string {
 		return "html"
 	case "css":
 		return "css"
+	case "latex", "tex":
+		return "latex"
+	case "bib", "bibtex":
+		return "bibtex"
 	default:
 		return l
 	}
@@ -100,6 +104,8 @@ func clientGroup(normLang string) string {
 		return "typescript"
 	case "c":
 		return "cpp"
+	case "bibtex":
+		return "latex"
 	default:
 		return normLang
 	}
@@ -139,6 +145,10 @@ func canonicalLspLanguageID(lang string) string {
 		return "html"
 	case "css":
 		return "css"
+	case "latex", "tex":
+		return "latex"
+	case "bib", "bibtex":
+		return "bibtex"
 	default:
 		return l
 	}
@@ -267,6 +277,15 @@ func (m *Manager) getLangSpec(normLang string) langSpec {
 				{binaryName: "vscode-css-language-server", args: []string{"--stdio"}},
 			},
 			installCommand: "npm install -g vscode-langservers-extracted",
+		}
+
+	case "latex":
+		return langSpec{
+			candidates: []langCandidate{
+				{binaryName: "texlab", args: nil},
+				{binaryName: "digestif", args: nil},
+			},
+			installCommand: "cargo install --locked texlab (or sudo apt install texlab / brew install texlab)",
 		}
 
 	default:
@@ -422,6 +441,7 @@ func (m *Manager) GetStatus() []LanguageServerStatus {
 		"html",
 		"css",
 		"json",
+		"latex",
 	}
 	result := make([]LanguageServerStatus, 0, len(standardLangs))
 

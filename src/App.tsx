@@ -9,7 +9,6 @@ import {
   BottomPanel,
   ChatDrawer,
   StatusBar,
-  SettingsModal,
   UnsavedChangesModal,
   VaultLockModal,
 } from "./components/layout"
@@ -166,7 +165,6 @@ function AppShell() {
         {chatOpen && <ChatDrawer />}
       </main>
       <StatusBar />
-      <SettingsModal />
       <FolderBrowserModal />
       <UnsavedChangesModal />
       <VaultLockModal />

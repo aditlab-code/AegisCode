@@ -63,6 +63,11 @@ export function detectLanguage(filename: string): string {
       return "HTML"
     case "md":
       return "Markdown"
+    case "tex":
+    case "latex":
+      return "LaTeX"
+    case "bib":
+      return "BibTeX"
     default:
       return "Plain Text"
   }
@@ -91,6 +96,9 @@ const LSP_EXTENSIONS = new Set([
   "zsh",
   "mk",
   "mak",
+  "tex",
+  "latex",
+  "bib",
 ])
 
 export function isLspLanguage(filename: string): boolean {

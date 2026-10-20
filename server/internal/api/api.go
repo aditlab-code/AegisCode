@@ -382,6 +382,12 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/lsp/status", s.handleLSPStatus)
 	mux.HandleFunc("/api/v1/events/lsp", s.handleLSPEvents)
 
+	// LaTeX Hybrid Compiler & SyncTeX Endpoints
+	mux.HandleFunc("/api/v1/latex/status", s.handleLatexStatus)
+	mux.HandleFunc("/api/v1/latex/compile", s.handleLatexCompile)
+	mux.HandleFunc("/api/v1/latex/synctex/forward", s.handleLatexSyncForward)
+	mux.HandleFunc("/api/v1/latex/synctex/inverse", s.handleLatexSyncInverse)
+
 	// System Management
 	mux.HandleFunc("/api/v1/system/shutdown", s.handleSystemShutdown)
 

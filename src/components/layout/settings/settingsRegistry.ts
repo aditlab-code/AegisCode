@@ -902,6 +902,26 @@ export function buildSettingsSchema(
         }))
       },
     },
+    {
+      id: "features.lsp.servers.latex",
+      category: "LSP",
+      title: "LSP: LaTeX Binary Path",
+      description: "Custom path to texlab or digestif executable.",
+      type: "text",
+      value: settings?.features?.lsp?.servers?.latex ?? "",
+      onChange: (v) => {
+        updateFeaturesSettings((prev) => ({
+          ...prev,
+          lsp: {
+            ...prev.lsp,
+            servers: {
+              ...(prev.lsp?.servers || {}),
+              latex: String(v).trim(),
+            },
+          },
+        }))
+      },
+    },
 
     // 6. Companion (Remote Tablet)
     {

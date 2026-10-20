@@ -131,7 +131,18 @@ All operations execute through `git.Service` with internal mutex serialization a
 
 ---
 
-## 9. Deprecated & Legacy Endpoints (Historical Reference)
+## 9. LaTeX Studio & Bidirectional SyncTeX Endpoints
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/v1/latex/status` | Discovers available LaTeX binaries on host (`latexmk`, `xelatex`, `pdflatex`, `lualatex`, `tectonic`, `synctex`, `texlab`) |
+| `POST` | `/api/v1/latex/compile` | Compiles LaTeX document root with selected engine (`auto`, `xelatex`, `pdflatex`, `lualatex`, `tectonic`) |
+| `POST` | `/api/v1/latex/synctex/forward` | Maps source file, line, and column coordinates to visual PDF page numbers and bounding box offsets |
+| `POST` | `/api/v1/latex/synctex/inverse` | Maps visual PDF page and point coordinates to source TeX file path and line number |
+
+---
+
+## 10. Deprecated & Legacy Endpoints (Historical Reference)
 
 The following endpoints have been decommissioned or superseded during Phase 5 optimization and Phase 26 Strategic Decoupling and are preserved for historical audit only:
 

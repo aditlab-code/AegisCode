@@ -14,6 +14,11 @@ import { EditorContextMenu } from "./EditorContextMenu"
 import { fetchActiveFileGraph } from "../../../utils/codegraphApi"
 import { streamAIChat } from "../../../utils/storeApi"
 import { normalizeWorkspacePath } from "../../../utils/workspaceApi"
+import {
+  compileLatex,
+  forwardSyncLatex,
+  type LatexEngine,
+} from "../../../services/latexService"
 import type { CursorCoordinates } from "../../../store/slices/createWorkspaceSlice"
 import type { EditorSelectionRange } from "../../../types/workbench"
 
@@ -410,6 +415,97 @@ export function CodePane({
     [editorLineHeight],
   )
 
+  const isLatexFile = useMemo(() => {
+    const lower = filename.toLowerCase()
+    return lower.endsWith(".tex") || lower.endsWith(".latex")
+  }, [filename])
+
+  const [latexEngine, setLatexEngine] = useState<LatexEngine>("auto")
+  const [isCompilingLatex, setIsCompilingLatex] = useState(false)
+
+  const handleCompileLatex = useCallback(async () => {
+    if (!filename || isCompilingLatex) return
+    setIsCompilingLatex(true)
+    showToast?.("Compiling LaTeX document...", "info")
+    try {
+      const res = await compileLatex(filename, latexEngine)
+      if (res.success) {
+        showToast?.(
+          `Compiled successfully with ${res.engineUsed} in ${res.durationMs}ms`,
+          "success",
+        )
+        if (res.pdfPath) {
+          const st = useWorkbenchStore.getState()
+          if (typeof st.openFileInGroup === "function") {
+            st.openFileInGroup(res.pdfPath, "group2")
+            st.setSplitEditor(true)
+            st.setFocusedGroup("group1")
+          } else {
+            openFileInPane(res.pdfPath)
+          }
+        }
+      } else {
+        const firstErr = res.errors?.[0] || "LaTeX compilation failed"
+        showToast?.(firstErr, "error")
+      }
+    } catch (err: any) {
+      showToast?.(err.message || "Failed to compile LaTeX", "error")
+    } finally {
+      setIsCompilingLatex(false)
+    }
+  }, [filename, latexEngine, isCompilingLatex, showToast, openFileInPane])
+
+  const handleForwardSync = useCallback(async () => {
+    if (!filename) return
+    const line = cursorPositionRef.current.line || 1
+    const col = cursorPositionRef.current.col || 1
+    try {
+      const target = await forwardSyncLatex(filename, line, col)
+      if (target?.pdfFile) {
+        const st = useWorkbenchStore.getState()
+        if (typeof st.openFileInGroup === "function") {
+          st.openFileInGroup(target.pdfFile, "group2")
+          st.setSplitEditor(true)
+          st.setFocusedGroup("group1")
+        } else {
+          openFileInPane(target.pdfFile)
+        }
+      }
+      window.dispatchEvent(
+        new CustomEvent("aegis:pdf-synctex-forward", {
+          detail: target,
+        }),
+      )
+    } catch (err: any) {
+      const errMsg = String(err?.message || "")
+      if (errMsg.includes("not compiled yet") || errMsg.includes("not found")) {
+        showToast?.("PDF not found. Compiling document first...", "info")
+        await handleCompileLatex()
+      } else {
+        showToast?.(err.message || "SyncTeX forward search failed", "warning")
+      }
+    }
+  }, [filename, showToast, openFileInPane])
+
+  // Keyboard shortcuts: Ctrl+Alt+B to compile, Ctrl+Alt+J to forward sync
+  useEffect(() => {
+    if (!isFocused || !isLatexFile) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey
+      if (mod && e.altKey && (e.key === "b" || e.key === "B")) {
+        e.preventDefault()
+        void handleCompileLatex()
+      } else if (mod && e.altKey && (e.key === "j" || e.key === "J")) {
+        e.preventDefault()
+        void handleForwardSync()
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [isFocused, isLatexFile, handleCompileLatex, handleForwardSync])
+
   return (
     <div
       ref={paneRef}
@@ -445,6 +541,61 @@ export function CodePane({
           <IconButton label="Close split editor" onClick={onClose}>
             <Icon name="close" size={13} />
           </IconButton>
+        </div>
+      )}
+
+      {isLatexFile && (
+        <div className="flex items-center justify-between px-3 py-1 bg-surface border-b border-line text-xs select-none">
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1 text-[11px] font-mono text-accent font-semibold">
+              <Icon name="code" size={12} />
+              <span>LaTeX</span>
+            </span>
+            <select
+              value={latexEngine}
+              onChange={(e) => setLatexEngine(e.target.value as any)}
+              className="bg-canvas border border-line rounded px-1.5 py-0.5 text-[11px] text-ink outline-none cursor-pointer"
+              title="Select LaTeX Compiler Engine"
+            >
+              <option value="auto">Auto (Detect)</option>
+              <option value="xelatex">XeLaTeX (latexmk)</option>
+              <option value="pdflatex">pdfLaTeX (latexmk)</option>
+              <option value="lualatex">LuaLaTeX (latexmk)</option>
+              <option value="tectonic">Tectonic (Standalone)</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              disabled={isCompilingLatex}
+              onClick={handleCompileLatex}
+              className="flex items-center gap-1 px-2.5 py-0.5 rounded bg-accent hover:bg-accent-soft text-canvas text-[11px] font-medium transition-opacity disabled:opacity-50 cursor-pointer"
+              title="Compile Document (Ctrl+Alt+B)"
+            >
+              {isCompilingLatex ? (
+                <>
+                  <span className="w-2.5 h-2.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  <span>Compiling...</span>
+                </>
+              ) : (
+                <>
+                  <Icon name="play" size={11} />
+                  <span>Compile (Ctrl+Alt+B)</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              disabled={isCompilingLatex}
+              onClick={handleForwardSync}
+              className="flex items-center gap-1 px-2 py-0.5 rounded bg-surface-raised hover:bg-surface-hover text-ink text-[11px] border border-line transition-colors cursor-pointer"
+              title="Jump to PDF at Cursor (SyncTeX Forward Search - Ctrl+Alt+J)"
+            >
+              <Icon name="external-link" size={11} />
+              <span>Jump to PDF (Ctrl+Alt+J)</span>
+            </button>
+          </div>
         </div>
       )}
 

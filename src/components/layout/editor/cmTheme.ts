@@ -12,6 +12,8 @@ import {
   syntaxHighlighting,
   foldGutter,
   indentOnInput,
+  StreamLanguage,
+  type StringStream,
 } from "@codemirror/language"
 import { history } from "@codemirror/commands"
 import { closeBrackets } from "@codemirror/autocomplete"
@@ -31,6 +33,58 @@ export interface LanguageInfo {
   ext: Extension | null
   id: string
 }
+
+/**
+ * Lightweight and fast LaTeX stream tokenizer for CodeMirror 6.
+ * Colors macros, comments, math environments, and structural braces.
+ */
+export const latexLanguage = StreamLanguage.define<{ inMath: boolean }>({
+  startState() {
+    return { inMath: false }
+  },
+  token(stream: StringStream, state: { inMath: boolean }) {
+    if (stream.peek() === "%") {
+      stream.skipToEnd()
+      return "lineComment"
+    }
+
+    if (stream.match("$$")) {
+      state.inMath = !state.inMath
+      return "atom"
+    }
+    if (stream.match("$")) {
+      state.inMath = !state.inMath
+      return "atom"
+    }
+
+    if (state.inMath) {
+      if (stream.match(/^[^$%]+/)) {
+        return "number"
+      }
+      stream.next()
+      return null
+    }
+
+    if (stream.match(/^\\[a-zA-Z@]+(?:\*)?/)) {
+      return "keyword"
+    }
+
+    if (stream.match(/^\\[^a-zA-Z]/)) {
+      return "escape"
+    }
+
+    if (stream.match(/^[{}()[\]]/)) {
+      return "bracket"
+    }
+
+    if (stream.match(/^[0-9]+(?:\.[0-9]+)?/)) {
+      return "number"
+    }
+
+    stream.next()
+    return null
+  },
+})
 
 /**
  * Maps file extension to CodeMirror language extension and LSP language ID.
@@ -105,6 +159,12 @@ export function resolveLanguage(filename: string): LanguageInfo {
     case "cs":
     case "csx":
       return { ext: cpp(), id: "csharp" }
+    case "tex":
+    case "latex":
+      return { ext: latexLanguage, id: "latex" }
+    case "bib":
+    case "bibtex":
+      return { ext: latexLanguage, id: "bibtex" }
     default:
       return { ext: null, id: "plaintext" }
   }

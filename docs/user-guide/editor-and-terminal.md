@@ -70,3 +70,22 @@ $
 - **New Tab**: Click the `+` icon to spawn a new shell.
 - **Close Tab**: Click the `x` button on a specific tab to kill the underlying PTY session.
 - **Clear Screen**: Use `Cmd + K` (macOS) or type `clear` / `reset`.
+
+---
+
+## 4. Native LaTeX Studio & SyncTeX Workflow
+
+When opening any `.tex` or `.latex` document, AegisCode activates an integrated LaTeX authoring environment:
+
+### Essential LaTeX Shortcuts
+| Action | macOS Shortcut | Linux / Windows Shortcut |
+| :--- | :--- | :--- |
+| **Compile Document** | `Cmd + Option + B` | `Ctrl + Alt + B` |
+| **SyncTeX Forward (Jump to PDF)** | `Cmd + Option + J` | `Ctrl + Alt + J` |
+| **SyncTeX Inverse (Jump to Source)** | `Cmd + Click` on PDF | `Ctrl + Click` on PDF |
+
+### Workflow Features
+- **Integrated LaTeX Toolbar**: Located at the top of the editor pane, allowing you to select compiler recipes (`Auto`, `XeLaTeX`, `pdfLaTeX`, `LuaLaTeX`, `Tectonic`) and trigger compilation or PDF jumps with one click.
+- **Side-by-Side Presentation**: Compiling or jumping automatically presents your PDF in split view on the right pane (`group2`) while keeping your cursor focused in the editor on the left (`group1`).
+- **Continuous Multi-Page PDF Stream**: Scroll effortlessly through multi-page papers with Adobe Acrobat-style continuous vertical stream and lazy canvas rendering.
+- **SyncTeX Pulse Marker**: Forward jump highlights the matching line in the PDF with a momentary animated pulse box. Inverse jump (`Ctrl+Click` on the PDF text) navigates the text cursor straight to the corresponding line in your `.tex` source code.

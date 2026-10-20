@@ -510,7 +510,7 @@ export function useWorkbenchLifecycle() {
       }
       if ((event.metaKey || event.ctrlKey) && event.key === ",") {
         event.preventDefault()
-        s.toggleSettingsModal()
+        s.openSettingsTab()
       }
       if (
         (event.metaKey || event.ctrlKey) &&
@@ -571,7 +571,6 @@ export function useWorkbenchLifecycle() {
           return
         }
         s.setCommandPaletteOpen(false)
-        s.setSettingsModalOpen(false)
         s.closeFind()
       }
     }

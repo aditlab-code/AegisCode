@@ -299,7 +299,7 @@ export function ChatMessageList() {
     isGenerating,
     activeProvider,
     showToast,
-    setSettingsModalOpen,
+    openSettingsTab,
     setActiveActivity,
     setSidebarOpen,
     openFileInPane,
@@ -311,7 +311,7 @@ export function ChatMessageList() {
       isGenerating: s.isGenerating,
       activeProvider: s.activeProvider,
       showToast: s.showToast,
-      setSettingsModalOpen: s.setSettingsModalOpen,
+      openSettingsTab: s.openSettingsTab,
       setActiveActivity: s.setActiveActivity,
       setSidebarOpen: s.setSidebarOpen,
       openFileInPane: s.openFileInPane,
@@ -352,8 +352,8 @@ export function ChatMessageList() {
   )
 
   const handleOpenSettings = useCallback(() => {
-    setSettingsModalOpen(true)
-  }, [setSettingsModalOpen])
+    openSettingsTab("AI")
+  }, [openSettingsTab])
 
   const handleReviewInGit = useCallback(() => {
     setActiveActivity("Source Control")

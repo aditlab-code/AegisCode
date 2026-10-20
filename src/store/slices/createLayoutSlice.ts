@@ -470,20 +470,17 @@ export const createLayoutSlice: SliceCreator<LayoutSlice> = (set, get) => {
 
     settingsModalOpen: false,
     setSettingsModalOpen: (open) => {
-      set((state) => ({
-        settingsModalOpen:
-          typeof open === "function" ? open(state.settingsModalOpen) : open,
-      }))
+      const shouldOpen = typeof open === "function" ? open(false) : open
+      if (shouldOpen) {
+        get().openSettingsTab()
+      }
     },
     settingsModalCategory: "Editor",
     setSettingsModalCategory: (cat) => {
       set({ settingsModalCategory: cat })
     },
     openSettingsModal: (category?: string) => {
-      set({
-        settingsModalOpen: true,
-        ...(category ? { settingsModalCategory: category } : {}),
-      })
+      get().openSettingsTab(category)
     },
     openSettingsTab: (category?: string) => {
       if (category) {
@@ -495,7 +492,7 @@ export const createLayoutSlice: SliceCreator<LayoutSlice> = (set, get) => {
       }
     },
     toggleSettingsModal: () => {
-      set((state) => ({ settingsModalOpen: !state.settingsModalOpen }))
+      get().openSettingsTab()
     },
 
     theme: initialTheme,

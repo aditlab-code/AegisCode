@@ -42,8 +42,8 @@ Technical specifications, internal design modules, and formal decision records g
 | :--- | :--- |
 | **[Architecture Overview](architecture/architecture-overview.md)** | Hybrid Multi-Process blueprint, disk watcher events, and zero-freeze execution. |
 | **[System Architecture](internal/architecture.md)** | Comprehensive folder-level ownership and communication contracts. |
-| **[Frontend UI Design](internal/frontend.md)** | Active UI design reference, layout modules, and Tailwind v4 token system. |
-| **[Backend Feature Reference](internal/feature-backend.md)** | Detailed API contracts, unified EventHub, and DAP debugging architecture. |
+| **[Frontend UI Design](internal/frontend.md)** | Active UI design reference, layout modules, Tailwind v4 tokens, LaTeX Studio, PDF stream viewer, and unified full-tab settings. |
+| **[Backend Feature Reference](internal/feature-backend.md)** | Detailed API contracts, unified EventHub, LaTeX & SyncTeX engine, and DAP debugging architecture. |
 | **[Engineering Roadmap](internal/roadmap.md)** | Milestone progression tracking Phases 1 through 9. |
 | **[Feature Assessment Report](internal/report.md)** | Standardized feature scorecard and phase-by-phase health audits. |
 | **[Database Schema & Partitioning](architecture/database-schema.md)** | SQLite3 data dictionary (`aegis.db` and workspace `graphs/*.db`), WAL mode, and FTS5. |

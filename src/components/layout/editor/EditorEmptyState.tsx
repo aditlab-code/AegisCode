@@ -12,14 +12,14 @@ export function EditorEmptyState({
     createFile,
     setCommandPaletteOpen,
     toggleSidebar,
-    toggleSettingsModal,
+    openSettingsTab,
     showToast,
   } = useWorkbenchStore(
     useShallow((s) => ({
       createFile: s.createFile,
       setCommandPaletteOpen: s.setCommandPaletteOpen,
       toggleSidebar: s.toggleSidebar,
-      toggleSettingsModal: s.toggleSettingsModal,
+      openSettingsTab: s.openSettingsTab,
       showToast: s.showToast,
     })),
   )
@@ -84,7 +84,7 @@ export function EditorEmptyState({
 
           <button
             className="empty-shortcut-card"
-            onClick={toggleSettingsModal}
+            onClick={() => openSettingsTab()}
             type="button"
           >
             <div className="shortcut-card-left">
